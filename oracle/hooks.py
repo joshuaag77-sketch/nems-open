@@ -217,9 +217,9 @@ EMM_TARGETS = [
     # call tree reaches most of EMM through shared helpers; following it everywhere
     # made each dump 350 MB, mostly EFD dispatch and storage arrays EFP never reads.
     dict(tag="ld", call=r"CALL ELLDSM\(IDSM\)", routines=["ELLDSM"],   # LDSM: load curves for ECP, EFD, EFP
-         home=["uldsm"]),
+         home=["uldsm"], ryears_only=True),  # 2021, 2030, 2050 only (disk)
     dict(tag="fp", call=r"CALL ELEFP\b", routines=["ELEFP"],           # EFP: prices (first pass; the second
-         home=["uefp", "udaf"]),                                        # runs only with STEO price benchmarking)
+         home=["uefp", "udaf"], ryears_only=True),                                      # runs only with STEO price benchmarking)
 ]
 # LDSM routines, around their calls in uldsm.f (ELLDSM's region loop, then DSMECP1's
 # ECP-horizon loop). Region targets dump as "<name>_rNN" for the regions in
@@ -794,6 +794,8 @@ def write_state_routine_emm(inc_dir):
             call = f"call {name}(tag, irg)"
         else:
             call = f"call {name}(tag)"
+            if tg.get("ryears_only"):
+                when += " .and. any(ryears == CURIYR)"
         branch = (f"      if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then\n"
                   f"        if ({when}) {call}\n        return\n      endif")
         (rg_branches if isinstance(tg["region"], str) else branches).append(branch)

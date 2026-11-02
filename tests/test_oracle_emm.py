@@ -19,7 +19,7 @@ from nems_open import oracle_state
 
 pytestmark = pytest.mark.skipif(not oracle_state.available("final", 61, "emm"), reason="oracle not run")
 
-YEARS = [31, 32, 33, 36, 37, 38, 41, 51, 61]  # 2020 2021 2022 2025 2026 2027 2030 2040 2050
+YEARS = [32, 41, 61]  # 2021 2030 2050: the whole-LDSM and whole-EFP dumps are kept to these (disk)
 TAGS = ["ld_in", "ld_out", "fp_in", "fp_out", "fs_out"]
 
 
