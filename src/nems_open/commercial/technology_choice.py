@@ -1154,15 +1154,19 @@ def _warehouse_and_us(inp: dict, out: dict, y: int) -> None:
     for s in range(1, NUM_MAJ_SERV + 1):
         tlist = [int(techs_for[s, k]) for k in range(1, int(n_techs[s]) + 1)]
         L = [(t, v) for t in tlist for v in range(1, int(n_vint[t]) + 1) if by_model[t, v] == 1]
+        # Running sums over division, building type, then technology; float32 times the int
+        # fuel flag is float64 (numpy), so the denominator sums in float64.
+        T = np.array([t for t, _ in L], dtype=int)
+        V = np.array([v for _, v in L], dtype=int)
+        tot = NSD[1:NUM_DIV + 1, 1:NUM_BLDG + 1, s] + RSD[1:NUM_DIV + 1, 1:NUM_BLDG + 1, s]             + SSD[1:NUM_DIV + 1, 1:NUM_BLDG + 1, s]
+        tss = TSS[1:NUM_DIV + 1, 1:NUM_BLDG + 1, s][:, :, T, V]
+        e = eff[1:NUM_DIV + 1, s][:, T, V][:, None, :]
+        live = np.broadcast_to(e > 0.0, tss.shape)
         for f in range(1, NUM_FUEL + 1):
-            num = den = nump = denp = f32(0.0)
-            for r in range(1, NUM_DIV + 1):
-                for b in range(1, NUM_BLDG + 1):
-                    tot = NSD[r, b, s] + RSD[r, b, s] + SSD[r, b, s]
-                    num += FSS[r, b, s, f] * tot
-                    for t, v in L:
-                        if eff[r, s, t, v] > 0.0:
-                            den += TSS[r, b, s, t, v] * fuelbytech[t, f] / eff[r, s, t, v] * tot
+            num = _seq_total((FSS[1:NUM_DIV + 1, 1:NUM_BLDG + 1, s, f] * tot).reshape(-1))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                terms = tss * fuelbytech[T, f] / e * tot[:, :, None]
+            den = _seq_total(terms[live])
             out["cmusavgeff"][s, f, y] = num / den if den > 0.0 else f32(0.0)
 
 
