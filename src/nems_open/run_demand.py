@@ -18,8 +18,10 @@ After the modules run, `sum_quantities` does the part of NEMS's SUMQAS
 the nine census divisions, California as a share of the Pacific division, and
 each sector's petroleum, renewable and total rows (QTP, QTR, QTS).
 
-Industrial and transportation are not ported yet: their QBLK arrays keep EIA's
-values. To add one, write a class like `ResidentialSector` and put it in SECTORS.
+Industrial is not ported yet: its QBLK arrays keep EIA's values. Transportation is
+ported and runs when asked for (`sectors=(..., "transportation")`); it takes about
+a minute and a half per iteration. To add a module, write a class like
+`ResidentialSector` and put it in SECTORS.
 
     python -m nems_open.run_demand 2030
 """
@@ -132,13 +134,51 @@ class CommercialSector:
         return c.qblk()
 
 
+class TransportationSector:
+    """SUBROUTINE TRAN (src/nems_open/transportation/tran.py).
+
+    The oracle's transportation dumps are at the top of a year's first iteration, so a
+    run that starts mid-year does that iteration first."""
+    name = "transportation"
+    suffix = "tr"
+
+    def start(self, year: int):
+        from nems_open.transportation import tran
+        s, carry = tran.start_from_dump(year - BASEYR + 1)
+        return {"s": s, "carry": carry, "next_itr": 1}
+
+    def iteration(self, t, year: int, itr: int, inputs: Inputs) -> None:
+        from nems_open.transportation import tran
+        s = t["s"]
+        # A fresh start is at iteration 1 even when the runner asks for iteration 2.
+        for i in range(min(t["next_itr"], itr), itr + 1):
+            s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, i
+            apply_transportation(inputs, s)
+            tran.tran(s, t["carry"])
+        t["next_itr"] = itr + 1
+
+    def quantities(self, t) -> dict:
+        return {k: t["s"][k] for k in SECTOR_QUANTITIES["tr"] if k in t["s"]}
+
+
+def apply_transportation(inputs: Inputs, s: dict) -> None:
+    """Inputs.apply for TRAN's state. Routines that include AEUSPRC or ANGTDM see those
+    blocks under a prefix (oracle/hooks_tran.py ALT_INCLUDES); the plain names are EUSPRC
+    and NGTDMOUT, which are not demand inputs, so an AEUSPRC input goes to the prefixed copy."""
+    plain = {k: v for k, v in s.items() if not k.startswith("aeusprc__")}
+    aeus = {k[len("aeusprc__"):]: v for k, v in s.items() if k.startswith("aeusprc__")}
+    inputs.apply({k: v for k, v in plain.items()
+                  if not inputs.by_var.get(k, "").startswith("AEUSPRC/")})
+    inputs.apply({k: v for k, v in aeus.items() if inputs.by_var.get(k, "").startswith("AEUSPRC/")})
+
+
 # NEMS calls the demand modules in this order (RESD, COMM, IND, TRAN). None marks
 # a module not ported yet; its QBLK arrays keep EIA's values.
 SECTORS = {
     "residential": ResidentialSector,
     "commercial": CommercialSector,
     "industrial": None,      # source/ind.f, being ported
-    "transportation": None,  # source/tran*.f, being ported
+    "transportation": TransportationSector,
 }
 
 # The fuel rows each sector owns in QBLK (QPRxx is in QMORE).
@@ -147,6 +187,9 @@ SECTOR_QUANTITIES = {
            "qstrs", "qpvrs"),
     "cm": ("qelcm", "qngcm", "qgfcm", "qgicm", "qclcm", "qmgcm", "qdscm", "qkscm", "qlgcm",
            "qprcm", "qrlcm", "qrscm", "qbmcm", "qstcm", "qpvcm"),
+    # TINTEG's QBLK rows, TRAN's natural gas and residual splits, and aviation gasoline.
+    "tr": ("qmgtr", "qmetr", "qettr", "qngtr", "qgftr", "qlgtr", "qprtr", "qeltr", "qh2tr", "qdstr", "qjftr",
+           "qottr", "qagtr", "qrltr", "qrhtr", "qrstr"),
 }
 # SUMQAS shares the Pacific division to California for these rows.
 CALIFORNIA_SHARED = ("qelrs", "qelcm", "qngrs", "qngcm", "qclrs", "qclcm", "qmgcm", "qdsrs", "qdscm", "qksrs",
@@ -179,6 +222,14 @@ def sum_quantities(q: dict, suffix: str, y: int, calshr) -> None:
         q["qtprs"][:, j] = g("qdsrs") + g("qksrs") + g("qlgrs")
         q["qtrrs"][:, j] = g("qbmrs") + g("qstrs") + g("qpvrs") + g("qgers")
         q["qtsrs"][:, j] = g("qelrs") + g("qngrs") + g("qclrs") + g("qtprs") + g("qtrrs")
+    elif suffix == "tr":
+        # SUMQAS rebuilds residual from its two grades after the California shares, so
+        # California's QRSTR ends up QRLTR + QRHTR = 0.
+        q["qrstr"][:, j] = g("qrltr") + g("qrhtr")
+        q["qtptr"][:, j] = g("qmgtr") + g("qjftr") + g("qdstr") + g("qlgtr") + g("qrstr") + g("qottr")
+        q["qtrtr"][:, j] = g("qettr")
+        q["qtstr"][:, j] = (g("qeltr") + g("qngtr") + g("qgptr") + g("qtptr") + g("qmetr") + g("qettr") + g("qh2tr")
+                            + g("qnglq"))
     else:
         q["qtpcm"][:, j] = g("qmgcm") + g("qdscm") + g("qkscm") + g("qlgcm") + g("qrscm")
         q["qtrcm"][:, j] = g("qbmcm") + g("qstcm") + g("qpvcm")
