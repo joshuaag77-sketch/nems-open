@@ -17,7 +17,8 @@ TOL = 1e-4
 
 
 def needs(tag):
-    return pytest.mark.skipif(not oracle_state.available(f"{tag}_out", YEARS[0], run=RUN),
+    have = any(oracle_state.available(f"{tag}_{side}", YEARS[0], run=RUN) for side in ("out", "in"))
+    return pytest.mark.skipif(not have,
                               reason="transportation oracle state not dumped")
 
 

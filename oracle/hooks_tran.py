@@ -55,6 +55,18 @@ TARGETS = [
     ("tmpg_cafe0", "tran.f90", r"^\s*CALL CAFECALC\(0\)", "cafecalc", "tmpgnew"),
     ("tmpg_cafe1", "tran.f90", r"^\s*CALL CAFECALC\(1\)", "cafecalc", "tmpgnew"),
     ("treg", "tran.f90", r"^\s*CALL TREG\s*$", "treg"),
+    # Inside TRANFRT and TRUCK_NEW (see ONLY_IN and GUARD below).
+    ("frt_new", "tranfrt.f90", r"^\s*CALL TRUCK_NEW\s*$", "truck_new", "tranfrt"),
+    ("frt_tech", "tranfrt.f90", r"^\s*CALL TRUCK_TECHADOPT\s*$", "truck_techadopt", "tranfrt"),
+    ("frt_inc", "tranfrt.f90", r"^\s*CALL TRUCK_INCCOST\s*$", "truck_inccost", "tranfrt"),
+    ("frt_choice", "tranfrt.f90", r"^\s*CALL TRUCK_CHOICE\s*$", "truck_choice", "tranfrt"),
+    ("frt_act", "tranfrt.f90", r"^\s*IF \(ACT_switch\.eq\.1\.and\.curcalyr\.ge\.2021\) CALL TRUCK_ACT", "truck_act", "tranfrt"),
+    ("frt_agg", "tranfrt.f90", r"^\s*CALL TRUCK_AGGVARS\s*$", "truck_aggvars", "tranfrt"),
+    ("frt_ghg", "tranfrt.f90", r"^\s*CALL TRUCK_GHGMEET\s*$", "truck_ghgmeet", "tranfrt"),
+    ("frt_stock", "tranfrt.f90", r"^\s*CALL TRUCK_STOCK\s*$", "truck_stock", "tranfrt"),
+    ("frt_vmt", "tranfrt.f90", r"^\s*CALL TRUCK_VMT\s*$", "truck_vmt", "tranfrt"),
+    ("frt_clt", "tranfrt.f90", r"^\s*CALL TCOMMCL_TRK\s*$", "tcommcl_trk", "tranfrt"),
+    ("frt_fuel", "tranfrt.f90", r"^\s*CALL TRUCK_FUEL\s*$", "truck_fuel", "tranfrt"),
     ("tfltstks", "tran.f90", r"^\s*CALL TFLTSTKS\s*$", "tfltstks"),
     ("flthav", "tran.f90", r"^\s*if \(yrs\.ge\.MINVAL\(first_lidar_year\)\) CALL FLTHAV", "flthav"),
     ("tfltvmts", "tran.f90", r"^\s*CALL TFLTVMTS\s*$", "tfltvmts"),
@@ -75,6 +87,13 @@ TARGETS = [
     ("tbenchmark", "tran.f90", r"^\s*CALL TBENCHMARK\s*$", "tbenchmark"),
     ("treport", "tran.f90", r"^\s*CALL TREPORT\s*$", "treport"),
 ]
+
+# Points dumped only before the call (the "after" is the next point's "before"); the
+# freight state is about 750 MB a dump, so this halves the disk the freight points take.
+ONLY_IN = {"frt_new", "frt_tech", "frt_inc", "frt_choice", "frt_act", "frt_agg", "frt_ghg",
+           "frt_stock", "frt_vmt", "frt_clt", "frt_fuel"}
+# Points inside a retry loop: dump on the first try only, so stretches stay consecutive.
+GUARD = {t: "itryghg.eq.1" for t in ("frt_tech", "frt_inc", "frt_choice", "frt_act", "frt_agg", "frt_ghg")}
 
 # Saved local arrays a routine reads back from last year (see instrument_private).
 # {tag: {routine (the target or one it calls): [arrays]}}. Found by scanning for locals
@@ -351,8 +370,10 @@ def instrument(build):
             raise SystemExit(f"hooks_tran: call for {tag} not found in {src}")
         line_start = text.rfind("\n", 0, m.start()) + 1
         line_end = text.index("\n", m.end())
-        text = (text[:line_start] + f"    CALL OST_{tag.upper()}('{tag}_in')\n" + text[line_start:line_end + 1]
-                + f"    CALL OST_{tag.upper()}('{tag}_out')\n" + text[line_end + 1:])
+        guard = f"IF ({GUARD[tag]}) " if tag in GUARD else ""
+        after = "" if tag in ONLY_IN else f"    {guard}CALL OST_{tag.upper()}('{tag}_out')\n"
+        text = (text[:line_start] + f"    {guard}CALL OST_{tag.upper()}('{tag}_in')\n" + text[line_start:line_end + 1]
+                + after + text[line_end + 1:])
         p.write_text(text, encoding="latin-1")
 
 
@@ -360,7 +381,7 @@ def make_dirs():
     final = RUN / "out" / "state" / "final" / "0"
     final.mkdir(parents=True, exist_ok=True)
     for tag, *_ in TARGETS:
-        for side in ("in", "out"):
+        for side in (("in",) if tag in ONLY_IN else ("in", "out")):
             for y in DUMP_YEARS:
                 d = RUN / "out" / "state" / f"{tag}_{side}" / str(y)
                 d.mkdir(parents=True, exist_ok=True)
