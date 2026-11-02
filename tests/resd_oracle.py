@@ -39,6 +39,9 @@ def assert_matches(state, after, tol=TOL, skip=()):
     for k, v in after.items():
         if k in skip or not isinstance(v, FArray):
             continue
+        if v.a.dtype.kind == "S":  # text arrays must be identical
+            worst[k] = 0.0 if np.array_equal(state[k].a, v.a) else 1.0
+            continue
         worst[k] = rel_err(state[k].a, v.a)
     bad = {k: e for k, e in worst.items() if e >= tol}
     assert not bad, f"over {tol}: {bad}"

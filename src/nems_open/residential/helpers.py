@@ -6,16 +6,16 @@ They are not dumped on their own; they are checked through the routines that cal
 
 import numpy as np
 
-from nems_open.residential.common import BASEYR, RECSYEAR, f32
+from nems_open.residential.common import BASEYR, RECSYEAR, expf, f32, logf, powf
 
 
 def svrte(alpha, y, k, lam):
     """SVRTE: Weibull survival, the share of equipment still working at age y."""
     if f32(y) - f32(alpha) < 0:
         return f32(1.0)
-    k1 = (f32(y) - f32(alpha)) / f32(lam)
-    k2 = f32(k1 ** f32(k))
-    return f32(np.exp(-k2))
+    k1 = f32(f32(f32(y) - f32(alpha)) / f32(lam))
+    k2 = powf(k1, f32(k))
+    return expf(-k2)
 
 
 def rselast(s: dict, f: int, r: int, alpha, ef1, ef2, ef3, eupr: int):
@@ -35,7 +35,7 @@ def rselast(s: dict, f: int, r: int, alpha, ef1, ef2, ef3, eupr: int):
             else:
                 P = s["prices"]
                 ratio = P[f, r, Y - k] / P[f, r, RECSYEAR]
-            fac[k] = f32(f32(ratio) ** f32(f32(alpha) * ef[k]))
+            fac[k] = powf(f32(ratio), f32(f32(alpha) * ef[k]))
     return fac[0] * fac[1] * fac[2]
 
 
@@ -57,10 +57,10 @@ def eqcost(s: dict, recty: int, year: int, ctype: str):
         return f32(base)
     if mat == "ADOLESCENT":
         y1, y0 = s["rtcostp1"][recty], f32(s["rtinityr"][recty])
-        return f32(base * f32(2.0) * d / (f32(1.0) + ((rsyr2 - y1) / (y0 - y1)) ** gamma) + (f32(1.0) - d) * base)
+        return f32(base * f32(2.0) * d / (f32(1.0) + powf(f32((rsyr2 - y1) / (y0 - y1)), gamma)) + (f32(1.0) - d) * base)
     if mat == "INFANT":
         y1, y0 = f32(s["rtinityr"][recty]), s["rtcostp1"][recty]
-        return f32(base * d / (f32(1.0) + ((rsyr2 - y1) / (y0 - y1)) ** gamma) + (f32(1.0) - d) * base)
+        return f32(base * d / (f32(1.0) + powf(f32((rsyr2 - y1) / (y0 - y1)), gamma)) + (f32(1.0) - d) * base)
     return f32(10.0 ** 9)
 
 
@@ -68,7 +68,7 @@ def rlearncost(max_cost, beta, c0, cum_ship):
     """rLearnCost: learning-curve cost from cumulative shipments, capped at max_cost."""
     if cum_ship <= 1.0 or c0 == 0.0:
         return f32(max_cost)
-    return min(f32(max_cost), f32(np.exp(f32(np.log(f32(c0))) - f32(beta) * f32(np.log(f32(cum_ship))))))
+    return min(f32(max_cost), expf(logf(c0) - f32(beta) * logf(cum_ship)))
 
 
 def replace(s: dict, eu: int, r: int, b: int, reccl: int, flag: int) -> None:
@@ -101,8 +101,8 @@ def replace(s: dict, eu: int, r: int, b: int, reccl: int, flag: int) -> None:
         if rectysw == 0:
             return
         # CAPITAL and RETAIL are computed here in EIA's code but never used.
-        rpshare[eqcsw] = f32(np.exp(f32(s["rtswbias"][recclsw] + s["rtswbeta"][recclsw]
-                                        * (s["lfcy"][eqtsw, b, r, 1] + f32(s["rpinscost"][reccl, recclsw])))))
+        rpshare[eqcsw] = expf(f32(s["rtswbias"][recclsw] + s["rtswbeta"][recclsw]
+                                  * (s["lfcy"][eqtsw, b, r, 1] + f32(s["rpinscost"][reccl, recclsw]))))
         totsh = f32(totsh + rpshare[eqcsw])
 
     fact = s["rtswfact"][reccl]
