@@ -22,6 +22,8 @@ STRETCHES = {
     "talt2x": (ldv_choice.talt2x, "tmpg_altx1_in", "tmpg_altx1_out"),
     "cafecalc0": (lambda st: cafe.cafecalc(st, 0), "tmpg_cafe0_in", "tmpg_cafe0_out"),
     "cafecalc1": (lambda st: cafe.cafecalc(st, 1), "tmpg_cafe1_in", "tmpg_cafe1_out"),
+    "passes": (tmpgnew.passes, "tmpg_cafe1_out", "tmpgnew_out"),
+    "whole": (tmpgnew.tmpgnew, "tmpgnew_in", "tmpgnew_out"),
 }
 
 
@@ -40,14 +42,18 @@ def test_stretch(name, y):
     # Before the EPA calibration years the setup stretch does nothing, as in the Fortran.
     # Technology shares go through 1/(1+exp(x)); numpy's and gfortran's expf differ by an ulp,
     # about 1e-7 on shares near 0.001. FEMCALC is held to the project's 0.1% rule, not 1e-4.
-    tol = 1e-3 if name == "femcalc" else 1e-4
+    # The multi-pass stretches inherit FEMCALC's ulp differences; GHG margins subtract two
+    # close numbers, which amplifies them to about 3e-4. Still inside the 0.1% rule.
+    tol = 1e-3 if name in ("femcalc", "passes", "whole") else 1e-4
     kwargs = {}
-    if name == "talt2":
+    if name in ("talt2", "passes", "whole"):
         # TALT2's saved arrays, dumped at its end in tmpgnew_out; only year n-1 is read.
         from tran_harness import _blank_from
         import nems_open.oracle_state as os_
         out = os_.load("tmpgnew_out", y, run="run_tran")
-        kwargs["carry"] = {k: _blank_from(out[f"p_{k}"], y) for k in ("altstat", "predstk")}
+        # For "passes" TALT2 has already run this year (pass 1), so its arrays are complete.
+        kwargs["carry"] = {k: (out[f"p_{k}"].copy() if name == "passes" else _blank_from(out[f"p_{k}"], y))
+                           for k in ("altstat", "predstk")}
     if name == "talt2x" and y <= 35:
         pytest.skip("TALT2X runs only after 2024")
     assert run(port, "tmpgnew", y, start=start, end=end, tol=tol, may_be_empty=name in ("setup", "cafecalc1"), **kwargs) == {}

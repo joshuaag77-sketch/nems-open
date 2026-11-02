@@ -7,13 +7,17 @@ against the oracle's dump at that point:
   (LIONCOSTCALC, in ldv_tech)
   nameplates   new nameplates by fuel type, make/model availability, gasoline price
                terms, then the start of FEM pass 1
-  ... FEM passes, CAFE compliance (to come)
+  pass 1       FEMCALC, CGSHARE, TATTRIB, TALT2, TALT2X, CAFECALC(0) and (1)
+  passes       pass 2 raises the regulatory cost signal step by step, pass 3 gives
+               back horsepower, then CAFEGHG_MEET forces compliance if still short
 """
 
 import numpy as np
 
 from nems_open.transportation.common import MAXLDV, MNUMCR, f32, fsum
-from nems_open.transportation.ldv_tech import afvadj
+from nems_open.transportation import cafe, cafe_meet, femcalc, ldv_attrib, ldv_choice
+from nems_open.transportation.common import STOCKYR
+from nems_open.transportation.ldv_tech import afvadj, lioncostcalc
 from nems_open.transportation.mean_funcs import weighted_mean
 
 BASE, PREV, CURRENT = 0, 1, 2
@@ -162,3 +166,135 @@ def nameplates(s: dict) -> None:
     s["iregn"] = MNUMCR + 1
     s["fem_pass"] = 1
     s["regcost"][1:MAXGROUP] = 0.0
+
+
+MAX_CAFETEST_PASS = 30
+
+
+def _round(s, carry, yrs):
+    """One FEM pass: FEMCALC through CAFECALC(0)."""
+    if yrs > XYR:
+        femcalc.femcalc(s)
+    ldv_attrib.cgshare(s)
+    ldv_attrib.tattrib(s)
+    ldv_choice.talt2(s, carry)
+    if yrs > STOCKYR:
+        ldv_choice.talt2x(s)
+    cafe.cafecalc(s, 0)
+
+
+def pass1(s: dict, carry: dict) -> None:
+    yrs = int(s["curcalyr"])
+    if yrs > XYR:
+        femcalc.femcalc(s)
+    ldv_attrib.cgshare(s)
+    ldv_attrib.tattrib(s)
+    ldv_choice.talt2(s, carry)
+    if yrs > STOCKYR:
+        ldv_choice.talt2x(s)
+    cafe.cafecalc(s, 0)
+    cafe.cafecalc(s, 1)
+
+
+def passes(s: dict, carry: dict) -> None:
+    """FEM passes 2 and 3, then the CAFE test; from after pass 1 to the end of TMPGNEW."""
+    n, yrs, epa = int(s["n"]), int(s["curcalyr"]), int(s["epalyr"])
+    cp = s["cafepass"]
+    regs27 = int(s["enforce_my27regs"]) == 1 and yrs >= 2027
+    s["fem_pass"] = 2
+    s["npass2"] = 5 if regs27 else 10
+    for p in range(1, int(s["npass2"]) + 1):
+        s["pass2"] = p
+        s["regcost"][1:MAXGROUP] = s["reg_cost"] * (f32(p) / f32(s["npass2"]))
+        if yrs > XYR:
+            _round(s, carry, yrs)
+        if cp[1:MAXGROUP].all():
+            cafe.cafecalc(s, 1)
+            break
+    else:
+        s["pass2"] = int(s["npass2"]) + 1
+
+    s["fem_pass"] = 3
+    s["npass3"] = 5 if regs27 else 10
+    s["regcost"][1:MAXGROUP] = s["reg_cost"]
+    for p in range(1, int(s["npass3"]) + 1):
+        s["pass3"] = p
+        s["gbinc"] = f32(p) / f32(s["npass3"])
+        if yrs > XYR:
+            _round(s, carry, yrs)
+        if cp[1:MAXGROUP].all():
+            cafe.cafecalc(s, 1)
+            break
+    else:
+        s["pass3"] = int(s["npass3"]) + 1
+
+    if yrs > epa + 1 and not cp[1:MAXGROUP].all():
+        _cafetest(s, n, yrs, epa)
+
+
+def _cafetest(s, n, yrs, epa):
+    cp, mg = s["cafepass"], s["mgghggrp"]
+    grp = s["creds_avail_grp"]
+    if epa + 2 <= yrs <= epa + 3:
+        if yrs == epa + 2:
+            s["creds_avail"] = s["credbal_epalyr"] * f32(0.7)
+        if yrs == epa + 3:
+            s["creds_avail"] = s["credbal_epalyr"] * f32(0.3)
+        deficit = f32(0.0)
+        for igp in range(1, MAXGROUP + 1):
+            if mg[igp, n] < 0.0 and igp != 5:
+                deficit = deficit + mg[igp, n]
+        for igp in range(1, MAXGROUP + 1):
+            if mg[igp, n] < 0.0 and igp != 5:
+                grp[igp] = s["creds_avail"] * mg[igp, n] / deficit
+    else:
+        s["creds_avail"] = f32(0.0)
+        grp[1:MAXGROUP] = 0.0
+
+    s["first_time_cafetest"] = 1
+    cp[1:MAXGROUP] = 1
+    cmg, used, std, newmpg = s["cafempggrp"], s["cafe_used"], s["cafestd"], s["newmpg"]
+    cafe_on = int(s["enforce_cafe"]) == 1
+    for igp in range(1, MAXGROUP + 1):
+        ivtyp = int(s["grpmap"][igp])
+        s["ivtyp"] = ivtyp
+        if int(s["enforce_epa"]) == 1:
+            if fsum(mg[1:MAXGROUP, n]) + s["creds_avail"] < 0.0 or newmpg[3, n] < std[3, n]:
+                if mg[igp, n] + grp[igp] < 0.0 or (cmg[igp, n] < used[igp, yrs] and cafe_on):
+                    cp[igp] = 0
+            elif (newmpg[ivtyp, n] - std[ivtyp, n]) < -2.0 and cmg[igp, n] < used[igp, yrs] and cafe_on:
+                cp[igp] = 0
+        else:
+            if newmpg[3, n] < std[3, n] and cafe_on:
+                if cmg[igp, n] < used[igp, yrs]:
+                    cp[igp] = 0
+            elif (newmpg[ivtyp, n] - std[ivtyp, n]) < -2.0 and cmg[igp, n] < used[igp, yrs]:
+                cp[igp] = 0
+    s["igp"] = MAXGROUP + 1
+
+    if cp[1:MAXGROUP].all():
+        cafe.cafecalc(s, 1)
+        return
+    for ipass in range(1, MAX_CAFETEST_PASS + 1):
+        s["first_time_cafetest"] = 1
+        s["maxadj_cafetest"] = f32(ipass) * f32(0.1)
+        for igp in range(MAXGROUP, 0, -1):
+            s["igp"] = igp
+            if not cp[igp]:
+                cafe_meet.cafeghg_meet(s)
+        s["igp"] = 0
+        if cp[1:MAXGROUP].all():
+            cafe.cafecalc(s, 1)
+            return
+        if ipass == MAX_CAFETEST_PASS:
+            cafe.cafecalc(s, 1)
+
+
+def tmpgnew(s: dict, carry: dict) -> None:
+    """The whole routine. carry: TALT2's altstat and predstk."""
+    setup(s)
+    if int(s["yrs"]) >= int(s["first_bat_yr"]) + 1989 - 1:
+        lioncostcalc(s)
+    nameplates(s)
+    pass1(s, carry)
+    passes(s, carry)
