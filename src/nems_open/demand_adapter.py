@@ -134,7 +134,7 @@ class PortedSectors:
         ratio = {}
         for name, p in prices.items():
             ref = self.base[name]
-            ratio[name[7:]] = np.divide(p, ref, out=np.ones_like(p), where=ref != 0)
+            ratio[name.split("/")[1]] = np.divide(p, ref, out=np.ones_like(p), where=ref != 0)
         snap = self.inputs.snapshot
         for var, full in self.inputs.by_var.items():
             block = full.split("/")[0]
@@ -157,10 +157,11 @@ class PortedSectors:
         out = {}
         for sector, state in run.sectors:
             for k, v in sector.quantities(state).items():
-                run.q[k][:9, y - 1] = v[1:10, y]
+                run.q[k][:9, y - 1] = v[1:9, y]  # FArray: Fortran bounds, inclusive
             self._sum(run.q, sector.suffix, y, calshr)
             for k in self._names[sector.suffix]:
-                out[f"QBLK/{k}"] = run.q[k][:, y - 1].astype(np.float64)
+                if f"QBLK/{k}" in self.base:  # qprrs and qprcm live in QMORE
+                    out[f"QBLK/{k}"] = run.q[k][:, y - 1].astype(np.float64)
         return out
 
     def end_year(self):

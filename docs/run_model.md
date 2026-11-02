@@ -58,7 +58,11 @@ Per sector it uses:
   transportation have no port yet, so they always use the stub.
 
 With no policy, the loop reproduces EIA's reference prices, demand and CO2 exactly
-(stub) or within the ported modules' own drift.
+(stub) or within the ported modules' own drift. Checked 2026-11-02 with ported
+residential for 2030 (runner's working tree, oracle dumps): one pass, US residential
+electricity and gas within 0.1% of EIA. At $50/t: four passes, residential gas -1.5%,
+electricity -1.0%. Test: `NEMS_SLOW=1 pytest tests/test_run_model.py -k ported`, run
+from a checkout that has both the demand runner and the oracle dumps.
 
 ## Limits
 
