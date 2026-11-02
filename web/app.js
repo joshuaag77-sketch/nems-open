@@ -91,6 +91,10 @@
       options: {
         responsive: true, maintainAspectRatio: false, animation: { duration: 250 },
         interaction: { mode: "index", intersect: false },
+        onClick: (e, items, c) => {
+          const pts = c.getElementsAtEventForMode(e, "index", { intersect: false }, false);
+          if (pts.length) { traceYear = years[pts[0].index]; trace(s); }
+        },
         plugins: {
           legend: { display: false },
           tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmt(c.parsed.y, measure.key === "co2" ? 0 : 2)}` } },
@@ -106,34 +110,160 @@
     chart = new Chart(el("chart"), cfg);
   }
 
+  // ---- trace this number -------------------------------------------------------
+  let traceYear = 2050;
+  const MODULE_FOR = { co2: "emissions", pel: "electricity", mg: "oil", ng: "natural_gas", gal: "transportation", use: null };
+  const VARIABLE = {
+    co2: "Sum of five sectors: fuel use x EIA's carbon factor (EMEBLK), scaled to EIA's sector carbon (EMISSION/em*c)",
+    pel: "MPBLK/pelas, average delivered electricity price",
+    mg: "MPBLK/pmgtr, gasoline delivered to transportation",
+    ng: "MPBLK/pngrs, natural gas delivered to homes",
+    gal: "QBLK/qmgtr, motor gasoline used in transportation",
+    use: "QBLK/qtsrs + qtscm + qtsin + qtstr, delivered energy by sector",
+  };
+  const SECTOR = { rs: "Homes", cm: "Businesses", in: "Industry", tr: "Transportation", el: "Power plants" };
+  function rowsFor(key, s, j) {
+    const t = s.trace, r = ref.trace;
+    const row = (label, a, b, d, unit) => ({ label, a, b, d, unit });
+    switch (key) {
+      case "co2": return [
+        ...Object.keys(SECTOR).map((k) => row(`${SECTOR[k]} CO2`, t.co2_sector[k][j], r.co2_sector[k][j], 0, " Mt")),
+        row("Gas burned in power plants", t.power_burn.gas[j], r.power_burn.gas[j], 2, " quads"),
+        row("Coal burned in power plants", t.power_burn.coal[j], r.power_burn.coal[j], 2, " quads")];
+      case "pel": return [
+        row("Electricity sold", t.totals.elec[j], r.totals.elec[j], 2, " quads"),
+        row("Gas price to power plants, before carbon", t.gas_to_power[j], r.gas_to_power[j], 2, " $/MMBtu"),
+        row("Carbon cost in the price", t.adders.electricity[j], 0, 2, "¢/kWh")];
+      case "mg": return [
+        row("Gasoline used, all sectors", t.totals.gasoline[j], r.totals.gasoline[j], 2, " quads"),
+        row("Carbon cost in the price", t.adders.gasoline[j], 0, 2, " $/gal")];
+      case "ng": return [
+        row("Natural gas used, all sectors", t.totals.gas[j], r.totals.gas[j], 2, " quads"),
+        row("Gas burned in power plants", t.power_burn.gas[j], r.power_burn.gas[j], 2, " quads"),
+        row("Carbon cost in the price", t.adders.gas_home[j], 0, 2, " $/MMBtu")];
+      case "gal": return [
+        row("Gasoline price", s.prices.gasoline[j], ref.prices.gasoline[j], 2, " $/gal"),
+        row("Cut by the EV lever", t.ev_cut_bgal[j], 0, 1, " bn gal")];
+      case "use": return Object.keys(s.energy).map((k) => row(k[0].toUpperCase() + k.slice(1), s.energy[k][j], ref.energy[k][j], 2, " quads"));
+    }
+    return [];
+  }
+  function story(key, s, j) {
+    const t = s.trace, a = measure.get(s)[j], b = measure.get(ref)[j];
+    if (key === "pel" || key === "mg" || key === "ng") {
+      if (Math.abs(a - b) < 1e-3) return "Same as EIA: nothing upstream moved.";
+      const adder = t.adders[{ pel: "electricity", mg: "gasoline", ng: "gas_home" }[key]][j];
+      const rest = a - b - adder;
+      return `Carbon cost adds ${fmt(adder, 2)}. The other ${rest >= 0 ? "+" : "-"}${fmt(Math.abs(rest), 2)} is the fitted price curve answering the change in demand${key === "pel" ? " and in the gas price to power plants" : ""}.`;
+    }
+    if (key === "gal") {
+      if (Math.abs(a - b) < 0.05) return "Same as EIA: nothing upstream moved.";
+      const cut = t.ev_cut_bgal[j], rest = a - b + cut;
+      return `The EV lever removes ${fmt(cut, 1)} bn gal. The price response ${rest >= 0 ? "adds" : "removes"} ${fmt(Math.abs(rest), 1)} bn gal (fitted stub elasticity).`;
+    }
+    if (key === "co2") {
+      if (Math.abs(a - b) < 1) return "Same as EIA: nothing upstream moved.";
+      const d = Object.keys(SECTOR).map((k) => [k, t.co2_sector[k][j] - ref.trace.co2_sector[k][j]]).sort((x, y) => x[1] - y[1]);
+      return `Biggest change: ${SECTOR[d[0][0]].toLowerCase()}, ${fmt(d[0][1], 0)} Mt.`;
+    }
+    return "";
+  }
+  function trace(s) {
+    const j = yi(traceYear);
+    const key = measure.key;
+    const a = measure.get(s)[j], b = measure.get(ref)[j];
+    const d = key === "co2" ? 0 : 2;
+    const mod = MODULE_FOR[key];
+    const name = (k) => `${ENGINE.modules[k].name} (${({ stand: "stand-in", partial: "stub", real: "port" })[ENGINE.modules[k].kind]})`;
+    const rows = rowsFor(key, s, j).map((r) => {
+      const diff = r.a - r.b, same = Math.abs(diff) < 0.5 * 10 ** -r.d;
+      return `<tr><td>${r.label}</td><td>${fmt(r.a, r.d)}${r.unit}</td><td>${fmt(r.b, r.d)}${r.unit}</td><td class="${same ? "" : diff < 0 ? "down" : "up"}">${same ? "same" : (diff > 0 ? "+" : "-") + fmt(Math.abs(diff), r.d)}</td></tr>`;
+    }).join("");
+    el("trace-body").innerHTML = `
+      <div class="trace-head"><div><div class="kpi-label">${measure.label}, ${traceYear}</div>
+        <div class="kpi-value">${fmt(a, d)}</div><div class="kpi-delta">EIA ${fmt(b, d)}</div></div>
+        <div class="made-by"><div class="kpi-label">Produced by</div>
+        <div class="made-btns">${(mod ? [mod] : ["residential", "commercial", "industrial", "transportation"]).map((k) => `<button type="button" class="ghost" data-mod="${k}">${name(k)}</button>`).join("")}</div>
+        <div class="fine"><code>${VARIABLE[key]}</code></div></div></div>
+      <table class="rt trace-t"><thead><tr><th>What fed it</th><th>This run</th><th>EIA</th><th>Change</th></tr></thead><tbody>${rows}</tbody></table>
+      <p class="story">${story(key, s, j)}</p>`;
+    el("trace-body").querySelectorAll("[data-mod]").forEach((b) => b.addEventListener("click", () => openModule(b.dataset.mod)));
+  }
+
   // ---- engine view -------------------------------------------------------------
-  const MODULES = [
-    { group: "Demand" },
-    { name: "Residential", kind: "real", tag: "Ported, matches EIA. Stub in this run", side: "d" },
-    { name: "Commercial", kind: "real", tag: "Ported, matches EIA. Stub in this run", side: "d" },
-    { name: "Industrial", kind: "partial", tag: "Being ported. Stub", side: "d" },
-    { name: "Transportation", kind: "partial", tag: "Being ported. Stub", side: "d" },
-    { group: "Supply" },
-    { name: "Electricity", kind: "stand", tag: "Stand-in", side: "s" },
-    { name: "Natural gas", kind: "stand", tag: "Stand-in", side: "s" },
-    { name: "Oil and refining", kind: "stand", tag: "Stand-in", side: "s" },
-    { name: "Coal", kind: "stand", tag: "Stand-in", side: "s" },
-    { name: "Emissions", kind: "stand", tag: "EIA carbon factors", side: "s" },
-  ];
+  const ENGINE = window.NEMS_ENGINE;
+  const TAGS = { real: "Ported, matches EIA. Stub in this run", partial: "Being ported. Stub", stand: "Stand-in" };
   const modBox = el("modules");
   const modEls = { d: [], s: [] };
-  MODULES.forEach((m) => {
-    const div = document.createElement("div");
-    if (m.group) {
-      div.className = "mod-group";
-      div.textContent = m.group;
-    } else {
-      div.className = "mod " + m.kind;
-      div.innerHTML = `<div class="name">${m.name}</div><div class="tag">${m.tag}</div>`;
-      modEls[m.side].push(div);
+  let lastSide = null;
+  Object.entries(ENGINE.modules).forEach(([key, m]) => {
+    const side = m.side === "demand" ? "d" : "s";
+    if (side !== lastSide) {
+      const g = document.createElement("div");
+      g.className = "mod-group";
+      g.textContent = side === "d" ? "Demand" : "Supply";
+      modBox.appendChild(g);
+      lastSide = side;
     }
-    modBox.appendChild(div);
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mod " + m.kind;
+    b.dataset.key = key;
+    b.setAttribute("aria-label", `${m.name}: open details`);
+    b.innerHTML = `<div class="name">${m.name}</div><div class="tag">${key === "emissions" ? "EIA carbon factors" : TAGS[m.kind]}</div>`;
+    b.addEventListener("click", () => openModule(key));
+    modEls[side].push(b);
+    modBox.appendChild(b);
   });
+
+  // ---- module details ------------------------------------------------------------
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const STATUS = {
+    real: "Ported from EIA's code and matching EIA",
+    partial: "Being ported. This demo runs a fitted stub in its place",
+    stand: "Stand-in: curves fitted to EIA's AEO2026 runs, to be replaced by a port",
+  };
+  const coefName = (k) => ({ q: "own use", pngel: "gas price" })[k] || k;
+  function openModule(key) {
+    const m = ENGINE.modules[key];
+    const dlg = el("module-dialog");
+    const real = m.kind === "real";
+    const hasMatch = m.routines.some((r) => r.match);
+    const third = real ? (hasMatch ? "<th>Match vs EIA</th>" : "") : "<th>File</th>";
+    const routines = m.routines.length
+      ? `<table class="rt"><thead><tr><th>Routine</th><th>${real ? "State" : "Lines"}</th>${third}</tr></thead><tbody>` +
+        m.routines.map((r) => real
+          ? `<tr class="${r.done ? "done" : "todo"}"><td><code>${esc(r.name)}</code></td><td>${esc(r.state)}</td>${hasMatch ? `<td>${esc(r.match)}</td>` : ""}</tr>`
+          : `<tr><td><code>${esc(r.name)}</code></td><td>${esc(r.lines)}</td><td>${esc(r.file || "")}</td></tr>`).join("") +
+        `</tbody></table><p class="fine">From ${esc(m.routines_source)}${real ? "" : ", longest first"}.</p>`
+      : "";
+    const fits = (m.fits || []).length
+      ? `<h3>What the stand-in does instead</h3><table class="rt"><thead><tr><th>Price</th><th>Fitted response</th><th>R2</th><th>Error</th></tr></thead><tbody>` +
+        m.fits.map((f) => `<tr><td><code>${esc(f.price)}</code></td><td>${Object.entries(f.coef).map(([k, v]) => `${coefName(k)} ${v}`).join(", ")}</td><td>${f.r2}</td><td>${f.rmse_pct}%</td></tr>`).join("") +
+        `</tbody></table>` +
+        (m.switching ? `<p class="fine">Power-plant fuel switching: gas burn ${m.switching.gas_own} per 1% of gas cost; coal ${m.switching.coal_own} per 1% of its own cost (assumed), ${m.switching.coal_from_gas_cost} per 1% of gas cost.</p>` : "")
+      : "";
+    const files = m.eia_files.map((f) => `<li><code>${esc(f.path)}</code> ${fmt(f.lines)} lines</li>`).join("");
+    const tests = Object.entries(m.test_files).map(([f, n]) => `<li><code>${esc(f)}</code> ${n}</li>`).join("");
+    el("module-body").innerHTML = `
+      <h2>${esc(m.name)}</h2>
+      <p class="status ${m.kind}">${STATUS[m.kind]}</p>
+      <div class="facts">
+        <div><span class="n">${fmt(m.eia_lines)}</span><span>lines of EIA source in ${m.eia_file_count} file${m.eia_file_count === 1 ? "" : "s"}</span></div>
+        <div><span class="n">${fmt(m.ours_lines)}</span><span>lines of our Python</span></div>
+        <div><span class="n">${fmt(m.tests)}</span><span>tests</span></div>
+      </div>
+      ${m.eia_state ? `<p class="fine">EIA module map: ${esc(m.eia_state)}${m.blocker && m.blocker !== "None" ? `. Blocker: ${esc(m.blocker)}` : ""}</p>` : ""}
+      ${routines ? `<h3>${real ? "Routines" : "EIA's largest routines"}</h3>${routines}` : ""}
+      ${fits}
+      <h3>EIA source it replaces</h3><ul class="files">${files}</ul>
+      ${tests ? `<h3>Tests</h3><ul class="files">${tests}</ul>` : ""}
+      <p class="fine">Generated from the repo on ${ENGINE.totals.generated} by scripts/build_engine_catalog.py (${fmt(ENGINE.totals.tests)} tests in the repo).</p>`;
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
+  }
+  el("module-close").addEventListener("click", () => el("module-dialog").close());
+  el("module-dialog").addEventListener("click", (e) => { if (e.target.id === "module-dialog") e.target.close(); });
+
   const nDemand = modEls.d.length, nSupply = modEls.s.length;
   const callsFor = (passes) => passes * nDemand + (passes + 1) * nSupply;
 
@@ -204,6 +334,7 @@
     el("bld-out").textContent = bldLabel(c.bld);
     kpis(c.s);
     drawChart(c.s);
+    trace(c.s);
     engine(c.s, animate);
   }
   Object.values(levers).forEach((l) => l.addEventListener("input", () => render(true)));
