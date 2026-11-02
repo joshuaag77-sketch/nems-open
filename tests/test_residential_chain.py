@@ -26,19 +26,6 @@ FUELS = ["qelrs", "qngrs", "qdsrs", "qlgrs", "qbmrs", "qpvrs"]
 REPORT_BLOCKS = ("RESDREP", "RSCON", "RSEFF")
 
 
-def start_state(y):
-    load = lambda tag: oracle_state.load(tag, y, "resd")
-    s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in load("yb_in").items()}
-    for k, v in load("pr_in").items():  # RDPR's price inputs, for later years
-        s.setdefault(k, v.copy() if isinstance(v, FArray) else v)
-    for d in oracle_state.state_dir("resd").glob("*_pre"):
-        if oracle_state.available(d.name, y, "resd"):
-            for k, v in load(d.name).items():
-                s[k] = v.copy() if isinstance(v, FArray) else v
-    resd.resume_from_dump(s)
-    return s
-
-
 def rel(mine, ref):
     mine, ref = np.asarray(mine, np.float64), np.asarray(ref, np.float64)
     return float((np.abs(mine - ref) / np.maximum(np.abs(ref), 1e-6 * max(np.abs(ref).max(), 1e-30))).max())
@@ -46,7 +33,7 @@ def rel(mine, ref):
 
 @pytest.mark.parametrize("y", LATER, ids=lambda y: str(1989 + y))
 def test_one_year(y):
-    s = start_state(y)
+    s = resd.start_from_dump(y)
     resd.after_prices(s)
     for tag in ("ne_out", "re_out"):
         for k, v in oracle_state.load(tag, y, "resd").items():
@@ -56,7 +43,7 @@ def test_one_year(y):
 
 @pytest.fixture(scope="module")
 def full_run():
-    s = start_state(32)
+    s = resd.start_from_dump(32)
     resd.after_prices(s)  # the rest of 2021's final iteration
     resd.run(s, 2022, 2050)
     return s, oracle_state.load("final", 61, "resd")
