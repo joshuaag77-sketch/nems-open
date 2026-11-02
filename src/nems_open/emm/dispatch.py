@@ -22,14 +22,16 @@ from nems_open.emm import db, demand, history, load, plants, regions, technology
 from nems_open.xlsx_ranges import named_ranges
 
 NUM_R = regions.NUM_EMM
-THERMAL = ("coal", "gas_cc", "gas_ct", "steam")
+THERMAL = ("coal", "coal_ccs", "gas_cc", "gas_ccs", "gas_ct", "steam")
 RENEWABLE = ("wind", "solar", "other")
 GROUPS = THERMAL + ("nuclear", "hydro") + RENEWABLE + ("battery", "pumped")
 
 # Restart capacity arrays (UDATOUT/UCAP<prefix><u|n>) that make up each group.
 CAPACITY_PREFIXES = {
-    "coal": ("cs", "ig", "pq", "sq", "is", "oc"),
-    "gas_cc": ("cc", "ac", "as", "a2", "fc"),
+    "coal": ("cs", "ig", "pq", "is", "oc"),   # less coal_ccs: sq (retrofits) is a subset of cs, not extra capacity
+    "coal_ccs": ("sq",),
+    "gas_cc": ("cc", "ac", "a2", "fc"),
+    "gas_ccs": ("as",),
     "gas_ct": ("ct", "at", "ic", "t2", "i2"),
     "steam": ("os", "ng"),
     "nuclear": ("nu", "sm"),
@@ -44,7 +46,9 @@ CAPACITY_PREFIXES = {
 # Plant-file EFD types behind each group, for heat rates, capacity factors and fuel shares of existing plants.
 EXISTING_TYPES = {
     "coal": ("COU", "CSU", "CSC", "CNC", "CN2", "CAV", "CNG", "COQ", "CAS"),
-    "gas_cc": ("CCO", "CCG", "CCX", "ACC", "AC2", "ACS", "FCG"),
+    "coal_ccs": ("COU", "CSU", "CSC", "CNC", "CN2", "CAV", "CNG", "COQ", "CAS"),
+    "gas_cc": ("CCO", "CCG", "CCX", "ACC", "AC2", "FCG"),
+    "gas_ccs": ("ACS",),
     "gas_ct": ("CTO", "CTG", "CTX", "CTA", "ACT", "ICE"),
     "steam": ("STO", "STG", "STX", "CTN"),
     "nuclear": ("CNU", "ANC", "SMR"),
@@ -55,12 +59,12 @@ EXISTING_TYPES = {
 }
 OIL_TYPES = {"steam": ("STO",), "gas_ct": ("CTO",)}
 # New-plant heat rate (Btu/kWh) and variable O&M come from these ECP types.
-NEW_TYPE = {"coal": "PC", "gas_cc": "AC", "gas_ct": "AT", "steam": "ST"}
+NEW_TYPE = {"coal": "PC", "coal_ccs": "PC", "gas_cc": "AC", "gas_ccs": "CS", "gas_ct": "AT", "steam": "ST"}
 # Forced outage and maximum capacity factor come from these EFD plant types in pltdata.txt.
-AVAIL_TYPE = {"coal": "CSC", "gas_cc": "CCG", "gas_ct": "CTG", "steam": "STG"}
+AVAIL_TYPE = {"coal": "CSC", "coal_ccs": "CSC", "gas_cc": "CCG", "gas_ccs": "CCG", "gas_ct": "CTG", "steam": "STG"}
 
-# Carbon capture: capacity prefixes that capture CO2, and the share of CO2 they capture.
-CCS_PREFIXES = {"coal": ("sq", "pq", "is"), "gas_cc": ("as",)}
+# Carbon capture: groups that capture CO2 (and the fuel they burn), the share captured, and the 45Q credit.
+CAPTURE_GROUPS = {"coal_ccs": "coal", "gas_ccs": "gas"}
 CAPTURE_RATE = 0.9
 
 # Storage: (duration in hours, round-trip efficiency)
@@ -83,7 +87,8 @@ class DispatchCase:
     price: dict               # fuel -> (25,) 1987$/MMBtu
     oil_share: dict           # thermal group -> (25,) share of that group's fuel that is oil
     avail: dict               # thermal group -> (forced outage rate, max capacity factor)
-    ccs_share: dict           # thermal group -> (25,) share of the group's capacity that captures CO2
+    max_cf: dict              # thermal group -> (25,) maximum capacity factor (pltdata.txt MCF)
+    credit_45q: float         # 1987$ per metric ton of CO2 captured
     monthly_cf: dict          # nuclear, hydro, other -> (25, 12)
     profile: dict             # wind, solar -> (25, 36, 24) capacity factor in each typical hour
     net_load_twh: np.ndarray  # (25,)
@@ -119,6 +124,31 @@ def _ucap_mid(snapshot, prefixes, y) -> np.ndarray:
     """Capacity in service on average through the year: the mean of last year's and this year's year-end
     capacity, which assumes builds and retirements are spread evenly through the year."""
     return 0.5 * (_ucap(snapshot, prefixes, y) + _ucap(snapshot, prefixes, y - 1))
+
+
+def _in_service(snapshot, prefixes, types, year) -> np.ndarray:
+    """Capacity in service on average through the year, using the plant file's in-service and retirement months.
+
+    Start from last year's year-end capacity. Add each planned unit for the part of the year after its
+    in-service month and take off each retiring unit for the part after its retirement month. What the
+    restart shows beyond that (builds EMM chose itself, which have no date) is assumed to arrive mid-year.
+    """
+    y = year - history.FIRST_YEAR
+    start, end = _ucap(snapshot, prefixes, y - 1), _ucap(snapshot, prefixes, y)
+    if types is None:
+        return 0.5 * (start + end)
+    u = plants.load_units()
+    tb = db.table("V_EMM_PLTF860")
+    in_group = np.isin(u.efd_type, list(types))
+    adds = in_group & (u.online_year == year)
+    rets = in_group & (u.retire_year == year)
+    add_gw, ret_gw, add_avg, ret_avg = (np.zeros(NUM_R) for _ in range(4))
+    np.add.at(add_gw, u.region[adds] - 1, u.summer_mw[adds] / 1000.0)
+    np.add.at(add_avg, u.region[adds] - 1, u.summer_mw[adds] / 1000.0 * (13 - np.clip(tb["T_SMO"][adds], 1, 12)) / 12.0)
+    np.add.at(ret_gw, u.region[rets] - 1, u.summer_mw[rets] / 1000.0)
+    np.add.at(ret_avg, u.region[rets] - 1, u.summer_mw[rets] / 1000.0 * (13 - np.clip(tb["T_RMO"][rets], 1, 12)) / 12.0)
+    undated = (end - start) - add_gw + ret_gw
+    return np.maximum(start + add_avg - ret_avg + 0.5 * undated, 0.0)
 
 
 def _ucap(snapshot, prefixes, y) -> np.ndarray:
@@ -224,7 +254,8 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     region, which fixes the interregional exchange at EIA's result.
     """
     y = year - history.FIRST_YEAR
-    cap = {g: _ucap_mid(snapshot, p, y) for g, p in CAPACITY_PREFIXES.items()}
+    cap = {g: _in_service(snapshot, p, EXISTING_TYPES.get(g), year) for g, p in CAPACITY_PREFIXES.items()}
+    cap["coal"] = np.maximum(cap["coal"] - cap["coal_ccs"], 0.0)
     u = plants.load_units()
     ptype = {t.code: t for t in technology.efd_plant_types()}
     params = technology.type_parameters()
@@ -257,10 +288,9 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     coal_u = np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
     ccs_hr = _weighted_mask(tb["T_CCSHR"], u.summer_mw, coal_u, u.region, 14000.0)
     ccs_vom = _weighted_mask(tb["T_CCSV"], u.summer_mw, coal_u, u.region, 1.5)
-    coal_ccs = np.divide(_ucap_mid(snapshot, CCS_PREFIXES["coal"], y), cap["coal"],
-                         out=np.zeros(NUM_R), where=cap["coal"] > 0).clip(0, 1)
-    heat["coal"] = (1 - coal_ccs) * heat["coal"] + coal_ccs * ccs_hr
-    vom["coal"] = vom["coal"] + coal_ccs * ccs_vom
+    heat["coal_ccs"] = ccs_hr
+    vom["coal_ccs"] = vom["coal"] + ccs_vom
+    heat["gas_ccs"] = np.full(NUM_R, float(hr_new_all[codes.index("CS")]))
     heat["nuclear"] = _weighted(u.heat_rate, u.summer_mw, EXISTING_TYPES["nuclear"], u.region, year, 10400.0)
 
     price = {
@@ -274,7 +304,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     efd_index = {pt.code: i for i, pt in enumerate(technology.efd_plant_types())}
     profiles = {}
     for group, parts in WRENEW_PROFILES.items():
-        caps = [_ucap_mid(snapshot, (prefix,), y) for prefix, _, _ in parts]
+        caps = [_in_service(snapshot, (prefix,), (code,), year) for prefix, _, code in parts]
         outage = [snapshot["UEFDOUT/up_xfor"][efd_index[code], :NUM_R, y].astype(float) for _, _, code in parts]
         cfs = [_wrenew_profile(snapshot, key, y) * (1.0 - o)[:, None, None] for (_, key, _), o in zip(parts, outage)]
         total = np.maximum(sum(caps), 1e-9)
@@ -286,10 +316,9 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     nl = demand.net_load_twh(snapshot, year)
     if trade == "reference":
         nl = snapshot["UEFDOUT/ugntlnr"][:, :NUM_R, y].sum(axis=0).astype(float)
-    ccs = {g: _ucap_mid(snapshot, CCS_PREFIXES[g], y) for g in ("coal", "gas_cc")}
-    ccs_share = {g: np.divide(ccs[g], cap[g], out=np.zeros(NUM_R), where=cap[g] > 0).clip(0, 1) for g in ccs}
     links = build_links(snapshot, year) if trade != "reference" else None
-    return DispatchCase(year, cap, heat, vom, price, oil, avail, ccs_share, mcf, profiles, nl, shapes, w, links)
+    credit = float(snapshot["TCS45Q/ccs_saline_45q"][y])
+    return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf, profiles, nl, shapes, w, links)
 
 
 def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> DispatchResult:
@@ -312,13 +341,20 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     cap_th = xr.DataArray(np.stack([case.capacity[g] * (1 - case.avail[g][0]) for g in THERMAL], axis=1), coords=[R, TH])
     upper = (cap_th * ones).transpose("region", "group", "day", "hour")
     g_th = m.add_variables(lower=0, upper=upper, name="gen_thermal")
-    e_lim = xr.DataArray(np.stack([case.capacity[g] * case.avail[g][1] * HOURS_PER_YEAR for g in THERMAL], axis=1), coords=[R, TH])
-    m.add_constraints((g_th * w).sum(["day", "hour"]) <= e_lim, name="thermal_energy")
+    e_lim_np = np.stack([case.capacity[g] * case.max_cf[g] * HOURS_PER_YEAR for g in THERMAL], axis=1)    # GWh
+    e_lim = xr.DataArray(e_lim_np, coords=[R, TH])
+    energy_out = (g_th * w).sum(["day", "hour"])
+    m.add_constraints(energy_out <= e_lim, name="thermal_energy")
     cost = np.zeros((NUM_R, len(THERMAL)))
     for k, g in enumerate(THERMAL):
         oil_price = case.price["residual"] if g == "steam" else case.price["distillate"]
-        fuel = (1 - case.oil_share[g]) * case.price["coal" if g == "coal" else "gas"] + case.oil_share[g] * oil_price
+        is_coal = g.startswith("coal")
+        fuel = (1 - case.oil_share[g]) * case.price["coal" if is_coal else "gas"] + case.oil_share[g] * oil_price
         cost[:, k] = case.heat_rate[g] / 1000.0 * fuel + case.vom[g]
+        if g in CAPTURE_GROUPS:
+            # 45Q pays per ton captured; tons per MWh = MMBtu per MWh x tons of CO2 per MMBtu.
+            tons = case.heat_rate[g] / 1000.0 * CO2_PER_TBTU[CAPTURE_GROUPS[g]] * CAPTURE_RATE
+            cost[:, k] -= case.credit_45q * tons
     cost_da = xr.DataArray(cost, coords=[R, TH])
 
     # Fixed-profile plants
@@ -403,7 +439,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     fuel = {k: np.zeros(NUM_R) for k in ("coal", "gas", "distillate", "residual", "uranium")}
     for g in THERMAL:
         btu = gen[g] * case.heat_rate[g] * 1e-3
-        if g == "coal":
+        if g.startswith("coal"):
             fuel["coal"] += btu
         else:
             o = case.oil_share[g]
@@ -412,11 +448,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     fuel["uranium"] = gen["nuclear"] * case.heat_rate["nuclear"] * 1e-3
     res.fuel_tbtu = fuel
     co2 = sum(fuel[k] * CO2_PER_TBTU[k] for k in CO2_PER_TBTU)
-    # Plants with capture release (1 - rate) of their CO2; assume they run like the rest of their group.
-    for g, fuel_key in (("coal", "coal"), ("gas_cc", "gas")):
-        share = case.ccs_share[g]
-        group_btu = gen[g] * case.heat_rate[g] * 1e-3
-        co2 = co2 - share * CAPTURE_RATE * group_btu * CO2_PER_TBTU[fuel_key]
+    # Capture groups release only (1 - rate) of their CO2.
+    for g, fuel_key in CAPTURE_GROUPS.items():
+        co2 = co2 - CAPTURE_RATE * gen[g] * case.heat_rate[g] * 1e-3 * CO2_PER_TBTU[fuel_key]
     res.co2_mt = co2
     res.price = bal.dual.transpose("region", "day", "hour").values / np.maximum(wd, 1e-9)
     res.objective = float(m.objective.value)

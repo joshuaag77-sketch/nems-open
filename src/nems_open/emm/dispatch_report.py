@@ -32,7 +32,9 @@ def reference(snapshot, year: int) -> dict:
         "gen_total": ugn("ugntlnr"),
         "fuel_coal": float(snapshot["QBLK/qclel"][10, y]),
         "fuel_gas": float(snapshot["QBLK/qngel"][10, y]),
-        "fuel_oil": float(snapshot["QBLK/qdsel"][10, y] + snapshot["QBLK/qrsel"][10, y]),
+        # Oil in the 25 regions EFD dispatches. QBLK/QDSEL + QRSEL also holds Alaska and Hawaii (about 45% of it
+        # in 2025), which EFD does not dispatch.
+        "fuel_oil": ugn("ufldsnr", "uflrlnr"),
         "co2": float(snapshot["UEFDOUT/utco2"][27, y]),
     }
 
@@ -41,8 +43,8 @@ def model(result: dispatch.DispatchResult) -> dict:
     g = {k: float(v.sum()) for k, v in result.generation_twh.items()}
     f = {k: float(v.sum()) for k, v in result.fuel_tbtu.items()}
     return {
-        "gen_coal": g["coal"],
-        "gen_gas": g["gas_cc"] + g["gas_ct"] + g["steam"] * (1 - float(np.average(result.case.oil_share["steam"]))),
+        "gen_coal": g["coal"] + g["coal_ccs"],
+        "gen_gas": g["gas_cc"] + g["gas_ccs"] + g["gas_ct"] + g["steam"] * (1 - float(np.average(result.case.oil_share["steam"]))),
         "gen_oil": g["steam"] * float(np.average(result.case.oil_share["steam"])),
         "gen_nuclear": g["nuclear"],
         "gen_renewable": g["hydro"] + g["wind"] + g["solar"] + g["other"],
