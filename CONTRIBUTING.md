@@ -46,6 +46,15 @@ oracle_test(globals(), tag="cn", port=consumption, outputs=["enduseconsump", "cm
 
 It loads `<tag>_in` for each test year, calls the port, and compares each named output with `<tag>_out` within 1e-4, one parametrized test per year and output. Options when the plain version does not fit: `module` ("resd"), `inputs(before, after, year)` to add inputs the routine sees from other dumps, `select(obj, name, year)` to compare one year or a subset of regions, `call` and `get` for other calling shapes. See `tests/test_commercial_service_demand.py` (inputs and select) and `test_commercial_consumption.py`. Hand-written tests stay fine for routines that do not fit.
 
+## Oracle dumps: one shared copy, packed
+
+The state dumps are big (commercial 7.5 GB, residential about 20 GB as the Fortran writes them), so do not keep one copy per clone.
+
+- **One cache for all clones.** Dumps live in `NEMS_ORACLE_DIR` (default `~/dev/oracle-cache`, outside OneDrive), one folder per module: `<cache>/<module>/out/state/<tag>/<year>/`. `oracle/hooks.py` links `oracle/run*/out` to it (a junction on Windows) when you build, so the Fortran fills the shared copy. `oracle_state.py` reads it from there, and falls back to a clone's own `oracle/run*/out` until a module has been moved. Treat the cache as read-only: rebuild it only when a hook changes, then everyone sees the new dumps.
+- **Pack them.** `python scripts/pack_oracle.py comm --delete-raw` turns each `<tag>/<year>/` folder into `<tag>/<year>.npz` after checking it reloads to identical arrays. On samples that is 37 to 100 times smaller (a 200 MB dump becomes 2 MB) and loads as fast or faster. Without `--delete-raw` it keeps the raw folders. `oracle_state.load` reads either form, so no test changes.
+- **See where the space went.** `python scripts/disk_report.py` prints raw and packed size per module, in the cache and in this clone, and the free space on each drive.
+- The dumps hold only the nine test years already, and every year is read by some test (consumption reads technology choice at all nine), so there is nothing to trim there.
+
 ## Good first issues
 
 The file readers. Each one reads one EIA input file into arrays the oracle already dumps, so the test is just "same arrays". Small, self-contained, and a good way to learn the codebase.

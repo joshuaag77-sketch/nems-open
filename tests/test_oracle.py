@@ -10,9 +10,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from nems_open import oracle_state
 from nems_open.snapshot import Snapshot
 
-OUT = Path(__file__).resolve().parents[1] / "oracle" / "run" / "out"
+OUT = oracle_state.out_dir("comm")
 YEARS = slice(29, 61)  # 2019-2050
 
 pytestmark = pytest.mark.skipif(not (OUT / "cmusconsumption.bin").exists(), reason="oracle not run")
