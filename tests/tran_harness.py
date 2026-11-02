@@ -67,7 +67,8 @@ def run(port, tag, y, tol=TOL, carry=None, start=None, end=None, may_be_empty=Fa
     after = oracle_state.load(end or f"{tag}_out", y, run=RUN)
     state = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in before.items()}
     if carry is not None:
-        kwargs["carry"] = {k: _blank_from(after[f"p_{k}"], y) for k in carry}
+        # A dict is the carry itself (saved arrays dumped somewhere other than the end point).
+        kwargs["carry"] = carry if isinstance(carry, dict) else {k: _blank_from(after[f"p_{k}"], y) for k in carry}
         before = dict(before, **{f"p_{k}": v for k, v in kwargs["carry"].items()})
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         port(state, **kwargs)
