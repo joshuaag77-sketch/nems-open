@@ -62,7 +62,7 @@ Its 9 subroutines become the first 9 GitHub issues:
 | `COMTechnologyChoice` (first call: KBEHAV, KDELEFF, KCAPFAC, KPREM reads, TimePrefProp normalization, heat pump cost edit) | Done 2026-11-01 | Same arrays as the oracle before and after the 2019 first call | `src/nems_open/commercial/technology_choice_inputs.py` |
 | `COMConsumption` (calculation) | Done 2026-11-01 | Within 5e-7 vs oracle on every output, 9 test years 2019-2050; US total matches EIA to 4 decimals | `src/nems_open/commercial/consumption.py` |
 | `COMConsumption` (first call: KSTEO, KMINFL reads, STEO targets into CMSEDS) | To do. KMINFL is re-read every call; tests take it from the oracle | | |
-| `COMBenchmarking` | To do | | |
+| `COMBenchmarking` | Done 2026-11-01 (emissions table and KEMFAC read are checked once the oracle is rebuilt with `EmissionFactor`/`CMEmissions` dumps) | Bit-for-bit (float32) vs oracle on every output, 9 test years 2019-2050 | `src/nems_open/commercial/benchmarking.py` |
 | `COMReport`, `CALC111D`, `CDISTGEN` | To do | | |
 | `COMM` driver | To do | | |
 

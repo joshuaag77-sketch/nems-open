@@ -64,6 +64,7 @@ TARGETS += [
     ("bm", r"CALL COMBenchmarking\s*\(RCDBG,RCQUAN\)", r"^510\s+FORMAT \(A20,1X,A20", [
         "WaterServicesElQ", "TelecomServicesElQ", "DiffQBM", "SolarPVContrib", "ApplyRamp",
         "LastDecayYr", "DecayBM", "NoHist", "STEOBM2pct", "EF1", "EF2", "EF3", "NRGBILL", "STIMULUS", "STEOBM",
+        "EmissionFactor", "CMEmissions",
     ], ["DiffQBM"]),
     # COMReport runs only in the last year; the call is the tail of a one-line IF.
     ("rp", r"IF\s*\(CURIYR\.EQ\.LASTYR\s*\.AND\.\s*FCRL\.EQ\.1\)\s*&\s*\n\s*CALL COMReport\s*\(RCDBG,RCRPT,SDReportOpts,ReportOption\)",
