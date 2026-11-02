@@ -60,6 +60,23 @@ LABELS = [
 ]
 # Rows held to the 10% tolerance; oil is tiny, so it is reported but not scored.
 SCORED = {"gen_coal", "gen_gas", "gen_nuclear", "gen_renewable", "fuel_coal", "fuel_gas", "co2"}
+# A row only counts as a miss when it is also off by more than this share of the national total
+# (generation rows: of total generation; fuel rows: of total fuel; CO2: of itself). This keeps a
+# fuel that has faded to nothing, like coal in 2050, from failing on a 10 TWh difference.
+FLOOR = 0.005
+
+
+def is_miss(key: str, m: dict, r: dict) -> bool:
+    if key not in SCORED or r[key] == 0:
+        return False
+    rel = abs(m[key] / r[key] - 1)
+    if key.startswith("gen_"):
+        scale = r["gen_total"]
+    elif key.startswith("fuel_"):
+        scale = r["fuel_coal"] + r["fuel_gas"] + r["fuel_oil"]
+    else:
+        scale = r[key]
+    return rel > TOLERANCE and abs(m[key] - r[key]) > FLOOR * scale
 
 
 def run(snapshot, trade: str, years=YEARS) -> dict:
@@ -80,9 +97,11 @@ def table(results: dict, trade: str) -> str:
         for y in years:
             m, r, _ = results[y]
             err = m[key] / r[key] - 1 if r[key] else float("nan")
-            flag = "" if key not in SCORED or abs(err) <= TOLERANCE else " MISS"
+            flag = " MISS" if is_miss(key, m, r) else ""
             cells.append(f"{m[key]:,.0f} / {r[key]:,.0f} ({err:+.0%}){flag}")
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
+    prices = [float((results[y][2].average_price() * results[y][2].case.net_load_twh).sum() / results[y][2].case.net_load_twh.sum()) for y in years]
+    lines.append("| Load-weighted marginal cost, 1987$/MWh (model only) | " + " | ".join(f"{p:,.1f}" for p in prices) + " |")
     return "\n".join(lines)
 
 
