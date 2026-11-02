@@ -15,47 +15,9 @@ import numpy as np
 from nems_open.fortran_array import FArray
 from nems_open.residential.common import (BASEYR, ENDYR, LASTSTEOYR, MNUMBLDG, MNUMFUEL, NUM_DIV,
                                           RECSYEAR, f32, powi)
-from nems_open.residential import helpers
+from nems_open.residential.helpers import replace, rselast, svrte
 
 NSHELLTYPES = 5
-
-
-def svrte(alpha, y, k, lam):
-    """SVRTE, with expf and powf as the oracle's libm gives them (correctly rounded
-    single precision, i.e. computed in double and rounded once). helpers.svrte uses
-    numpy's float32 exp and pow, which differ in the last bit for about a third of
-    the inputs and that bit grows through the survival sums."""
-    if f32(y) - f32(alpha) < 0:
-        return f32(1.0)
-    k1 = (f32(y) - f32(alpha)) / f32(lam)
-    k2 = f32(math.pow(float(k1), float(k)))
-    return f32(math.exp(-float(k2)))
-
-
-def replace(s: dict, eu: int, r: int, b: int, reccl: int, flag: int) -> None:
-    """helpers.replace with one change: EXP is correctly rounded single precision
-    (see svrte). helpers.replace calls numpy's float32 exp, whose last-bit misses
-    change the switching shares. Everything else is helpers.replace as it stands."""
-    real_np = helpers.np
-    helpers.np = _ExactExp
-    try:
-        helpers.replace(s, eu, r, b, reccl, flag)
-    finally:
-        helpers.np = real_np
-
-
-class _ExactExp:
-    """numpy as helpers.py sees it, with exp done as libm's expf does."""
-
-    def __getattr__(self, name):
-        return getattr(np, name)
-
-    @staticmethod
-    def exp(x):
-        return f32(math.exp(float(x)))
-
-
-_ExactExp = _ExactExp()
 
 
 def _replace_ends_loop(year: int, eu: int, b: int, r: int) -> bool:
@@ -294,26 +256,6 @@ def _powf(x, y):
         return f32(math.pow(float(x), float(y)))
     except (ValueError, ZeroDivisionError):
         return f32(math.nan)
-
-
-def rselast(s: dict, f: int, r: int, alpha, ef1, ef2, ef3, eupr: int):
-    """RSELAST with correctly rounded powf (helpers.rselast uses numpy's pow, which
-    is not the oracle's libm). f = 4 is priced by end use from PELRSOUT."""
-    if f == 0:
-        return f32(1.0)
-    Y, Y1 = int(s["curcalyr"]), int(s["curiyr"])
-    fac = [f32(1.0), f32(1.0), f32(1.0)]
-    ef = (ef1, ef2, ef3)
-    for k in range(3):
-        if Y >= RECSYEAR + 1 + k:
-            if f == 4:
-                p = s["pelrsout"]
-                ratio = p[r, Y1 - k, eupr] / p[r, RECSYEAR - BASEYR + 1, eupr]
-            else:
-                P = s["prices"]
-                ratio = P[f, r, Y - k] / P[f, r, RECSYEAR]
-            fac[k] = _powf(ratio, alpha * ef[k])
-    return fac[0] * fac[1] * fac[2]
 
 
 def _carried(s: dict) -> dict:

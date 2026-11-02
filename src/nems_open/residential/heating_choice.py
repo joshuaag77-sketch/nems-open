@@ -14,7 +14,7 @@ Writes to the debug units (RDM_OUT.txt, AppBetaData.txt) are skipped.
 EIA's locals are all SAVEd (the oracle builds with -fno-automatic, zero-initialised),
 so a few of them carry between calls. They live in s["_hv"] and s["heatsys"]:
 see the module notes in each routine. Both routines read PELRSOUT, which the
-oracle did not dump; the caller supplies s["pelrsout"] as [division, iyr, end use].
+oracle dumps as s["pelrsout"], indexed [division, iyr, end use].
 """
 
 import numpy as np

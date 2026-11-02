@@ -7,15 +7,7 @@ variable just before the call). RWHCON / RSTOVCON turn the stock into energy.
 
 Writes to debug units and AppBetaData.txt are skipped.
 
-Two gaps in the oracle dumps, both handled the same way so the lead can close them:
-- PELRSOUT (equivalenced to PELSHRS in eusprc) is not dumped. RWHTEC, RSTVTEC,
-  RWHCON and RSTOVCON overwrite PRICES(4, R, CurCalYr) from it, and RSELAST reads
-  it for electric equipment. While "pelrsout" is missing from the state dict the
-  overwrite is skipped (the dumped PRICES already holds the value that line wrote:
-  checked equal in and out for every dump year) and the electric price response is
-  not computed (RWHCON; see the test). With "pelrsout" in the state the code runs EIA's
-  line as written.
-- LEAPYR is set by RESD each year; it is rebuilt here from CurCalYr when absent.
+LEAPYR is set by RESD each year; it is rebuilt here from CurCalYr when absent.
 """
 
 import numpy as np
@@ -46,9 +38,7 @@ def powi_real(x, p):
 
 
 def _elec_price(s, eupr):
-    """PRICES(4,R,CurCalYr) from the end-use electricity price (skipped without PELRSOUT)."""
-    if "pelrsout" not in s:
-        return
+    """PRICES(4,R,CurCalYr) from the end-use electricity price."""
     Y, Y1 = int(s["curcalyr"]), int(s["curiyr"])
     gdp = s["mc_jpgdp"]
     for r in range(1, NM + 1):
@@ -56,10 +46,6 @@ def _elec_price(s, eupr):
 
 
 def _rselast(s, f, r, alpha, ef1, ef2, ef3, eupr):
-    # RSTOVCON uses ALPHA = 0, so every factor is x**0 = 1 whatever x is; this lets it
-    # run without PELRSOUT. Anything else goes through EIA's function.
-    if f == 4 and "pelrsout" not in s and f32(alpha) == 0:
-        return f32(1.0)
     return rselast(s, f, r, alpha, ef1, ef2, ef3, eupr)
 
 

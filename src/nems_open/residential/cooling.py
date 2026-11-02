@@ -9,32 +9,18 @@ Inputs the oracle dumps do not hold:
              reads it for electricity. Expected in s["pelrsout"].
   COSTTRSW   PARAMETER in rtek, 0 (menu costs, no EQCOST trend).
   EQCPN90    RCLADD's local array, carried between calls (static storage in the
-             build). Kept in s["_eqcpn90"], created empty if absent.
+             build). Kept in s["eqcpn90"], created empty if absent.
 """
-
-import math
 
 import numpy as np
 
 from nems_open.fortran_array import FArray
 from nems_open.residential.common import BASEYR, COSTTRSW, ENDYR, RECSYEAR, f32, powi
-from nems_open.residential.helpers import _text, eqcost, rselast
+from nems_open.residential.helpers import _text, eqcost, rselast, svrte
 
 NDIV = 9
 NBLDG = 3
 EU = 2  # space cooling
-
-
-def svrte(alpha, y, k, lam):
-    """SVRTE as helpers.svrte, but pow and exp go through double and round once,
-    which is what glibc's powf and expf return almost always. NumPy's float32 exp
-    and pow can be one bit off, and RCLADD's replacements (a difference of two
-    large sums) magnify that bit to 1e-5."""
-    if f32(y) - f32(alpha) < 0:
-        return f32(1.0)
-    k1 = (f32(y) - f32(alpha)) / f32(lam)
-    k2 = f32(math.pow(float(k1), float(f32(k))))
-    return f32(math.exp(-float(k2)))
 
 
 def _prices_elec(s: dict, eupr: int) -> None:
@@ -215,9 +201,9 @@ def rcladd(s: dict) -> None:
     max_cenac_pen = f32(0.90)
 
     # EQCPN90 is a local of RCLADD that persists between calls in the build
-    pn = s.get("_eqcpn90")
+    pn = s.get("eqcpn90")
     if pn is None:
-        pn = s["_eqcpn90"] = FArray.zeros([(RECSYEAR, ENDYR), (1, 40), (1, NBLDG), (1, 11)])
+        pn = s["eqcpn90"] = FArray.zeros([(RECSYEAR, ENDYR), (1, 40), (1, NBLDG), (1, 11)])
     SA = {}
 
     eqcsr90, eqcsur, rp90rp = s["eqcsr90"], s["eqcsur"], s["eqcrp90rp"]
