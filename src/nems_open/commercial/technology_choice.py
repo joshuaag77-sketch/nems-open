@@ -134,6 +134,12 @@ def _first_min(vals: np.ndarray, init):
     return (k, vals[k]) if vals[k] < init else (-1, init)
 
 
+def _seq_total(terms: np.ndarray):
+    """A Fortran running sum from 0.0 (float32) over `terms` in order: the last element of a
+    sequential accumulate in the terms' dtype, or float32 zero if there are none."""
+    return np.add.accumulate(terms)[-1] if terms.size else f32(0.0)
+
+
 def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
     """technology_choice with the searches done by argmin and the per-building work on plain arrays.
 
@@ -273,6 +279,10 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
             retro_L = retro_frac[T, V]
             tp = {p: tpp[s, p, y] for p in prefs}
             tp_P = np.array([tp[p] for p in prefs], dtype=f32)
+            fb_L = {f: fuelbytech[T, f] for f in (1, 2, 3)}
+            eff_pos = eff_L > 0.0
+            TA = np.array([t for t in tlist for v in range(1, int(n_vint[t]) + 1)], dtype=int)
+            VA = np.array([v for t in tlist for v in range(1, int(n_vint[t]) + 1)], dtype=int)
 
             # Candidate sets for the searches, as positions in L.
             same_fuel = {f: np.array([i for i, (t, _) in enumerate(L) if fuelbytech[t, f] == 1], dtype=int)
@@ -541,27 +551,18 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                         purch_sd += invest
                         prt_sd += ird[t, v]
 
-                # Fuel shares and efficiency by decision (label 270).
-                ird_L = [ird[t, v] for t, v in L]
-                eff_pos = [eff_L[i] > 0.0 for i in range(nL)]
-                FS, AE, fsprt = {}, {}, {}
+                # Fuel shares and efficiency by decision (label 270). MS (float32) times the int
+                # fuel flag is float64 in numpy, so these sums run in float64, in L's order.
+                ird_L = np.array([ird[t, v] for t, v in L], dtype=f32)
+                FS, AE = {}, {}
                 for d in range(1, NUM_DEC + 1):
-                    ms_d = [MS[b, s, d, t, v] for t, v in L]
+                    ms_d = MS[b, s, d, T, V]
                     for f in range(1, NUM_FUEL + 1):
-                        fb = [fuelbytech[t, f] for t, _ in L]
-                        fs = f32(0.0)
-                        fp = f32(0.0)
-                        for i in range(nL):
-                            fs += ms_d[i] * fb[i]
-                            if d == 3 and ssd > 0.0:
-                                fp += ird_L[i] / ssd * fb[i]
-                        den = f32(0.0)
-                        for i in range(nL):
-                            if eff_pos[i]:
-                                den += ms_d[i] * fb[i] / eff_L[i]
+                        terms = ms_d * fb_L[f]
+                        fs = _seq_total(terms)
+                        den = _seq_total((terms / eff_L)[eff_pos])
                         FS[d, f] = fs
                         AE[d, f] = fs / den if den > 0.0 else f32(0.0)
-                        fsprt[f] = fp
                 tot = nsd + rsd + ssd
                 for f in range(1, NUM_FUEL + 1):
                     FSS[r, b, s, f] = 0.0
@@ -570,31 +571,22 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                         FSS[r, b, s, f] = (nsd * FS[1, f] + rsd * FS[2, f] + ssd * FS[3, f]) / tot
                         sdbyfuel[f, s, b, r] = (nsd_ns[r, b, s] * FS[1, f] + rsd_ns[r, b, s] * FS[2, f]
                                                 + ssd_ns[r, b, s] * FS[3, f])
-                for i, (t, v) in enumerate(L):
-                    TSS[r, b, s, t, v] = 0.0
-                    PTS[r, b, s, t, v] = 0.0
-                    if tot > 0.0:
-                        TSS[r, b, s, t, v] = (nsd * MS[b, s, 1, t, v] + rsd * MS[b, s, 2, t, v]
-                                              + ssd * MS[b, s, 3, t, v]) / tot
-                    if purch_sd > 0.0:
-                        PTS[r, b, s, t, v] = (nsd * MS[b, s, 1, t, v] + rsd * MS[b, s, 2, t, v]
-                                              + prt_sd * (ird_L[i] / ssd)) / purch_sd
-                tss_L = [TSS[r, b, s, t, v] for t, v in L]
+                ms1, ms2, ms3 = MS[b, s, 1, T, V], MS[b, s, 2, T, V], MS[b, s, 3, T, V]
+                tss_L = (nsd * ms1 + rsd * ms2 + ssd * ms3) / tot if tot > 0.0 else np.zeros(nL, dtype=f32)
+                TSS[r, b, s, T, V] = tss_L
+                PTS[r, b, s, T, V] = ((nsd * ms1 + rsd * ms2 + prt_sd * (ird_L / ssd)) / purch_sd
+                                      if purch_sd > 0.0 else f32(0.0))
+                tss_L = TSS[r, b, s, T, V]
                 for f in range(1, NUM_FUEL + 1):
-                    den = f32(0.0)
-                    for i, (t, _) in enumerate(L):
-                        if eff_pos[i]:
-                            den += tss_L[i] * fuelbytech[t, f] / eff_L[i]
+                    den = _seq_total((tss_L * fb_L[f] / eff_L)[eff_pos])
                     AVE[r, b, s, f] = FSS[r, b, s, f] / den if den > 0.0 else prev_ae[r, b, s, f]
                     if b == 10:
                         whse_eff[r, s, f] = AVE[r, 10, s, f]
                         whse_sd[r, s, f] = sdbyfuel[f, s, 10, r]
-                for t in tlist:
-                    for v in range(1, int(n_vint[t]) + 1):
-                        for d, dmd in ((1, nsd), (2, rsd), (3, ssd)):
-                            add = MS[b, s, d, t, v] * dmd
-                            eqy[r, b, t, v, d] += add
-                            eqy[11, b, t, v, d] += add
+                for d, dmd in ((1, nsd), (2, rsd), (3, ssd)):
+                    add = MS[b, s, d, TA, VA] * dmd
+                    eqy[r, b, TA, VA, d] += add
+                    eqy[11, b, TA, VA, d] += add
                 reg_fs_num[b] = (FS, AE)
 
             # Decision-type fuel shares and efficiency for the region (labels 340, 350).
