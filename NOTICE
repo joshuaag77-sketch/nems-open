@@ -1,0 +1,7 @@
+NEMS Open
+Copyright 2026 Josh Agarwal and contributors
+
+This project ports the U.S. Energy Information Administration's National
+Energy Modeling System (NEMS, github.com/EIAgov/NEMS) to Python. NEMS is
+produced by EIA. This project is not affiliated with or endorsed by EIA.
+No EIA source code is included in this repository.
