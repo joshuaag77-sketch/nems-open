@@ -315,6 +315,36 @@ EFP reads EFD's results per region (fuel, O&M, allowance and trade costs) from a
 
 The EFP tests check the routine's arithmetic, not EIA's final prices. Rerun them, and recheck the NaN finding above, once our dispatch LP supplies this block.
 
+## LDSM port (branch `emm-ldsm`, 2026-11-02)
+
+`src/nems_open/emm/ldsm/`: LDSM's yearly path, every routine ELLDSM calls, in Python, float32 where the Fortran is REAL*4 and float64 where it is REAL*8. Merged the elec session's data layer (`emm-data`, `src/nems_open/emm/`); the yearly path takes its inputs from the shared state, so it does not need the data layer yet (the readers will).
+
+| Fortran | Python | Check |
+|---|---|---|
+| DSMCADJ | `forecast.dsmcadj` | all 9 dump years, 1e-6 |
+| DSMFOR, DSMARE, DSMACM, DSMAIN, DSMATR, DSMEMMV | `forecast` | regions 1 and 13, 2021/2030/2050, 1e-6 |
+| DSMDLT | `forecast.dsmdlt` | same |
+| DSMHLM, DSMNWS, DSMQSR | `system_load` | same |
+| DSMEFP, DSMTOR | `outputs` | same |
+| DSMEFD, DSMSECWT | `efd` | same |
+| DSMLCP, DSMECP1 | `ecp` | regions 1 and 13, 2030/2050 (runs from 2025, first iteration), 1e-6 |
+| ELLDSM, DSMREP1 | `driver` | every array ELLDSM touches, all 25 regions, all 9 dump years, 1e-6 (about 30 s a year) |
+| DSMRST, CALLSYSLOAD, CALLSYSLOAD_EU, LOAD_LDSM_CAL | not yet | startup readers (SQLite); their output comes in with the state |
+| DSMREP3, DSMREP4, DSMSRP, DSMHLC | not ported | write report files only |
+
+Oracle dumps for this (oracle/hooks.py): one target per LDSM call, dumped as `<name>_rNN` for EMM regions 1 and 13 in 2021, 2030 and 2050 (`EMM_DUMP_REGIONS`, `EMM_REGION_YEARS`; five regions in nine years filled the disk). DSMECP1 and DSMLCP dump on the first iteration, where they run; DSMLCP only on the current-year pass. The dumps now include EQUIVALENCE aliases (QELINOUT) and COMMON blocks declared inside routines (LDSM's load shapes `/REGSYSLD/`, `/EUSYSLD/`; EFP's `/EFPIT/` and others). The driver stops early with `ORACLE_LAST_YEAR=<year index>` for trying dumps. A full run with these dumps takes 11 minutes and 3.6 GB.
+
+Precision notes: SYLOAD and SectorLoad are REAL*8; the shapes, LoadForec and block heights are REAL*4. DSMEFD keeps the peak in REAL*8, DSMLCP in REAL*4. DSMNWS adds REAL*4 shape x REAL*8 load in double.
+
+LDSM quirks kept:
+- DSMQSR, EIA's quicksort: the order of equal loads decides the peak hour, so it is reproduced statement by statement. Its two-item branch sorts ascending, not descending, and moves the value through an INTEGER*2 temporary, truncating it. It only runs if a season has two blocks.
+- DSMEFD stores the absolute peak by segment and reads it back by season: `ULPEAK(j,RNB) = abspeak(j)`.
+- DSMACM's EV loop adds charging types 7 and 8 onto what type 6 left, so type 8's load is types 6+7+8; types 6 and 7 get no end use of their own.
+- DSMAIN's electrolyzer end use (4) takes the hydrogen model's MWh directly, with no census mapping.
+- DSMARE's error path sets WHOOPS to false (the other sectors set it true). Never reached in AEO2026.
+- DSMFOR's history share applies only to the 13-region EMM; AEO2026 has 25.
+- DSMECP1 leaves K1 one past the last horizon year (a Fortran DO counter).
+
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
 2. Run the Python commercial module year by year with those inputs.
