@@ -245,6 +245,11 @@ def _running(start, terms):
     return np.add.accumulate(np.concatenate([[np.float32(start)], terms.astype(np.float32)]))[-1]
 
 
+def _interleave(*cols):
+    """a0, b0, ..., a1, b1, ...: the order a running sum like TEMP = TEMP + A(Y) + B(Y) adds them."""
+    return np.stack(cols, axis=-1).reshape(-1)
+
+
 def _powf(x, y):
     """REAL**REAL as libm's powf gives it: computed in double, rounded once."""
     try:
@@ -447,45 +452,37 @@ def rhtrcon(s: dict) -> None:
                     EQCAHVUEC[CurCalYr, RECCL, B, R] = EQCHVUEC[CurCalYr, RECCL, B, R]
                     AFANUEC[RECSYEAR + 1, R, B] = NFANUEC[RECSYEAR + 1, R, B]
                 else:
-                    TEMP = f32(0.0)
-                    TEMP1 = f32(0.0)
-                    TEMP2 = f32(0.0)
-                    for Y in range(RECSYEAR, CurCalYr):
-                        TEMP = TEMP + EQR90FUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R]
-                        TEMP1 = TEMP1 + (EQR90FUT[Y, CurCalYr, RECCL, B, R] + EQADDFUT[Y, CurCalYr, RECCL, B, R]
-                                         + EQREPFUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R]) * FAN
-                        TEMP2 = TEMP2 + EQADDFUT[Y, CurCalYr, RECCL, B, R] + EQREPFUT[Y, CurCalYr, RECCL, B, R]
+                    # Stock-weighted averages over the vintages RECSYEAR..CurCalYr-1: float32 term
+                    # arrays, summed in year order by a sequential accumulate (the Fortran's loops).
+                    v = slice(RECSYEAR, CurCalYr - 1)
+                    a = EQR90FUT[v, CurCalYr, RECCL, B, R]
+                    rp = EQR90RPFUT[v, CurCalYr, RECCL, B, R]
+                    add = EQADDFUT[v, CurCalYr, RECCL, B, R]
+                    rep = EQREPFUT[v, CurCalYr, RECCL, B, R]
+                    TEMP = _running(f32(0.0), _interleave(a, rp))
+                    TEMP1 = _running(f32(0.0), (((a + add) + rep) + rp) * FAN)
+                    TEMP2 = _running(f32(0.0), _interleave(add, rep))
 
                     if TEMP <= 0.0:
                         EQCAUEC[CurCalYr, RECCL, B, R] = EQCNUEC[CurCalYr, RECCL, B, R]
                     else:
-                        EQCAUEC[CurCalYr, RECCL, B, R] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            EQCAUEC[CurCalYr, RECCL, B, R] = EQCAUEC[CurCalYr, RECCL, B, R] + (
-                                EQR90FUT[Y, CurCalYr, RECCL, B, R] * EQCRUEC[Y, RECCL, B, R]
-                                + EQR90RPFUT[Y, CurCalYr, RECCL, B, R] * EQCNIUEC[Y, RECCL, B, R]) / TEMP
+                        EQCAUEC[CurCalYr, RECCL, B, R] = _running(f32(0.0), (
+                            a * EQCRUEC[v, RECCL, B, R] + rp * EQCNIUEC[v, RECCL, B, R]) / TEMP)
 
                     # EIA quirk: AFANUEC is rewritten for every class, so the value the
                     # consumption loop uses comes from the last class (and its TEMP1)
                     if TEMP1 <= 0.0:
                         AFANUEC[CurCalYr, R, B] = NFANUEC[CurCalYr, R, B]
                     else:
-                        AFANUEC[CurCalYr, R, B] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            AFANUEC[CurCalYr, R, B] = AFANUEC[CurCalYr, R, B] + (
-                                EQR90FUT[Y, CurCalYr, RECCL, B, R] * EFANUEC[Y, R, B] * FAN
-                                + EQADDFUT[Y, CurCalYr, RECCL, B, R] * NFANUEC[Y, R, B] * FAN
-                                + EQREPFUT[Y, CurCalYr, RECCL, B, R] * NFANUEC[Y, R, B] * FAN
-                                + EQR90RPFUT[Y, CurCalYr, RECCL, B, R] * NFANUEC[Y, R, B] * FAN) / TEMP1
+                        nf = NFANUEC[v, R, B]
+                        AFANUEC[CurCalYr, R, B] = _running(f32(0.0), (
+                            a * EFANUEC[v, R, B] * FAN + add * nf * FAN + rep * nf * FAN + rp * nf * FAN) / TEMP1)
 
                     if TEMP2 <= 0.0:
                         EQCAHVUEC[CurCalYr, RECCL, B, R] = EQCHVUEC[CurCalYr, RECCL, B, R]
                     else:
-                        EQCAHVUEC[CurCalYr, RECCL, B, R] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            EQCAHVUEC[CurCalYr, RECCL, B, R] = EQCAHVUEC[CurCalYr, RECCL, B, R] + (
-                                EQADDFUT[Y, CurCalYr, RECCL, B, R] * EQCHVUEC[Y, RECCL, B, R]
-                                + EQREPFUT[Y, CurCalYr, RECCL, B, R] * EQCNUEC[Y, RECCL, B, R]) / TEMP2
+                        EQCAHVUEC[CurCalYr, RECCL, B, R] = _running(f32(0.0), (
+                            add * EQCHVUEC[v, RECCL, B, R] + rep * EQCNUEC[v, RECCL, B, R]) / TEMP2)
 
     # average equipment efficiency
     for R in range(1, NUM_DIV + 1):
@@ -494,18 +491,16 @@ def rhtrcon(s: dict) -> None:
                 if CurCalYr == RECSYEAR + 1:
                     WTEQCEFFA[RECSYEAR + 1, RECCL, B, R] = WTEQCEFFN[RECSYEAR + 1, RECCL, B, R]
                 else:
-                    TEMP = f32(0.0)
-                    for Y in range(RECSYEAR, CurCalYr):
-                        TEMP = (TEMP + EQR90FUT[Y, CurCalYr, RECCL, B, R] + EQADDFUT[Y, CurCalYr, RECCL, B, R]
-                                + EQREPFUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R])
+                    v = slice(RECSYEAR, CurCalYr - 1)
+                    a = EQR90FUT[v, CurCalYr, RECCL, B, R]
+                    add = EQADDFUT[v, CurCalYr, RECCL, B, R]
+                    rep = EQREPFUT[v, CurCalYr, RECCL, B, R]
+                    rp = EQR90RPFUT[v, CurCalYr, RECCL, B, R]
+                    TEMP = _running(f32(0.0), _interleave(a, add, rep, rp))
                     if TEMP > 0.0:
-                        WTEQCEFFA[CurCalYr, RECCL, B, R] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            WTEQCEFFA[CurCalYr, RECCL, B, R] = WTEQCEFFA[CurCalYr, RECCL, B, R] + (
-                                (EQR90FUT[Y, CurCalYr, RECCL, B, R] * WTEQCEFFR[Y, RECCL, B, R])
-                                + ((EQADDFUT[Y, CurCalYr, RECCL, B, R] * WTEQCEFFHV[Y, RECCL, B, R])
-                                   + (EQREPFUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R])
-                                   * WTEQCEFFN[Y, RECCL, B, R])) / TEMP
+                        WTEQCEFFA[CurCalYr, RECCL, B, R] = _running(f32(0.0), (
+                            (a * WTEQCEFFR[v, RECCL, B, R])
+                            + ((add * WTEQCEFFHV[v, RECCL, B, R]) + (rep + rp) * WTEQCEFFN[v, RECCL, B, R])) / TEMP)
                     else:
                         WTEQCEFFA[CurCalYr, RECCL, B, R] = WTEQCEFFN[CurCalYr, RECCL, B, R]
 

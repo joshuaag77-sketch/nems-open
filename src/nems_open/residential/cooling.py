@@ -40,6 +40,18 @@ def _cddfact(s: dict, r: int):
 # ----------------------------------------------------------------------------
 # RCLTEC
 # ----------------------------------------------------------------------------
+def _running(terms):
+    """0.0 + terms[0] + terms[1] + ... in float32, in order (a Fortran running sum)."""
+    if terms.size == 0:
+        return np.float32(0.0)
+    return np.add.accumulate(terms.astype(np.float32))[-1]
+
+
+def _interleave(*cols):
+    """a0, b0, ..., a1, b1, ...: the order TEMP = TEMP + A(y) + B(y) adds them."""
+    return np.stack(cols, axis=-1).reshape(-1)
+
+
 def rcltec(s: dict) -> None:
     """RCLTEC: new (NEQTSHR) and replacement (REQTSHR) shares of cooling equipment
     types, life-cycle costs LFCY, and weighted efficiencies WTEQCEFFN/R."""
@@ -471,42 +483,34 @@ def rclcon(s: dict) -> None:
                     s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
                     s["eqcahvuec"][Y, reccl, b, d] = s["eqchvuec"][Y, reccl, b, d]
                 else:
-                    temp = temp1 = temp2 = f32(0.0)
-                    for y in range(RECSYEAR, Y):
-                        temp = temp + r90[y, Y, reccl, b, d] + r90rp[y, Y, reccl, b, d]
-                        temp1 = temp1 + addf[y, Y, reccl, b, d] + repf[y, Y, reccl, b, d]
-                        temp2 = (temp2 + r90[y, Y, reccl, b, d] + r90rp[y, Y, reccl, b, d]
-                                 + addf[y, Y, reccl, b, d] + repf[y, Y, reccl, b, d])
+                    # Stock-weighted averages over vintages RECSYEAR..Y-1: float32 term arrays,
+                    # summed in year order by a sequential accumulate (the Fortran's loops).
+                    v = slice(RECSYEAR, Y - 1)
+                    a90, arp = r90[v, Y, reccl, b, d], r90rp[v, Y, reccl, b, d]
+                    aad, are = addf[v, Y, reccl, b, d], repf[v, Y, reccl, b, d]
+                    temp = _running(_interleave(a90, arp))
+                    temp1 = _running(_interleave(aad, are))
+                    temp2 = _running(_interleave(a90, arp, aad, are))
+                    ruec, nuec, niuec = s["eqcruec"][v, reccl, b, d], s["eqcnuec"][v, reccl, b, d], s["eqcniuec"][v, reccl, b, d]
                     auec = s["eqcauec"]
                     if eqc == 1:
                         if temp2 <= 0.0:
                             auec[Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
                         else:
-                            auec[Y, reccl, b, d] = f32(0.0)
-                            for y in range(RECSYEAR, Y):
-                                auec[Y, reccl, b, d] = auec[Y, reccl, b, d] + (
-                                    (r90[y, Y, reccl, b, d] * s["eqcruec"][y, reccl, b, d])
-                                    + (addf[y, Y, reccl, b, d] + repf[y, Y, reccl, b, d]) * s["eqcnuec"][y, reccl, b, d]
-                                    + r90rp[y, Y, reccl, b, d] * s["eqcniuec"][y, reccl, b, d]) / temp2
+                            auec[Y, reccl, b, d] = _running(
+                                ((a90 * ruec) + (aad + are) * nuec + arp * niuec) / temp2)
                     else:
                         if temp <= 0.0:
                             auec[Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
                         else:
-                            auec[Y, reccl, b, d] = f32(0.0)
-                            for y in range(RECSYEAR, Y):
-                                auec[Y, reccl, b, d] = auec[Y, reccl, b, d] + (
-                                    r90[y, Y, reccl, b, d] * s["eqcruec"][y, reccl, b, d]
-                                    + r90rp[y, Y, reccl, b, d] * s["eqcniuec"][y, reccl, b, d]) / temp
+                            auec[Y, reccl, b, d] = _running((a90 * ruec + arp * niuec) / temp)
 
                     if eqc > 1:
                         if temp1 <= 0.0:
                             s["eqcahvuec"][Y, reccl, b, d] = s["eqchvuec"][Y, reccl, b, d]
                         else:
-                            s["eqcahvuec"][Y, reccl, b, d] = f32(0.0)
-                            for y in range(RECSYEAR, Y):
-                                s["eqcahvuec"][Y, reccl, b, d] = s["eqcahvuec"][Y, reccl, b, d] + (
-                                    addf[y, Y, reccl, b, d] * s["eqchvuec"][y, reccl, b, d]
-                                    + repf[y, Y, reccl, b, d] * s["eqcnuec"][y, reccl, b, d]) / temp1
+                            s["eqcahvuec"][Y, reccl, b, d] = _running(
+                                (aad * s["eqchvuec"][v, reccl, b, d] + are * nuec) / temp1)
 
     # average equipment efficiency
     wa = s["wteqceffa"]
@@ -517,24 +521,17 @@ def rclcon(s: dict) -> None:
                 if Y == RECSYEAR + 1:
                     wa[RECSYEAR + 1, reccl, b, d] = s["wteqceffn"][RECSYEAR + 1, reccl, b, d]
                 else:
-                    temp = f32(0.0)
-                    for y in range(RECSYEAR, Y):
-                        temp = (temp + r90[y, Y, reccl, b, d] + addf[y, Y, reccl, b, d]
-                                + repf[y, Y, reccl, b, d] + r90rp[y, Y, reccl, b, d])
+                    v = slice(RECSYEAR, Y - 1)
+                    a90, aad = r90[v, Y, reccl, b, d], addf[v, Y, reccl, b, d]
+                    are, arp = repf[v, Y, reccl, b, d], r90rp[v, Y, reccl, b, d]
+                    temp = _running(_interleave(a90, aad, are, arp))
                     if temp > 0.0:
-                        wa[Y, reccl, b, d] = f32(0.0)
-                        for y in range(RECSYEAR, Y):
-                            if eqc == 1:
-                                wa[Y, reccl, b, d] = wa[Y, reccl, b, d] + (
-                                    (r90[y, Y, reccl, b, d] * s["wteqceffr"][y, reccl, b, d])
-                                    + ((addf[y, Y, reccl, b, d] + repf[y, Y, reccl, b, d] + r90rp[y, Y, reccl, b, d])
-                                       * s["wteqceffn"][y, reccl, b, d])) / temp
-                            else:
-                                wa[Y, reccl, b, d] = wa[Y, reccl, b, d] + (
-                                    r90[y, Y, reccl, b, d] * s["wteqceffr"][y, reccl, b, d]
-                                    + addf[y, Y, reccl, b, d] * s["wteqceffhv"][y, reccl, b, d]
-                                    + (repf[y, Y, reccl, b, d] + r90rp[y, Y, reccl, b, d])
-                                    * s["wteqceffn"][y, reccl, b, d]) / temp
+                        effr, effn = s["wteqceffr"][v, reccl, b, d], s["wteqceffn"][v, reccl, b, d]
+                        if eqc == 1:
+                            wa[Y, reccl, b, d] = _running(((a90 * effr) + ((aad + are + arp) * effn)) / temp)
+                        else:
+                            wa[Y, reccl, b, d] = _running(
+                                (a90 * effr + aad * s["wteqceffhv"][v, reccl, b, d] + (are + arp) * effn) / temp)
                     else:
                         wa[Y, reccl, b, d] = s["wteqceffn"][Y, reccl, b, d]
 
