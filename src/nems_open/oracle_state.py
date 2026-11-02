@@ -1,6 +1,6 @@
 """Read the oracle's state dumps (oracle/hooks.py, oracle/hooks_tran.py) as Fortran-indexed arrays.
 
-Each module's oracle has its own run folder: run (commercial), run_tran (transportation).
+Each module's oracle has its own run folder: run (commercial), run_resd, run_tran.
 """
 
 from pathlib import Path
@@ -10,22 +10,24 @@ import numpy as np
 from nems_open.fortran_array import FArray
 from nems_open.paths import REPO_ROOT
 
+# Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
+RUN_DIRS = {"comm": "run", "resd": "run_resd", "tran": "run_tran"}
 ORACLE = REPO_ROOT / "oracle"
 STATE = ORACLE / "run" / "out" / "state"
 
 
-def _folder(tag: str, year: int, run: str | None) -> Path:
-    base = STATE if run is None else ORACLE / run / "out" / "state"
-    return base / tag / str(year)
+def state_dir(module: str = "comm", run: str | None = None) -> Path:
+    """run: the run folder by name (e.g. "run_tran"), instead of the module."""
+    return ORACLE / (run or RUN_DIRS[module]) / "out" / "state"
 
 
-def available(tag: str, year: int, run: str | None = None) -> bool:
-    return (_folder(tag, year, run) / "index.txt").exists()
+def available(tag: str, year: int, module: str = "comm", run: str | None = None) -> bool:
+    return (state_dir(module, run) / tag / str(year) / "index.txt").exists()
 
 
-def load(tag: str, year: int, run: str | None = None) -> dict:
+def load(tag: str, year: int, module: str = "comm", run: str | None = None) -> dict:
     """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name."""
-    folder = _folder(tag, year, run)
+    folder = state_dir(module, run) / tag / str(year)
     out = {}
     for line in (folder / "index.txt").read_text(encoding="latin-1").splitlines():
         parts = line.split()

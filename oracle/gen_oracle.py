@@ -14,6 +14,7 @@ The build folder also gets a copy of the upstream includes in inc/, so the compi
 works wherever the upstream checkout lives (spaces in its path break -I).
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -49,6 +50,16 @@ MODULES = {
                    ("input/tdm/trnairx.xlsx", "trnair")]
                   + [("input/tdm/trnhdvx.xlsx", s) for s in ("trnhdv", "tech_adopt", "ACT", "Phase_2")],
         skip_blocks=[],
+    ),
+    "resd": dict(
+        source=["resd.f"], run="run_resd", build="build_resd",
+        # MODULE R_ at the top of resd.f
+        includes=["parametr", "ncntrl", "apq", "resdrep", "rtek", "bldglrn", "emmparm", "emission",
+                  "eusprc", "emablk", "macout", "rscon", "rseff", "qsblk", "cogen", "uefpout",
+                  "uecpout", "e111d", "steoblock",
+                  "tranrep"],  # included by EXCONS and NEMSCN: TRQ_ELEC, EV home charging
+        workbooks=[("input/rdm/rsmess.xlsx", s) for s in ("RSCLASS", "RSMEQP", "RSSWITCH", "RSMSHL")],
+        skip_blocks=["RESDREP", "RSCON", "RSEFF"],
     ),
 }
 

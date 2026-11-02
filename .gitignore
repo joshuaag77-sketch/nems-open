@@ -6,3 +6,4 @@ oracle/run/
 oracle/build/
 oracle/run_*/
 oracle/build_*/
+/data/
