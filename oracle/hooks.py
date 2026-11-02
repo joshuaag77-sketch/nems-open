@@ -258,6 +258,28 @@ EMM_TARGETS += [
     dict(tag="at1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], itr=1, **_EFP),
     dict(tag="ad", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], **_EFP),
     dict(tag="ad1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], itr=1, **_EFP),
+]
+# Inside AVRPRC, routine by routine, for the generation component only (site_cond
+# is tested where the call is, since ICALL is local). Transmission and
+# distribution are covered by the whole-AVRPRC dumps above.
+_G = dict(site_cond="ICALL .EQ. 'G'", **_EFP)
+EMM_TARGETS += [dict(tag=tag, call=call, routines=[name], itr=itr, **_G) for tag, name, call, itr in [
+    ("x_adcr", "ELADCR", r"CALL ELADCR\b", 1),
+    ("x_cwip", "ELCWIP", r"CALL ELCWIP\(NRGN,ICALL\)", 1),
+    ("x_nd", "ELND", r"CALL ELND\(NRGN,6,ICALL\)", 1),
+    ("x_phin", "ELPHIN", r"CALL ELPHIN\(NRGN\)", 1),
+    ("x_sl", "ELSL", r"CALL ELSL\(NRGN\)", 1),
+    ("x_itc", "ELITC", r"CALL ELITC\b", 1),
+    ("x_bkdp", "ELBKDP", r"CALL ELBKDP\(NRGN,ICALL\)", 1),
+    ("x_txdp", "ELTXDP", r"CALL ELTXDP\(NRGN,ICALL\)", 1),
+    ("x_tsaf", "ELTSAF", r"CALL ELTSAF\b", 1),
+    ("x_xpns", "ELXPNS", r"CALL ELXPNS\(NRGN,ICALL\)", None),
+    ("x_inex", "ELINEX", r"CALL ELINEX\(NRGN\)", None),
+    ("x_revs", "ELREVS", r"CALL ELREVS\(ICALL,NRGN\)", None),
+    ("x_rate", "ELRATE", r"CALL ELRATE\(ICALL,NRGN\)", None),
+    ("x_stmt", "STMTS", r"IF \(EFPFCRL \.EQ\. 1\) CALL STMTS\(NRGN,ICALL\)", None),
+]]
+EMM_TARGETS += [
     dict(tag="se", call=r"CALL ELSET\b", file="uefp", home=["uefp", "udaf"], routines=["ELSET"]),
     dict(tag="rv", call=r"IF \(EFPFCRL \.eq\. 1\) CALL REVGAP", file="uefp", home=["uefp", "udaf"],
          routines=["REVGAP"]),
@@ -505,7 +527,7 @@ def as_dict(target):
     if isinstance(target, dict):
         name = re.search(r"CALL\s+(\w+)", target["call"], re.I).group(1)
         return dict(dict(nth=0, end=None, private=[], carried=[], before=False, routines=[name],
-                         file="util", region=False, itr=None, cond=None), **target)
+                         file="util", region=False, itr=None, cond=None, site_cond=None), **target)
     tag, call_re, end_re, private, carried = target
     before = bool(end_re) and end_re.startswith("before:")  # commercial targets mark "dump before this line" in the pattern
     if before:
@@ -816,7 +838,8 @@ def instrument_emm(util_path: Path):
         m = list(re.finditer(r"^(\s*)(" + tg["call"] + r")", text, re.I | re.M))[tg["nth"]]
         ind = m.group(1).lstrip("\n")
         if isinstance(tg["region"], str):
-            hook = lambda side: f"CALL ORACLE_STATE_RG('{tg['tag']}_{side}', INT({tg['region']}))"
+            hook = lambda side: ((f"IF ({tg['site_cond']}) " if tg['site_cond'] else "")
+                                 + f"CALL ORACLE_STATE_RG('{tg['tag']}_{side}', INT({tg['region']}))")
         else:
             hook = lambda side: f"CALL ORACLE_STATE('{tg['tag']}_{side}')"
         texts[f] = (text[:m.start()] + f"\n{ind}{hook('in')}\n{ind}{m.group(2)}\n"
