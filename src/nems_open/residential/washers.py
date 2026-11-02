@@ -7,9 +7,7 @@ vintage it into the future-year arrays. CON routines turn that into unit energy
 consumption and energy use. Writes to AppBetaData.txt (unit 661) are skipped.
 
 Inputs the oracle dump cannot hold, and what the port does about them:
-- PELRSOUT is EQUIVALENCEd to a block (PELSHRS), so hooks.py misses it. The TEC and
-  CON routines read it once, to set PRICES(4,r,year). The port reads s["pelrsout"];
-  the test builds that from the "out" prices.
+- PELRSOUT is read once by the TEC and CON routines, to set PRICES(4,r,year).
 - LEAPYR is set in the main RESD body (not dumped); it depends only on the year.
 - COSTTRSW is a PARAMETER (rtek include), 0.
 - DECAY is a static local set on the first iteration of each year; it depends only
@@ -18,8 +16,8 @@ Inputs the oracle dump cannot hold, and what the port does about them:
 
 import numpy as np
 
-from nems_open.residential.common import BASEYR, LASTSTEOYR, MNUMBLDG, NUM_DIV, RECSYEAR, f32, powi
-from nems_open.residential.helpers import eqcost, rselast
+from nems_open.residential.common import BASEYR, LASTSTEOYR, MNUMBLDG, NUM_DIV, RECSYEAR, expf, f32, powf, powi
+from nems_open.residential.helpers import eqcost, rselast, svrte
 
 ENDYR = 2050
 COSTTRSW = 0  # PARAMETER in the rtek include
@@ -31,32 +29,11 @@ EU_DW, EUPR_DW = 4, 9
 # pieces shared by the technology-choice routines
 # ----------------------------------------------------------------------------
 
-def svrte(alpha, y, k, lam):
-    """SVRTE (resd.f), with EXP and ** rounded once from double precision.
-    helpers.svrte calls NumPy's float32 exp, which is a few ulp off libm's expf and
-    shows up as one-ulp differences in EQCREP, a difference of two large sums."""
-    if f32(y) - f32(alpha) < 0:
-        return f32(1.0)
-    k1 = f32(f32(f32(y) - f32(alpha)) / f32(lam))
-    k2 = f32(np.power(np.float64(k1), np.float64(f32(k))))
-    return f32(np.exp(-np.float64(k2)))
-
-
-def _exp(x):
-    """EXP rounded once from double precision (see svrte)."""
-    return f32(np.exp(np.float64(x)))
-
-
-def _pow(x, y):
-    """REAL ** REAL rounded once from double precision (powf)."""
-    return f32(np.power(np.float64(x), np.float64(y)))
-
-
 def _decay(s: dict):
     """DECAY = annuity factor for the life-cycle cost. EIA sets it only when
     CURITR = 1 and keeps it in a static local; the inputs never change."""
     rate, tenure = f32(s["resdiscountrate"]), f32(s["tenure"])
-    return f32(f32(f32(1) - _pow(f32(f32(1) + rate), -tenure)) / rate)
+    return f32(f32(f32(1) - powf(f32(f32(1) + rate), -tenure)) / rate)
 
 
 def _map_electricity_price(s: dict, eupr: int) -> None:
@@ -78,7 +55,7 @@ def _beta1dr(s: dict, recty: int, r: int) -> None:
         s["hrdrate"] = f32(b1[recty] / b2[recty])
         s["eligble"] = f32(s["hrdrate"] - f32(0.07))
         if s["eligble"] > 0.0:
-            s["hrdadj"] = f32(s["eligble"] * _pow(f32(P[4, r, Y] / P[4, r, RECSYEAR]), alpha1))
+            s["hrdadj"] = f32(s["eligble"] * powf(f32(P[4, r, Y] / P[4, r, RECSYEAR]), alpha1))
             s["beta1dr"][recty] = f32(s["hrdadj"] + f32(0.07)) * b2[recty]
         else:
             s["beta1dr"][recty] = b1[recty]
@@ -164,10 +141,10 @@ def rcwtec(s: dict) -> None:
                     LFCY[eqt, b, r, 1] = CAPITAL + f32(OPCOST1 * DECAY)
                     LFCY[eqt, b, r, 2] = CAPITAL + f32(OPCOST2 * DECAY)
                     bias, b1, b2, b3 = s["rtecbias"][recty], s["beta1dr"][recty], s["rtecbta2"][recty], s["rtecbta3"][recty]
-                    EQWTN[eqt, b, r] = _exp(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST2))
+                    EQWTN[eqt, b, r] = expf(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST2))
                                                       + f32(b3 * LFCY[eqt, b, r, 2])))
                     TOTEWTN[eqc, b, r] = f32(TOTEWTN[eqc, b, r] + EQWTN[eqt, b, r])
-                    EQWTR[eqt, b, r] = _exp(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST1))
+                    EQWTR[eqt, b, r] = expf(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST1))
                                                       + f32(b3 * LFCY[eqt, b, r, 1])))
                     TOTEWTR[eqc, b, r] = f32(TOTEWTR[eqc, b, r] + EQWTR[eqt, b, r])
 
@@ -530,10 +507,10 @@ def rdwtec(s: dict) -> None:
                     LFCY[eqt, b, r, 1] = CAPITAL + f32(OPCOST1 * DECAY)
                     LFCY[eqt, b, r, 2] = CAPITAL + f32(OPCOST2 * DECAY)
                     bias, b1, b2, b3 = s["rtecbias"][recty], s["beta1dr"][recty], s["rtecbta2"][recty], s["rtecbta3"][recty]
-                    EQWTN[eqt, b, r] = _exp(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST2))
+                    EQWTN[eqt, b, r] = expf(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST2))
                                                       + f32(b3 * LFCY[eqt, b, r, 2])))
                     TOTEWTN[eqc, b, r] = f32(TOTEWTN[eqc, b, r] + EQWTN[eqt, b, r])
-                    EQWTR[eqt, b, r] = _exp(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST1))
+                    EQWTR[eqt, b, r] = expf(f32(f32(f32(bias + f32(b1 * CAPITAL)) + f32(b2 * OPCOST1))
                                                       + f32(b3 * LFCY[eqt, b, r, 1])))
                     TOTEWTR[eqc, b, r] = f32(TOTEWTR[eqc, b, r] + EQWTR[eqt, b, r])
 
