@@ -44,6 +44,16 @@ TARGETS = [
     ("tmac", "tran.f90", r"^\s*CALL TMAC\s*$", "tmac"),
     ("newldv", "tran.f90", r"^\s*CALL NEWLDV\s*$", "newldv"),
     ("tmpgnew", "tran.f90", r"^\s*CALL TMPGNEW\s*$", "tmpgnew"),
+    # Inside TMPGNEW, at the first call of each callee (FEM pass 1). Each holds the
+    # whole TMPGNEW state (fifth field), so the stretch between two points is testable.
+    ("tmpg_lion", "tran.f90", r"^\s*IF\(YRS\.GE\.FIRST_BAT_YR\+1989-1\) CALL LIONCOSTCALC", "lioncostcalc", "tmpgnew"),
+    ("tmpg_fem1", "tran.f90", r"^\s*if\(curcalyr\.gt\.xyr\) CALL FEMCALC\s*$", "femcalc", "tmpgnew"),
+    ("tmpg_cgs1", "tran.f90", r"^\s*CALL CGSHARE\s*$", "cgshare", "tmpgnew"),
+    ("tmpg_att1", "tran.f90", r"^\s*CALL TATTRIB\s*$", "tattrib", "tmpgnew"),
+    ("tmpg_alt1", "tran.f90", r"^\s*CALL TALT2\s*$", "talt2", "tmpgnew"),
+    ("tmpg_altx1", "tran.f90", r"^\s*if\(curcalyr\.gt\.stockyr\) CALL TALT2X", "talt2x", "tmpgnew"),
+    ("tmpg_cafe0", "tran.f90", r"^\s*CALL CAFECALC\(0\)", "cafecalc", "tmpgnew"),
+    ("tmpg_cafe1", "tran.f90", r"^\s*CALL CAFECALC\(1\)", "cafecalc", "tmpgnew"),
     ("treg", "tran.f90", r"^\s*CALL TREG\s*$", "treg"),
     ("tfltstks", "tran.f90", r"^\s*CALL TFLTSTKS\s*$", "tfltstks"),
     ("flthav", "tran.f90", r"^\s*if \(yrs\.ge\.MINVAL\(first_lidar_year\)\) CALL FLTHAV", "flthav"),
@@ -238,8 +248,8 @@ def write_state(inc_dir, build):
     years = ", ".join(map(str, DUMP_YEARS))
     inc_c = "\n".join(f"      include '{n}'" for n in COMMON_INCLUDES)
     parts, counts = [], {}
-    for tag, _, _, routine in TARGETS:
-        used = reach(routine, bodies)
+    for tag, _, _, routine, *closure in TARGETS:
+        used = reach(closure[0] if closure else routine, bodies)
         subs = [f"      subroutine ost_{tag}(tag)\n      include 'parametr'\n      include 'ncntrl'\n"
                 f"      character(*) tag\n      if (CURITR .ne. 1 .or. .not. any((/ {years} /) == CURIYR)) return"]
         n_total = 0
@@ -333,7 +343,7 @@ def instrument_private(build):
 
 def instrument(build):
     instrument_private(build)
-    for tag, src, call_re, _ in TARGETS:
+    for tag, src, call_re, *_ in TARGETS:
         p = build / src
         text = p.read_text(encoding="latin-1")
         m = re.search(call_re, text, re.I | re.M)

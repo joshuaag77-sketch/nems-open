@@ -27,6 +27,8 @@ def _raw(v):
 
 def rel_err(mine, eia):
     """Largest relative error; NaN in both places counts as a match (0/0 in the Fortran too)."""
+    if np.asarray(eia).dtype.kind in "SU":
+        return 0.0 if np.array_equal(np.asarray(mine), np.asarray(eia)) else np.inf
     mine, eia = np.asarray(mine, dtype=np.float64), np.asarray(eia, dtype=np.float64)
     if mine.shape != eia.shape:
         return np.inf
@@ -52,13 +54,15 @@ def _blank_from(a: FArray, y: int) -> FArray:
     return a
 
 
-def run(port, tag, y, tol=TOL, carry=None, **kwargs):
+def run(port, tag, y, tol=TOL, carry=None, start=None, end=None, may_be_empty=False, **kwargs):
     """Run a port on <tag>_in for year y; return {name: error} for every array it got wrong.
 
     carry: the routine's saved local arrays (dumped as p_<name> in <tag>_out). The port
-    gets them with this year and later blanked, as `carry`, and must fill them in."""
-    before = oracle_state.load(f"{tag}_in", y, run=RUN)
-    after = oracle_state.load(f"{tag}_out", y, run=RUN)
+    gets them with this year and later blanked, as `carry`, and must fill them in.
+    start, end: other dump folders to run between, e.g. "tmpg_lion_out" to "tmpg_fem1_in"
+    for a stretch of TMPGNEW."""
+    before = oracle_state.load(start or f"{tag}_in", y, run=RUN)
+    after = oracle_state.load(end or f"{tag}_out", y, run=RUN)
     state = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in before.items()}
     if carry is not None:
         kwargs["carry"] = {k: _blank_from(after[f"p_{k}"], y) for k in carry}
@@ -68,7 +72,7 @@ def run(port, tag, y, tol=TOL, carry=None, **kwargs):
     if carry is not None:
         state.update({f"p_{k}": v for k, v in kwargs["carry"].items()})
     changed = [k for k in after if rel_err(_raw(before[k]), _raw(after[k])) > 0]
-    assert changed, f"{tag}: nothing changed between _in and _out, so the test proves nothing"
+    assert changed or may_be_empty, f"{tag}: nothing changed between _in and _out, so the test proves nothing"
     bad = {}
     for k, v in after.items():
         e = rel_err(_raw(state[k]), _raw(v)) if k in state else np.inf
