@@ -60,6 +60,7 @@ TARGETS += [
         "QCMDGSG", "QRSDGSG", "PRSDGSG", "xCumPenSqft", "com111drensub", "CMCogenEL",
         "SolarPVTechPotentialMW", "SolarPVAvailRoofArea", "SolarPVInstalledMW", "SolarPVUsedRoofArea",
         "WindTechPotentialMW", "WindAvailFS", "WindInstalledMW", "WindBldgCount",
+        "xPVGenAdded", "xWindGenAdded", "XINXDECAY", "xRPS", "iNumYrsatRPSBaseRate", "iNumRPSCreditYrs", "xpen",
     ], []),
     ("bm", r"CALL COMBenchmarking\s*\(RCDBG,RCQUAN\)", r"^510\s+FORMAT \(A20,1X,A20", [
         "WaterServicesElQ", "TelecomServicesElQ", "DiffQBM", "SolarPVContrib", "ApplyRamp",
@@ -68,7 +69,9 @@ TARGETS += [
     ], ["DiffQBM"]),
     # COMReport runs only in the last year; the call is the tail of a one-line IF.
     ("rp", r"IF\s*\(CURIYR\.EQ\.LASTYR\s*\.AND\.\s*FCRL\.EQ\.1\)\s*&\s*\n\s*CALL COMReport\s*\(RCDBG,RCRPT,SDReportOpts,ReportOption\)",
-     None, [], []),
+     r"before:^\s*RETURN\s*\n\s*END\s*\n!\*+\s*\n! Floorspace Survival function", [
+         "CMFinalUnbenchUse", "UnBenchedCon",
+     ], []),
 ]
 
 # Run once, in the first iteration of the first year: state around the first call
@@ -83,11 +86,24 @@ PROBES = [
         "ServicesIndex", "xplicitmiscshr", "DataCtrServPenetration", "OfficePCPenetration",
         "MarketPenetrationSC", "pctSCSavings", "CT_flag", "ApplyRamp", "BASELINEBKWHCM",
     ]),
+    # CDistGen's tables, right after it reads KCOGEN and KGENTK.
+    ("fdg", r"^\s*xpctWindSuitable=\.10", [
+        "CMCogenEL", "NUMTECHS", "NUMYEARS", "NUMDIV", "NUMBLDG", "NVINT", "iGenCapCostYr", "XOPERHOURS",
+        "GlobalLearn", "xpctPVSuitable", "XBeta", "Xc0", "XINX", "XINXFY", "XINXLY", "XTAXRATE", "XDOWNPAYPCT",
+        "XINTRATE", "XTERM", "XINFLATION", "XALPHA", "XPENPARM", "xkwMin", "xkwmax", "xScaleFac", "ISKIP",
+        "iRPSStartYear", "iRPSPhaseOutYear", "iRPSGrandFatherYear", "AEQUIPNAME", "IFUELTYPE", "IFIRSTYR",
+        "ILASTYR", "XKW", "XELEFF", "XLOSSFAC", "XDEGRAD", "XEQLIFE", "xtxlife", "xdep", "XWHRECOVERY",
+        "XINSTCOST", "XCAPCOST", "XMAINTCST", "xIntervalCst", "iIntervalYrs", "XAVAIL", "XTXCRPCT",
+        "xTXCrMaxPerKW", "xTXCrMaxPerSys", "comtxcrpct_div", "xRPS", "iNumYrsatRPSBaseRate", "iNumRPSCreditYrs",
+        "NumPVNiche", "xSolarInsolation", "xSqftShare", "xRateScalar", "xRoofAreatoSqftRatio", "xWindSpeed",
+        "xNGRateScalar", "XBLDGSHARE", "cbecsFlspcCatShare", "cbecsAVGSQFT", "xelecavgkwh", "XEXOGPEN",
+        "XA", "XB", "XC", "xpctWindSuitable",
+    ]),
 ]
 
 # Shared state dumped around each target call.
 STATE_INCLUDES = ["parametr", "ncntrl", "apq", "macout", "eusprc", "mxpblk", "emmparm", "emission", "qsblk",
-                  "cogen", "tranrep", "comparm", "comvars", "commrep"]
+                  "cogen", "bldglrn", "uefpout", "uecpout", "tranrep", "comparm", "comvars", "commrep"]
 STATE_BLOCK_FILES = ["comparm", "comvars", "commrep"]
 # Arrays from other modules' blocks that the commercial routines read.
 STATE_EXTRA = ["QELCM",                                   # service demand
@@ -96,9 +112,14 @@ STATE_EXTRA = ["QELCM",                                   # service demand
                "PRSCM", "PLGCM", "PCLCM", "PMGCM", "PKSCM",  # consumption (minor fuels)
                "MC_NP", "PCLIN", "TRQ_ELEC", "WHRFOSS", "QSBMCM", "EMCM", "EMCMC",  # benchmarking
                "QNGCM", "QGFCM", "QGICM", "QDSCM", "QRSCM", "QRLCM", "QLGCM", "QPRCM", "QCLCM",
-               "QMGCM", "QKSCM", "QSTCM", "QPVCM", "QBMCM"]
+               "QMGCM", "QKSCM", "QSTCM", "QPVCM", "QBMCM",
+               # distributed generation
+               "CGCOMMGEN", "CGCOMMCAP", "CGCOMMQ", "CGCPVCOM", "CGCWNCOM", "KCHPCESGEN",
+               "CFuelCell_MW", "CPV_MW", "RPV_MW", "UPV_MW", "RFuelCell_MW", "CWind_MW", "RWind_MW",
+               "CMicroTur_MW", "RMicroTur_MW", "PELME", "EPRPSPR", "EPRPSTGT", "UPIRA_APPYR"]
 DECL_FILES = ["parametr", "comparm", "comvars", "commrep", "qblk", "apq", "ampblk",
-              "mpblk", "mxpblk", "eusprc", "macout", "emmparm", "emission", "qsblk", "cogen", "tranrep"]
+              "mpblk", "mxpblk", "eusprc", "macout", "emmparm", "emission", "qsblk", "cogen", "tranrep",
+              "bldglrn", "uefpout", "uecpout"]
 
 TYPE_RE = re.compile(r"^(real\*8|double precision|real\*4|real|integer\*1|integer\*2|integer\*4|integer\*8|integer"
                      r"|logical(?:\*\d+)?|character(?:\s*\*\s*(?:\(\s*[\w*]+\s*\)|\d+))?)(?![\w*])(.*)", re.I)
@@ -234,7 +255,11 @@ def private_dumps(tag, names, src_decls):
 
 def instrument(comm_path: Path, upstream: Path):
     text = comm_path.read_text(encoding="latin-1")
-    src_decls = declarations(text)
+    # Private arrays may be declared in an include file (EmissionFactor) rather than in comm.f itself.
+    src_decls = {}
+    for n in DECL_FILES:
+        src_decls.update(declarations((upstream / "includes" / n).read_text(encoding="latin-1")))
+    src_decls.update(declarations(text))
     years = ", ".join(map(str, DUMP_YEARS))
     for tag, call_re, end_re, private, carried in TARGETS:
         m = re.search(r"^(\s*)(" + call_re + r")", text, re.I | re.M)
