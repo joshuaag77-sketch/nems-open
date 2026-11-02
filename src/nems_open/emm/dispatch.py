@@ -96,6 +96,9 @@ class DispatchCase:
     weights: np.ndarray       # (36,) days per typical day
     links: dict = None        # exporter, importer (0-based), capacity_gw (L, 36), cost (L,) 1987$/MWh, loss
     carbon_price: float = 0.0  # 1987$ per metric ton CO2, added to each plant's cost by its emissions
+    must_run_oil_gw: np.ndarray = None   # (25,) average output of must-run oil steam units, GW (taken out of `steam`)
+    must_run_oil_hr: np.ndarray = None   # (25,) their heat rate, Btu/kWh
+    ignition_share: float = 0.0          # share of coal Btu that is distillate (plant file fuel 2, T_FSHR_2)
 
 
 @dataclass
@@ -319,7 +322,21 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         nl = snapshot["UEFDOUT/ugntlnr"][:, :NUM_R, y].sum(axis=0).astype(float)
     links = build_links(snapshot, year) if trade != "reference" else None
     credit = float(snapshot["TCS45Q/ccs_saline_45q"][y])
-    return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf, profiles, nl, shapes, w, links)
+    # Oil steam units flagged must-run (plant file T_MRUN at or after the year) burn residual oil at their
+    # historical capacity factor whatever it costs, as EFD's minimum-run rows force them to. They leave the
+    # dispatchable steam capacity. Coal units list distillate as their second fuel (1% of Btu): ignition fuel.
+    on = plants.online(year)
+    sto = on & (u.efd_type == "STO") & (tb["T_MRUN"] >= year) & (tb["T_MRUN"] > 0)
+    mr_cap, mr_gw = np.zeros(NUM_R), np.zeros(NUM_R)
+    np.add.at(mr_cap, u.region[sto] - 1, u.summer_mw[sto] / 1000.0)
+    np.add.at(mr_gw, u.region[sto] - 1, u.summer_mw[sto] / 1000.0 * tb["T_CF"][sto])
+    mr_hr = _weighted_mask(u.heat_rate, u.summer_mw, sto, u.region, 11000.0)
+    cap["steam"] = np.maximum(cap["steam"] - mr_cap, 0.0)
+    coal_on = on & np.isin(u.efd_type, EXISTING_TYPES["coal"])
+    second = np.array([x.strip() for x in tb["CFL_2"]], dtype=object)
+    ignition = float(np.average(np.where(second == "DS", tb["T_FSHR_2"], 0.0)[coal_on], weights=u.summer_mw[coal_on])) if coal_on.any() else 0.0
+    return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf,
+                        profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition)
 
 
 def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
@@ -396,6 +413,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         "other": by_region(case.capacity["other"]) * profile("other"),
     }
     fixed = nuc_gw + ren_gw["wind"] + ren_gw["solar"] + ren_gw["other"]
+    oil_gw = by_region(case.must_run_oil_gw if case.must_run_oil_gw is not None else np.zeros(NUM_R))
 
     # Hydro within a monthly energy budget
     g_hy = m.add_variables(lower=0, upper=by_region(case.capacity["hydro"]), name="gen_hydro")
@@ -431,7 +449,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         trade_out = (trade * xr.DataArray(outof, coords=[R, L])).sum("link")
     spill = m.add_variables(lower=0, coords=[R, D, H], name="spill")
     unserved = m.add_variables(lower=0, coords=[R, D, H], name="unserved")
-    bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill + trade_in - trade_out == load_gw - fixed, name="balance")
+    bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill + trade_in - trade_out == load_gw - fixed - oil_gw, name="balance")
 
     objective = (g_th * cost_da * w).sum() + (g_hy * w).sum() * 0.01 + (unserved * (UNSERVED_COST * w)).sum()
     if trade is not None:
@@ -456,6 +474,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     gen["nuclear"] = fx(nuc_gw) * keep
     for g in RENEWABLE:
         gen[g] = fx(ren_gw[g]) * keep
+    gen["oil_must_run"] = np.zeros(NUM_R) if case.must_run_oil_gw is None else case.must_run_oil_gw * 8.76
     res.generation_twh = gen
     if trade is not None:
         flow = trade.solution.transpose("link", "day", "hour").values
@@ -474,6 +493,11 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             fuel["gas"] += btu * (1 - o)
             fuel["residual" if g == "steam" else "distillate"] += btu * o
     fuel["uranium"] = gen["nuclear"] * case.heat_rate["nuclear"] * 1e-3
+    if case.must_run_oil_gw is not None:
+        fuel["residual"] = fuel["residual"] + gen["oil_must_run"] * case.must_run_oil_hr * 1e-3
+    ignition = case.ignition_share * fuel["coal"]
+    fuel["coal"] = fuel["coal"] - ignition
+    fuel["distillate"] = fuel["distillate"] + ignition
     res.fuel_tbtu = fuel
     co2 = sum(fuel[k] * CO2_PER_TBTU[k] for k in CO2_PER_TBTU)
     # Capture groups release only (1 - rate) of their CO2.
