@@ -345,6 +345,45 @@ LDSM quirks kept:
 - DSMFOR's history share applies only to the 13-region EMM; AEO2026 has 25.
 - DSMECP1 leaves K1 one past the last horizon year (a Fortran DO counter).
 
+## EFP port (branch `emm-ldsm`, 2026-11-02)
+
+`src/nems_open/emm/efp/`: every computational routine on EFP's yearly path, ported by parallel Sonnet agents against per-routine oracle dumps (brief: shared notes `efp-porting-brief.md`), checked and committed here. All match the oracle exactly (relative error 0.0) unless noted. These are arithmetic checks: the oracle's EFP runs on stand-in dispatch results (see "EFP oracle input stand-ins"), so they say nothing about matching EIA's prices.
+
+| Fortran | Python | Checked |
+|---|---|---|
+| ELADCR, ELCWIP, ELCEXP | `cwip` | G, regions 1 and 13, 2021/2030/2050 (ELCEXP is not called in this build) |
+| ELND, NDRANN, ELPHIN, ELPIPY, ELSL | `phasein` | same; ELPHIN and ELSL only check zeros (no active plans in these regions) |
+| ELITC, ELBKDP, ELTXDP, ELTSAF | `depreciation` | same |
+| ELXPNS, ELINEX, ELREVS | `expenses` | same |
+| ELRATE, FUNCTN, ALLOCT, RATES | `rates` | same |
+| STMTS | `statements` | same |
+| AVRPRC (all of the above chained) | `avrprc` | G, T and D, first and final iteration (36 cases): the check on the T and D branches |
+| GL | `gl` | G, T, D (18 cases); the region's EFD block comes in as an argument (GETOUT/GETBLD) |
+| COMPPRC, RATES2 | `compprc` | regions 1 and 13, 2021/2030/2050 (runs because USW_POL = 4) |
+| CAPCOST, ALLFAC, CNV1CRNR, ANEWBLD, ELTRAN, ELDIST | `capcost` | 42 cases; ANEWBLD, ELTRAN, ELDIST write build records EFP keeps in a scratch file, checked from the records |
+| ELSET, REVGAP | `elset` | all regions, 8 years (2020-2040) |
+| ELGLTR, ELLGTR, GETR*/STR*/GETEB/STREB | not yet | load and store each region's books in EFP's direct-access files |
+| ELEFP | not yet | the region loop around the above |
+| INICON, ELRDPI, ELRDSL, ELRDTR, ELRDAL, ELRDFR, ELEA | not yet | startup readers, about 2,100 lines |
+| EFP_REPORT, COMPREPORT, TMPSET, ADDUP, REPLAR, REPSML, WREFPDB, EFPREALDOLLARS | not ported | reports |
+
+Gaps in what the dumps can check: GETBLD's file record (ten ECP financial fields) is taken from the state in GL's test; FPRICE, a SAVEd local of RATES set by an earlier D call, is taken from the oracle for five entries of a report buffer; the byte views of whole COMMON blocks (OUTRP2, OUTRC, OUTRCY, OUTREP, EBILDN) are skipped in favor of the named arrays inside them. ELSET's and COMPPRC's SAVEd locals live in the state (or at module level for ELSET); a multi-year run must keep them in the state.
+
+Oracle dumps for EFP: one target per call, regions 1 and 13 in 2021/2030/2050, except GL, AVRPRC and ELRATE (about 50 MB a region each: region 1 in 2030 only). The whole-LDSM and whole-EFP dumps are kept to 2021/2030/2050. A full run with all dumps: about 9 minutes, 2.5 GB.
+
+EFP quirks kept (selection; each module's docstring and the agents' reports in git history have the rest):
+- NDRANN and ELND index NDTAXR and NESTESC (50 elements) by year index up to 61, reading on into the rest of /EFPND/ (NDADMNR, NDEARNR, NDTCMON, NDPSER, NDPSCU, NUCAP).
+- ELBKDP computes JYR and overwrites it with MAX(JY,1); ELTXDP applies the negative-ERPDTB correction to ERATSD twice; its SYD branch is unreachable with EOVYRS = 40.
+- ELREVS: LAG is INT(EILAG), so any lag other than -1 or above 1 means no lag; this year's ERTDRG and ERNDFPMT are mixed into last year's revenue terms.
+- FUNCTN zeroes ECOST on every call, so T and D wipe G's values; RATES prices a zero-sales class at 0.1.
+- STMTS: FUNDS(21) divides by FUNDS(15)+FUNDS(19) unguarded; COMPCAP(NRGN) is assigned, so ownership 2 replaces 1.
+- CAPCOST: ESRTPS(1) uses last year's national average; EPUFPER divides by EPURORR unguarded.
+- COMPPRC: REL is never set (0); ERFXGNAC is reset before it is read, so OTH is always 0; NMARCST = 80.0 is a sentinel for "use MARCST2".
+- ELSET: the US-total block sits in the ELSE of a loop to MNUMNR-2, so it runs for every region from UNRGNS+1 to 26.
+- One EIA quirk found in ELND: an unreachable PASS branch.
+
+Oracle fixes found while porting: `REAL *4` with a space was not parsed (EFPND arrays dumped as single integers; fixed in hooks.py, effective from the next rebuild); the test check treated NaN as a match (fixed: NaN against NaN and equal infinities match, NaN on one side fails).
+
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
 2. Run the Python commercial module year by year with those inputs.
