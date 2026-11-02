@@ -8,7 +8,8 @@ Writes into oracle/run/:
 And into oracle/build/:
   load_restart.f90 Fortran that reads dump/*.bin into the COMMON blocks
 
-Usage: python -I gen_oracle.py <upstream> <scenario>   e.g. ../nems-upstream cb2026
+Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 resd
+module is comm (default, run/ and build/) or resd (run_resd/ and build_resd/).
 """
 
 import re
@@ -19,22 +20,42 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+
+# One entry per ported module. includes: same includes, same order, as the module's
+# entry routine sees them (nested includes such as apq -> qblk are followed).
+# workbooks: spreadsheets read through ReadRngXLSX, as (file, sheet).
+# skip_blocks: restart blocks the module itself writes. They are not loaded, so any
+# match against EIA is earned.
+MODULES = {
+    "comm": dict(
+        source="comm.f", run="run", build="build",
+        includes=["parametr", "ncntrl", "apq", "macout", "eusprc", "qsblk", "mxpblk", "uefpout",
+                  "uecpout", "emission", "emmparm", "steoblock", "cogen", "bldglrn", "commrep",
+                  "tranrep", "e111d", "comparm"],
+        workbooks=[("input/cdm/ktekx.xlsx", "ktek")],
+        skip_blocks=[],
+    ),
+    "resd": dict(
+        source="resd.f", run="run_resd", build="build_resd",
+        # MODULE R_ at the top of resd.f
+        includes=["parametr", "ncntrl", "apq", "resdrep", "rtek", "bldglrn", "emmparm", "emission",
+                  "eusprc", "emablk", "macout", "rscon", "rseff", "qsblk", "cogen", "uefpout",
+                  "uecpout", "e111d", "steoblock",
+                  "tranrep"],  # included by EXCONS and NEMSCN: TRQ_ELEC, EV home charging
+        workbooks=[("input/rdm/rsmess.xlsx", s) for s in ("RSCLASS", "RSMEQP", "RSSWITCH", "RSMSHL")],
+        skip_blocks=["RESDREP", "RSCON", "RSEFF"],
+    ),
+}
+
+# Set by main() from MODULES.
 RUN = HERE / "run"
 BUILD = HERE / "build"
-
-# Same includes, same order, as SUBROUTINE COMM sees them. Nested includes
-# (apq -> qblk, ampblk) are followed automatically.
-INCLUDES = [
-    "parametr", "ncntrl", "apq", "macout", "eusprc", "qsblk", "mxpblk", "uefpout",
-    "uecpout", "emission", "emmparm", "steoblock", "cogen", "bldglrn", "commrep",
-    "tranrep", "e111d", "comparm",
-]
+INCLUDES: list[str] = []
+WORKBOOKS: list = []
+SKIP_BLOCKS: list[str] = []
 
 # Must match build.sh. Run from oracle/build so the relative include path works.
 FFLAGS = ["-ffree-line-length-none", "-fdec", "-I../../nems-upstream/includes"]
-
-# Spreadsheets the commercial module reads through ReadRngXLSX.
-WORKBOOKS = [("input/cdm/ktekx.xlsx", "ktek")]
 
 
 def statements(text: str):
@@ -114,7 +135,7 @@ def dump_restart(upstream: Path, scenario: str, members):
     loaded = []
     for key in z.files:
         block, _, var = key.partition("/")
-        if (block.upper(), var.lower()) not in members:
+        if (block.upper(), var.lower()) not in members or block.upper() in SKIP_BLOCKS:
             continue
         try:
             a = z[key]
@@ -210,7 +231,11 @@ def write_loader(loaded, inc_dir: Path, source: Path):
 
 
 def main():
+    global RUN, BUILD, INCLUDES, WORKBOOKS, SKIP_BLOCKS
     upstream, scenario = Path(sys.argv[1]).resolve(), sys.argv[2]
+    mod = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
+    RUN, BUILD = HERE / mod["run"], HERE / mod["build"]
+    INCLUDES, WORKBOOKS, SKIP_BLOCKS = mod["includes"], mod["workbooks"], mod["skip_blocks"]
     RUN.mkdir(exist_ok=True)
     BUILD.mkdir(exist_ok=True)
     inc_dir = upstream / "includes"
@@ -221,7 +246,7 @@ def main():
     loaded = dump_restart(upstream, scenario, members)
     subprocess.run([sys.executable, str(HERE / "steo_fill.py"), str(upstream),
                     str(RUN / "dump" / "steo_var_com__eq.bin")], check=True)
-    n = write_loader(loaded, inc_dir, upstream / "source" / "comm.f")
+    n = write_loader(loaded, inc_dir, upstream / "source" / mod["source"])
     print(f"{len(includes)} includes, {len(loaded)} restart variables dumped, {n} wired into the loader, {len(rows)} files")
 
 

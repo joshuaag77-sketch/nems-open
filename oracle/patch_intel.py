@@ -22,6 +22,14 @@ RULES = [
      r"\1\2*\4 FUNCTION \3("),
     # READ ... (X (I)) with no implied DO: drop the redundant parentheses.
     (re.compile(r"(IOSTAT=\w+\)\s*)\((\s*\w+\s*\(\s*\w+\s*\)\s*)\)"), r"\1\2"),
+    # Same for a scalar: READ ... (ResDiscountRate) in resd.f.
+    (re.compile(r"(IOSTAT=\w+\)\s*)\((\s*\w+\s*)\)[ \t]*$", re.M), r"\1\2"),
+    # A statement label run into its keyword, "91FORMAT(...)" in resd.f.
+    (re.compile(r"^(\s*\d+)(FORMAT\s*\()", re.I | re.M), r"\1 \2"),
+    # Intel writes an INTEGER zero under an F edit descriptor; gfortran stops. Only in
+    # RESDBOUT's lighting report (format 990), so write the zeros as reals.
+    (re.compile(r"(LTInvest\(app,Y,E,B,D,2\)),0,0,(LTsubsidy\(app,Y,E,B,D,1\),LTsubsidy\(app,Y,E,B,D,2\)),0,0,0"),
+     r"\1,0.,0.,\2,0.,0.,0."),
     # ININT is Intel's round-to-INTEGER*2. NINT rounds the same way and the
     # assignment narrows to INTEGER*2.
     (re.compile(r"\binint\s*\(", re.I), "nint("),

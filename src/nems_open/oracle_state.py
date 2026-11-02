@@ -7,16 +7,22 @@ import numpy as np
 from nems_open.fortran_array import FArray
 from nems_open.paths import REPO_ROOT
 
+# Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
+RUN_DIRS = {"comm": "run", "resd": "run_resd"}
 STATE = REPO_ROOT / "oracle" / "run" / "out" / "state"
 
 
-def available(tag: str, year: int) -> bool:
-    return (STATE / tag / str(year) / "index.txt").exists()
+def state_dir(module: str = "comm") -> Path:
+    return STATE if module == "comm" else REPO_ROOT / "oracle" / RUN_DIRS[module] / "out" / "state"
 
 
-def load(tag: str, year: int) -> dict:
+def available(tag: str, year: int, module: str = "comm") -> bool:
+    return (state_dir(module) / tag / str(year) / "index.txt").exists()
+
+
+def load(tag: str, year: int, module: str = "comm") -> dict:
     """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name."""
-    folder = STATE / tag / str(year)
+    folder = state_dir(module) / tag / str(year)
     out = {}
     for line in (folder / "index.txt").read_text(encoding="latin-1").splitlines():
         parts = line.split()
