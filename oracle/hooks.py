@@ -84,11 +84,13 @@ RESD_TARGETS = [
     # end uses: ht heating, cl cooling, cw clothes washing, dw dishwashing, wh water
     # heating, ck cooking, dy drying, rf refrigeration, fz freezing;
     # t = technology choice, a = equipment added/replaced, c = consumption
-    dict(tag="htt", call=r"CALL RHTRTEC\b"),
+    dict(tag="htt", call=r"CALL RHTRTEC\b", end=r"^END SUBROUTINE RHTRTEC", before=True, carried=["HEATSYS"]),
     dict(tag="hta", call=r"CALL RHTRADD\b"),
-    dict(tag="dg", call=r"CALL RDISTGEN\b", nth=1),
+    dict(tag="dg", call=r"CALL RDISTGEN\b", nth=1, end=r"^RETURN  !SEND CONTROL BACK TO RESD", before=True,
+         carried=["Income_L", "Households_L", "ElecRate_L", "PopDensity_L", "Lag1Installs", "Lag2Installs",
+                  "ProjectedInstalls", "CumUnits", "CumUnits_L"]),
     dict(tag="clt", call=r"CALL RCLTEC\b"),
-    dict(tag="cla", call=r"CALL RCLADD\b"),
+    dict(tag="cla", call=r"CALL RCLADD\b", end=r"^END SUBROUTINE RCLADD", before=True, carried=["EQCPN90"]),
     dict(tag="cwt", call=r"CALL RCWTEC\b"),
     dict(tag="cwa", call=r"CALL RCWADD\b"),
     dict(tag="dwt", call=r"CALL RDWTEC\b"),
@@ -103,7 +105,8 @@ RESD_TARGETS = [
     dict(tag="rfa", call=r"CALL RREFADD\b"),
     dict(tag="fzt", call=r"CALL RFRZTEC\b"),
     dict(tag="fza", call=r"CALL RFRZADD\b"),
-    dict(tag="htc", call=r"CALL RHTRCON\b"),
+    dict(tag="htc", call=r"CALL RHTRCON\b", end=r"^END SUBROUTINE RHTRCON", before=True,
+         carried=["EFANUEC", "NFANUEC"]),
     dict(tag="clc", call=r"CALL RCLCON\b"),
     dict(tag="cwc", call=r"CALL RCWCON\b"),
     dict(tag="dwc", call=r"CALL RDWCON\b"),
@@ -112,7 +115,8 @@ RESD_TARGETS = [
     dict(tag="dyc", call=r"CALL RDRYCON\b"),
     dict(tag="rfc", call=r"CALL RREFCON\b"),
     dict(tag="fzc", call=r"CALL RFRZCON\b"),
-    dict(tag="lt", call=r"CALL LTCNS\b"),
+    dict(tag="lt", call=r"CALL LTCNS\b", end=r"^END SUBROUTINE LTCNS", before=True,
+         carried=["LTREPFUTly", "LTrepstkly", "LTrepconsly"]),
     dict(tag="ap", call=r"CALL APCNS\b"),
     dict(tag="sh", call=r"CALL SHTCNS\b"),
     dict(tag="sa", call=r"CALL APPCNS\b"),
@@ -123,7 +127,7 @@ RESD_TARGETS = [
 ]
 RESD_STATE_BLOCK_FILES = ["resdrep", "rtek", "rscon", "rseff"]
 RESD_STATE_EXTRA = ["QELRS", "QNGRS", "QDSRS", "QLGRS", "QKSRS", "QBMRS", "QGERS", "QSTRS", "QPVRS",
-                    "QTRRS", "PELRS", "PNGRS", "PDSRS", "PLGRS", "PKSRS", "MC_JPGDP"]
+                    "QTRRS", "PELRSOUT", "PELRS", "PNGRS", "PDSRS", "PLGRS", "PKSRS", "MC_JPGDP"]
 # Other modules' blocks the residential routines can read. Around a target, any of
 # their arrays the routine mentions is dumped too (not in 'final').
 RESD_WIDE_FILES = ["ncntrl", "qblk", "mpblk", "ampblk", "macout", "eusprc", "qsblk", "cogen", "uefpout",
