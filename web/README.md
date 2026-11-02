@@ -11,6 +11,12 @@ sector, gasoline use, and the run's convergence log per year.
 
 Not deployed anywhere.
 
+Sharing: the address holds the scenario (`#c=100&ev=80&b=90&m=pel&y=2035`: carbon price,
+2035 EV share or `ref`, building energy as a percent of EIA's, chart measure, traced
+year), so a copied link opens the same view. "Download CSV" saves the selected scenario
+and EIA's reference, year by year. `about.html` credits EIA and states that the project
+is independent.
+
 Engine view details: `python scripts/build_engine_catalog.py` builds `data/engine.js`
 from the repo (SCOPE.md tables, EIA source line counts and routine headers in
 nems-upstream, our Python, `pytest --collect-only`). Rerun it whenever a port lands.

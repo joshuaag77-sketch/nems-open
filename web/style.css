@@ -174,3 +174,28 @@ table.rt tr.todo td:first-child { border-left: 3px solid var(--partial); }
   dialog#module-dialog { padding: 16px; }
   table.rt { font-size: 0.76rem; }
 }
+
+/* Navigation, sharing, how this works, footer, about page */
+.top-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+a.ghost { display: inline-block; text-decoration: none; background: transparent; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; font-size: 0.85rem; }
+a.ghost:hover { border-color: var(--accent); color: var(--accent); }
+.share { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.share .fine { margin: 0; min-height: 1.2em; color: var(--accent); }
+.how-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+.how h3, .about h3 { font-size: 0.92rem; margin: 14px 0 4px; }
+.how p, .about p { margin: 0 0 8px; }
+.how .dot { margin-right: 6px; }
+.links { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+a { color: var(--accent); }
+button.link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.foot { max-width: 1240px; margin: 0 auto; padding: 0 16px 32px; font-size: 0.8rem; color: var(--muted); }
+.about { max-width: 760px; margin: 0 auto; padding: 8px 16px 40px; }
+.about .card { margin-bottom: 16px; }
+.about ul { padding-left: 18px; margin: 0 0 8px; }
+@media (max-width: 900px) { .how-grid { grid-template-columns: 1fr; } }
+.levers > button.ghost, .share button.ghost { width: 100%; }
+@media (max-width: 600px) {
+  .top { flex-direction: column; gap: 10px; }
+  .top-nav { justify-content: flex-start; }
+}
