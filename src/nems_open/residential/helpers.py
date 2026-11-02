@@ -171,3 +171,24 @@ def vintage_future(s: dict, Y: int, lo: int, hi: int, pairs=STOCK_FUTURES) -> No
             for r in range(1, NUM_DIV + 1):
                 for dst, src in pairs:
                     s[dst][Y, Y:ENDYR, reccl, b, r] = (s[src][Y, reccl, b, r] * esr) * hsr[b]
+
+
+def running_sum(terms) -> np.float32:
+    """0.0 + terms[0] + terms[1] + ... in float32, in order (a Fortran running sum)."""
+    if terms.size == 0:
+        return np.float32(0.0)
+    return np.add.accumulate(terms.astype(np.float32))[-1]
+
+
+def stock_average(s: dict, Y: int, reccl: int, b: int, d: int, first: int, rate_r: str, rate_n: str):
+    """The stock-weighted average the CON routines take over vintages first..Y-1:
+    TEMP = sum of (EQR90FUT + EQADDFUT + EQREPFUT + EQR90RPFUT), year by year in that order, and
+    sum of ((EQR90FUT*rate_r) + ((EQADDFUT + EQREPFUT) + EQR90RPFUT)*rate_n) / TEMP.
+    Returns (TEMP, average), the average None when TEMP <= 0."""
+    v = slice(first, Y - 1)
+    a90, add = s["eqr90fut"][v, Y, reccl, b, d], s["eqaddfut"][v, Y, reccl, b, d]
+    rep, rp = s["eqrepfut"][v, Y, reccl, b, d], s["eqr90rpfut"][v, Y, reccl, b, d]
+    temp = running_sum(np.stack([a90, add, rep, rp], axis=-1).reshape(-1))
+    if temp <= 0.0:
+        return temp, None
+    return temp, running_sum(((a90 * s[rate_r][v, reccl, b, d]) + ((add + rep + rp) * s[rate_n][v, reccl, b, d])) / temp)
