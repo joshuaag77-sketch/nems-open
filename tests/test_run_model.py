@@ -103,3 +103,29 @@ def test_ported_residential_one_year(base):
         assert abs(r.prices[k][US, j] / base[k][US, j] - 1) < 0.02, k
     for k in ("QBLK/qelrs", "QBLK/qngrs"):
         assert abs(r.quantities[k][US, j] / base[k][US, j] - 1) < 0.01, k
+
+
+@pytest.mark.parametrize("case", ["highogs", "lowogs", "lowztc"])
+def test_stub_demand_on_eia_prices(base, case):
+    """Fed a price-driven case's own prices, the stub's fitted elasticities land near
+    EIA's own demand for that case (US, 2030-2050). GDP is held at the reference, which
+    is small in these cases."""
+    from nems_open.demand_adapter import StubSector
+    z = load_case(case)
+    prices = {k: v for k, v in z.items() if k.startswith("MPBLK/")}
+    worst = {}
+    for sfx, fuels in {"rs": ("el", "ng"), "cm": ("el", "ng"), "in": ("el", "ng")}.items():
+        stub = StubSector(sfx, base)
+        for j in range(2025 - 1990, 2051 - 1990):
+            out = stub.solve(j, prices, {})
+            stub.end_year()
+            if j >= 2030 - 1990:
+                for f in fuels:
+                    k = f"QBLK/q{f}{sfx}"
+                    e = abs(out[k][:9].sum() / z[k][US, j] - 1)
+                    worst[k] = max(worst.get(k, 0), e)
+    # Buildings within 4%. Industry within 8%: in the gas supply cases cheap gas also
+    # grows industrial output, which an own-price elasticity cannot carry.
+    tol = lambda k: 0.08 if k.endswith("in") else 0.04
+    bad = {k: round(100 * v, 1) for k, v in worst.items() if v > tol(k)}
+    assert not bad, bad

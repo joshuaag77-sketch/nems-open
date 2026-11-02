@@ -1,0 +1,220 @@
+{
+ "rs": {
+  "adjustment": 0.4,
+  "fuels": {
+   "el": {
+    "fitted": -0.276,
+    "se": 0.003,
+    "gdp": 0.288,
+    "n": 1512,
+    "r2": 0.892,
+    "rmse_pct": 0.61,
+    "price_spread_pct": 4.76,
+    "used": -0.276,
+    "why": "fitted"
+   },
+   "ng": {
+    "fitted": -0.182,
+    "se": 0.001,
+    "gdp": 0.108,
+    "n": 1512,
+    "r2": 0.957,
+    "rmse_pct": 0.39,
+    "price_spread_pct": 9.7,
+    "used": -0.182,
+    "why": "fitted"
+   },
+   "ds": {
+    "fitted": -0.285,
+    "se": 0.031,
+    "gdp": 0.053,
+    "n": 1413,
+    "r2": 0.058,
+    "rmse_pct": 4.69,
+    "price_spread_pct": 4.12,
+    "used": -0.285,
+    "why": "fitted"
+   },
+   "lg": {
+    "fitted": -0.226,
+    "se": 0.002,
+    "gdp": 0.108,
+    "n": 1512,
+    "r2": 0.919,
+    "rmse_pct": 0.99,
+    "price_spread_pct": 14.42,
+    "used": -0.226,
+    "why": "fitted"
+   }
+  }
+ },
+ "cm": {
+  "adjustment": 0.4,
+  "fuels": {
+   "el": {
+    "fitted": -0.187,
+    "se": 0.005,
+    "gdp": 0.37,
+    "n": 1512,
+    "r2": 0.715,
+    "rmse_pct": 1.16,
+    "price_spread_pct": 5.46,
+    "used": -0.187,
+    "why": "fitted"
+   },
+   "ng": {
+    "fitted": -0.245,
+    "se": 0.001,
+    "gdp": 0.219,
+    "n": 1512,
+    "r2": 0.984,
+    "rmse_pct": 0.38,
+    "price_spread_pct": 11.52,
+    "used": -0.245,
+    "why": "fitted"
+   },
+   "ds": {
+    "fitted": -0.257,
+    "se": 0.002,
+    "gdp": 0.053,
+    "n": 1512,
+    "r2": 0.934,
+    "rmse_pct": 0.29,
+    "price_spread_pct": 4.32,
+    "used": -0.257,
+    "why": "fitted"
+   },
+   "lg": {
+    "fitted": -0.003,
+    "se": 0.001,
+    "gdp": 0.397,
+    "n": 1512,
+    "r2": 0.953,
+    "rmse_pct": 0.37,
+    "price_spread_pct": 14.38,
+    "used": -0.003,
+    "why": "fitted"
+   }
+  }
+ },
+ "in": {
+  "adjustment": 0.3,
+  "fuels": {
+   "el": {
+    "fitted": -0.247,
+    "se": 0.012,
+    "gdp": 1.153,
+    "n": 1512,
+    "r2": 0.749,
+    "rmse_pct": 2.86,
+    "price_spread_pct": 6.09,
+    "used": -0.247,
+    "why": "fitted"
+   },
+   "ng": {
+    "fitted": -0.221,
+    "se": 0.003,
+    "gdp": 1.012,
+    "n": 1512,
+    "r2": 0.851,
+    "rmse_pct": 2.84,
+    "price_spread_pct": 23.76,
+    "used": -0.221,
+    "why": "fitted"
+   },
+   "ds": {
+    "fitted": -0.604,
+    "se": 0.013,
+    "gdp": 0.933,
+    "n": 1512,
+    "r2": 0.806,
+    "rmse_pct": 2.1,
+    "price_spread_pct": 4.06,
+    "used": -0.604,
+    "why": "fitted"
+   },
+   "lg": {
+    "fitted": 0.199,
+    "se": 0.015,
+    "gdp": 0.828,
+    "n": 1512,
+    "r2": 0.148,
+    "rmse_pct": 11.72,
+    "price_spread_pct": 20.54,
+    "used": -0.3,
+    "why": "fit has the wrong sign (demand rising with price); placeholder kept"
+   },
+   "cl": {
+    "fitted": 0.699,
+    "se": 0.127,
+    "gdp": 0.715,
+    "n": 1344,
+    "r2": 0.172,
+    "rmse_pct": 5.19,
+    "price_spread_pct": 1.12,
+    "used": -0.3,
+    "why": "fit has the wrong sign (demand rising with price); placeholder kept"
+   },
+   "mc": {
+    "fitted": -0.467,
+    "se": 0.192,
+    "gdp": 1.349,
+    "n": 336,
+    "r2": 0.804,
+    "rmse_pct": 2.67,
+    "price_spread_pct": 0.76,
+    "used": -0.3,
+    "why": "price barely moves across the cases; placeholder kept"
+   }
+  }
+ },
+ "tr": {
+  "adjustment": 0.15,
+  "fuels": {
+   "mg": {
+    "fitted": -0.056,
+    "se": 0.003,
+    "gdp": 0.068,
+    "n": 1512,
+    "r2": 0.322,
+    "rmse_pct": 0.71,
+    "price_spread_pct": 6.57,
+    "used": -0.056,
+    "why": "fitted"
+   },
+   "ds": {
+    "fitted": -0.25,
+    "se": 0.011,
+    "gdp": 0.655,
+    "n": 1512,
+    "r2": 0.83,
+    "rmse_pct": 1.24,
+    "price_spread_pct": 2.95,
+    "used": -0.25,
+    "why": "fitted"
+   },
+   "jf": {
+    "fitted": 0.002,
+    "se": 0.004,
+    "gdp": 1.012,
+    "n": 1512,
+    "r2": 0.978,
+    "rmse_pct": 0.65,
+    "price_spread_pct": 4.23,
+    "used": -0.2,
+    "why": "fit has the wrong sign (demand rising with price); placeholder kept"
+   },
+   "ng": {
+    "fitted": -1.179,
+    "se": 0.019,
+    "gdp": 1.22,
+    "n": 1512,
+    "r2": 0.734,
+    "rmse_pct": 6.89,
+    "price_spread_pct": 9.03,
+    "used": -0.2,
+    "why": "mostly pipeline compressor fuel, which follows gas throughput (high in the high-supply case, when gas is cheap), not price; placeholder kept"
+   }
+  }
+ }
+}

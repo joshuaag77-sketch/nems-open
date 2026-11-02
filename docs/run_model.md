@@ -52,10 +52,42 @@ Per sector it uses:
   MPBLK prices against the baseline, then calls each module's iteration. These start
   from the oracle's state dumps, so they need the runner's checkout, and commercial
   takes about 5 minutes per iteration.
-- **A stub** everywhere else: EIA's reference fuel use moved by a lagged price
-  elasticity (long run -0.3 for buildings and industry, -0.2 for transport, 20% of the
-  gap closed each year). These numbers are placeholders, not fitted. Industrial and
-  transportation have no port yet, so they always use the stub.
+- **A stub** everywhere else: EIA's reference fuel use moved by a lagged own-price
+  elasticity, per sector and fuel. Industrial and transportation have no port yet, so
+  they always use the stub.
+
+### Stub elasticities
+
+Fitted from EIA's AEO2026 runs where prices move for supply-side reasons (high and low
+oil and gas supply, high and low zero-carbon technology cost, alternative electricity),
+with high and low growth added to separate out GDP. Divisions 1-9, 2027-2050. Each year
+closes a share `k` of the gap to the long-run response, `k` fitted per sector.
+`python -m nems_open.fit_elasticities`; full table in
+[demand_elasticities.md](demand_elasticities.md).
+
+| Sector (k) | Electricity | Natural gas | Distillate | Propane | Gasoline |
+|---|---|---|---|---|---|
+| Residential (0.4) | -0.28 (R2 0.89) | -0.18 (0.96) | -0.29 (0.06) | -0.23 (0.92) | |
+| Commercial (0.4) | -0.19 (0.72) | -0.25 (0.98) | -0.26 (0.93) | -0.00 (0.95) | |
+| Industrial (0.3) | -0.25 (0.75) | -0.22 (0.85) | -0.60 (0.81) | -0.30 placeholder | |
+| Transportation (0.15) | | -0.20 placeholder | -0.25 (0.83) | | -0.06 (0.32) |
+
+Placeholders (-0.3, or -0.2 in transport) stay where the fit has the wrong sign
+(industrial propane and coal, jet fuel), the price barely moves (metallurgical coal), or
+the row is something other than a price response (transport gas is mostly pipeline
+compressor fuel, which follows gas throughput).
+
+Checked against EIA (tests/test_run_model.py): fed a gas supply or zero-carbon case's own
+prices, the stub's building gas and electricity use land within 4% of EIA's; industry
+within 8% (cheap gas also grows industrial output in those runs, which an own-price
+elasticity cannot carry).
+
+Limits of the fit: own price only, so no switching between gas and electricity; the
+cases move gas and power prices a lot and oil prices little (AEO2026 has no oil price
+case), so oil-product numbers rest on less; the standard errors count every
+division-year as independent and so overstate precision. The previous guesses (-0.3
+buildings and industry, -0.2 transport, k 0.2) were in the same range for buildings
+but well above the fitted gasoline response (-0.06).
 
 With no policy, the loop reproduces EIA's reference prices, demand and CO2 exactly
 (stub) or within the ported modules' own drift. Checked 2026-11-02 with ported
@@ -66,8 +98,8 @@ from a checkout that has both the demand runner and the oracle dumps.
 
 ## Limits
 
-- The stub elasticities set how much demand answers a price. Until the ports replace
-  them, the size of any demand response is an assumption.
+- The stub elasticities are fitted to how EIA's own model responds to prices, not to
+  history, and only own-price. They are reduced-form stand-ins for the ports.
 - The EV lever does not touch the transportation model's vehicle choice; it shifts fuel
   use directly. EIA's home charging sits in residential electricity; the lever puts all
   new EV electricity in transportation.

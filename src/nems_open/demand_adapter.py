@@ -10,8 +10,8 @@ it, each sector is one of:
   opt-in: `DemandAdapter(ported=("residential", "commercial"))`.
 - A stub: EIA's reference fuel use moved by a price elasticity with a lag. Used for
   industrial and transportation (not ported yet) and, by default, for every sector so
-  the loop runs in seconds. The stub's numbers are placeholders, not fitted: see
-  ELASTICITY.
+  the loop runs in seconds. Its elasticities are fitted from EIA's side cases where
+  the data allow (see ELASTICITY).
 
 Policy levers (`Policy`) are applied here, after the sector models:
 - building_efficiency multiplies residential and commercial fuel use;
@@ -20,7 +20,9 @@ Policy levers (`Policy`) are applied here, after the sector models:
 - carbon_price is a supply-side lever (the loop passes it to the supply stand-in).
 """
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -30,11 +32,19 @@ SECTORS = {"residential": "rs", "commercial": "cm", "industrial": "in", "transpo
 BUILDINGS = ("rs", "cm")
 
 # Stub price response. Long-run own-price elasticity of each sector's fuel use, reached
-# gradually: each year closes ADJUSTMENT of the gap (a Koyck lag, so the first-year
-# response is ELASTICITY * ADJUSTMENT). Placeholders in the range of published
-# estimates (RESD's own short-run value is -0.15), to be replaced by the ports.
-ELASTICITY = {"rs": -0.30, "cm": -0.30, "in": -0.30, "tr": -0.20}
-ADJUSTMENT = 0.20
+# gradually: each year closes ADJUSTMENT[sector] of the gap (a Koyck lag). Fitted per
+# sector and fuel from EIA's AEO2026 side cases (fit_elasticities.py,
+# docs/demand_elasticities.md); fuels without a usable fit keep the sector's
+# placeholder (PLACEHOLDER).
+PLACEHOLDER = {"rs": -0.30, "cm": -0.30, "in": -0.30, "tr": -0.20}
+_FITTED = json.loads(Path(__file__).with_name("demand_elasticities.json").read_text())
+ADJUSTMENT = {s: v["adjustment"] for s, v in _FITTED.items()}
+ELASTICITY = {(s, f): v["used"] for s, fit in _FITTED.items() for f, v in fit["fuels"].items()}
+
+
+def elasticity(sector: str, fuel: str) -> float:
+    fuel = "ng" if fuel in CORE_NONCORE else fuel
+    return ELASTICITY.get((sector, fuel), PLACEHOLDER[sector])
 
 # Fleet turnover for the EV lever: the fleet's plug-in share closes 1/VEHICLE_LIFE of
 # the gap to the sales share each year.
@@ -95,7 +105,7 @@ class StubSector:
         return p if p in self.base else None
 
     def solve(self, j: int, prices: dict, shifts: dict) -> dict[str, np.ndarray]:
-        eps = ELASTICITY[self.suffix]
+        k_adj = ADJUSTMENT[self.suffix]
         out = {}
         for k in self.names:
             q = self.base[k][:, j] + shifts.get(k, 0.0)
@@ -104,9 +114,9 @@ class StubSector:
                 ref, now = self.base[p][:, j], prices[p][:, j]
                 ok = (ref > 0) & (now > 0)
                 dlog = np.where(ok, np.log(np.where(ok, now, 1.0) / np.where(ok, ref, 1.0)), 0.0)
-                lag = (1 - ADJUSTMENT) * self.lag[k] + ADJUSTMENT * dlog
+                lag = (1 - k_adj) * self.lag[k] + k_adj * dlog
                 self._pending[k] = lag
-                q = q * np.exp(eps * lag)
+                q = q * np.exp(elasticity(self.suffix, fuel_of(k)) * lag)
             out[k] = q
         return out
 
