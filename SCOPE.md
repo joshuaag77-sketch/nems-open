@@ -66,7 +66,7 @@ Its 9 subroutines become the first 9 GitHub issues:
 | `COMReport` (the national totals it leaves in COMMREP; the printed KRPT/KSDOUT/KDBOUT tables are not ported) | Done 2026-11-01 | Same arrays as the oracle before and after the 2050 call | `src/nems_open/commercial/report.py` |
 | `CDISTGEN` (KCOGEN and KGENTK readers, learning, cash flow and IRR, Bass diffusion, RPS credits, CGCOMM outputs) | Done 2026-11-01 | Within 1e-4 on every output, 9 test years 2019-2050 (about 100 s a year in pure Python; the cash flow search is the hot spot) | `src/nems_open/commercial/distgen.py`, `distgen_tables.py` |
 | `CALC111D` | To do | | |
-| `COMM` driver | To do | | |
+| `COMM` driver (yearly chain) | Done 2026-11-02 | Within 4e-7 vs oracle on QBLK fuel use, 2025-2050, one year or chained | `src/nems_open/commercial/comm.py` |
 
 Run the tests: `python -m pytest` from the project root. The harness pieces are `src/nems_open/snapshot.py` (reads EIA's restart file) and `src/nems_open/fortran_io.py` (mimics Fortran's text reads).
 
@@ -247,6 +247,30 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 
 ## Supply stand-in (2026-11-02)
 Track two of the plan: a playable full model first, real supply ports after. `src/nems_open/supply_standin/` takes end-use demand (QBLK) and returns MPBLK prices, power-sector fuel use and CO2, from price curves fitted across EIA's 11 AEO2026 runs (their restart files sit in `nems-upstream/output/aeo2026/`; only cb2026 had an npz, but every `restart.rlx` is an npz too). Reproduces any case exactly when used as its baseline; on the demand-side cases (high/low growth, high electricity demand) US prices land within 2-5%. Supply shocks (oil and gas supply, zero-carbon cost) are baselines, not levers. Biggest gap: no power-sector abatement under a carbon price. Details and limits: `docs/supply_standin.md`. Upstream defect found: the `alttrnp` run is a byte copy of `electrnp`.
+
+## Phase 2: demand runner (started 2026-11-02)
+`src/nems_open/run_demand.py` runs the ported demand modules for a year on EIA's prices and writes QBLK-style fuel use. `python -m nems_open.run_demand 2030`; README has the Python API. Test: `tests/test_run_demand.py`.
+
+- Order: NEMS's (RESD, COMM, IND, TRAN). Industrial and transportation are `None` in `SECTORS` and keep EIA's QBLK rows until their ports land; a new sector is a class with `start`, `iteration`, `quantities`.
+- Inputs: every array in the restart blocks AMPBLK, AEUSPRC, MXPBLK, MACOUT, QSBLK, EMABLK, UEFPOUT, UECPOUT, TRANREP that a module's state holds is overwritten from `Inputs` (restart file plus overrides). PELRSOUT and PELCMOUT are EQUIVALENCEd onto the AEUSPRC end-use price arrays, so they are rebuilt from them. Applied to the oracle's state this changes nothing: the oracle ran on exactly these inputs.
+- Start: the input readers are not all ported, so each module starts from the oracle's state at the top of the year's final iteration (`resd.start_from_dump`, `Commercial.start_from_dump`), with the run year cleared from every array the chain writes. `DemandRunner.run_year()` again carries on to the next year with two iterations.
+- Commercial year driver: `src/nems_open/commercial/comm.py` (the "COMM driver" row above). It chains floorspace (from MACOUT/mc_commflsp), service demand, CDistGen, technology choice, consumption, benchmarking, and COMReport in 2050. It also ports the small pieces at the top of COMServiceDemand the calculation port left out: the first-iteration roll of last year's shares and efficiencies into the PrevYr arrays, and the reset of solar water heating. CALC111D writes no fuel use and is skipped. Speed: about 4.5 minutes per iteration (CDistGen 2.5, technology choice 2).
+- Totals: the part of SUMQAS (source/util_sumqas.f90) that touches these sectors: US = sum of divisions 1-9, California = Pacific times the CALSHR share, then QTP, QTR, QTS for each sector.
+- Results (2025, 2030, 2040, 2050): the runner matches the oracle to 4e-7 on QBLK fuel use for both sectors, and 2026 reached from 2025 matches too. Against EIA it inherits the oracle's own gfortran vs Intel drift:
+
+| Sector | Year | US total (QTS) vs EIA | Worst electricity or gas cell |
+|---|---|---|---|
+| Commercial | 2025 | 5e-6 | 6e-6 |
+| Commercial | 2030 | 1.3e-4 | 1.5e-3 |
+| Commercial | 2040 | 6e-5 | 1.5e-3 |
+| Commercial | 2050 | 7e-5 | 1.7e-3 |
+| Residential | 2025 | 4e-6 | 3e-5 |
+| Residential | 2030 | 8e-5 | 1.2e-3 |
+| Residential | 2040 | 2.4e-4 | 2.3e-3 |
+| Residential | 2050 | 2.4e-4 | 1.2e-3 |
+
+- Oracle gaps it inherits, worth a look later: commercial kerosene (QKSCM, 2050 US 1.7 vs EIA 0.5 trillion Btu), residual oil (QRSCM, up to 7% of a 2 trillion Btu row), solar thermal (up to 8% in 2040 in both sectors). All tiny next to sector totals.
+- Gotcha fixed: `residential/totals.py` read rssteo.txt from the repo folder, ignoring NEMS_UPSTREAM.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
