@@ -126,6 +126,28 @@ subroutine read_ints_lenient(u, a, b)
   b = nint(rb)
 end subroutine read_ints_lenient
 
+! State dump for hooks.py: raw bytes plus one index line with type and bounds.
+subroutine odump(tag, name, iyr, x, nbytes, tcode, rnk, lb, ub)
+  implicit none
+  character(*) tag, name, tcode
+  integer iyr, rnk, lb(*), ub(*)
+  integer(1) x(*)
+  integer(8) nbytes
+  character(256) dir
+  integer u, k
+  write(dir, '(a,a,a,i0,a)') 'out/state/', tag, '/', iyr, '/'
+  open(newunit=u, file=trim(dir)//name//'.bin', access='stream', form='unformatted', status='replace')
+  write(u) x(1:nbytes)
+  close(u)
+  open(newunit=u, file=trim(dir)//'index.txt', position='append', action='write')
+  write(u, '(a,1x,a,1x,i0)', advance='no') name, tcode, rnk
+  do k = 1, rnk
+    write(u, '(1x,i0,1x,i0)', advance='no') lb(k), ub(k)
+  enddo
+  write(u, *)
+  close(u)
+end subroutine odump
+
 subroutine callsys(iret, cmd)
   implicit none
   integer iret
