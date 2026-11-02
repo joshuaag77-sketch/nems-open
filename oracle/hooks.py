@@ -220,11 +220,9 @@ IND_DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]  # 2019 2020 2021 2025 202
 # CALBSC runs once per industry and region; the dump holds the last one of the year.
 IND_TARGETS = [
     dict(tag="bsc", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
-         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[]),
-    dict(tag="bsc2", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=0,
-         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[]),
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
     dict(tag="stot", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
-         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[]),
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
     # Single industry and region cases, since each dump holds only one call: food (7) and bulk
     # chemicals (9) have CHP and share biomass boiler fuel, wood products (19) burns biomass,
     # mining (3) is nonmanufacturing (no coal boilers).
@@ -241,7 +239,7 @@ IND_TARGETS = [
     dict(tag="bsc7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
          end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
     dict(tag="itot", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
-         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[]),
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
     dict(tag="itot1", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
          end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
     dict(tag="itot7", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
@@ -252,6 +250,22 @@ IND_TARGETS = [
          end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.12 .and. indreg.eq.1"),
     dict(tag="itot16", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
          end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.16 .and. indreg.eq.4"),
+    dict(tag="cinit", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="cinit7", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="cinit9", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="cinit19", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="ecog", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="ecog7", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="ecog9", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="ecog19", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
 ]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
@@ -265,7 +279,16 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "cogthr", "cogelf", "coggrd", "cogcap", "coggen", "genfuel", "rptcap", "rptgen", "cogsteam",
                    # INDTOTAL
                    "ENPMQTY", "ENPIQTY", "ENBQTY", "BYPBSCI", "BYPBSCR", "BYPBSCM", "CFELQ", "ELOWN", "ELSALE",
-                   "REFCON", "ELOWNX", "ELSALEX", "XELIN", "XELINSHR", "QTYMAIN", "QTYINTR", "QTYRENW", "indnum"]
+                   "REFCON", "ELOWNX", "ELSALEX", "XELIN", "XELINSHR", "QTYMAIN", "QTYINTR", "QTYRENW", "indnum",
+                   # COGINIT
+                   "nadds"] + list(f"cogadd%{c}" for c in ("year", "industry", "censusdiv", "fuelind", "gen", "cap", "thr", "elc", "grd")) + [
+                   # EVALCOGEN
+                   "nsys", "nload", "CapCostYearly", "CheatRateYearly", "OverAllEffYearly", "CHeatRate", "CogSizeKW",
+                   "CapFac", "maxRegCHPutil", "RegCHPutil", "QELAS", "CogFuelPrice", "CogElecPrice", "CapCostMultStart",
+                   "CapCostMultEnd", "CapCostMult", "MC_RMTCM10Y", "MC_CPI", "AcceptFrac", "AcceptFrac2",
+                   "CogCapCostKW", "OverAllEff", "ElecGenEff", "ElecSizeMWH", "FuelUse", "PowerSteam", "SteamOutput",
+                   "EBoilEff", "CogSys", "FuelCost", "ExistFuelUse", "ExistFuelCost", "ElecValue", "IncrFuelCost",
+                   "OperProfit", "Investment", "CPayBack", "EconFrac"]
 IND_DECL_FILES = ["parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
                   "ampblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
@@ -350,6 +373,11 @@ def common_names(text):
     return names
 
 
+# Components of the derived-type array COGADD (planned CHP builds); dumped as plain arrays.
+COMPONENT_DECLS = {f"cogadd%{c}": ("integer" if c in ("year", "industry", "censusdiv", "fuelind") else "real", 1)
+                   for c in ("year", "industry", "censusdiv", "fuelind", "gen", "cap", "thr", "elc", "grd")}
+
+
 def dump_call(tag, name, t, rank):
     code = type_code(t, name)
     if code is None:
@@ -359,11 +387,11 @@ def dump_call(tag, name, t, rank):
         # that declares them as text (odump_c in stubs.f90).
         lb = f"lbound({name})" if rank else "0"
         ub = f"ubound({name})" if rank else "0"
-        return (f"      call odump_c('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+        return (f"      call odump_c('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', "
                 f"{rank}, {lb}, {ub})")
     if rank == 0:
-        return f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
-    return (f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+        return f"      call odump('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
+    return (f"      call odump('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', "
             f"{rank}, lbound({name}), ubound({name}))")
 
 
@@ -419,6 +447,7 @@ def write_state_routine(inc_dir, source_text=None):
         if not CFG.get("decls_only"):  # ind: only the names listed in extra, not all of I_
             names += mnames
     names += CFG["extra"]
+    decls.update(COMPONENT_DECLS)
 
     def calls_for(subset):
         cs = [c for c in (dump_call("'//tag//'", n, *decls.get(n.lower(), ("?", 0))) for n in {s.lower(): s for s in subset}.values()) if c]
