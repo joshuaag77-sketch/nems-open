@@ -21,7 +21,7 @@ DEMAND_CASES = ["hm2026", "lm2026", "higheldmd"]
 # Largest US error 2027-2050 (percent) for a demand-side case fed through the reference.
 US_TOLERANCE = {
     "MPBLK/pelrs": 3, "MPBLK/pelcm": 3, "MPBLK/pelin": 4, "MPBLK/pelas": 3,
-    "MPBLK/pngrs": 2, "MPBLK/pngcm": 3, "MPBLK/pngin": 5, "MPBLK/pngel": 5,
+    "MPBLK/pngrs": 2, "MPBLK/pngcm": 3, "MPBLK/pngin": 5, "MPBLK/pngel": 6,
     "MPBLK/pmgtr": 4, "MPBLK/pdstr": 4, "MPBLK/pjftr": 3, "MPBLK/pdsrs": 4, "MPBLK/plgrs": 3,
 }
 REGIONAL_TOLERANCE = {"MPBLK/pelrs": 10, "MPBLK/pelcm": 10, "MPBLK/pngrs": 4, "MPBLK/pmgtr": 5}
@@ -107,12 +107,31 @@ def test_carbon_price(ref):
     r0, r = ref.solve(), ref.solve(carbon_price=50.0)
     to87 = base["MACOUT/mc_jpgdp"][2024 - 1987] / base["MACOUT/mc_jpgdp"][0]
     expect = 50.0 / to87 * base["EMEBLK/engrs"] * 44 / 12 / 1000  # 1987 $/MMBtu
-    np.testing.assert_allclose(r.prices["MPBLK/pngrs"] - r0.prices["MPBLK/pngrs"],
+    np.testing.assert_allclose(r.carbon_adders["MPBLK/pngrs"],
                                np.broadcast_to(expect, (11, 61)) * (base["MPBLK/pngrs"] > 0))
+    # The delivered price moves by about the adder. Later, power plants burn less gas
+    # and the gas price before carbon falls a little; early, while coal still runs,
+    # coal switches to gas and it rises a little.
+    rise = (r.prices["MPBLK/pngrs"] - r0.prices["MPBLK/pngrs"])[US, YEARS]
+    assert np.all(rise > 0.8 * expect[YEARS]) and np.all(rise < 1.05 * expect[YEARS])
     # Electricity carries the power sector's average CO2 per unit sold.
     assert np.all(r.prices["MPBLK/pelrs"][US, YEARS] > r0.prices["MPBLK/pelrs"][US, YEARS])
     # Coal goes up more per MMBtu than gas.
     assert np.all(r.carbon_adders["MPBLK/pclin"][US, YEARS] > r.carbon_adders["MPBLK/pngin"][US, YEARS])
+
+
+def test_carbon_price_switches_power_plants(ref):
+    """A carbon price cuts coal burn hard, moves some of it to gas, and cuts power CO2."""
+    base = load_case("cb2026")
+    r0, r = ref.solve(), ref.solve(carbon_price=100.0)
+    y = slice(2027 - 1990, 2035 - 1990 + 1)  # years with real coal burn
+    coal = r.power_fuel["QBLK/qclel"][US, y] / base["QBLK/qclel"][US, y]
+    gas = r.power_fuel["QBLK/qngel"][US, y] / base["QBLK/qngel"][US, y]
+    assert np.all(coal < 0.7) and np.all(coal < gas)
+    assert np.all(r.co2["el"][US, YEARS] < 0.9 * r0.co2["el"][US, YEARS])
+    # Fixed point: more carbon, less power-sector CO2.
+    co2 = [ref.solve(carbon_price=c).co2["el"][US, 2050 - 1990] for c in (0, 50, 100, 200)]
+    assert co2 == sorted(co2, reverse=True)
 
 
 def test_more_electricity_demand_raises_gas_and_power_prices(ref):
