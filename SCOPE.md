@@ -182,4 +182,4 @@ Pure reporting (not ported): `INDSIC` 9985, `INDGRP` 11311, `TECHSHR_RPT` 17380,
 Note quad precision: `logit_calc` and `shares_calc` use REAL*16. gfortran REAL*16 matches Intel's.
 
 ### Port status
-Nothing ported yet. Next steps: (1) add `TARGETS` for the energy accounting routines in `hooks.py` (IND_TARGETS is empty); (3) port CALGEN/CALBSC/CALSTOT/INDTOTAL first.
+Ported: CALBSC (`industrial/boiler_shares.py`, test `tests/test_industrial_boiler_shares.py`, matches the oracle to float rounding, 6 years). The oracle's per-routine dumps hold only the last industry and region of the year (24, 4), so each test checks one case per year. Quirk kept: BSSHR only gets the fuels CALBSC lists, the rest keep earlier values; SwitchPrat/AveFPrc is computed in the Fortran but never used, so it is not ported. Next steps: (1) add `TARGETS` for the energy accounting routines in `hooks.py` (IND_TARGETS is empty); (3) port CALGEN/CALBSC/CALSTOT/INDTOTAL first.

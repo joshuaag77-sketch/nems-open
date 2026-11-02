@@ -20,8 +20,10 @@ def available(tag: str, year: int, module: str = "comm") -> bool:
     return (state_dir(module) / tag / str(year) / "index.txt").exists()
 
 
-def load(tag: str, year: int, module: str = "comm") -> dict:
-    """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name."""
+def load(tag: str, year: int, module: str = "comm", only=None) -> dict:
+    """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name.
+
+    only: read just these names (the industrial dumps are large and slow to load whole)."""
     folder = state_dir(module) / tag / str(year)
     out = {}
     for line in (folder / "index.txt").read_text(encoding="latin-1").splitlines():
@@ -29,6 +31,8 @@ def load(tag: str, year: int, module: str = "comm") -> dict:
         if not parts:
             continue
         name, code, rank = parts[0], parts[1], int(parts[2])
+        if only is not None and name not in only:
+            continue
         bounds = [(int(parts[3 + 2 * k]), int(parts[4 + 2 * k])) for k in range(rank)]
         raw = np.fromfile(folder / f"{name}.bin", dtype=np.dtype(code))
         if rank == 0:

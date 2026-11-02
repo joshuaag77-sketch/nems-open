@@ -89,14 +89,22 @@ MODULES = {
 # residential the state dump USEs the module. Dumps are the routine-by-routine
 # targets below, taken from the final iteration of these years.
 IND_DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]  # 2019 2020 2021 2025 2026 2027 2030 2040 2050
-IND_TARGETS = []
+# CALBSC runs once per industry and region; the dump holds the last one of the year.
+IND_TARGETS = [
+    dict(tag="bsc", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[]),
+    dict(tag="bsc2", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=0,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[]),
+]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
-IND_STATE_EXTRA = []
+# Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
+IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "ibyr2", "lastcalyr", "curitr",
+                   "BSCIBYR", "beff", "PRCX", "PRCXIBYR", "PRCXYR", "MAINFUELS", "BSFUELSHR", "BSSHR", "Boiler_Fuel_List", "HPbeff"]
 IND_DECL_FILES = ["parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
                   "ampblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
                       includes=[], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
-                      decl_files=IND_DECL_FILES, module_text=False)
+                      decl_files=IND_DECL_FILES, module_text=True, module_name="I_", decls_only=True)
 CFG = MODULES["comm"]
 
 TYPE_RE = re.compile(r"^(real\*8|double precision|real\*4|real|integer\*1|integer\*2|integer\*4|integer\*8|integer"
@@ -193,9 +201,9 @@ def dump_call(tag, name, t, rank):
             f"{rank}, lbound({name}), ubound({name}))")
 
 
-def module_r_(source_text):
+def module_r_(source_text, name="R_"):
     """The MODULE R_ block of resd.f: its declarations and its shared arrays."""
-    m = re.search(r"^MODULE R_\s*$(.*?)^END MODULE R_", source_text, re.I | re.M | re.S)
+    m = re.search(r"^\s*MODULE " + name + r"\s*$(.*?)^\s*END MODULE " + name, source_text, re.I | re.M | re.S)
     text = m.group(1)
     names = common_names(text)
     for st in statements(text):
@@ -213,9 +221,10 @@ def write_state_routine(inc_dir, source_text=None):
     for n in CFG["block_files"]:
         names += common_names((inc_dir / n).read_text(encoding="latin-1"))
     if CFG["module_text"]:
-        mtext, mnames = module_r_(source_text)
+        mtext, mnames = module_r_(source_text, CFG.get("module_name", "R_"))
         decls.update(declarations(mtext))
-        names += mnames
+        if not CFG.get("decls_only"):  # ind: only the names listed in extra, not all of I_
+            names += mnames
     names += CFG["extra"]
     calls = [c for c in (dump_call("'//tag//'", n, *decls.get(n.lower(), ("?", 0))) for n in dict.fromkeys(names)) if c]
     calls = [c.replace("''//tag//''", "tag") for c in calls]
