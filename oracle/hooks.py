@@ -279,6 +279,23 @@ EMM_TARGETS += [dict(tag=tag, call=call, routines=[name], itr=itr, **_G) for tag
     ("x_rate", "ELRATE", r"CALL ELRATE\(ICALL,NRGN\)", None),
     ("x_stmt", "STMTS", r"IF \(EFPFCRL \.EQ\. 1\) CALL STMTS\(NRGN,ICALL\)", None),
 ]]
+# ELGLTR's cost routines, after it has loaded the region's books (generation;
+# CAPCOST once per ownership type), and COMPPRC, which GENERA runs when USW_POL=4
+# (it is in cb2026). Calls on a continuation line are matched as the whole IF.
+EMM_TARGETS += [
+    dict(tag="y_cap1", call=r"CALL CAPCOST\(NRGN,ICALL,N\)", routines=["CAPCOST"], **dict(_EFP, site_cond=
+         "ICALL .EQ. 'G' .AND. N .EQ. 1")),
+    dict(tag="y_cap2", call=r"CALL CAPCOST\(NRGN,ICALL,N\)", routines=["CAPCOST"], **dict(_EFP, site_cond=
+         "ICALL .EQ. 'G' .AND. N .EQ. 2")),
+    dict(tag="y_alf", call=r"IF \(ICALL \.EQ\. 'G'\) CALL ALLFAC\(NRGN\)", routines=["ALLFAC"], **_EFP),
+    dict(tag="y_anb", call=r"IF \(ICALL \.EQ\. 'G' \.and\. curiyr\+uhbsyr \.gt\. efpsyr\) &\s*\n\s*CALL ANEWBLD\(NRGN\)",
+         routines=["ANEWBLD"], itr=1, **_EFP),
+    dict(tag="y_tran", call=r"if \(curiyr\+UHBSYR \.ge\. EFPSYR\) CALL ELTRAN\(NRGN\)", routines=["ELTRAN"], itr=1,
+         **_EFP),
+    dict(tag="y_dist", call=r"if \(CURIYR\+UHBSYR \.ge\. EFPSYR\) CALL ELDIST\(NRGN\)", routines=["ELDIST"], itr=1,
+         **_EFP),
+    dict(tag="cp", call=r"IF \(USW_POL \.eq\. 4\) &\s*\n\s*CALL COMPPRC\(NRGN\)", routines=["COMPPRC"], **_EFP),
+]
 EMM_TARGETS += [
     dict(tag="se", call=r"CALL ELSET\b", file="uefp", home=["uefp", "udaf"], routines=["ELSET"]),
     dict(tag="rv", call=r"IF \(EFPFCRL \.eq\. 1\) CALL REVGAP", file="uefp", home=["uefp", "udaf"],
