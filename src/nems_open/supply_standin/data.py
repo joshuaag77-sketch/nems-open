@@ -49,6 +49,8 @@ SINGLE = (
     "INTOUT/brent_price", "INTOUT/wti_price", "MACOUT/mc_gdpr", "MACOUT/mc_jpgdp",
     # Carbon by census division, pollutant, year (pollutant 0 is carbon, million metric tons C)
     "EMISSION/emrsc", "EMISSION/emcmc", "EMISSION/emincc", "EMISSION/emtrc", "EMISSION/emelc",
+    # Light-duty sales and stock by technology, energy by fuel (for the EV-share lever)
+    "TRANREP/trldsalc", "TRANREP/trldsalt", "TRANREP/trldstkc", "TRANREP/trldstkt", "TRANREP/trqldv",
 )
 
 
