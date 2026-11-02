@@ -69,6 +69,7 @@ STORAGE = {"battery": (4.0, 0.85), "pumped": (12.0, 0.78)}
 # Emission factors, million metric tons CO2 per trillion Btu.
 CO2_PER_TBTU = {"coal": 0.0953, "gas": 0.05307, "distillate": 0.07316, "residual": 0.0751}
 
+CCS_HEAT_RATE_MAX = 20000.0  # Btu/kWh; with-capture heat rates above this in the plant file are data outliers
 UNSERVED_COST = 1000.0       # 1987$/MWh
 HOURS_PER_YEAR = 8760.0
 
@@ -88,6 +89,7 @@ class DispatchCase:
     net_load_twh: np.ndarray  # (25,)
     shapes: np.ndarray        # (25, 36, 24) share of annual energy per typical hour
     weights: np.ndarray       # (36,) days per typical day
+    links: dict = None        # exporter, importer (0-based), capacity_gw (L, 36), cost (L,) 1987$/MWh, loss
 
 
 @dataclass
@@ -102,6 +104,7 @@ class DispatchResult:
     spilled_twh: np.ndarray = None                          # (25,)
     price: np.ndarray = None                                # (25, 36, 24) 1987$/MWh
     objective: float = 0.0
+    trade_twh: np.ndarray = None                            # (links,) energy sent on each link
 
     def total_generation_twh(self) -> float:
         return float(sum(v.sum() for v in self.generation_twh.values()))
@@ -110,6 +113,12 @@ class DispatchResult:
         """Load-weighted marginal cost by region, 1987$/MWh."""
         w = self.case.weights[None, :, None] * self.case.shapes
         return (self.price * w).sum(axis=(1, 2)) / w.sum(axis=(1, 2))
+
+
+def _ucap_mid(snapshot, prefixes, y) -> np.ndarray:
+    """Capacity in service on average through the year: the mean of last year's and this year's year-end
+    capacity, which assumes builds and retirements are spread evenly through the year."""
+    return 0.5 * (_ucap(snapshot, prefixes, y) + _ucap(snapshot, prefixes, y - 1))
 
 
 def _ucap(snapshot, prefixes, y) -> np.ndarray:
@@ -136,6 +145,16 @@ def _weighted(values, weights, types, region_arr, year, fallback):
     return np.where(np.isnan(out), nat, out)
 
 
+def _weighted_mask(values, weights, mask, region_arr, fallback):
+    out = np.full(NUM_R, np.nan)
+    for r in range(1, NUM_R + 1):
+        m = mask & (region_arr == r)
+        if weights[m].sum() > 0:
+            out[r - 1] = np.average(values[m], weights=weights[m])
+    nat = np.average(values[mask], weights=weights[mask]) if weights[mask].sum() > 0 else fallback
+    return np.where(np.isnan(out), nat, out)
+
+
 def _monthly_cf(types, year) -> np.ndarray:
     t = db.table("V_EMM_PLTF860")
     u = plants.load_units()
@@ -159,6 +178,38 @@ def _wrenew_profile(snapshot, key, y) -> np.ndarray:
     return a.transpose(0, 2, 1, 3).reshape(NUM_R, 36, 24)
 
 
+def build_links(snapshot, year: int) -> dict:
+    """Transmission between EMM regions from the ETT pre-processor table (V_EMM_PRETTIN).
+
+    Each row is a link between an exporting and an importing region with a summer and a winter
+    capacity in MW and a markup in 1987 dollars per MWh (PT1 + PT2). DIRSW 2 means the link works
+    both ways. Rows for the same pair add up. New transmission that EMM built (UETTOUT/UTNEWTRN, GW)
+    is added to the pair's capacity. Summer is June to September.
+    """
+    t = db.table("V_EMM_PRETTIN")
+    live = (t["IRGEX"] <= NUM_R) & (t["IRGIM"] <= NUM_R) & (t["STRTYR"] <= year) & (t["ENDYEAR"] >= year)
+    summer = np.isin(np.repeat(np.arange(12), 3), (5, 6, 7, 8))
+    pairs = {}
+    for ex, im, dirsw, c1, c2, p1, p2 in zip(t["IRGEX"][live], t["IRGIM"][live], t["DIRSW"][live],
+                                              t["TEMPC1"][live], t["TEMPC2"][live], t["PT1"][live], t["PT2"][live]):
+        for a, b in ((ex, im), (im, ex)) if dirsw == 2 else ((ex, im),):
+            entry = pairs.setdefault((int(a) - 1, int(b) - 1), [np.zeros(36), 0.0])
+            entry[0] = entry[0] + np.where(summer, c1, c2) / 1000.0
+            entry[1] = p1 + p2
+    new = snapshot["UETTOUT/utnewtrn"][:NUM_R, :NUM_R, year - history.FIRST_YEAR].astype(float)
+    for a in range(NUM_R):
+        for b in range(NUM_R):
+            add = max(new[a, b], new[b, a])
+            if add > 0 and a != b:
+                entry = pairs.setdefault((a, b), [np.zeros(36), 2.44])
+                entry[0] = entry[0] + add
+    keys = sorted(pairs)
+    loss = float(db.table("V_EMM_NUGPIPE_PARM")["LINELOSS"][0])
+    return {"exporter": np.array([k[0] for k in keys]), "importer": np.array([k[1] for k in keys]),
+            "capacity_gw": np.stack([pairs[k][0] for k in keys]), "cost": np.array([pairs[k][1] for k in keys]),
+            "loss": loss}
+
+
 def _fill_prices(a: np.ndarray, y: int) -> np.ndarray:
     v = a[:NUM_R, y].astype(float)
     ok = v > 0
@@ -173,7 +224,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     region, which fixes the interregional exchange at EIA's result.
     """
     y = year - history.FIRST_YEAR
-    cap = {g: _ucap(snapshot, p, y) for g, p in CAPACITY_PREFIXES.items()}
+    cap = {g: _ucap_mid(snapshot, p, y) for g, p in CAPACITY_PREFIXES.items()}
     u = plants.load_units()
     ptype = {t.code: t for t in technology.efd_plant_types()}
     params = technology.type_parameters()
@@ -200,6 +251,16 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
             oil[g] = np.zeros(NUM_R)
         pt = ptype[AVAIL_TYPE[g]]
         avail[g] = (pt.forced_outage, pt.max_capacity_factor)
+    # Coal that captures CO2 burns more fuel per kWh and costs more to run: use the plant file's own
+    # with-capture heat rate and variable O&M (T_CCSHR, T_CCSV) for the captured share.
+    tb = db.table("V_EMM_PLTF860")
+    coal_u = np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
+    ccs_hr = _weighted_mask(tb["T_CCSHR"], u.summer_mw, coal_u, u.region, 14000.0)
+    ccs_vom = _weighted_mask(tb["T_CCSV"], u.summer_mw, coal_u, u.region, 1.5)
+    coal_ccs = np.divide(_ucap_mid(snapshot, CCS_PREFIXES["coal"], y), cap["coal"],
+                         out=np.zeros(NUM_R), where=cap["coal"] > 0).clip(0, 1)
+    heat["coal"] = (1 - coal_ccs) * heat["coal"] + coal_ccs * ccs_hr
+    vom["coal"] = vom["coal"] + coal_ccs * ccs_vom
     heat["nuclear"] = _weighted(u.heat_rate, u.summer_mw, EXISTING_TYPES["nuclear"], u.region, year, 10400.0)
 
     price = {
@@ -213,8 +274,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     efd_index = {pt.code: i for i, pt in enumerate(technology.efd_plant_types())}
     profiles = {}
     for group, parts in WRENEW_PROFILES.items():
-        # Year-end capacity overstates a year that is still building: use the average of this year and last.
-        caps = [0.5 * (_ucap(snapshot, (prefix,), y) + _ucap(snapshot, (prefix,), y - 1)) for prefix, _, _ in parts]
+        caps = [_ucap_mid(snapshot, (prefix,), y) for prefix, _, _ in parts]
         outage = [snapshot["UEFDOUT/up_xfor"][efd_index[code], :NUM_R, y].astype(float) for _, _, code in parts]
         cfs = [_wrenew_profile(snapshot, key, y) * (1.0 - o)[:, None, None] for (_, key, _), o in zip(parts, outage)]
         total = np.maximum(sum(caps), 1e-9)
@@ -226,9 +286,10 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     nl = demand.net_load_twh(snapshot, year)
     if trade == "reference":
         nl = snapshot["UEFDOUT/ugntlnr"][:, :NUM_R, y].sum(axis=0).astype(float)
-    ccs = {"coal": _ucap(snapshot, CCS_PREFIXES["coal"], y), "gas_cc": _ucap(snapshot, CCS_PREFIXES["gas_cc"], y)}
+    ccs = {g: _ucap_mid(snapshot, CCS_PREFIXES[g], y) for g in ("coal", "gas_cc")}
     ccs_share = {g: np.divide(ccs[g], cap[g], out=np.zeros(NUM_R), where=cap[g] > 0).clip(0, 1) for g in ccs}
-    return DispatchCase(year, cap, heat, vom, price, oil, avail, ccs_share, mcf, profiles, nl, shapes, w)
+    links = build_links(snapshot, year) if trade != "reference" else None
+    return DispatchCase(year, cap, heat, vom, price, oil, avail, ccs_share, mcf, profiles, nl, shapes, w, links)
 
 
 def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> DispatchResult:
@@ -292,12 +353,26 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         net_storage = net_storage + di - ch
         sto[name] = (ch, di)
 
+    trade_in = trade_out = 0
+    trade = None
+    if case.links is not None:
+        L = pd.Index(np.arange(len(case.links["exporter"])), name="link")
+        cap_l = xr.DataArray(case.links["capacity_gw"], coords=[L, D]) * xr.DataArray(np.ones(24), coords=[H])
+        trade = m.add_variables(lower=0, upper=cap_l.transpose("link", "day", "hour"), name="trade")
+        into = np.zeros((NUM_R, len(L)))
+        outof = np.zeros((NUM_R, len(L)))
+        into[case.links["importer"], np.arange(len(L))] = 1.0 - case.links["loss"]
+        outof[case.links["exporter"], np.arange(len(L))] = 1.0
+        trade_in = (trade * xr.DataArray(into, coords=[R, L])).sum("link")
+        trade_out = (trade * xr.DataArray(outof, coords=[R, L])).sum("link")
     spill = m.add_variables(lower=0, coords=[R, D, H], name="spill")
     unserved = m.add_variables(lower=0, coords=[R, D, H], name="unserved")
-    bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill == load_gw - fixed, name="balance")
+    bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill + trade_in - trade_out == load_gw - fixed, name="balance")
 
-    m.add_objective((g_th * cost_da * w).sum() + (g_hy * w).sum() * 0.01
-                    + (unserved * (UNSERVED_COST * w)).sum())
+    objective = (g_th * cost_da * w).sum() + (g_hy * w).sum() * 0.01 + (unserved * (UNSERVED_COST * w)).sum()
+    if trade is not None:
+        objective = objective + (trade * (xr.DataArray(case.links["cost"], coords=[L]) * w)).sum()
+    m.add_objective(objective)
     status, cond = m.solve(solver_name=solver, progress=progress)
 
     res = DispatchResult(year=case.year, case=case, status=f"{status}:{cond}")
@@ -318,6 +393,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     for g in RENEWABLE:
         gen[g] = fx(ren_gw[g]) * keep
     res.generation_twh = gen
+    if trade is not None:
+        flow = trade.solution.transpose("link", "day", "hour").values
+        res.trade_twh = (flow * case.weights[None, :, None]).sum(axis=(1, 2)) / 1000.0
     res.spilled_twh = spilled
     res.unserved_twh = energy(unserved.solution.transpose("region", "day", "hour").values)
 
