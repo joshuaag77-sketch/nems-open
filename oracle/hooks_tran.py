@@ -46,6 +46,7 @@ TARGETS = [
     ("tmpgnew", "tran.f90", r"^\s*CALL TMPGNEW\s*$", "tmpgnew"),
     ("treg", "tran.f90", r"^\s*CALL TREG\s*$", "treg"),
     ("tfltstks", "tran.f90", r"^\s*CALL TFLTSTKS\s*$", "tfltstks"),
+    ("flthav", "tran.f90", r"^\s*if \(yrs\.ge\.MINVAL\(first_lidar_year\)\) CALL FLTHAV", "flthav"),
     ("tfltvmts", "tran.f90", r"^\s*CALL TFLTVMTS\s*$", "tfltvmts"),
     ("tsmod", "tran.f90", r"^\s*CALL TSMOD\s*$", "tsmod"),
     ("tmpgstk", "tran.f90", r"^\s*CALL TMPGSTK\s*$", "tmpgstk"),
@@ -53,11 +54,16 @@ TARGETS = [
     ("tfltmpgs", "tran.f90", r"^\s*CALL TFLTMPGS\s*$", "tfltmpgs"),
     ("tfltcons", "tran.f90", r"^\s*CALL TFLTCONS\s*$", "tfltcons"),
     ("tvmt", "tran.f90", r"^\s*CALL TVMT\s*$", "tvmt"),
+    ("tranfrt", "tran.f90", r"^\s*CALL TRANFRT\(0\)\s*$", "tranfrt"),
     ("tmpgag", "tran.f90", r"^\s*CALL TMPGAG\s*$", "tmpgag"),
     ("trail", "tran.f90", r"^\s*CALL TRAIL\s*$", "trail"),
+    ("tship", "tran.f90", r"^\s*CALL TSHIP\s*$", "tship"),
+    ("tranair", "tran.f90", r"^\s*CALL TRANAIR\s*$", "tranair"),
     ("tmisc", "tran.f90", r"^\s*CALL TMISC\s*$", "tmisc"),
     ("tcons", "tran.f90", r"^\s*CALL TCONS\s*$", "tcons"),
     ("tinteg", "tran.f90", r"^\s*CALL TINTEG\s*$", "tinteg"),
+    ("tbenchmark", "tran.f90", r"^\s*CALL TBENCHMARK\s*$", "tbenchmark"),
+    ("treport", "tran.f90", r"^\s*CALL TREPORT\s*$", "treport"),
 ]
 
 # Shared output blocks, dumped at the end of the run.
@@ -109,6 +115,16 @@ def parameters(text):
     return names
 
 
+def externals(text):
+    """Functions declared EXTERNAL (FILE_MGR, RTOVALUE): typed, but not variables."""
+    names = set()
+    for st in statements(text):
+        m = re.match(r"external\s+(.*)", st, re.I)
+        if m:
+            names.update(p.strip().lower() for p in m.group(1).split(","))
+    return names
+
+
 def allocatables(text):
     names = set()
     for st in statements(text):
@@ -141,6 +157,18 @@ def dump_line(fname, name, t, rank, alloc):
     return f"      if (allocated({name})) {call}" if alloc else f"      {call}"
 
 
+def nested(names, inc_dir, seen=None):
+    """Include files in order, with the ones they include (apq -> qblk, ampblk)."""
+    seen = [] if seen is None else seen
+    for n in names:
+        n = n.lower()
+        if n not in seen:
+            seen.append(n)
+            text = (inc_dir / n).read_text(encoding="latin-1")
+            nested(re.findall(r"^\s*include\s*'(\w+)'", text, re.I | re.M), inc_dir, seen)
+    return seen
+
+
 def routines(build):
     """{routine name: code text} across the three sources."""
     out = {}
@@ -170,7 +198,7 @@ def reach(name, bodies):
 def write_state(inc_dir, build):
     # COMMON variables visible to the module.
     cdecls, cnames = {}, []
-    for n in COMMON_INCLUDES:
+    for n in nested(COMMON_INCLUDES, inc_dir):
         txt = (inc_dir / n).read_text(encoding="latin-1")
         cdecls.update(declarations(txt))
         cnames += common_names(txt)
@@ -180,7 +208,7 @@ def write_state(inc_dir, build):
     for mod, src, prefix in MODULES:
         body = normalise(module_body((build / src).read_text(encoding="latin-1"), mod))
         d = declarations(body)
-        skip = parameters(body) | set(cnames)
+        skip = parameters(body) | set(cnames) | externals(body)
         own = {k: v for k, v in d.items() if k not in skip}
         mods.append((mod, prefix, own, allocatables(body)))
 
