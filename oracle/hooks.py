@@ -221,6 +221,26 @@ EMM_TARGETS = [
     dict(tag="fp", call=r"CALL ELEFP\b", routines=["ELEFP"],           # EFP: prices (first pass; the second
          home=["uefp", "udaf"]),                                        # runs only with STEO price benchmarking)
 ]
+# LDSM routines, around their calls in uldsm.f (ELLDSM's region loop, then DSMECP1's
+# ECP-horizon loop). Region targets dump as "<name>_rNN" for the regions in
+# EMM_DUMP_REGIONS (all 25 would be 5x the disk for little more coverage). itr=1:
+# the routine only runs on a year's first iteration, so dump there instead of the
+# final one. cond: an extra Fortran test for the dump.
+EMM_DUMP_REGIONS = [1, 13]
+EMM_REGION_YEARS = [32, 41, 61]  # 2021 2030 2050: region dumps filled the disk at 5 regions x 9 years
+EMM_TARGETS += [
+    dict(tag="ca", call=r"CALL DSMCADJ\b", file="uldsm", home=["uldsm"], routines=["DSMCADJ"]),
+    dict(tag="fo", call=r"CALL DSMFOR\(WHOOPS\)", file="uldsm", home=["uldsm"], routines=["DSMFOR"], region=True),
+    dict(tag="dl", call=r"CALL DSMDLT\b", file="uldsm", home=["uldsm"], routines=["DSMDLT"], region=True),
+    dict(tag="hl", call=r"CALL DSMHLM\b", file="uldsm", home=["uldsm"], routines=["DSMHLM"], region=True),
+    dict(tag="ep", call=r"CALL DSMEFP\b", file="uldsm", home=["uldsm"], routines=["DSMEFP"], region=True),
+    dict(tag="to", call=r"CALL DSMTOR\b", file="uldsm", home=["uldsm"], routines=["DSMTOR"], region=True),
+    dict(tag="ef", call=r"CALL DSMEFD\b", file="uldsm", home=["uldsm"], routines=["DSMEFD"], region=True),
+    dict(tag="e1", call=r"CALL DSMECP1\(WHOOPS\)", file="uldsm", home=["uldsm"], routines=["DSMECP1"], region=True,
+         itr=1),
+    dict(tag="lc", call=r"CALL DSMLCP\(1\)", file="uldsm", home=["uldsm"], routines=["DSMLCP"], region=True, itr=1,
+         cond="K1 .EQ. CURIYR"),
+]
 EMM_SWAPS = [
     (r"^(\s*)CALL ELECP\s*$", r"\1CONTINUE   ! ORACLE: ECP (AIMMS LP) not run"),
     (r"^(\s*)CALL ELEFD\(CURIYR\)", r"\1CALL EFD_STANDIN(CURIYR)   ! ORACLE: was CALL ELEFD(CURIYR)"),
@@ -463,7 +483,8 @@ def private_dumps(tag, names, src_decls):
 def as_dict(target):
     if isinstance(target, dict):
         name = re.search(r"CALL\s+(\w+)", target["call"], re.I).group(1)
-        return dict(dict(nth=0, end=None, private=[], carried=[], before=False, routines=[name]), **target)
+        return dict(dict(nth=0, end=None, private=[], carried=[], before=False, routines=[name],
+                         file="util", region=False, itr=None, cond=None), **target)
     tag, call_re, end_re, private, carried = target
     before = bool(end_re) and end_re.startswith("before:")  # commercial targets mark "dump before this line" in the pattern
     if before:
@@ -623,17 +644,31 @@ def write_state_routine_emm(inc_dir):
     years = ", ".join(map(str, CFG["years"]))
     routines, branches, total = [], [], 0
     all_used, all_incs = set(), []
+    regions = ", ".join(map(str, EMM_DUMP_REGIONS))
     for tg in map(as_dict, CFG["targets"]):
         bodies = {}
         for s in tg["home"]:
             bodies.update(by_file[s])
         used, incs = emm_closure(bodies, tg["routines"])
-        all_used |= used
-        all_incs += [n for n in incs if n not in all_incs]
-        src, n, _ = emm_dump_routine(f"oracle_state_{tg['tag']}", incs, inc_dir, used, "tag")
+        if tg["file"] == "util":
+            all_used |= used
+            all_incs += [n for n in incs if n not in all_incs]
+        name = f"oracle_state_{tg['tag']}"
+        if tg["region"]:
+            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag", suffix="rsuf")
+        else:
+            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag")
         routines.append(src)
+        when = "CURITR .eq. 1" if tg["itr"] == 1 else "FCRL .eq. 1"
+        if tg["cond"]:
+            when += f" .and. ({tg['cond']})"
+        if tg["region"]:
+            when += f" .and. any(regions == RNB) .and. any(ryears == CURIYR)"
+            call = f"call {name}(tag, int(RNB))"
+        else:
+            call = f"call {name}(tag)"
         branches.append(f"      if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then\n"
-                        f"        call oracle_state_{tg['tag']}(tag)\n        return\n      endif")
+                        f"        if ({when}) {call}\n        return\n      endif")
         total += n
     src, n, _ = emm_dump_routine("oracle_state_final", all_incs, inc_dir, all_used, "tag")
     routines.append(src)
@@ -650,11 +685,16 @@ def write_state_routine_emm(inc_dir):
       implicit none
       include 'parametr'
       include 'ncntrl'
+      include 'emmparm'
+      include 'dsmdimen'
+      include 'dsmhelm'
       character(*) tag
       integer, parameter :: years({len(CFG["years"])}) = (/ {years} /)
-      if (FCRL .ne. 1 .or. .not. any(years == CURIYR)) return
+      integer, parameter :: regions({len(EMM_DUMP_REGIONS)}) = (/ {regions} /)
+      integer, parameter :: ryears({len(EMM_REGION_YEARS)}) = (/ {", ".join(map(str, EMM_REGION_YEARS))} /)
+      if (.not. any(years == CURIYR)) return
 {body}
-      if (tag == 'final') call oracle_state_final(tag)
+      if (tag == 'final' .and. FCRL .eq. 1) call oracle_state_final(tag)
       end subroutine oracle_state
 
       subroutine oracle_region(irg)
@@ -672,16 +712,24 @@ def write_state_routine_emm(inc_dir):
 
 
 def instrument_emm(util_path: Path):
-    text = util_path.read_text(encoding="latin-1")
+    """Swap the solves in util.f90, and wrap each target's call in its own file
+    (uldsm.f90 for LDSM routines), all in the build folder."""
+    texts = {"util": util_path.read_text(encoding="latin-1")}
     for pat, repl in EMM_SWAPS:
-        text, k = re.subn(pat, repl, text, count=1, flags=re.I | re.M)
+        texts["util"], k = re.subn(pat, repl, texts["util"], count=1, flags=re.I | re.M)
         assert k == 1, pat
     for tg in map(as_dict, CFG["targets"]):
+        f = tg["file"]
+        if f not in texts:
+            texts[f] = (BUILD / f"{f}.f90").read_text(encoding="latin-1")
+        text = texts[f]
         m = list(re.finditer(r"^(\s*)(" + tg["call"] + r")", text, re.I | re.M))[tg["nth"]]
         ind = m.group(1).lstrip("\n")
-        text = (text[:m.start()] + f"\n{ind}CALL ORACLE_STATE('{tg['tag']}_in')\n{ind}{m.group(2)}\n"
-                f"{ind}CALL ORACLE_STATE('{tg['tag']}_out')" + text[m.end():])
-    util_path.write_text(text, encoding="latin-1")
+        texts[f] = (text[:m.start()] + f"\n{ind}CALL ORACLE_STATE('{tg['tag']}_in')\n{ind}{m.group(2)}\n"
+                    f"{ind}CALL ORACLE_STATE('{tg['tag']}_out')" + text[m.end():])
+    util_path.write_text(texts.pop("util"), encoding="latin-1")
+    for f, text in texts.items():
+        (BUILD / f"{f}.f90").write_text(text, encoding="latin-1")
 
 
 def make_dirs():

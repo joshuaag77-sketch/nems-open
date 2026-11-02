@@ -11,7 +11,8 @@ program oracle_emm
   implicit none
   include 'parametr'
   include 'ncntrl'
-  integer nbad, y, iters
+  integer nbad, y, iters, lasty, st
+  character(16) envval
 
   call load_restart(nbad)
   write(*,'(a,i0)') ' restart variables with size mismatch: ', nbad
@@ -19,8 +20,14 @@ program oracle_emm
   EPHRTS = 0                  ! scedes EPHRTS: hydrogen submodule off in cb2026
   TURN_ON_DEBUGGING = .FALSE.
 
+  ! ORACLE_LAST_YEAR (a NEMS year index, e.g. 32 for 2021) stops early, for
+  ! trying out dumps without a full run. The final dump is then skipped.
+  call get_environment_variable('ORACLE_LAST_YEAR', envval, status=st)
+  lasty = LASTYR
+  if (st == 0) read(envval, *) lasty
+
   iters = 2
-  do y = FIRSYR, LASTYR
+  do y = FIRSYR, lasty
     CURIYR = y
     CURCALYR = y + BASEYR - 1
     do CURITR = 1, iters
@@ -31,5 +38,5 @@ program oracle_emm
     if (CURCALYR >= 2020) write(*,'(a,i0)') ' done ', CURCALYR
   enddo
 
-  call oracle_state('final')
+  if (lasty == LASTYR) call oracle_state('final')
 end program oracle_emm
