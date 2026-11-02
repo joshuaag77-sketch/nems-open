@@ -45,7 +45,7 @@ def model(result: dispatch.DispatchResult) -> dict:
     return {
         "gen_coal": g["coal"] + g["coal_ccs"],
         "gen_gas": g["gas_cc"] + g["gas_ccs"] + g["gas_ct"] + g["steam"] * (1 - float(np.average(result.case.oil_share["steam"]))),
-        "gen_oil": g["steam"] * float(np.average(result.case.oil_share["steam"])),
+        "gen_oil": g["steam"] * float(np.average(result.case.oil_share["steam"])) + g.get("oil_must_run", 0.0),
         "gen_nuclear": g["nuclear"],
         "gen_renewable": g["hydro"] + g["wind"] + g["solar"] + g["other"],
         "gen_total": sum(g.values()),

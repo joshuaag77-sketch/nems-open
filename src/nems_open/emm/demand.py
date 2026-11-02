@@ -13,18 +13,20 @@ from nems_open.emm import history, load, regions
 TBTU_PER_TWH = 3.412
 SECTORS = ("rs", "cm", "in", "tr")          # residential, commercial, industrial, transportation
 SALES_KEYS = ("QBLK/qelrs", "QBLK/qelcm", "QBLK/qelin", "QBLK/qeltr")
+PV_COLUMN = 9                                # solar column in COGEN/cgtotgennr
 BASE_YEAR = 2024                             # last year of regional sales history in the input files
 
 
 def census_sales_twh(snapshot, year: int) -> np.ndarray:
-    """Sales by census division and sector, shape (9, 4), TWh. California is folded into the Pacific division,
-    as the EMM-to-census map does."""
+    """Sales by census division and sector, shape (9, 4), TWh.
+
+    The restart's census arrays have 11 slots: the nine divisions, California (slot 10) and the US. California
+    is part of the Pacific division, so it is not added again (the nine divisions add up to the US).
+    """
     y = year - history.FIRST_YEAR
     out = np.zeros((9, 4))
     for s, key in enumerate(SALES_KEYS):
-        q = snapshot[key][:, y] / TBTU_PER_TWH
-        out[:, s] = q[:9]
-        out[8, s] += q[9]
+        out[:, s] = snapshot[key][:9, y] / TBTU_PER_TWH
     return out
 
 
@@ -42,9 +44,16 @@ def regional_sales_twh(snapshot, year: int) -> np.ndarray:
 
 
 def end_user_generation_twh(snapshot, year: int) -> np.ndarray:
-    """Power that cogeneration, rooftop solar and other end-use generators make, by EMM region, TWh."""
+    """Power that cogeneration and other end-use generators make for their own use, by EMM region, TWh.
+
+    The solar column is left out: rooftop solar is already netted out of the purchases the demand modules
+    report. (Counting it again leaves national net load 3% to 10% short of EIA's generation; leaving it out
+    matches within 1% in 2025 and within 3% in 2050, the rest being storage losses the LP models itself.)
+    """
     a = snapshot["COGEN/cgtotgennr"][:25, year - history.FIRST_YEAR]      # (25, 13, 2) GWh
-    return a.sum(axis=(1, 2)) / 1000.0
+    keep = np.ones(a.shape[1], dtype=bool)
+    keep[PV_COLUMN] = False
+    return a[:, keep].sum(axis=(1, 2)) / 1000.0
 
 
 def international_net_imports_twh(snapshot, year: int) -> np.ndarray:
