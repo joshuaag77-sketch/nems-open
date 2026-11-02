@@ -14,8 +14,7 @@ restart file, and runs it. Its QBLK fuel use must match:
 It also starts at 2025 and keeps going into 2026 (NEMS's two iterations, every
 module's state carried), which must match the oracle's 2026 to float rounding.
 
-The runs go in parallel processes; commercial takes about 5 minutes per iteration
-of a year, so the whole file takes about 10 minutes.
+The runs go in parallel processes; commercial takes about 5 s per iteration.
 """
 
 from concurrent.futures import ProcessPoolExecutor
