@@ -70,12 +70,19 @@ DECL_FILES = ["parametr", "comparm", "comvars", "commrep", "qblk", "apq", "ampbl
 # routine's last line), before (dump before that line rather than after it),
 # private, carried.
 RESD_DUMP_YEARS = [31, 32, 33, 36, 37, 38, 41, 51, 61]  # 2020 2021 2022 2025 2026 2027 2030 2040 2050
-RESD_TARGETS = []
+RESD_TARGETS = [
+    dict(tag="pr", call=r"IF \(CurCalYr\.GE\.RECSYear\) CALL RDPR\b"),
+    dict(tag="nh", call=r"CALL NEWHSE\b"),
+    dict(tag="sq", call=r"CALL SQFTCALC\b"),
+]
 RESD_STATE_BLOCK_FILES = ["resdrep", "rtek", "rscon", "rseff"]
 RESD_STATE_EXTRA = ["QELRS", "QNGRS", "QDSRS", "QLGRS", "QKSRS", "QBMRS", "QGERS", "QSTRS", "QPVRS",
                     "QTRRS", "PELRS", "PNGRS", "PDSRS", "PLGRS", "PKSRS", "MC_JPGDP"]
-RESD_DECL_FILES = ["parametr", "resdrep", "rtek", "rscon", "rseff", "qblk", "apq", "ampblk", "mpblk",
-                   "eusprc", "macout", "ncntrl"]
+# Other modules' blocks the residential routines can read. Around a target, any of
+# their arrays the routine mentions is dumped too (not in 'final').
+RESD_WIDE_FILES = ["ncntrl", "qblk", "mpblk", "ampblk", "macout", "eusprc", "qsblk", "cogen", "uefpout",
+                   "uecpout", "e111d", "steoblock", "tranrep", "emission", "emablk", "bldglrn"]
+RESD_DECL_FILES = ["parametr", "resdrep", "rtek", "rscon", "rseff", "apq"] + RESD_WIDE_FILES
 
 MODULES = {
     "comm": dict(build="build", run="run", years=DUMP_YEARS, targets=TARGETS, includes=STATE_INCLUDES,
@@ -83,7 +90,7 @@ MODULES = {
                  module_text=False),
     "resd": dict(build="build_resd", run="run_resd", years=RESD_DUMP_YEARS, targets=RESD_TARGETS,
                  includes=[], use="R_", block_files=RESD_STATE_BLOCK_FILES, extra=RESD_STATE_EXTRA,
-                 decl_files=RESD_DECL_FILES, module_text=True),
+                 decl_files=RESD_DECL_FILES, module_text=True, wide_files=RESD_WIDE_FILES),
 }
 CFG = MODULES["comm"]
 
@@ -193,6 +200,17 @@ def module_r_(source_text):
     return text, names
 
 
+def routine_idents(source_text, routines):
+    """Lowercase identifiers used in the named routines, comments stripped."""
+    used = set()
+    for r in routines:
+        m = re.search(rf"^\s*(?:REAL\s+)?(?:SUBROUTINE|FUNCTION)\s+{r}\b(.*?)^\s*END\s+(?:SUBROUTINE|FUNCTION)\s+{r}\b",
+                      source_text, re.I | re.M | re.S)
+        body = "\n".join(l.split("!", 1)[0] for l in m.group(1).splitlines())
+        used |= {w.lower() for w in re.findall(r"[A-Za-z_]\w*", body)}
+    return used
+
+
 def write_state_routine(inc_dir, source_text=None):
     decls = {}
     for n in CFG["decl_files"]:
@@ -205,8 +223,25 @@ def write_state_routine(inc_dir, source_text=None):
         decls.update(declarations(mtext))
         names += mnames
     names += CFG["extra"]
-    calls = [c for c in (dump_call("'//tag//'", n, *decls.get(n.lower(), ("?", 0))) for n in dict.fromkeys(names)) if c]
-    calls = [c.replace("''//tag//''", "tag") for c in calls]
+
+    def calls_for(subset):
+        cs = [c for c in (dump_call("'//tag//'", n, *decls.get(n.lower(), ("?", 0))) for n in {s.lower(): s for s in subset}.values()) if c]
+        return [c.replace("''//tag//''", "tag") for c in cs]
+
+    calls = calls_for(names)
+    if CFG["module_text"]:
+        # A full residential dump is about 170 MB. Around a target, dump only the
+        # shared arrays its routines mention; the full set is kept for 'final'.
+        wide = list(names)
+        for n in CFG["wide_files"]:
+            wide += common_names((inc_dir / n).read_text(encoding="latin-1"))
+        blocks = []
+        for tg in map(as_dict, CFG["targets"]):
+            used = routine_idents(source_text, tg["routines"])
+            sub = calls_for([n for n in wide if n.lower() in used])
+            blocks.append(f"      if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then\n"
+                          + "\n".join(sub) + "\n        return\n      endif")
+        calls = blocks + calls
     years = ", ".join(map(str, CFG["years"]))
     inc = "\n".join(f"      include '{n}'" for n in CFG["includes"])
     if CFG["use"]:
@@ -228,7 +263,8 @@ def write_state_routine(inc_dir, source_text=None):
 
 def as_dict(target):
     if isinstance(target, dict):
-        return dict(dict(nth=0, private=[], carried=[], before=False), **target)
+        name = re.search(r"CALL\s+(\w+)", target["call"], re.I).group(1)
+        return dict(dict(nth=0, end=None, private=[], carried=[], before=False, routines=[name]), **target)
     tag, call_re, end_re, private, carried = target
     return dict(tag=tag, call=call_re, end=end_re, private=private, carried=carried, nth=0, before=False)
 
@@ -243,6 +279,8 @@ def instrument(comm_path: Path, upstream: Path):
         text = (text[:m.start()] + f"{ind}CALL ORACLE_STATE('{tag}_in')\n{ind}{m.group(2)}\n"
                 f"{ind}CALL ORACLE_STATE('{tag}_out')" + text[m.end():])
         years = ", ".join(map(str, CFG["years"]))
+        if not private and not carried:
+            continue
         lines = [f"      IF (FCRL .EQ. 1 .AND. ANY((/ {years} /) == CURIYR)) THEN"]
         for name in private + carried:
             c = dump_call(f"{tag}_out", name, *src_decls.get(name.lower(), ("?", 0)))
@@ -265,11 +303,14 @@ def instrument(comm_path: Path, upstream: Path):
 
 
 def make_dirs():
+    """Create the dump folders and drop old index files (odump appends to them)."""
+    dirs = [RUN / "out" / "state" / "final" / str(CFG["years"][-1])]
     for tg in map(as_dict, CFG["targets"]):
         for side in ("in", "out", "pre"):
-            for y in CFG["years"]:
-                (RUN / "out" / "state" / f"{tg['tag']}_{side}" / str(y)).mkdir(parents=True, exist_ok=True)
-    (RUN / "out" / "state" / "final" / str(CFG["years"][-1])).mkdir(parents=True, exist_ok=True)
+            dirs += [RUN / "out" / "state" / f"{tg['tag']}_{side}" / str(y) for y in CFG["years"]]
+    for d in dirs:
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "index.txt").unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
