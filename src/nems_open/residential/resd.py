@@ -6,6 +6,8 @@ minus the 111(d) and price-induced technical change hooks, which are off in AEO2
 whole state forward the way the Fortran's COMMON and SAVEd locals do.
 """
 
+from nems_open import oracle_state
+from nems_open.fortran_array import FArray
 from nems_open.residential.appliances import (rdryadd, rdrycon, rdrytec, rfrzadd, rfrzcon, rfrztec,
                                               rrefadd, rrefcon, rreftec)
 from nems_open.residential.common import BASEYR, ENDYR as LASTYEAR
@@ -41,6 +43,23 @@ def after_prices(s: dict) -> None:
 def projection_year(s: dict) -> None:
     rdpr(s)
     after_prices(s)
+
+
+def start_from_dump(y: int) -> dict:
+    """The state at the top of year index y's final iteration, from the oracle's dumps
+    (y a dump year after 2020): the shared arrays before NEWHSE ("yb_in"), RDPR's
+    inputs, and the SAVEd locals ("<tag>_pre")."""
+    load = lambda tag: oracle_state.load(tag, y, "resd")
+    own = lambda v: v.copy() if isinstance(v, FArray) else v
+    s = {k: own(v) for k, v in load("yb_in").items()}
+    for k, v in load("pr_in").items():
+        s.setdefault(k, own(v))
+    for d in oracle_state.state_dir("resd").glob("*_pre"):
+        if oracle_state.available(d.name, y, "resd"):
+            for k, v in load(d.name).items():
+                s[k] = own(v)
+    resume_from_dump(s)
+    return s
 
 
 def resume_from_dump(s: dict) -> None:

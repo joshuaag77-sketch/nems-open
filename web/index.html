@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEMS Open Sandbox</title>
+<meta name="description" content="Move a carbon price, EV sales and building efficiency, and watch an open rebuild of EIA's energy model run America's energy system to 2050.">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data/scenarios.js"></script>
+<script src="data/engine.js"></script>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>NEMS Open policy sandbox</h1>
+    <p class="sub">An open Python rebuild of EIA's National Energy Modeling System, run to 2050. Move a lever, see what changes against EIA's AEO2026 reference.</p>
+  </div>
+  <button id="theme" class="ghost" type="button" aria-label="Switch light or dark mode">Dark</button>
+</header>
+
+<main class="layout">
+  <aside class="levers" aria-label="Policy levers">
+    <h2>Levers</h2>
+    <div class="lever">
+      <label for="carbon">Carbon price from 2027</label>
+      <output id="carbon-out">$0 per ton CO2</output>
+      <input id="carbon" type="range" min="0" max="8" step="1" value="0">
+      <div class="ticks"><span>$0</span><span>$100</span><span>$200</span></div>
+    </div>
+    <div class="lever">
+      <label for="ev">Plug-in share of new car and light truck sales, 2035</label>
+      <output id="ev-out">65% (EIA)</output>
+      <input id="ev" type="range" min="0" max="3" step="1" value="1">
+      <div class="ticks"><span>25%</span><span>EIA</span><span>80%</span><span>100%</span></div>
+    </div>
+    <div class="lever">
+      <label for="bld">Building energy use by 2050, vs EIA</label>
+      <output id="bld-out">Same as EIA</output>
+      <input id="bld" type="range" min="0" max="3" step="1" value="0">
+      <div class="ticks"><span>EIA</span><span>-5%</span><span>-10%</span><span>-20%</span></div>
+    </div>
+    <button id="reset" class="ghost" type="button">Back to EIA reference</button>
+    <p class="fine">Every combination was run ahead of time (144 runs), so the sliders snap to the grid. Prices are 2024 dollars.</p>
+  </aside>
+
+  <section class="results" aria-label="Results">
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-label">US energy CO2, 2050</div><div class="kpi-value" id="k-co2"></div><div class="kpi-delta" id="k-co2-d"></div></div>
+      <div class="kpi"><div class="kpi-label">Average power price, 2050</div><div class="kpi-value" id="k-pel"></div><div class="kpi-delta" id="k-pel-d"></div></div>
+      <div class="kpi"><div class="kpi-label">Gasoline use, 2050</div><div class="kpi-value" id="k-gas"></div><div class="kpi-delta" id="k-gas-d"></div></div>
+      <div class="kpi"><div class="kpi-label">CO2 avoided, 2027-2050</div><div class="kpi-value" id="k-cum"></div><div class="kpi-delta" id="k-cum-d"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="tabs" role="tablist" id="tabs"></div>
+        <div class="legend"><span class="sw solid"></span>This run <span class="sw dashed"></span>EIA reference</div>
+      </div>
+      <div class="chart-box"><canvas id="chart" aria-label="Chart of the selected measure, 2025 to 2050"></canvas></div>
+    </div>
+
+    <div class="card trace">
+      <div class="card-head"><h2>Trace this number</h2><span class="fine hint">Click any point on the chart</span></div>
+      <div id="trace-body"></div>
+    </div>
+
+    <div class="card engine">
+      <div class="card-head">
+        <h2>Engine view</h2>
+        <div class="engine-controls">
+          <button id="play" class="ghost" type="button">Replay</button>
+          <label for="year" class="year-label">Year <output id="year-out">2030</output></label>
+          <input id="year" type="range" min="2027" max="2050" step="1" value="2030">
+        </div>
+      </div>
+      <p class="fine">The real convergence log of this run. Each year, demand and supply take turns until no price moves more than 0.1%. Pass 0 applies the levers; each pass after it narrows the gap. Click a module to see what is inside it.</p>
+      <div class="engine-grid">
+        <div class="modules" id="modules"></div>
+        <div class="passes">
+          <div class="pass-head"><span id="pass-label">Pass 0</span><span id="gap-label"></span></div>
+          <div class="gap-bars" id="gap-bars" aria-label="Largest price change in each pass"></div>
+          <div class="counts">
+            <div><span class="n" id="c-passes"></span><span>passes this year</span></div>
+            <div><span class="n" id="c-calls"></span><span>module calls this year</span></div>
+            <div><span class="n" id="c-total"></span><span>module calls, 2027-2050</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="key">
+        <span><i class="dot real"></i>Ported from EIA's code, matches EIA</span>
+        <span><i class="dot partial"></i>Being ported</span>
+        <span><i class="dot stand"></i>Stand-in, fitted to EIA's runs</span>
+      </div>
+    </div>
+
+    <div class="card note">
+      <h2>What is real and what is a stand-in</h2>
+      <ul>
+        <li><b>Real ports.</b> The residential and commercial demand modules are line-by-line Python ports of EIA's Fortran. Run on EIA's prices they match EIA's AEO2026 reference within 0.3%. The ported residential module has been run through this same loop and holds EIA's numbers.</li>
+        <li><b>In these runs</b> every demand sector uses a fast stub (EIA's reference demand moved by a price elasticity) so each run takes seconds. The ported modules take minutes per year. Industrial and transportation are still being ported.</li>
+        <li><b>Supply is a stand-in.</b> Electricity, natural gas, oil, refining and coal prices come from curves fitted to EIA's 11 AEO2026 runs, not from ports. On EIA's own growth and demand side cases they land within 2 to 5% of EIA's prices.</li>
+        <li><b>Power plants.</b> A carbon price now switches power plants from coal to gas to zero-carbon power, using a response fitted to how plants reacted to gas prices in EIA's high and low gas supply runs (no AEO2026 run has a carbon price). Coal's response to its own cost is assumed, not fitted. Above $100 per ton the curve is extrapolated, and the cost of building replacement renewables is not in the power price, so power prices rise too little.</li>
+        <li><b>Stub demand is fitted.</b> How much each sector's use of each fuel responds to its price is fitted to EIA's own side runs (for example -0.28 for home electricity, -0.06 for gasoline). A few fuels without a usable fit keep a placeholder. The stub only responds to a fuel's own price. The EV lever shifts fuel use as the fleet turns over; building efficiency is a flat cut.</li>
+      </ul>
+      <p class="fine">EIA's reference here is the AEO2026 Counterfactual Baseline. Source and method: github.com/joshuaag77-sketch/nems-open, docs/supply_standin.md and docs/run_model.md.</p>
+    </div>
+  </section>
+</main>
+<dialog id="module-dialog" aria-label="Module details">
+  <button id="module-close" class="ghost close" type="button" aria-label="Close">Close</button>
+  <div id="module-body"></div>
+</dialog>
+<script src="app.js"></script>
+</body>
+</html>

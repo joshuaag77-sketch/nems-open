@@ -12,3 +12,10 @@ test = ["pytest"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+markers = [
+    "comm: commercial module",
+    "resd: residential module",
+    "tran: transportation module",
+    "ind: industrial module",
+    "slow: heavy files (minutes on their own)",
+]

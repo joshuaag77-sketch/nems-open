@@ -1,0 +1,1460 @@
+{
+ "modules": {
+  "residential": {
+   "name": "Residential",
+   "side": "demand",
+   "kind": "real",
+   "eia_lines": 17052,
+   "eia_files": [
+    {
+     "path": "source/resd.f",
+     "lines": 17052
+    }
+   ],
+   "eia_file_count": 1,
+   "ours_lines": 7802,
+   "ours_files": [
+    "src/nems_open/residential/__init__.py",
+    "src/nems_open/residential/appliances.py",
+    "src/nems_open/residential/common.py",
+    "src/nems_open/residential/cooling.py",
+    "src/nems_open/residential/distgen.py",
+    "src/nems_open/residential/heating.py",
+    "src/nems_open/residential/heating_choice.py",
+    "src/nems_open/residential/helpers.py",
+    "src/nems_open/residential/housing.py",
+    "src/nems_open/residential/lighting_misc.py",
+    "src/nems_open/residential/reports.py",
+    "src/nems_open/residential/resd.py",
+    "src/nems_open/residential/totals.py",
+    "src/nems_open/residential/washers.py",
+    "src/nems_open/residential/water_cooking.py"
+   ],
+   "tests": 388,
+   "test_files": {
+    "test_oracle_residential.py": 19,
+    "test_residential_appliances.py": 72,
+    "test_residential_chain.py": 11,
+    "test_residential_cooling.py": 24,
+    "test_residential_distgen.py": 8,
+    "test_residential_heating.py": 16,
+    "test_residential_heating_choice.py": 16,
+    "test_residential_housing.py": 25,
+    "test_residential_lighting_misc.py": 33,
+    "test_residential_reports.py": 2,
+    "test_residential_totals.py": 36,
+    "test_residential_washers.py": 48,
+    "test_residential_water_cooking.py": 48,
+    "test_run_demand.py": 30
+   },
+   "routines": [
+    {
+     "name": "RTEKREAD",
+     "state": "To do (reader)",
+     "match": "",
+     "lines": "607, 437",
+     "done": false
+    },
+    {
+     "name": "DEGDAYREAD, BLDBASEREAD, RSUECSHLREAD, RSMELSREAD, RSMISCREAD, RSMLGTREAD, RDRET, INTEQT, RDSQFOOT, RDHTREQC, RDEFF, RDSTEFF, RDESTARHOMES, RDUECS, RCONSFL",
+     "state": "To do (readers)",
+     "match": "",
+     "lines": "1044-2443",
+     "done": false
+    },
+    {
+     "name": "RDPR",
+     "state": "Done, bit-exact",
+     "match": "",
+     "lines": "2086, 61",
+     "done": true
+    },
+    {
+     "name": "EXCONS",
+     "state": "Done, bit-exact (totals.py)",
+     "match": "",
+     "lines": "2444, 525",
+     "done": true
+    },
+    {
+     "name": "NEWHSE",
+     "state": "Done, bit-exact",
+     "match": "",
+     "lines": "2969, 44",
+     "done": true
+    },
+    {
+     "name": "SQFTCALC",
+     "state": "Done, bit-exact",
+     "match": "",
+     "lines": "3013, 85",
+     "done": true
+    },
+    {
+     "name": "REPLACE",
+     "state": "Ported in helpers.py, checked through callers",
+     "match": "",
+     "lines": "3098, 107",
+     "done": true
+    },
+    {
+     "name": "RSHVAC",
+     "state": "Done, 4e-7 (heating_choice.py)",
+     "match": "",
+     "lines": "3205, 409",
+     "done": true
+    },
+    {
+     "name": "RHTRTEC / RHTRADD / RHTRCON",
+     "state": "Done: 3e-7, 2e-7, bit-exact (heating_choice.py, heating.py)",
+     "match": "",
+     "lines": "3614, 3951, 4249",
+     "done": true
+    },
+    {
+     "name": "RCLTEC / RCLADD / RCLCON",
+     "state": "Done: 3e-7, bit-exact, bit-exact (cooling.py)",
+     "match": "",
+     "lines": "4790, 5047, 5361",
+     "done": true
+    },
+    {
+     "name": "RCWTEC / RCWADD / RCWCON",
+     "state": "Done, bit-exact (washers.py)",
+     "match": "",
+     "lines": "5844, 6095, 6240",
+     "done": true
+    },
+    {
+     "name": "RDWTEC / RDWADD / RDWCON",
+     "state": "Done, bit-exact (washers.py)",
+     "match": "",
+     "lines": "6466, 6683, 6841",
+     "done": true
+    },
+    {
+     "name": "RWHTEC / REUADD (EU 5) / RWHCON",
+     "state": "Done: 9e-8, bit-exact, bit-exact (water_cooking.py)",
+     "match": "",
+     "lines": "7056, 7387, 7660",
+     "done": true
+    },
+    {
+     "name": "RSTVTEC / REUADD (EU 6) / RSTOVCON",
+     "state": "Done, bit-exact (water_cooking.py)",
+     "match": "",
+     "lines": "8085, 7387, 8338",
+     "done": true
+    },
+    {
+     "name": "RDRYTEC / RDRYADD / RDRYCON",
+     "state": "Done, bit-exact (appliances.py)",
+     "match": "",
+     "lines": "8568, 8783, 9055",
+     "done": true
+    },
+    {
+     "name": "RREFTEC / RREFADD / RREFCON",
+     "state": "Done, bit-exact (appliances.py)",
+     "match": "",
+     "lines": "9296, 9562, 9694",
+     "done": true
+    },
+    {
+     "name": "RFRZTEC / RFRZADD / RFRZCON",
+     "state": "Done, bit-exact (appliances.py)",
+     "match": "",
+     "lines": "9899, 10146, 10279",
+     "done": true
+    },
+    {
+     "name": "LTCNS",
+     "state": "Done, 7e-7 (lighting_misc.py)",
+     "match": "",
+     "lines": "10492, 666",
+     "done": true
+    },
+    {
+     "name": "APCNS",
+     "state": "Done, bit-exact (lighting_misc.py)",
+     "match": "",
+     "lines": "11158, 378",
+     "done": true
+    },
+    {
+     "name": "SHTCNS, APPCNS",
+     "state": "Done, bit-exact (lighting_misc.py)",
+     "match": "",
+     "lines": "11536, 11628",
+     "done": true
+    },
+    {
+     "name": "FUELCN",
+     "state": "Done, bit-exact (totals.py)",
+     "match": "",
+     "lines": "11693, 40",
+     "done": true
+    },
+    {
+     "name": "RSBENCH",
+     "state": "Done, bit-exact (totals.py)",
+     "match": "",
+     "lines": "13673, 223",
+     "done": true
+    },
+    {
+     "name": "NEMSCN",
+     "state": "Done, bit-exact (totals.py)",
+     "match": "",
+     "lines": "11733, 60",
+     "done": true
+    },
+    {
+     "name": "RESDRP",
+     "state": "Done, bit-exact (totals.py)",
+     "match": "",
+     "lines": "11793, 107",
+     "done": true
+    },
+    {
+     "name": "RDISTGEN",
+     "state": "Done, bit-exact (distgen.py; reads RGENTK and RSGENTK itself)",
+     "match": "",
+     "lines": "15065, 1678",
+     "done": true
+    },
+    {
+     "name": "CALC111D",
+     "state": "Skip",
+     "match": "",
+     "lines": "14956, 109",
+     "done": false
+    },
+    {
+     "name": "RSPITC, PITCINIT",
+     "state": "Skip",
+     "match": "",
+     "lines": "16773, 16743",
+     "done": false
+    },
+    {
+     "name": "NHTSHR, RESDRP2",
+     "state": "Done, bit-exact (reports.py)",
+     "match": "",
+     "lines": "13610, 11900",
+     "done": true
+    },
+    {
+     "name": "RESDBOUT",
+     "state": "Skip",
+     "match": "",
+     "lines": "13896",
+     "done": false
+    },
+    {
+     "name": "SVRTE, RSELAST, EQCOST, rLearnCost",
+     "state": "Ported in helpers.py",
+     "match": "",
+     "lines": "16862-17051",
+     "done": true
+    }
+   ],
+   "routines_source": "SCOPE.md",
+   "eia_state": "",
+   "blocker": ""
+  },
+  "commercial": {
+   "name": "Commercial",
+   "side": "demand",
+   "kind": "real",
+   "eia_lines": 13268,
+   "eia_files": [
+    {
+     "path": "source/comm.f",
+     "lines": 13268
+    }
+   ],
+   "eia_file_count": 1,
+   "ours_lines": 4804,
+   "ours_files": [
+    "src/nems_open/commercial/__init__.py",
+    "src/nems_open/commercial/base_year.py",
+    "src/nems_open/commercial/benchmarking.py",
+    "src/nems_open/commercial/comm.py",
+    "src/nems_open/commercial/consumption.py",
+    "src/nems_open/commercial/distgen.py",
+    "src/nems_open/commercial/distgen_tables.py",
+    "src/nems_open/commercial/floorspace.py",
+    "src/nems_open/commercial/inputs.py",
+    "src/nems_open/commercial/ktek.py",
+    "src/nems_open/commercial/report.py",
+    "src/nems_open/commercial/service_demand.py",
+    "src/nems_open/commercial/technology_choice.py",
+    "src/nems_open/commercial/technology_choice_inputs.py"
+   ],
+   "tests": 921,
+   "test_files": {
+    "test_commercial_benchmarking.py": 226,
+    "test_commercial_consumption.py": 144,
+    "test_commercial_distgen.py": 344,
+    "test_commercial_floorspace.py": 4,
+    "test_commercial_inputs.py": 39,
+    "test_commercial_report.py": 14,
+    "test_commercial_service_demand.py": 54,
+    "test_commercial_technology_choice.py": 57,
+    "test_commercial_technology_choice_inputs.py": 6,
+    "test_oracle.py": 3,
+    "test_run_demand.py": 30
+   },
+   "routines": [
+    {
+     "name": "COMFloorspace + CMSurvRate",
+     "state": "Done 2026-11-01",
+     "match": "Within 1e-6, all 9 divisions, 11 building types, 2019-2050",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMServiceDemand (calculation)",
+     "state": "Done 2026-11-01",
+     "match": "Within 4e-7 (float32 rounding) vs oracle, all regions, buildings, services, 9 test years 2019-2050",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMServiceDemand (first call: KINTENS, KSHEFF, KMELS, KSDELA, KHURELA, KVARSDI, KDSSTM, KDSEFF, KDSFS, KRENEW, KDEGDAY, BLDBASE, the KTEK technology table, base-year ServDmdIntenBASE)",
+     "state": "Done 2026-11-01",
+     "match": "Same arrays as the oracle at the end of the 2019 first call (float32 exact; BLDBASE needs one oracle rebuild to be checked)",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMTechnologyChoice (calculation, non-first calls)",
+     "state": "Done 2026-11-01",
+     "match": "Within 2e-6 vs oracle on every output (shares, efficiency, MS, investment, EquipSD, warehouse indices, US averages), tested 2020, 2026, 2040",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMTechnologyChoice (first call: KBEHAV, KDELEFF, KCAPFAC, KPREM reads, TimePrefProp normalization, heat pump cost edit)",
+     "state": "Done 2026-11-01",
+     "match": "Same arrays as the oracle before and after the 2019 first call",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMConsumption (calculation)",
+     "state": "Done 2026-11-01",
+     "match": "Within 5e-7 vs oracle on every output, 9 test years 2019-2050; US total matches EIA to 4 decimals",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMConsumption (first call: KSTEO, KMINFL reads, STEO targets into CMSEDS)",
+     "state": "To do. KMINFL is re-read every call; tests take it from the oracle",
+     "match": "",
+     "lines": "",
+     "done": false
+    },
+    {
+     "name": "COMBenchmarking",
+     "state": "Done 2026-11-01",
+     "match": "Bit-for-bit (float32) vs oracle on every output, 9 test years 2019-2050",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "COMReport (the national totals it leaves in COMMREP; the printed KRPT/KSDOUT/KDBOUT tables are not ported)",
+     "state": "Done 2026-11-01",
+     "match": "Same arrays as the oracle before and after the 2050 call",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "CDISTGEN (KCOGEN and KGENTK readers, learning, cash flow and IRR, Bass diffusion, RPS credits, CGCOMM outputs)",
+     "state": "Done 2026-11-01",
+     "match": "Within 1e-4 on every output, 9 test years 2019-2050 (under 1 s a year since issue #6)",
+     "lines": "",
+     "done": true
+    },
+    {
+     "name": "CALC111D",
+     "state": "To do",
+     "match": "",
+     "lines": "",
+     "done": false
+    },
+    {
+     "name": "COMM driver (yearly chain)",
+     "state": "Done 2026-11-02",
+     "match": "Within 4e-7 vs oracle on QBLK fuel use, 2025-2050, one year or chained",
+     "lines": "",
+     "done": true
+    }
+   ],
+   "routines_source": "SCOPE.md",
+   "eia_state": "",
+   "blocker": ""
+  },
+  "industrial": {
+   "name": "Industrial",
+   "side": "demand",
+   "kind": "partial",
+   "eia_lines": 20002,
+   "eia_files": [
+    {
+     "path": "source/ind.f",
+     "lines": 20002
+    }
+   ],
+   "eia_file_count": 1,
+   "ours_lines": 460,
+   "ours_files": [
+    "src/nems_open/demand_adapter.py",
+    "src/nems_open/fit_elasticities.py"
+   ],
+   "tests": 11,
+   "test_files": {
+    "test_run_model.py": 11
+   },
+   "routines": [
+    {
+     "name": "WEXOG",
+     "state": "",
+     "match": "",
+     "lines": "1912",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "INDSIC",
+     "state": "",
+     "match": "",
+     "lines": "1326",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "INDGRP",
+     "state": "",
+     "match": "",
+     "lines": "962",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "SETUP_MAC_AND_PRICE",
+     "state": "",
+     "match": "",
+     "lines": "895",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "CEMENTCCS",
+     "state": "",
+     "match": "",
+     "lines": "868",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "TECHSHR_RPT",
+     "state": "",
+     "match": "",
+     "lines": "624",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "TECH_STEP",
+     "state": "",
+     "match": "",
+     "lines": "525",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "IS_GETDATA",
+     "state": "",
+     "match": "",
+     "lines": "517",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "CALPATOT",
+     "state": "",
+     "match": "",
+     "lines": "492",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "ISEAM",
+     "state": "",
+     "match": "",
+     "lines": "447",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "CALPROD",
+     "state": "",
+     "match": "",
+     "lines": "446",
+     "done": false,
+     "file": "ind.f"
+    },
+    {
+     "name": "CALGEN",
+     "state": "",
+     "match": "",
+     "lines": "412",
+     "done": false,
+     "file": "ind.f"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "To port",
+   "blocker": "None"
+  },
+  "transportation": {
+   "name": "Transportation",
+   "side": "demand",
+   "kind": "partial",
+   "eia_lines": 18378,
+   "eia_files": [
+    {
+     "path": "source/tran.f",
+     "lines": 10960
+    },
+    {
+     "path": "source/tranfrt.f",
+     "lines": 5694
+    },
+    {
+     "path": "source/tranair.f",
+     "lines": 1724
+    }
+   ],
+   "eia_file_count": 3,
+   "ours_lines": 460,
+   "ours_files": [
+    "src/nems_open/demand_adapter.py",
+    "src/nems_open/fit_elasticities.py"
+   ],
+   "tests": 11,
+   "test_files": {
+    "test_run_model.py": 11
+   },
+   "routines": [
+    {
+     "name": "FEMCALC",
+     "state": "",
+     "match": "",
+     "lines": "1072",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "READLDV",
+     "state": "",
+     "match": "",
+     "lines": "869",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "TMPGNEW",
+     "state": "",
+     "match": "",
+     "lines": "658",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "TRUCK_ACT",
+     "state": "",
+     "match": "",
+     "lines": "642",
+     "done": false,
+     "file": "tranfrt.f"
+    },
+    {
+     "name": "CFREAD",
+     "state": "",
+     "match": "",
+     "lines": "640",
+     "done": false,
+     "file": "tranfrt.f"
+    },
+    {
+     "name": "TAIREFF",
+     "state": "",
+     "match": "",
+     "lines": "603",
+     "done": false,
+     "file": "tranair.f"
+    },
+    {
+     "name": "TREPORT",
+     "state": "",
+     "match": "",
+     "lines": "555",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "CAFECALC",
+     "state": "",
+     "match": "",
+     "lines": "521",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "TRUCK_NEW",
+     "state": "",
+     "match": "",
+     "lines": "514",
+     "done": false,
+     "file": "tranfrt.f"
+    },
+    {
+     "name": "TBENCHMARK",
+     "state": "",
+     "match": "",
+     "lines": "473",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "TMISC",
+     "state": "",
+     "match": "",
+     "lines": "440",
+     "done": false,
+     "file": "tran.f"
+    },
+    {
+     "name": "TRUCK_CHOICE",
+     "state": "",
+     "match": "",
+     "lines": "397",
+     "done": false,
+     "file": "tranfrt.f"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "To port",
+   "blocker": "None"
+  },
+  "electricity": {
+   "name": "Electricity",
+   "side": "supply",
+   "kind": "stand",
+   "eia_lines": 268287,
+   "eia_files": [
+    {
+     "path": "models/ecp/MainProject/ecp.ams",
+     "lines": 118489
+    },
+    {
+     "path": "models/efd/MainProject/efd.ams",
+     "lines": 52137
+    },
+    {
+     "path": "source/uecp.f",
+     "lines": 41939
+    },
+    {
+     "path": "source/uefd.f",
+     "lines": 20276
+    },
+    {
+     "path": "source/udat.f",
+     "lines": 18203
+    },
+    {
+     "path": "source/uefp.f",
+     "lines": 12265
+    },
+    {
+     "path": "source/uldsm.f",
+     "lines": 4978
+    }
+   ],
+   "eia_file_count": 7,
+   "ours_lines": 738,
+   "ours_files": [
+    "src/nems_open/supply_standin/__init__.py",
+    "src/nems_open/supply_standin/data.py",
+    "src/nems_open/supply_standin/fit.py",
+    "src/nems_open/supply_standin/model.py"
+   ],
+   "tests": 24,
+   "test_files": {
+    "test_supply_standin.py": 24
+   },
+   "routines": [
+    {
+     "name": "CRPGRP",
+     "state": "",
+     "match": "",
+     "lines": "7333",
+     "done": false,
+     "file": "udat.f"
+    },
+    {
+     "name": "RDCNTRL",
+     "state": "",
+     "match": "",
+     "lines": "4708",
+     "done": false,
+     "file": "udat.f"
+    },
+    {
+     "name": "EP$COAL",
+     "state": "",
+     "match": "",
+     "lines": "2949",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "CALC_STORAGE_VAL",
+     "state": "",
+     "match": "",
+     "lines": "2038",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EP$BRNW",
+     "state": "",
+     "match": "",
+     "lines": "1875",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EP$INT",
+     "state": "",
+     "match": "",
+     "lines": "1760",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EP$BDSP",
+     "state": "",
+     "match": "",
+     "lines": "1664",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EP_ORNW_Calculations",
+     "state": "",
+     "match": "",
+     "lines": "1642",
+     "done": false,
+     "file": "ecp.ams"
+    },
+    {
+     "name": "EP$ODSP",
+     "state": "",
+     "match": "",
+     "lines": "1599",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EPO$BILD",
+     "state": "",
+     "match": "",
+     "lines": "1586",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EPO$COAL",
+     "state": "",
+     "match": "",
+     "lines": "1546",
+     "done": false,
+     "file": "uecp.f"
+    },
+    {
+     "name": "EP$CSUPPLY",
+     "state": "",
+     "match": "",
+     "lines": "1476",
+     "done": false,
+     "file": "uecp.f"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "To port, last",
+   "blocker": "Biggest piece. Its optimization models run on AIMMS (paid)",
+   "fits": [
+    {
+     "price": "MPBLK/pelrs",
+     "coef": {
+      "q": 0.37806,
+      "pngel": 0.00118
+     },
+     "r2": 0.5804,
+     "rmse_pct": 1.201
+    },
+    {
+     "price": "MPBLK/pelcm",
+     "coef": {
+      "q": 0.28652,
+      "pngel": 0.10232
+     },
+     "r2": 0.4364,
+     "rmse_pct": 1.667
+    },
+    {
+     "price": "MPBLK/pelin",
+     "coef": {
+      "q": 0.29782,
+      "pngel": 0.13023
+     },
+     "r2": 0.42,
+     "rmse_pct": 1.741
+    }
+   ],
+   "switching": {
+    "gas_own": -0.7634,
+    "coal_from_gas_cost": 0.7637,
+    "coal_own": -0.7634
+   }
+  },
+  "natural_gas": {
+   "name": "Natural gas",
+   "side": "supply",
+   "kind": "stand",
+   "eia_lines": 34883,
+   "eia_files": [
+    {
+     "path": "models/ngas/nems_ngmm.ams",
+     "lines": 16968
+    },
+    {
+     "path": "models/ngas/mainproject/natgas.ams",
+     "lines": 16959
+    },
+    {
+     "path": "models/ngas/mainproject/repts.ams",
+     "lines": 565
+    },
+    {
+     "path": "models/ngas/mainproject/nlp.ams",
+     "lines": 391
+    }
+   ],
+   "eia_file_count": 4,
+   "ours_lines": 738,
+   "ours_files": [
+    "src/nems_open/supply_standin/__init__.py",
+    "src/nems_open/supply_standin/data.py",
+    "src/nems_open/supply_standin/fit.py",
+    "src/nems_open/supply_standin/model.py"
+   ],
+   "tests": 24,
+   "test_files": {
+    "test_supply_standin.py": 24
+   },
+   "routines": [
+    {
+     "name": "Write_to_NEMS",
+     "state": "",
+     "match": "",
+     "lines": "347",
+     "done": false,
+     "file": "nems_ngmm.ams"
+    },
+    {
+     "name": "Write_to_NEMS_History",
+     "state": "",
+     "match": "",
+     "lines": "335",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "NGMM_MainExecution_API",
+     "state": "",
+     "match": "",
+     "lines": "229",
+     "done": false,
+     "file": "nems_ngmm.ams"
+    },
+    {
+     "name": "MainExecution_Standalone_Rest_API",
+     "state": "",
+     "match": "",
+     "lines": "209",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "RNG_Production_Run",
+     "state": "",
+     "match": "",
+     "lines": "150",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "Historical_InitializeData",
+     "state": "",
+     "match": "",
+     "lines": "132",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "Read_EIA_860_Data",
+     "state": "",
+     "match": "",
+     "lines": "120",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "Read_EIA_923_Data",
+     "state": "",
+     "match": "",
+     "lines": "118",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "STEOFactors_Run",
+     "state": "",
+     "match": "",
+     "lines": "115",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "ReadPipelineProjects",
+     "state": "",
+     "match": "",
+     "lines": "114",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "MainExecution",
+     "state": "",
+     "match": "",
+     "lines": "113",
+     "done": false,
+     "file": "natgas.ams"
+    },
+    {
+     "name": "NEMS_Monitor",
+     "state": "",
+     "match": "",
+     "lines": "111",
+     "done": false,
+     "file": "natgas.ams"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "To port",
+   "blocker": "AIMMS (paid)",
+   "fits": [
+    {
+     "price": "MPBLK/pngrs",
+     "coef": {
+      "q": 0.12905
+     },
+     "r2": 0.3703,
+     "rmse_pct": 0.89
+    },
+    {
+     "price": "MPBLK/pngcm",
+     "coef": {
+      "q": 0.20125
+     },
+     "r2": 0.364,
+     "rmse_pct": 1.406
+    },
+    {
+     "price": "MPBLK/pngin",
+     "coef": {
+      "q": 0.50779
+     },
+     "r2": 0.5723,
+     "rmse_pct": 2.293
+    },
+    {
+     "price": "MPBLK/pngel",
+     "coef": {
+      "q": 0.78365
+     },
+     "r2": 0.6475,
+     "rmse_pct": 2.942
+    }
+   ]
+  },
+  "oil": {
+   "name": "Oil and refining",
+   "side": "supply",
+   "kind": "stand",
+   "eia_lines": 34625,
+   "eia_files": [
+    {
+     "path": "models/lfmm/source/lfreport.gms",
+     "lines": 7413
+    },
+    {
+     "path": "models/lfmm/source/lfprep.gms",
+     "lines": 5622
+    },
+    {
+     "path": "source/refine_hogs.f",
+     "lines": 3989
+    },
+    {
+     "path": "source/refine.f",
+     "lines": 3988
+    },
+    {
+     "path": "source/refine_logs.f",
+     "lines": 3968
+    },
+    {
+     "path": "models/lfmm/source/lfshell.gms",
+     "lines": 1908
+    },
+    {
+     "path": "models/lfmm/source/lfshell_hogs.gms",
+     "lines": 1896
+    },
+    {
+     "path": "models/lfmm/source/lfmodel.gms",
+     "lines": 1241
+    }
+   ],
+   "eia_file_count": 15,
+   "ours_lines": 738,
+   "ours_files": [
+    "src/nems_open/supply_standin/__init__.py",
+    "src/nems_open/supply_standin/data.py",
+    "src/nems_open/supply_standin/fit.py",
+    "src/nems_open/supply_standin/model.py"
+   ],
+   "tests": 24,
+   "test_files": {
+    "test_supply_standin.py": 24
+   },
+   "routines": [
+    {
+     "name": "RFHIST1",
+     "state": "",
+     "match": "",
+     "lines": "2097",
+     "done": false,
+     "file": "refine.f"
+    },
+    {
+     "name": "E85_DEMAND_CURVE",
+     "state": "",
+     "match": "",
+     "lines": "795",
+     "done": false,
+     "file": "refine.f"
+    },
+    {
+     "name": "REFINE",
+     "state": "",
+     "match": "",
+     "lines": "716",
+     "done": false,
+     "file": "refine_hogs.f"
+    },
+    {
+     "name": "WRITE_GDX",
+     "state": "",
+     "match": "",
+     "lines": "222",
+     "done": false,
+     "file": "refine.f"
+    },
+    {
+     "name": "READ_GDX",
+     "state": "",
+     "match": "",
+     "lines": "50",
+     "done": false,
+     "file": "refine.f"
+    },
+    {
+     "name": "WRITE_INIT_GDX",
+     "state": "",
+     "match": "",
+     "lines": "45",
+     "done": false,
+     "file": "refine.f"
+    },
+    {
+     "name": "PMM_NEXTDATA",
+     "state": "",
+     "match": "",
+     "lines": "25",
+     "done": false,
+     "file": "refine.f"
+    },
+    {
+     "name": "LFMM_FFVSHR",
+     "state": "",
+     "match": "",
+     "lines": "24",
+     "done": false,
+     "file": "refine.f"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "To port",
+   "blocker": "GAMS (paid)",
+   "fits": [
+    {
+     "price": "MPBLK/pmgtr",
+     "coef": {
+      "q": 0.49656
+     },
+     "r2": 0.9494,
+     "rmse_pct": 1.051
+    },
+    {
+     "price": "MPBLK/pjftr",
+     "coef": {
+      "q": 0.20029
+     },
+     "r2": 0.0961,
+     "rmse_pct": 1.919
+    },
+    {
+     "price": "MPBLK/plgrs",
+     "coef": {
+      "q": 0.34855
+     },
+     "r2": 0.3231,
+     "rmse_pct": 1.594
+    }
+   ]
+  },
+  "coal": {
+   "name": "Coal",
+   "side": "supply",
+   "kind": "stand",
+   "eia_lines": 28361,
+   "eia_files": [
+    {
+     "path": "models/coal/MainProject/coal.ams",
+     "lines": 28310
+    },
+    {
+     "path": "models/coal/MainProject/case.ams",
+     "lines": 44
+    },
+    {
+     "path": "models/coal/MainProject/nchar.ams",
+     "lines": 7
+    }
+   ],
+   "eia_file_count": 3,
+   "ours_lines": 738,
+   "ours_files": [
+    "src/nems_open/supply_standin/__init__.py",
+    "src/nems_open/supply_standin/data.py",
+    "src/nems_open/supply_standin/fit.py",
+    "src/nems_open/supply_standin/model.py"
+   ],
+   "tests": 24,
+   "test_files": {
+    "test_supply_standin.py": 24
+   },
+   "routines": [
+    {
+     "name": "PutGlobalData",
+     "state": "",
+     "match": "",
+     "lines": "553",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "CalculationOfElectricityPricingEquation",
+     "state": "",
+     "match": "",
+     "lines": "334",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "Copy_Global",
+     "state": "",
+     "match": "",
+     "lines": "329",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "ReadData",
+     "state": "",
+     "match": "",
+     "lines": "314",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "Overwrites",
+     "state": "",
+     "match": "",
+     "lines": "310",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "CalculationOfCoalPricingEquation",
+     "state": "",
+     "match": "",
+     "lines": "304",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "MainExecution",
+     "state": "",
+     "match": "",
+     "lines": "260",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "not_used_PrepDBData",
+     "state": "",
+     "match": "",
+     "lines": "254",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "Initialize_Global",
+     "state": "",
+     "match": "",
+     "lines": "180",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "SendGlobalDataToNEMS_HistOverwrites",
+     "state": "",
+     "match": "",
+     "lines": "173",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "SendGlobalDataToNEMS",
+     "state": "",
+     "match": "",
+     "lines": "172",
+     "done": false,
+     "file": "coal.ams"
+    },
+    {
+     "name": "WriteToExcelFileAxll",
+     "state": "",
+     "match": "",
+     "lines": "159",
+     "done": false,
+     "file": "coal.ams"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "To port",
+   "blocker": "AIMMS (paid)",
+   "fits": [
+    {
+     "price": "MPBLK/pclel",
+     "coef": {
+      "q": 0.03397
+     },
+     "r2": -0.0269,
+     "rmse_pct": 38.877
+    },
+    {
+     "price": "MPBLK/pclin",
+     "coef": {
+      "q": 0.00738
+     },
+     "r2": -0.0711,
+     "rmse_pct": 0.813
+    }
+   ]
+  },
+  "emissions": {
+   "name": "Emissions",
+   "side": "supply",
+   "kind": "stand",
+   "eia_lines": 11745,
+   "eia_files": [
+    {
+     "path": "models/epm/epm_sum_emissions.py",
+     "lines": 3771
+    },
+    {
+     "path": "models/epm/epm_restart.py",
+     "lines": 2411
+    },
+    {
+     "path": "models/epm/epm_other_ghg.py",
+     "lines": 866
+    },
+    {
+     "path": "models/epm/epm_core.py",
+     "lines": 799
+    },
+    {
+     "path": "models/epm/epm_regula_falsi.py",
+     "lines": 765
+    },
+    {
+     "path": "models/epm/epm_read.py",
+     "lines": 670
+    },
+    {
+     "path": "models/epm/epm_revenue.py",
+     "lines": 670
+    },
+    {
+     "path": "models/epm/epm_adjustments.py",
+     "lines": 512
+    }
+   ],
+   "eia_file_count": 13,
+   "ours_lines": 341,
+   "ours_files": [
+    "src/nems_open/supply_standin/model.py"
+   ],
+   "tests": 24,
+   "test_files": {
+    "test_supply_standin.py": 24
+   },
+   "routines": [
+    {
+     "name": "sum_emissions_industrial",
+     "state": "",
+     "match": "",
+     "lines": "928",
+     "done": false,
+     "file": "epm_sum_emissions.py"
+    },
+    {
+     "name": "epm",
+     "state": "",
+     "match": "",
+     "lines": "693",
+     "done": false,
+     "file": "epm_core.py"
+    },
+    {
+     "name": "sum_emissions_electricity",
+     "state": "",
+     "match": "",
+     "lines": "572",
+     "done": false,
+     "file": "epm_sum_emissions.py"
+    },
+    {
+     "name": "sum_emissions_transportation",
+     "state": "",
+     "match": "",
+     "lines": "504",
+     "done": false,
+     "file": "epm_sum_emissions.py"
+    },
+    {
+     "name": "accntrev",
+     "state": "",
+     "match": "",
+     "lines": "494",
+     "done": false,
+     "file": "epm_revenue.py"
+    },
+    {
+     "name": "regfalsibank",
+     "state": "",
+     "match": "",
+     "lines": "449",
+     "done": false,
+     "file": "epm_regula_falsi.py"
+    },
+    {
+     "name": "oghg",
+     "state": "",
+     "match": "",
+     "lines": "398",
+     "done": false,
+     "file": "epm_other_ghg.py"
+    },
+    {
+     "name": "_include_emeblk",
+     "state": "",
+     "match": "",
+     "lines": "309",
+     "done": false,
+     "file": "epm_restart.py"
+    },
+    {
+     "name": "price_adjust",
+     "state": "",
+     "match": "",
+     "lines": "304",
+     "done": false,
+     "file": "epm_adjustments.py"
+    },
+    {
+     "name": "_include_emablk",
+     "state": "",
+     "match": "",
+     "lines": "283",
+     "done": false,
+     "file": "epm_restart.py"
+    },
+    {
+     "name": "readoffsets",
+     "state": "",
+     "match": "",
+     "lines": "262",
+     "done": false,
+     "file": "epm_other_ghg.py"
+    },
+    {
+     "name": "regfalsi",
+     "state": "",
+     "match": "",
+     "lines": "248",
+     "done": false,
+     "file": "epm_regula_falsi.py"
+    }
+   ],
+   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "eia_state": "Done by EIA",
+   "blocker": "None"
+  }
+ },
+ "totals": {
+  "tests": 1314,
+  "generated": "2026-11-02"
+ }
+}
