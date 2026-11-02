@@ -10,10 +10,12 @@ Dumps only happen on the final iteration of the years in DUMP_YEARS.
 Output only: nothing here changes a computed value.
 
 Usage: python -I hooks.py <upstream> <source.f90 to instrument in place> [module]
-module is comm (default) or resd.
+module is comm (default), resd or emm (src is then util.f90; the other EMM
+files must already be patched into the build folder).
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -204,6 +206,36 @@ RESD_WIDE_FILES = ["ncntrl", "qblk", "mpblk", "ampblk", "macout", "eusprc", "qsb
                    "uecpout", "e111d", "steoblock", "emission", "emablk", "bldglrn"]
 RESD_DECL_FILES = ["parametr", "resdrep", "rtek", "rscon", "rseff", "apq"] + RESD_WIDE_FILES
 
+# Electricity (EMM): UTIL is the yearly entry. Targets are dicts as for resd.
+# Each gets its own dump routine, built from the includes of the target routine
+# and everything it calls (EMM has 121 includes; they do not all compile in one
+# routine). The ECP and EFD solves run in AIMMS, which we do not have: EMM_SWAPS
+# rewrite those calls in the oracle's copy of util.f.
+EMM_DUMP_YEARS = [31, 32, 33, 36, 37, 38, 41, 51, 61]  # 2020 2021 2022 2025 2026 2027 2030 2040 2050
+EMM_TARGETS = [
+    # home: the files whose routines count when collecting what a target uses. The
+    # call tree reaches most of EMM through shared helpers; following it everywhere
+    # made each dump 350 MB, mostly EFD dispatch and storage arrays EFP never reads.
+    dict(tag="ld", call=r"CALL ELLDSM\(IDSM\)", routines=["ELLDSM"],   # LDSM: load curves for ECP, EFD, EFP
+         home=["uldsm"]),
+    dict(tag="fp", call=r"CALL ELEFP\b", routines=["ELEFP"],           # EFP: prices (first pass; the second
+         home=["uefp", "udaf"]),                                        # runs only with STEO price benchmarking)
+]
+EMM_SWAPS = [
+    (r"^(\s*)CALL ELECP\s*$", r"\1CONTINUE   ! ORACLE: ECP (AIMMS LP) not run"),
+    (r"^(\s*)CALL ELEFD\(CURIYR\)", r"\1CALL EFD_STANDIN(CURIYR)   ! ORACLE: was CALL ELEFD(CURIYR)"),
+    # These copy EFD results into NEMS's shared arrays. Skipped so those arrays keep
+    # EIA's values from the restart file, which EFP and the stand-in read.
+    (r"^(\s*)CALL EMMCAPO\s*$", r"\1CONTINUE   ! ORACLE: EMMCAPO skipped"),
+    (r"^(\s*)CALL EMMDSPO\s*$", r"\1CONTINUE   ! ORACLE: EMMDSPO skipped"),
+    (r"^(\s*)IF \(FCRL \.EQ\. 1 \.OR\. CURITR \.GT\. MAXITR\)CALL EMMGENO\s*$", r"\1CONTINUE   ! ORACLE: EMMGENO skipped"),
+    (r"^(\s*)CALL EMMBODPV\s*$", r"\1CONTINUE   ! ORACLE: EMMBODPV skipped"),
+    (r"^(\s*)CALL EMMPRCO\s*$", r"\1CONTINUE   ! ORACLE: EMMPRCO skipped"),
+]
+# EFD's per-region output and build blocks live in direct-access files, not in
+# COMMON, so the stand-in dumps them region by region ("<name>_rNN", tag fs_out).
+EMM_REGION_FILES = ["dispout", "bildin"]
+
 MODULES = {
     "comm": dict(build="build", run="run", years=DUMP_YEARS, targets=TARGETS, includes=STATE_INCLUDES,
                  use=None, block_files=STATE_BLOCK_FILES, extra=STATE_EXTRA, decl_files=DECL_FILES,
@@ -212,6 +244,8 @@ MODULES = {
                  includes=[], use="R_", block_files=RESD_STATE_BLOCK_FILES, extra=RESD_STATE_EXTRA,
                  decl_files=RESD_DECL_FILES, module_text=True, wide_files=RESD_WIDE_FILES,
                  outside_files=["tranrep"]),
+    "emm": dict(build="build_emm", run="run_emm", years=EMM_DUMP_YEARS, targets=EMM_TARGETS, module_text=False,
+                sources=["util", "udat", "uldsm", "uefp", "uefd", "uecp", "unugs", "udaf", "ucape", "uread"]),
 }
 CFG = MODULES["comm"]
 
@@ -257,7 +291,7 @@ def declarations(text):
             t = m.group(1).lower().replace(" ", "")
             body = m.group(2).split("::", 1)[-1]
             for ent in split_top(body):
-                em = re.match(r"(\w+)\s*(?:\*\s*\d+)?\s*(\((.*)\))?", ent)
+                em = re.match(r"([\w$]+)\s*(?:\*\s*\d+)?\s*(\((.*)\))?", ent)
                 if em:
                     rank = len(split_top(em.group(3))) if em.group(2) else 0
                     prev = out.get(em.group(1).lower(), (t, 0))
@@ -265,7 +299,7 @@ def declarations(text):
         cm = re.match(r"common\s*/\s*\w+\s*/(.*)", st, re.I)
         if cm:
             for ent in split_top(cm.group(1)):
-                em = re.match(r"(\w+)\s*(\((.*)\))?", ent)
+                em = re.match(r"([\w$]+)\s*(\((.*)\))?", ent)
                 if em and em.group(2):
                     t = out.get(em.group(1).lower(), ("?", 0))[0]
                     out[em.group(1).lower()] = (t, len(split_top(em.group(3))))
@@ -288,7 +322,7 @@ def common_names(text):
     for st in statements(text):
         cm = re.match(r"common\s*/\s*\w+\s*/(.*)", st, re.I)
         if cm:
-            names += [re.match(r"\w+", e).group(0) for e in split_top(cm.group(1))]
+            names += [re.match(r"[\w$]+", e).group(0) for e in split_top(cm.group(1))]
     return names
 
 
@@ -317,7 +351,7 @@ def module_r_(source_text):
     for st in statements(text):
         a = re.match(r"real\*\d\s*,\s*allocatable\s*::(.*)", st, re.I)
         if a:
-            names += [re.match(r"\w+", e).group(0) for e in split_top(a.group(1))]
+            names += [re.match(r"[\w$]+", e).group(0) for e in split_top(a.group(1))]
     return text, names
 
 
@@ -481,6 +515,175 @@ def instrument(comm_path: Path, upstream: Path):
     comm_path.write_text(text, encoding="latin-1")
 
 
+def emm_bodies(text):
+    """{lowercase name: (body, include list)} for every routine in EMM's files.
+    EMM routines end in a bare END, so a body runs to the next routine's start."""
+    heads = list(re.finditer(r"^[ \t]*(?:(?:REAL|INTEGER|LOGICAL)(?:\*\d)?[ \t]+)?(?:SUBROUTINE|FUNCTION)[ \t]+(\w+)",
+                             text, re.I | re.M))
+    out = {}
+    for i, m in enumerate(heads):
+        body = text[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        incs = [n.lower() for n in re.findall(r"(?im)^\s*include\s*'(\w+)'", body)]
+        out.setdefault(m.group(1).lower(), ("\n".join(l.split("!", 1)[0] for l in body.splitlines()), incs))
+    return out
+
+
+def emm_closure(bodies, routines):
+    """Identifiers and includes used by the routines and everything they call."""
+    used, incs, todo, seen = set(), [], [r.lower() for r in routines], set()
+    while todo:
+        r = todo.pop(0)
+        if r in seen or r not in bodies:
+            continue
+        seen.add(r)
+        body, rincs = bodies[r]
+        words = {w.lower() for w in re.findall(r"[A-Za-z_][\w$]*", body)}
+        used |= words
+        incs += [n for n in rincs if n not in incs]
+        todo += sorted(w for w in words if w in bodies and w not in seen)
+    return used, incs
+
+
+def nested_includes(n, inc_dir, seen=None):
+    seen = set() if seen is None else seen
+    for m in re.findall(r"(?im)^\s*include\s*'(\w+)'", (inc_dir / n).read_text(encoding="latin-1")):
+        if m.lower() not in seen:
+            seen.add(m.lower())
+            nested_includes(m.lower(), inc_dir, seen)
+    return seen
+
+
+def include_list_errors(incs):
+    """Include files named in gfortran's errors for a routine with just these
+    includes (about 5 s for EMM's), or [] if it compiles."""
+    test = BUILD / "_inc_test.f90"
+    test.write_text("      subroutine t\n      implicit none\n" + "".join(f"      include '{n}'\n" for n in incs)
+                    + "      end subroutine t\n")
+    r = subprocess.run(["gfortran", "-fsyntax-only", "-ffree-line-length-none", "-fdec", "-Iinc", test.name],
+                       cwd=BUILD, capture_output=True, text=True)
+    test.unlink()
+    if r.returncode == 0:
+        return []
+    return [m.lower() for m in re.findall(r"^(\w+):\d+:\d+:", r.stderr, re.M)] or ["?"]
+
+
+def compiling_includes(incs, inc_dir):
+    """incs minus any include another one already pulls in, then minus whichever
+    include gfortran's errors point at, until the list compiles."""
+    incs = [n for n in incs if (inc_dir / n).exists()]
+    inner = set()
+    for n in incs:
+        inner |= nested_includes(n, inc_dir)
+    incs = [n for n in incs if n not in inner or n == "parametr"]
+    while True:
+        bad = include_list_errors(incs)
+        if not bad:
+            return incs
+        culprit = next((n for n in reversed(incs) if n == bad[0] or bad[0] in nested_includes(n, inc_dir)), incs[-1])
+        if culprit in ("parametr", "ncntrl"):
+            culprit = incs[-1]
+        print(f"  dropping include {culprit} ({bad[0]} does not compile with the others)", flush=True)
+        incs.remove(culprit)
+
+
+def emm_dump_routine(name, incs, inc_dir, used, tag_expr, suffix=None):
+    """A routine that includes `incs` and dumps every COMMON member in them that
+    `used` mentions (all members when used is None)."""
+    incs = ["parametr"] + [n for n in incs if n != "parametr"]
+    if "ncntrl" not in incs:
+        incs.insert(1, "ncntrl")
+    incs = compiling_includes(incs, inc_dir)
+    files = list(incs)
+    for n in incs:
+        files += sorted(nested_includes(n, inc_dir) - set(files))
+    decls, names = {}, []
+    for n in files:
+        t = (inc_dir / n).read_text(encoding="latin-1")
+        decls.update(declarations(t))
+        names += [v for v in common_names(t) if used is None or v.lower() in used]
+    calls = []
+    for v in {s.lower(): s for s in names}.values():
+        c = dump_call("@TAG@", v, *decls.get(v.lower(), ("?", 0)))
+        if c:
+            c = c.replace("'@TAG@'", tag_expr)
+            if suffix:
+                c = c.replace(f"'{v.lower()}'", f"'{v.lower()}'//{suffix}", 1)
+            calls.append(c)
+    inc = "\n".join(f"      include '{n}'" for n in incs)
+    arg = "tag, irg" if suffix else "tag"
+    extra = "      integer irg\n      character(4) rsuf\n" if suffix else ""
+    pre = "      write(rsuf, '(a,i2.2)') '_r', irg\n" if suffix else ""
+    src = (f"      subroutine {name}({arg})\n      implicit none\n{inc}\n      character(*) tag\n{extra}{pre}"
+           + "\n".join(calls) + f"\n      end subroutine {name}\n")
+    return src, len(calls), incs
+
+
+def write_state_routine_emm(inc_dir):
+    by_file = {s: emm_bodies((BUILD / f"{s}.f90").read_text(encoding="latin-1")) for s in CFG["sources"]}
+    years = ", ".join(map(str, CFG["years"]))
+    routines, branches, total = [], [], 0
+    all_used, all_incs = set(), []
+    for tg in map(as_dict, CFG["targets"]):
+        bodies = {}
+        for s in tg["home"]:
+            bodies.update(by_file[s])
+        used, incs = emm_closure(bodies, tg["routines"])
+        all_used |= used
+        all_incs += [n for n in incs if n not in all_incs]
+        src, n, _ = emm_dump_routine(f"oracle_state_{tg['tag']}", incs, inc_dir, used, "tag")
+        routines.append(src)
+        branches.append(f"      if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then\n"
+                        f"        call oracle_state_{tg['tag']}(tag)\n        return\n      endif")
+        total += n
+    src, n, _ = emm_dump_routine("oracle_state_final", all_incs, inc_dir, all_used, "tag")
+    routines.append(src)
+    # Per-region EFD output and build blocks, called from efd_standin.f90.
+    region_names = set()
+    for f in EMM_REGION_FILES:
+        region_names |= {v.lower() for v in common_names((inc_dir / f).read_text(encoding="latin-1"))}
+    rsrc, rn, _ = emm_dump_routine("oracle_region_dump", ["emmparm", "control"] + EMM_REGION_FILES, inc_dir,
+                                   region_names, "tag", suffix="rsuf")
+    routines.append(rsrc)
+    body = "\n".join(branches)
+    (BUILD / "oracle_state.f90").write_text(f"""! Generated by hooks.py. Do not edit.
+      subroutine oracle_state(tag)
+      implicit none
+      include 'parametr'
+      include 'ncntrl'
+      character(*) tag
+      integer, parameter :: years({len(CFG["years"])}) = (/ {years} /)
+      if (FCRL .ne. 1 .or. .not. any(years == CURIYR)) return
+{body}
+      if (tag == 'final') call oracle_state_final(tag)
+      end subroutine oracle_state
+
+      subroutine oracle_region(irg)
+      implicit none
+      include 'parametr'
+      include 'ncntrl'
+      integer irg
+      integer, parameter :: years({len(CFG["years"])}) = (/ {years} /)
+      if (FCRL .ne. 1 .or. .not. any(years == CURIYR)) return
+      call oracle_region_dump('fs_out', irg)
+      end subroutine oracle_region
+
+{"".join(routines)}""")
+    return total + n + rn
+
+
+def instrument_emm(util_path: Path):
+    text = util_path.read_text(encoding="latin-1")
+    for pat, repl in EMM_SWAPS:
+        text, k = re.subn(pat, repl, text, count=1, flags=re.I | re.M)
+        assert k == 1, pat
+    for tg in map(as_dict, CFG["targets"]):
+        m = list(re.finditer(r"^(\s*)(" + tg["call"] + r")", text, re.I | re.M))[tg["nth"]]
+        ind = m.group(1).lstrip("\n")
+        text = (text[:m.start()] + f"\n{ind}CALL ORACLE_STATE('{tg['tag']}_in')\n{ind}{m.group(2)}\n"
+                f"{ind}CALL ORACLE_STATE('{tg['tag']}_out')" + text[m.end():])
+    util_path.write_text(text, encoding="latin-1")
+
+
 def make_dirs():
     """Create the dump folders and drop old index files (odump appends to them)."""
     dirs = [RUN / "out" / "state" / "final" / str(CFG["years"][-1])]
@@ -491,6 +694,8 @@ def make_dirs():
             dirs += [RUN / "out" / "state" / f"f{tg['tag']}_{side}" / str(FIRST_YEAR) for side in ("in", "out")]
     if CFG is MODULES["comm"]:
         dirs += [RUN / "out" / "state" / f"{tag}_out" / str(FIRST_YEAR) for tag, *_ in PROBES]
+    if CFG is MODULES["emm"]:
+        dirs += [RUN / "out" / "state" / "fs_out" / str(y) for y in CFG["years"]]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
         (d / "index.txt").unlink(missing_ok=True)
@@ -500,7 +705,11 @@ if __name__ == "__main__":
     upstream, src = Path(sys.argv[1]).resolve(), Path(sys.argv[2])
     CFG = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
     BUILD, RUN = HERE / CFG["build"], HERE / CFG["run"]
-    n = write_state_routine(upstream / "includes", src.read_text(encoding="latin-1"))
-    instrument(src, upstream)
+    if CFG is MODULES["emm"]:
+        n = write_state_routine_emm(upstream / "includes")
+        instrument_emm(src)
+    else:
+        n = write_state_routine(upstream / "includes", src.read_text(encoding="latin-1"))
+        instrument(src, upstream)
     make_dirs()
     print(f"hooks: {n} shared arrays per state dump, {len(CFG['targets'])} routine(s) instrumented")

@@ -9,11 +9,13 @@ And into oracle/build/:
   load_restart.f90 Fortran that reads dump/*.bin into the COMMON blocks
 
 Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 resd
-module is comm (default, run/ and build/) or resd (run_resd/ and build_resd/).
+module is comm (default, run/ and build/), resd or emm (run_<module>/ and build_<module>/).
 """
 
+import csv
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +47,29 @@ MODULES = {
                   "tranrep"],  # included by EXCONS and NEMSCN: TRQ_ELEC, EV home charging
         workbooks=[("input/rdm/rsmess.xlsx", s) for s in ("RSCLASS", "RSMEQP", "RSSWITCH", "RSMSHL")],
         skip_blocks=["RESDREP", "RSCON", "RSEFF"],
+    ),
+    # EMM's Fortran: the yearly driver UTIL and everything it calls, with only the
+    # ECP and EFD solves swapped out (see hooks.py). includes="auto" takes every
+    # include these files use. EFP's own outputs are not loaded.
+    "emm": dict(
+        source=["util.f", "udat.f", "uldsm.f", "uefp.f", "uefd.f", "uecp.f", "unugs.f", "udaf.f", "ucape.f",
+                "uread.f"],
+        run="run_emm", build="build_emm", includes="auto",
+        # Every sheet EMM reads through ReadRngXLSX (udat.f RDBD_UECP, uefp.f ELRDFR).
+        workbooks=[("input/emm/ecpdaty.xlsx", s) for s in (
+                       "GENERAL", "COSTPERF", "SUBSIDY", "CCSRET", "BLDINFO", "OVERWRT", "OPTLRN", "RETROFIT",
+                       "FINANCIAL", "RESCES", "FUELTRAN", "SPNRSV", "HTRTIMP")]
+                  + [("input/emm/finregy.xlsx", s) for s in (
+                       "headers_ntl", "ntl_eovdef", "ntl_eovyrs", "ntl_eslcp", "ntl_life", "ntl_bypass",
+                       "headers_reg")],
+        skip_blocks=["UEFPOUT"],
+        # ORACLESW writes EMM's results database (Oracle/Access era name). Output only.
+        options={"ORACLESW": 0},
+        # EMM opens this one by a relative path, not through the file list.
+        copy={"input/emm/emm_db/NEMS_INPUT.db": "emm_db/NEMS_INPUT.db",
+              # NEMS's setup copies these into the run folder (scripts/setup/src/nems_setup.py)
+              "input/emm/plntdaf.daf": "PLNTTMP.daf", "input/emm/ettdem.daf": "ETTTMP.daf"},
+        file_modes=True,
     ),
 }
 
@@ -102,20 +127,33 @@ def common_members(inc_dir: Path, includes):
     return members
 
 
-def write_filelist(upstream: Path, scenario: str):
-    rows, opts = [], []
-    for line in (upstream / "scedes" / f"scedes.{scenario}.csv").read_text(encoding="latin-1").splitlines():
-        parts = line.split(",")
+def write_filelist(upstream: Path, scenario: str, file_modes=False):
+    """file_modes (EMM): also list the run-folder files NEMS creates (no $NEMS/
+    path), and write filemodes.txt with each file's action, access, form and
+    record length from the scedes file, for stubs.f90's FILE_MGR."""
+    rows, opts, modes = [], [], []
+    text = (upstream / "scedes" / f"scedes.{scenario}.csv").read_text(encoding="latin-1")
+    for parts in csv.reader(text.splitlines()):
         if len(parts) < 2 or parts[0].startswith("#"):
             continue
         key, value = parts[0].strip(), parts[1].strip()
+        path = None
         if value.startswith("$NEMS/"):
             path = (upstream / value[len("$NEMS/"):]).resolve()
-            rows.append(f"{key[:-1] if key.endswith('N') else key} {path}")
+            key = key[:-1] if key.endswith('N') else key
+            rows.append(f"{key} {path}")
         elif re.fullmatch(r"-?\d+", value):
             opts.append(f"{key} {value}")
+        elif file_modes and re.fullmatch(r"[\w.\-]+\.\w+", value):
+            path = value
+            rows.append(f"{key} {path}")
+        mode = parts[-1].split()
+        if file_modes and path is not None and len(mode) == 4 and mode[-1].isdigit():
+            modes.append(f"{key} {' '.join(mode)} {path}")
     (RUN / "filelist.txt").write_text("\n".join(rows) + "\n")
     (RUN / "options.txt").write_text("\n".join(opts) + "\n")
+    if file_modes:
+        (RUN / "filemodes.txt").write_text("\n".join(modes) + "\n")
     return rows
 
 
@@ -150,11 +188,24 @@ def dump_restart(upstream: Path, scenario: str, members):
     return loaded
 
 
-def include_prefixes(source: Path):
-    """For each include, the include list of the first comm.f routine that uses it,
+def source_text(sources) -> str:
+    return "\n".join(Path(s).read_text(encoding="latin-1") for s in sources)
+
+
+def auto_includes(sources) -> list[str]:
+    """Every include the sources use, parametr first, in order of first use."""
+    seen = ["parametr"]
+    for n in re.findall(r"(?im)^\s*include\s*'(\w+)'", source_text(sources)):
+        if n.lower() not in seen:
+            seen.append(n.lower())
+    return seen
+
+
+def include_prefixes(sources):
+    """For each include, the include list of the first routine that uses it,
     up to and including it. That ordering already compiles, so it is safe."""
     prefixes = {}
-    for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function)?\s*\w*\s*$", source.read_text(encoding="latin-1")):
+    for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function)?\s*\w*\s*$", source_text(sources)):
         seq = [n.lower() for n in re.findall(r"(?im)^\s*include\s*'(\w+)'", routine)]
         for i, n in enumerate(seq):
             prefixes.setdefault(n, seq[: i + 1])
@@ -180,9 +231,9 @@ def pick_prefix(top: str, prefixes) -> list[str] | None:
     return next((c for c in candidates if compiles(c)), None)
 
 
-def write_loader(loaded, inc_dir: Path, source: Path):
+def write_loader(loaded, inc_dir: Path, sources):
     """One loader routine per include file, each with an include order that compiles."""
-    prefixes = include_prefixes(source)
+    prefixes = include_prefixes(sources)
     routines, calls, done = [], [], set()
     for top in INCLUDES:
         if top == "parametr":
@@ -236,18 +287,37 @@ def main():
     upstream, scenario = Path(sys.argv[1]).resolve(), sys.argv[2]
     mod = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
     RUN, BUILD = HERE / mod["run"], HERE / mod["build"]
+    sources = [upstream / "source" / s for s in ([mod["source"]] if isinstance(mod["source"], str) else mod["source"])]
     INCLUDES, WORKBOOKS, SKIP_BLOCKS = mod["includes"], mod["workbooks"], mod["skip_blocks"]
+    if INCLUDES == "auto":
+        INCLUDES = auto_includes(sources)
     RUN.mkdir(exist_ok=True)
     BUILD.mkdir(exist_ok=True)
     inc_dir = upstream / "includes"
     includes = walk_includes(INCLUDES, inc_dir)
     members = common_members(inc_dir, includes)
-    rows = write_filelist(upstream, scenario)
+    rows = write_filelist(upstream, scenario, mod.get("file_modes", False))
+    if mod.get("options"):
+        opts = dict(l.split(" ", 1) for l in (RUN / "options.txt").read_text().splitlines() if l)
+        opts.update({k: str(v) for k, v in mod["options"].items()})
+        (RUN / "options.txt").write_text("".join(f"{k} {v}\n" for k, v in opts.items()))
+    if mod.get("file_modes"):
+        # NEMS starts every run in a fresh folder: drop the files the last run made
+        # (EMM's scratch DAFs, reports) and its dump index files (odump appends).
+        for row in rows:
+            name = row.split(" ", 1)[1]
+            if not Path(name).is_absolute():
+                (RUN / name).unlink(missing_ok=True)
+        for idx in (RUN / "out" / "state").glob("*/*/index.txt"):
+            idx.unlink()
+    for src, dst in mod.get("copy", {}).items():
+        (RUN / dst).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(upstream / src, RUN / dst)
     flatten_workbooks(upstream)
     loaded = dump_restart(upstream, scenario, members)
     subprocess.run([sys.executable, str(HERE / "steo_fill.py"), str(upstream),
                     str(RUN / "dump" / "steo_var_com__eq.bin")], check=True)
-    n = write_loader(loaded, inc_dir, upstream / "source" / mod["source"])
+    n = write_loader(loaded, inc_dir, sources)
     print(f"{len(includes)} includes, {len(loaded)} restart variables dumped, {n} wired into the loader, {len(rows)} files")
 
 

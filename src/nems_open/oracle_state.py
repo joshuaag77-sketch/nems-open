@@ -8,7 +8,7 @@ from nems_open.fortran_array import FArray
 from nems_open.paths import REPO_ROOT
 
 # Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
-RUN_DIRS = {"comm": "run", "resd": "run_resd"}
+RUN_DIRS = {"comm": "run", "resd": "run_resd", "emm": "run_emm"}
 STATE = REPO_ROOT / "oracle" / "run" / "out" / "state"
 
 

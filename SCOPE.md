@@ -22,7 +22,7 @@ Rebuild EIA's National Energy Modeling System (NEMS) as open Python that runs wi
 | Renewable fuels | `source/renew.f` | 35k Fortran | To port | None |
 | International | `source/world.f` | 3k Fortran | To port | None |
 | Macroeconomic | `source/mac.f` | 4k Fortran | To port | Uses S&P Global's licensed model. Replace with a simple open GDP driver |
-| Electricity | `source/uecp.f`, `uefd.f`, `udat.f`, `uefp.f`, `uldsm.f` + `models/ecp`, `models/efd` | about 100k Fortran + AIMMS | To port, last | Biggest piece. Its optimization models run on AIMMS (paid) |
+| Electricity | `source/uecp.f`, `uefd.f`, `udat.f`, `uefp.f`, `uldsm.f` + `models/ecp`, `models/efd` | about 100k Fortran + AIMMS | Oracle built (LDSM and EFP Fortran run; ECP and EFD solves swapped out); port to do | Biggest piece. Its optimization models run on AIMMS (paid) |
 | Liquid fuels (refining) | `source/refine*.f` + `models/lfmm` | 12k Fortran + GAMS | To port | GAMS (paid) |
 | Coal, natural gas, restore | `models/coal`, `models/ngas`, `models/rest` | AIMMS models | To port | AIMMS (paid) |
 | Oil and gas supply (HSM) | `models/hsm` | 27k Python | Done by EIA | None |
@@ -244,6 +244,76 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 - REPLACE's debug loop DO RECCL=1,27 (2021, EU 1, B 1, R 1) overwrites the caller's RECCL with 28 through the argument, so RHTRADD processes only class 1 for B=1, R=1 in 2021.
 - RHTRADD: B=1 left over after the main loops, so the REPLACE flag-2, SWITCHTO, SWF/SWT, EQCND90 loops never touch multifamily or mobile homes. SHARESN zeroed per class and set only for valid records.
 - RHTRCON: AFANUEC rewritten per class, last class wins; FANCONIN divided by Driver2 inside the FCON loop (five times); FANEFF/NFANEFF set only in 2021; EFANUEC set only on iteration 1; EFANUEC/NFANUEC for 2020 never set (0); wood ALPHA +0.5; HEATOT maps F by class number (NG_HP 3, GEO_HP 4).
+
+## Electricity oracle (built 2026-11-02, branch `emm-oracle`)
+
+EIA's electricity Fortran builds and runs under gfortran on the cb2026 restart file, 2020 to 2050 in about 12 minutes. EMM's two optimization models (ECP capacity, EFD dispatch) solve in AIMMS, which we do not have, so the oracle runs everything around them and swaps the two solves out. LDSM (load) runs as EIA wrote it on EIA's demand. EFP (pricing) runs as EIA wrote it, but on stand-in dispatch results, so its dumps check the routine's arithmetic for a port, not EIA's prices. Plan for issue #7: `docs/electricity_choice.md` on branch `elec-scoping`.
+
+Rebuild and run (rerun gen_oracle before every run: it resets the run folder the way NEMS starts each run in a fresh one):
+```
+cd oracle
+python -I gen_oracle.py ../nems-upstream cb2026 emm
+bash build.sh emm
+cd run_emm && ./oracle.exe
+```
+The build takes about 20 minutes (uecp.f and util.f are 42k and 13k lines). The run writes 2.3 GB of dumps and 0.8 GB of EMM's own logs, all git-ignored.
+
+What it compiles: `util.f` (UTIL, EMM's yearly entry), `udat.f`, `uldsm.f`, `uefp.f`, `uefd.f`, `uecp.f`, `unugs.f`, `udaf.f`, `ucape.f`, `uread.f`, `ephrts.f90` (the HMM hand-off), `uesql.f90`, `ecp_row_col.f90`, `efd_row_col.f90`. Not `uaimms.f`, the AIMMS interface itself: what it would supply is in `oracle/emm_stubs.f90`, and each stub prints a line if it is ever called. None is, 2020 to 2050.
+
+How it works:
+- `driver_emm.f90` calls UTIL for every year from FIRSYR, 2 iterations a year, as NEMS does. UTIL returns at once before EMM's start year (UESTYR 2020) and runs EMM's own startup on the first call: DSMRST (LDSM structure), RDCNTRL (emmcntl), GETPCNTL (plant file), RDNUGS, RDYRDAT, RDINTLRN, CALLSYSLOAD, RDBD_UECP (ecpdaty), and EFP's readers on its first year.
+- SQLite: EMM reads `input/emm/emm_db/NEMS_INPUT.db`. NEMS ships SQLite and its C glue as MSVC objects inside `source/libfsqlite.a`; gfortran links them directly with one shim, `__chkstk` jumping to MinGW's `___chkstk_ms` (same contract: probe the stack, leave the pointer). `fsqlite.f90` is EIA's, unchanged. The database is copied to `run_emm/emm_db/` because EMM opens it by relative path.
+- Files: EMM uses direct-access scratch files for per-region data. `gen_oracle.py` writes `run_emm/filemodes.txt` (action, access, form, record length from the scedes file) and `stubs.f90`'s FILE_MGR opens those keys the way `filemgr.f` does: big-endian for unformatted files (`CONVERT='BIG_ENDIAN'` in filemgr.f), record lengths in bytes (NEMS builds with `/assume:byterecl`), a key already open keeps its unit. Run-folder files (no `$NEMS/` path) are listed too. `plntdaf.daf` and `ettdem.daf` are copied in as `PLNTTMP.daf` and `ETTTMP.daf`, as `scripts/setup/src/nems_setup.py` does. Commercial and residential have no filemodes.txt, so they open files as before. One shared fix: FILE_MGR's close tested `units > 0`, but `newunit` numbers are negative, so it never closed anything; it now closes.
+- Workbooks: every `ecpdaty.xlsx` and `finregy.xlsx` sheet EMM reads through ReadRngXLSX is flattened, as for commercial.
+- Swaps (`EMM_SWAPS` in `hooks.py`), each marked `! ORACLE` in the instrumented copy of util.f: `CALL ELECP` becomes a no-op; `CALL ELEFD(CURIYR)` becomes `CALL EFD_STANDIN(CURIYR)` (`oracle/efd_standin.f90`); EMMCAPO, EMMDSPO, EMMGENO, EMMBODPV and EMMPRCO are skipped, so the shared arrays they would overwrite from EFD's results keep EIA's restart values.
+- Not loaded from the restart: `UEFPOUT` (EFP's own outputs).
+- Scenario switches: EPHRTS (hydrogen) is 0 in cb2026 and stays 0. ORACLESW is set to 0 in `run_emm/options.txt`: it only writes EMM's results database.
+- Intel spellings added to `patch_intel.py`. Commercial and residential output is byte-identical, and so is their hooks output. `<10+EFD_D_FPP-1>` format counts; extra parentheses around implied-DO items in READ and WRITE (a small parser, since a regex cannot track nesting; groups that are themselves implied DOs are left alone); `.EQ. .TRUE.` on LOGICALs; an INTEGER used as a LOGICAL becomes `BTEST(x,0)`, Intel's low-bit rule (`IF (IRS)` in uefd.f, one term in uecp.f); `BUFFERED=`/`BUFFERCOUNT=` on OPEN; the LP-coefficient routines (DVAL, CVAL, ...) that USE the module holding their own interface (renamed on import). A variable format count that is not in the last group of its format (about 100, all WRITEs to report and debug files, never a READ or an internal write) makes that WRITE list-directed: same numbers, different spacing in EMM's debug files. `emm_modules.f90` stands in for Intel's `ifport`/`ifcore` (timer, sleep, cwd, file commit) and carries the one module EMM needs from `util_tools.f90`.
+- COMMON names can hold `$` in EMM (`CHK$`, `EP$LF`); hooks.py's name patterns now allow it (no effect on commercial or residential).
+
+State dumps (`EMM_TARGETS` in `hooks.py`), final iteration of 2020, 2021, 2022, 2025, 2026, 2027, 2030, 2040, 2050. Python: `nems_open.oracle_state.load(tag, year, "emm")`.
+- `ld_in` / `ld_out` around `CALL ELLDSM(IDSM)` in UTIL: 205 arrays, 60 MB.
+- `fp_in` / `fp_out` around the first `CALL ELEFP` (the second runs only with STEO price benchmarking, off in cb2026): 746 arrays, 49 MB.
+- `fs_out`: EFD's per-region output block (DISPOUT) and build block (BILDIN), which live in direct-access files rather than COMMON, as `<name>_rNN` for each of the 25 regions, written by the stand-in: 5,925 arrays, 29 MB.
+- `final` in 2050.
+- Each target dumps the COMMON arrays mentioned by the target and what it calls inside its own files (`home`: uldsm.f; uefp.f plus udaf.f). Following calls through all of EMM reached the EFD dispatch and storage arrays and made each dump 350 MB. Its includes are those routines' includes, minus any already nested in another and any gfortran rejects together (`compiling_includes`; dropped: `steoblock`, `apq` whose `qblk` is kept, `coalprc`).
+- `tests/test_oracle_emm.py` (73 tests, 20 s): every dump exists and is full, no NaN after LDSM, LDSM's hourly load positive in all 25 regions, EFP's prices positive and finite by census division and region, one EFD block per region.
+
+Results: LDSM builds system load for all 25 regions every year. EFP writes retail prices for every region and census division. On the stand-in inputs the US average price (PELAS) is 8% to 19% below EIA's: 12.67 vs 15.65 in 2020, 13.28 vs 15.90 in 2030, 14.27 vs 16.98 in 2050 (1987 dollars per MMBtu); census divisions 0.65 to 1.04 of EIA. Expected with no ECP builds and stand-in costs. Do not tune it: the real fix is our dispatch LP filling the EFD block.
+
+Found on the stand-in inputs, to recheck with real EFD results: EFP's five regression variables (`TMSINT`, `TRNPCT`, `DSTPCT`, `BLDRAT`, `NUCPCT`, uefp.f around line 3533) divide 0 by 0 in every region. Nothing reads a NaN from them: prices stay finite.
+
+EMM quirk kept: uecp.f line 22499 tests `CO2_STDTN(IMPORT)` as a LOGICAL where every line around it tests `CO2_STDTN .LT. 2`. Under Intel's rule 1 (rate standard) is true and 2 (mass) false, which matches; 0 is false here and true in the lines around it.
+
+### EFP oracle input stand-ins
+
+EFP reads EFD's results per region (fuel, O&M, allowance and trade costs) from a scratch file that EFD writes during a run. None of it is in the restart file. `efd_standin.f90` fills each region's block from EIA's regional totals where they exist, and a plausible nonzero value where they do not, so EFP's branches and division guards still run. Units as in DISPOUT: million 1987 dollars, MWh.
+
+| Input (DISPOUT) | Filled from | Stand-in part |
+|---|---|---|
+| ERTFL(owner) fuel cost | UFL*NR fuel use by owner group x UPR*NR regional fuel price (coal; gas firm, interruptible and competitive; distillate; resid; wood); nuclear UFLURNR x 0.4 $/MMBtu | Nuclear fuel price; owner split |
+| Owner split | EIA has 2 groups (utility, nonutility); EFD has 5 | Utility 80% private, 20% public; nonutility 90% EWG, 5% each cogen type |
+| ERTOM(owner) variable O&M | UGNTLNR generation x 2 $/MWh | The $/MWh |
+| ERTOMF(1,owner) fixed O&M | generation x 8 $/MWh, all on plant type 1 | All of it |
+| ERTOMX aging cost | 0 | |
+| ERTSO2, ERTNOX(owner) | 1% of fuel cost each | All of it |
+| ERTHG(owner) | 0.1% of fuel cost | All of it |
+| ERTGSUB(owner) generation subsidy | UPTCCST PTC payments, by generation share | Owner split |
+| ERFFL(UIUF) nuclear fuel cost | UFLURNR x 0.4 $/MMBtu; other fuel types 0 | The price |
+| EWGFIX, EWGREV | 20% of EWG fuel cost; EWG fuel plus O&M | All of it |
+| EWGRCC, EWGRIC (cogen sales) | 1% and 5% of EWGREV | All of it |
+| ETDMMF, ETDMME, ETIMPF, ETIMPE, ETEXPF, ETEXPE | UETTOUT trade by region, GWh x 1000 | |
+| ETDMDF, ETDMDE | UETTOUT net domestic trade, million $ | |
+| ETIMPD, ETEXPD | import and export MWh x 30 $/MWh | The price |
+| ERRPS RPS cost | URPSCSTR regional RPS credit payments | |
+| ERDSCAR carbon allowance cost | UTCAR x EMETAX(1) (0 in cb2026) | |
+| MARCST, MARCST2 marginal cost by slice | regional average fuel cost per MWh, same in every slice | All of it |
+| ETGEN | UGNTLNR, both groups | |
+| BILDIN (new builds) | ECP does not run: only what EMM's data setup (RDBD_UECP) puts there | All new builds |
+| Everything else in DISPOUT | as EMM's data setup leaves it | |
+| Generation, capacity, fuel use, fuel prices in UEFDOUT, UDATOUT, UECPOUT | EIA's restart values (EMMCAPO, EMMDSPO, EMMPRCO skipped) | |
+
+The EFP tests check the routine's arithmetic, not EIA's final prices. Rerun them, and recheck the NaN finding above, once our dispatch LP supplies this block.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
