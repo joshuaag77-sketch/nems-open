@@ -44,6 +44,11 @@ def _local(s: dict, name: str, bounds):
     return s[name]
 
 
+def _running_last(a):
+    """0.0 + a[..., 0] + a[..., 1] + ... in float32 along the last axis (a Fortran running sum)."""
+    return np.add.accumulate(a.astype(np.float32), axis=-1)[..., -1]
+
+
 def _nint(x) -> int:
     # Fortran NINT: halves round away from zero
     v = float(x)
@@ -307,36 +312,33 @@ def _ltcns(s: dict) -> None:
                 live[blk] = saved[blk]
             s["ltnuec"][uec] = s["ltnuecly"][uec]
 
-        # Bulbs for new construction and floorspace added to surviving RECS homes
-        for bin_ in range(1, nbins + 1):
-            for d in range(1, ND + 1):
-                for b in range(1, NB + 1):
-                    for e in range(1, ntypes + 1):
-                        LTNEEDED[app, cy, e, b, d, bin_] = (
-                            HSEADD[cy, b, d] * (SQRFOOT[cy, b, d] / SQRFOOT[RECSYEAR, b, d])
-                            * s["bulbsperhh"][app, b] * LTMSHR[cy, e, b, d, bin_] * s["binshares"][app, bin_]
-                            + EH[cy, b, d] * ((EXSQ[cy, b, d] / EXSQ[cy - 1, b, d]) - f32(1.0))
-                            * s["bulbsperhh"][app, b] * LTMSHR[cy, e, b, d, bin_] * s["binshares"][app, bin_])
+        # Arrays below are [bulb type e, building type b, division d, bin], this application
+        # and year; the Fortran's loops become elementwise float32 operations, and its running
+        # sums over e (or bin) sequential accumulates in the same order.
+        E, Bs, Ds, K = slice(1, ntypes), slice(1, NB), slice(1, ND), slice(1, nbins)
+        cur = (app, cy, E, Bs, Ds, K)
+        bd = lambda A, yy: A[yy, Bs, Ds][None, :, :, None]
+        msh = LTMSHR[cy, E, Bs, Ds, K]
+        bph = s["bulbsperhh"][app, Bs][None, :, None, None]
+        bsh = s["binshares"][app, K][None, None, None, :]
+        hours = s["appbinhours"][app, K][None, None, None, :]
+        wts = watts[E][:, None, None, None]
+        hdr = HDR[Bs][None, :, None, None]
 
-        # Bulbs needed this year for all reasons
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                for bin_ in range(1, nbins + 1):
-                    LTREPTOT[app, cy, b, d, bin_] = 0.0
-                    for e in range(1, ntypes + 1):
-                        LTREPTOT[app, cy, b, d, bin_] = LTREPTOT[app, cy, b, d, bin_] \
-                            + LTSTOCKEX[app, cy - 1, e, b, d, bin_] * HDR[b] - LTSTOCKEX[app, cy, e, b, d, bin_] \
-                            + LTREPFUT[app, cy, e, b, d, bin_] + LTNEEDED[app, cy, e, b, d, bin_]
+        # Bulbs for new construction and floorspace added to surviving RECS homes
+        LTNEEDED[cur] = (bd(HSEADD, cy) * (bd(SQRFOOT, cy) / bd(SQRFOOT, RECSYEAR)) * bph * msh * bsh
+                         + bd(EH, cy) * ((bd(EXSQ, cy) / bd(EXSQ, cy - 1)) - f32(1.0)) * bph * msh * bsh)
+
+        # Bulbs needed this year for all reasons: per bulb type, + stock retiring - surviving
+        # + future replacements + new needs
+        prev = (app, cy - 1, E, Bs, Ds, K)
+        terms = np.stack([LTSTOCKEX[prev] * hdr, -LTSTOCKEX[cur], LTREPFUT[cur], LTNEEDED[cur]], axis=1)
+        LTREPTOT[app, cy, Bs, Ds, K] = _running_last(terms.transpose(2, 3, 4, 0, 1).reshape(NB, ND, nbins, -1))
 
         # Split purchases by bulb type, accumulate stock and consumption
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                for bin_ in range(1, nbins + 1):
-                    for e in range(1, ntypes + 1):
-                        LTREP[app, cy, e, b, d, bin_] = LTREPTOT[app, cy, b, d, bin_] * LTMSHR[cy, e, b, d, bin_]
-                        LTREPSTK[app, cy, e, b, d, bin_] = LTREPSTK[app, cy, e, b, d, bin_] + LTREP[app, cy, e, b, d, bin_]
-                        LTREPCONS[app, cy, e, b, d, bin_] = LTREPCONS[app, cy, e, b, d, bin_] \
-                            + LTREP[app, cy, e, b, d, bin_] * C365 * s["appbinhours"][app, bin_] * watts[e] * C3412 / C1E6
+        LTREP[cur] = LTREPTOT[app, cy, Bs, Ds, K][None] * msh
+        LTREPSTK[cur] = LTREPSTK[cur] + LTREP[cur]
+        LTREPCONS[cur] = LTREPCONS[cur] + LTREP[cur] * C365 * hours * wts * C3412 / C1E6
 
         # Spread this year's purchases into future replacement needs and remaining stock
         for d in range(1, ND + 1):
@@ -360,75 +362,33 @@ def _ltcns(s: dict) -> None:
                                     + (maxrep - cumrep) * C365 * s["appbinhours"][app, bin_] * watts[e] * C3412 / C1E6
 
         # Total stock is surviving RECS stock plus replacements still in service
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                for bin_ in range(1, nbins + 1):
-                    for e in range(1, ntypes + 1):
-                        s["ltstock"][app, cy, e, b, d, bin_] = LTSTOCKEX[app, cy, e, b, d, bin_] \
-                            + LTREPSTK[app, cy, e, b, d, bin_]
-
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                s["lteqp"][app, cy, b, d] = 0.0
-                for bin_ in range(1, nbins + 1):
-                    LTTOTSTOCK[app, cy, b, d, bin_] = 0.0
-                    for e in range(1, ntypes + 1):
-                        LTTOTSTOCK[app, cy, b, d, bin_] = LTTOTSTOCK[app, cy, b, d, bin_] \
-                            + s["ltstock"][app, cy, e, b, d, bin_]
-                        s["lteqp"][app, cy, b, d] = s["lteqp"][app, cy, b, d] + s["ltstock"][app, cy, e, b, d, bin_]
+        s["ltstock"][cur] = LTSTOCKEX[cur] + LTREPSTK[cur]
+        st = s["ltstock"][cur].transpose(1, 2, 3, 0)                    # [b, d, bin, e]
+        LTTOTSTOCK[app, cy, Bs, Ds, K] = _running_last(st)
+        s["lteqp"][app, cy, Bs, Ds] = _running_last(st.reshape(NB, ND, -1))
 
         # Investment and subsidy; bulbs lasting under a year are bought several times a year
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                for e in range(1, ntypes + 1):
-                    s["ltinvest"][app, cy, e, b, d, 1] = 0.0
-                    s["ltinvest"][app, cy, e, b, d, 2] = 0.0
-                    s["ltsubsidy"][app, cy, e, b, d, 1] = 0.0
-                    s["ltsubsidy"][app, cy, e, b, d, 2] = 0.0
-                    s["ltneededbyapp"][app, cy, e, b, d] = 0.0
-                    s["ltrepbyapp"][app, cy, e, b, d] = 0.0
-                    for bin_ in range(1, nbins + 1):
-                        s["ltneededbyapp"][app, cy, e, b, d] = s["ltneededbyapp"][app, cy, e, b, d] \
-                            + LTNEEDED[app, cy, e, b, d, bin_]
-                        s["ltrepbyapp"][app, cy, e, b, d] = s["ltrepbyapp"][app, cy, e, b, d] \
-                            + LTREP[app, cy, e, b, d, bin_]
-                        temp = s["ltlcapinvest"][e] - s["ltlsub"][e, d]
-                        if bulbbinlife[e, bin_] < 1.0:
-                            temp = temp / bulbbinlife[e, bin_]
-                        s["ltinvest"][app, cy, e, b, d, 1] = s["ltinvest"][app, cy, e, b, d, 1] \
-                            + LTNEEDED[app, cy, e, b, d, bin_] * temp
-                        s["ltinvest"][app, cy, e, b, d, 2] = s["ltinvest"][app, cy, e, b, d, 2] \
-                            + LTREP[app, cy, e, b, d, bin_] * temp
-                        temp = s["ltlsub"][e, d]
-                        if bulbbinlife[e, bin_] < 1.0:
-                            temp = temp / bulbbinlife[e, bin_]
-                        s["ltsubsidy"][app, cy, e, b, d, 1] = s["ltsubsidy"][app, cy, e, b, d, 1] \
-                            + LTNEEDED[app, cy, e, b, d, bin_] * temp
-                        s["ltsubsidy"][app, cy, e, b, d, 2] = s["ltsubsidy"][app, cy, e, b, d, 2] \
-                            + LTREP[app, cy, e, b, d, bin_] * temp
+        life = bulbbinlife[E, K][:, None, :]                             # [e, 1, bin]
+        short = life < 1.0
+        ltsub = s["ltlsub"][E, Ds][:, :, None]                           # [e, d, 1]
+        cost = s["ltlcapinvest"][E][:, None, None] - ltsub
+        t_inv = np.where(short, cost / life, cost)[:, None]              # [e, 1, d, bin]
+        t_sub = np.where(short, ltsub / life, np.broadcast_to(ltsub, short.shape[:1] + ltsub.shape[1:2] + short.shape[2:]))[:, None]
+        need, rep = LTNEEDED[cur], LTREP[cur]
+        s["ltneededbyapp"][app, cy, E, Bs, Ds] = _running_last(need)
+        s["ltrepbyapp"][app, cy, E, Bs, Ds] = _running_last(rep)
+        s["ltinvest"][app, cy, E, Bs, Ds, 1] = _running_last(need * t_inv)
+        s["ltinvest"][app, cy, E, Bs, Ds, 2] = _running_last(rep * t_inv)
+        s["ltsubsidy"][app, cy, E, Bs, Ds, 1] = _running_last(need * t_sub)
+        s["ltsubsidy"][app, cy, E, Bs, Ds, 2] = _running_last(rep * t_sub)
 
         # Weighted efficiency: total watts of this year's and surviving stock, then per bulb
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                for bin_ in range(1, nbins + 1):
-                    WTLEFF[app, cy, b, d, bin_] = 0.0
-                    for e in range(1, ntypes + 1):
-                        den = C365 * s["appbinhours"][app, bin_] * C3412 / C1E6
-                        WTLEFF[app, cy, b, d, bin_] = WTLEFF[app, cy, b, d, bin_] \
-                            + LTREPCONS[app, cy, e, b, d, bin_] / den \
-                            + LTSTOCKEXCONS[app, cy, e, b, d, bin_] / den
-
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                for bin_ in range(1, nbins + 1):
-                    WTLEFF[app, cy, b, d, bin_] = WTLEFF[app, cy, b, d, bin_] / LTTOTSTOCK[app, cy, b, d, bin_]
-
-        for d in range(1, ND + 1):
-            for b in range(1, NB + 1):
-                s["wtleffbyapp"][app, cy, b, d] = 0.0
-                for bin_ in range(1, nbins + 1):
-                    s["wtleffbyapp"][app, cy, b, d] = s["wtleffbyapp"][app, cy, b, d] \
-                        + ((WTLEFF[app, cy, b, d, bin_] * LTTOTSTOCK[app, cy, b, d, bin_]) / s["lteqp"][app, cy, b, d])
+        den = (C365 * s["appbinhours"][app, K] * C3412 / C1E6)[None, None, None, :]
+        w = np.stack([LTREPCONS[cur] / den, LTSTOCKEXCONS[cur] / den], axis=1)  # [e, 2, b, d, bin]
+        WTLEFF[app, cy, Bs, Ds, K] = _running_last(w.transpose(2, 3, 4, 0, 1).reshape(NB, ND, nbins, -1))
+        WTLEFF[app, cy, Bs, Ds, K] = WTLEFF[app, cy, Bs, Ds, K] / LTTOTSTOCK[app, cy, Bs, Ds, K]
+        s["wtleffbyapp"][app, cy, Bs, Ds] = _running_last(
+            (WTLEFF[app, cy, Bs, Ds, K] * LTTOTSTOCK[app, cy, Bs, Ds, K]) / s["lteqp"][app, cy, Bs, Ds][:, :, None])
 
         # UEC adjusted for efficiency and rebound. ALPHA is still -0.15 for the first
         # application and -0.30 for the rest (EIA resets it at the end of the first pass).
