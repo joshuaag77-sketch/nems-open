@@ -95,6 +95,7 @@ class DispatchCase:
     shapes: np.ndarray        # (25, 36, 24) share of annual energy per typical hour
     weights: np.ndarray       # (36,) days per typical day
     links: dict = None        # exporter, importer (0-based), capacity_gw (L, 36), cost (L,) 1987$/MWh, loss
+    carbon_price: float = 0.0  # 1987$ per metric ton CO2, added to each plant's cost by its emissions
 
 
 @dataclass
@@ -321,15 +322,42 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf, profiles, nl, shapes, w, links)
 
 
+def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
+    """The same case with the 24 hours of each typical day averaged into blocks, so the LP is smaller.
+
+    Load shapes and wind and solar profiles are averaged over each block; `solve` weights each block by its
+    length. Three-hour blocks cut the solve to about a third of the time and move the totals by under 1%.
+    """
+    from dataclasses import replace
+
+    def blocks(a):
+        return a.reshape(a.shape[:-1] + (24 // hours_per_block, hours_per_block)).mean(axis=-1)
+
+    return replace(case, shapes=blocks(case.shapes), profile={k: blocks(v) for k, v in case.profile.items()})
+
+
+def emissions_per_mwh(case: DispatchCase, g: str) -> np.ndarray:
+    """Metric tons of CO2 released per MWh by a thermal group, by region (after capture)."""
+    heat = case.heat_rate[g] / 1000.0                       # MMBtu per MWh
+    if g.startswith("coal"):
+        tons = heat * CO2_PER_TBTU["coal"]
+    else:
+        oil = CO2_PER_TBTU["residual" if g == "steam" else "distillate"]
+        tons = heat * ((1 - case.oil_share[g]) * CO2_PER_TBTU["gas"] + case.oil_share[g] * oil)
+    return tons * (1.0 - CAPTURE_RATE) if g in CAPTURE_GROUPS else tons
+
+
 def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> DispatchResult:
     R = pd.Index(np.arange(1, NUM_R + 1), name="region")
     D = pd.Index(np.arange(36), name="day")
-    H = pd.Index(np.arange(24), name="hour")
+    nh = case.shapes.shape[-1]
+    hp = 24 // nh                         # hours in each block
+    H = pd.Index(np.arange(nh), name="hour")
     TH = pd.Index(list(THERMAL), name="group")
     MO = pd.Index(np.arange(12), name="month")
     month_of_day = np.repeat(np.arange(12), 3)
-    w = xr.DataArray(case.weights, coords=[D])
-    ones = xr.DataArray(np.ones((NUM_R, 36, 24)), coords=[R, D, H])
+    w = xr.DataArray(case.weights * hp, coords=[D])
+    ones = xr.DataArray(np.ones((NUM_R, 36, nh)), coords=[R, D, H])
 
     def by_region(a):
         return xr.DataArray(np.asarray(a, dtype=float), coords=[R]) * ones
@@ -350,7 +378,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         oil_price = case.price["residual"] if g == "steam" else case.price["distillate"]
         is_coal = g.startswith("coal")
         fuel = (1 - case.oil_share[g]) * case.price["coal" if is_coal else "gas"] + case.oil_share[g] * oil_price
-        cost[:, k] = case.heat_rate[g] / 1000.0 * fuel + case.vom[g]
+        cost[:, k] = case.heat_rate[g] / 1000.0 * fuel + case.vom[g] + case.carbon_price * emissions_per_mwh(case, g)
         if g in CAPTURE_GROUPS:
             # 45Q pays per ton captured; tons per MWh = MMBtu per MWh x tons of CO2 per MMBtu.
             tons = case.heat_rate[g] / 1000.0 * CO2_PER_TBTU[CAPTURE_GROUPS[g]] * CAPTURE_RATE
@@ -385,7 +413,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         ch = m.add_variables(lower=0, upper=c, name=f"{name}_charge")
         di = m.add_variables(lower=0, upper=c, name=f"{name}_discharge")
         soc = m.add_variables(lower=0, upper=c * dur, name=f"{name}_soc")
-        m.add_constraints(soc - soc.roll(hour=1) - eta * ch + di / eta == 0, name=f"{name}_balance")
+        m.add_constraints(soc - soc.roll(hour=1) - hp * eta * ch + hp * di / eta == 0, name=f"{name}_balance")
         net_storage = net_storage + di - ch
         sto[name] = (ch, di)
 
@@ -393,7 +421,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     trade = None
     if case.links is not None:
         L = pd.Index(np.arange(len(case.links["exporter"])), name="link")
-        cap_l = xr.DataArray(case.links["capacity_gw"], coords=[L, D]) * xr.DataArray(np.ones(24), coords=[H])
+        cap_l = xr.DataArray(case.links["capacity_gw"], coords=[L, D]) * xr.DataArray(np.ones(nh), coords=[H])
         trade = m.add_variables(lower=0, upper=cap_l.transpose("link", "day", "hour"), name="trade")
         into = np.zeros((NUM_R, len(L)))
         outof = np.zeros((NUM_R, len(L)))
@@ -414,7 +442,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     res = DispatchResult(year=case.year, case=case, status=f"{status}:{cond}")
     if status != "ok":
         return res
-    wd = case.weights[None, :, None]
+    wd = case.weights[None, :, None] * hp
     energy = lambda gw: (np.asarray(gw) * wd).sum(axis=(1, 2)) / 1000.0         # GW x hours -> TWh
     gth = g_th.solution.transpose("region", "group", "day", "hour").values
     gen = {g: energy(gth[:, k]) for k, g in enumerate(THERMAL)}

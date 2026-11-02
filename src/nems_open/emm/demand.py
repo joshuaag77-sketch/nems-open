@@ -55,14 +55,15 @@ def international_net_imports_twh(snapshot, year: int) -> np.ndarray:
     return g / 1000.0
 
 
-def net_load_twh(snapshot, year: int) -> np.ndarray:
+def net_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
     """Energy the EMM power plants must supply, by region, shape (25,), TWh.
 
-    Sales plus delivery losses, less end-user generation and international net imports.
+    Sales plus delivery losses, less end-user generation and international net imports. `sales` is any
+    mapping with the restart's QBLK/qel* arrays (the default is the snapshot); the rest comes from the snapshot.
     Trade between EMM regions is not in this number (the dispatch model has none yet), so
     regional totals are only as good as the sales split.
     """
     loss = load.region_parameters()["td_loss"]
-    need = regional_sales_twh(snapshot, year).sum(axis=1) / (1.0 - loss)
+    need = regional_sales_twh(sales if sales is not None else snapshot, year).sum(axis=1) / (1.0 - loss)
     return np.maximum(need - end_user_generation_twh(snapshot, year)
                       - international_net_imports_twh(snapshot, year), 0.0)
