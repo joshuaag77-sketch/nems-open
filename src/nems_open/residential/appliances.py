@@ -16,40 +16,17 @@ State the dumps do not hold, and what the port does about it:
   * COSTTRSW is a PARAMETER (= 0 in the rtek include), so CAPITAL is RTEQCOST.
   * LEAPYR is a local of RESD set from the year (366/365 in leap years up to the
     last STEO year, else 1); it is rebuilt from CurCalYr.
-  * PELRSOUT is not dumped. The TEC/CON price line that maps it into
-    PRICES(4, r, CurCalYr) runs only when the state has it (the dumped PRICES
-    already hold that value). RSELAST needs it for electric dryers, so RDRYCON
-    cannot be checked for electricity until it is dumped.
 """
-
-import math
 
 import numpy as np
 
-from nems_open.residential.common import BASEYR, ENDYR, RECSYEAR, f32, powi
-from nems_open.residential.helpers import eqcost, replace, rselast
+from nems_open.residential.common import BASEYR, ENDYR, RECSYEAR, expf, f32, powi
+from nems_open.residential.helpers import eqcost, replace, rselast, svrte
 
 NUM_R = 9  # MNUMCR-2 census divisions
 NUM_B = 3  # MNUMBLDG
 COSTTRSW = 0  # PARAMETER in the rtek include
 LASTSTEOYR = 2026
-
-
-def _expf(x):
-    """EXP of a REAL*4 as libm expf returns it (correctly rounded in practice).
-    numpy's float32 exp is a SIMD routine that can be a few ulp off."""
-    return f32(math.exp(float(x)))
-
-
-def _svrte(alpha, y, k, lam):
-    """SVRTE with the same arithmetic as helpers.svrte but libm-accurate pow and
-    exp. The helper's numpy float32 exp/pow leave ulp-level noise that the
-    difference EQCREP = SA - EQCSUR then magnifies to about 4e-5."""
-    if f32(y) - f32(alpha) < 0:
-        return f32(1.0)
-    k1 = (f32(y) - f32(alpha)) / f32(lam)
-    k2 = f32(math.pow(float(k1), float(f32(k))))
-    return _expf(-k2)
 
 
 def _text(v) -> str:
@@ -69,8 +46,6 @@ def _leapyr(y):
 
 def _map_electricity_price(s, eupr):
     """PRICES(4,R,CurCalYr) from PELRSOUT; skipped when the dump has no PELRSOUT."""
-    if "pelrsout" not in s:
-        return
     Y, Y1 = int(s["curcalyr"]), int(s["curiyr"])
     gdp = s["mc_jpgdp"]
     for r in range(1, NUM_R + 1):
@@ -161,10 +136,10 @@ def rdrytec(s: dict) -> None:
 
                             ECTEMP = s["rtecbias"][RECTY] + s["beta1dr"][RECTY] * CAPITAL
 
-                            EQWTN[EQT, B, R] = _expf(ECTEMP + (s["rtecbta2"][RECTY] * OPCOST[2])
+                            EQWTN[EQT, B, R] = expf(ECTEMP + (s["rtecbta2"][RECTY] * OPCOST[2])
                                                       + (s["rtecbta3"][RECTY] * s["lfcy"][EQT, B, R, 2]))
                             TOTEWTN[EQC, B, R] = TOTEWTN[EQC, B, R] + EQWTN[EQT, B, R]
-                            EQWTR[EQT, B, R] = _expf(ECTEMP + (s["rtecbta2"][RECTY] * OPCOST[1])
+                            EQWTR[EQT, B, R] = expf(ECTEMP + (s["rtecbta2"][RECTY] * OPCOST[1])
                                                       + (s["rtecbta3"][RECTY] * s["lfcy"][EQT, B, R, 1]))
                             TOTEWTR[EQC, B, R] = TOTEWTR[EQC, B, R] + EQWTR[EQT, B, R]
 
@@ -289,7 +264,7 @@ def rdryadd(s: dict) -> None:
                     if CY > RECSYEAR + 1:
                         for Y in range(RECSYEAR + 1, CY):
                             TEMP = CY - Y
-                            ESR = _svrte(alpha, TEMP - 1, k, lam) - _svrte(alpha, TEMP, k, lam)
+                            ESR = svrte(alpha, TEMP - 1, k, lam) - svrte(alpha, TEMP, k, lam)
                             EQCRP90RP[CY, RECCL, B, R] = (EQCRP90RP[CY, RECCL, B, R] + (
                                 EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
                                 + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
@@ -298,7 +273,7 @@ def rdryadd(s: dict) -> None:
                     if CY > RECSYEAR + 1:
                         for Y in range(RECSYEAR + 1, CY):
                             TEMP = CY - Y
-                            ESR = _svrte(alpha, TEMP, k, lam)
+                            ESR = svrte(alpha, TEMP, k, lam)
                             EQCSR90[CY, RECCL, B, R] = (EQCSR90[CY, RECCL, B, R] + (
                                 EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
                                 + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
@@ -380,7 +355,7 @@ def _vintage_future(s, EU):
                 for Y in range(CY, ENDYR + 1):
                     TEMP = Y - CY
                     HSR = powi(HDR[B], TEMP)
-                    ESR = _svrte(s["rtalpha"][RECCL], TEMP, s["rtk"][RECCL], s["rtlambda"][RECCL])
+                    ESR = svrte(s["rtalpha"][RECCL], TEMP, s["rtk"][RECCL], s["rtlambda"][RECCL])
                     s["eqr90fut"][CY, Y, RECCL, B, R] = (s["eqcrp90"][CY, RECCL, B, R] * ESR * HSR)
                     s["eqr90rpfut"][CY, Y, RECCL, B, R] = (s["eqcrp90rp"][CY, RECCL, B, R] * ESR * HSR)
                     s["eqrepfut"][CY, Y, RECCL, B, R] = (s["eqcrep"][CY, RECCL, B, R] * ESR * HSR)
@@ -612,10 +587,10 @@ def rreftec(s: dict) -> None:
 
                             LFCYCLE = CAPITAL + (OPCOST1 * DECAY)
                             # EQWTR is the same expression as EQWTN: replacement choices equal new ones
-                            EQWTN[EQT, B, R] = _expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
+                            EQWTN[EQT, B, R] = expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
                                                       + (s["rtecbta2"][RECTY] * OPCOST1) + (s["rtecbta3"][RECTY] * LFCYCLE))
                             TOTEWTN[EQC, B, R] = TOTEWTN[EQC, B, R] + EQWTN[EQT, B, R]
-                            EQWTR[EQT, B, R] = _expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
+                            EQWTR[EQT, B, R] = expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
                                                       + (s["rtecbta2"][RECTY] * OPCOST1) + (s["rtecbta3"][RECTY] * LFCYCLE))
                             TOTEWTR[EQC, B, R] = TOTEWTR[EQC, B, R] + EQWTR[EQT, B, R]
 
@@ -724,7 +699,7 @@ def _cooling_add(s, EU, sat_name):
                     if CY > RECSYEAR + 1:
                         for Y in range(RECSYEAR + 1, CY):
                             TEMP = CY - Y
-                            ESR = _svrte(alpha, TEMP - 1, k, lam) - _svrte(alpha, TEMP, k, lam)
+                            ESR = svrte(alpha, TEMP - 1, k, lam) - svrte(alpha, TEMP, k, lam)
                             EQCRP90RP[CY, RECCL, B, R] = (EQCRP90RP[CY, RECCL, B, R] + (
                                 EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
                                 + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)))
@@ -732,7 +707,7 @@ def _cooling_add(s, EU, sat_name):
                     if CY > RECSYEAR + 1:
                         for Y in range(RECSYEAR + 1, CY):
                             TEMP = CY - Y
-                            ESR = _svrte(alpha, TEMP, k, lam)
+                            ESR = svrte(alpha, TEMP, k, lam)
                             EQCSR90[CY, RECCL, B, R] = (EQCSR90[CY, RECCL, B, R] + (
                                 EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
                                 + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)))
@@ -885,10 +860,10 @@ def rfrztec(s: dict) -> None:
                                 s["beta1dr"][RECTY] = s["rtecbta1"][RECTY]
 
                             LFCYCLE1 = CAPITAL + (OPCOST2 * DECAY)
-                            EQWTN[EQT, B, R] = _expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
+                            EQWTN[EQT, B, R] = expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
                                                       + (s["rtecbta2"][RECTY] * OPCOST2) + (s["rtecbta3"][RECTY] * LFCYCLE1))
                             TOTEWTN[EQC, B, R] = TOTEWTN[EQC, B, R] + EQWTN[EQT, B, R]
-                            EQWTR[EQT, B, R] = _expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
+                            EQWTR[EQT, B, R] = expf(s["rtecbias"][RECTY] + (s["beta1dr"][RECTY] * CAPITAL)
                                                       + (s["rtecbta2"][RECTY] * OPCOST2) + (s["rtecbta3"][RECTY] * LFCYCLE1))
                             TOTEWTR[EQC, B, R] = TOTEWTR[EQC, B, R] + EQWTR[EQT, B, R]
 
