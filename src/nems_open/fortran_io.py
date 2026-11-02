@@ -19,7 +19,9 @@ class ListDirectedReader:
     def skip(self, n: int = 1) -> None:
         self.pos += n
 
-    def read(self, n: int, kind=float):
+    def read(self, n: int, kind=float, partial: bool = False):
+        """n values, or None on a read error. With partial=True an error returns the values
+        read before it (the Fortran has already assigned them when it jumps to ERR=)."""
         values = []
         while len(values) < n:
             if self.pos >= len(self.records):
@@ -32,7 +34,7 @@ class ListDirectedReader:
                 try:
                     values.append(kind(float(tok)))
                 except ValueError:
-                    return None
+                    return values if partial else None
                 if len(values) == n:
                     break
         return values
