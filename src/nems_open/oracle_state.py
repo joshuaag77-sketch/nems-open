@@ -1,43 +1,67 @@
-"""Read the oracle's state dumps (oracle/hooks.py) as Fortran-indexed arrays."""
-
-from pathlib import Path
-
-import numpy as np
-
-from nems_open.fortran_array import FArray
-from nems_open.paths import REPO_ROOT
-
-# Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
-RUN_DIRS = {"comm": "run", "resd": "run_resd", "ind": "run_ind"}
-STATE = REPO_ROOT / "oracle" / "run" / "out" / "state"
-
-
-def state_dir(module: str = "comm") -> Path:
-    return STATE if module == "comm" else REPO_ROOT / "oracle" / RUN_DIRS[module] / "out" / "state"
-
-
-def available(tag: str, year: int, module: str = "comm") -> bool:
-    return (state_dir(module) / tag / str(year) / "index.txt").exists()
-
-
-def load(tag: str, year: int, module: str = "comm", only=None) -> dict:
-    """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name.
-
-    only: read just these names (the industrial dumps are large and slow to load whole)."""
-    folder = state_dir(module) / tag / str(year)
-    out = {}
-    for line in (folder / "index.txt").read_text(encoding="latin-1").splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        name, code, rank = parts[0], parts[1], int(parts[2])
-        if only is not None and name not in only:
-            continue
-        bounds = [(int(parts[3 + 2 * k]), int(parts[4 + 2 * k])) for k in range(rank)]
-        raw = np.fromfile(folder / f"{name}.bin", dtype=np.dtype(code))
-        if rank == 0:
-            out[name] = raw[0]
-        else:
-            shape = tuple(hi - lo + 1 for lo, hi in bounds)
-            out[name] = FArray(raw.reshape(shape, order="F"), [lo for lo, _ in bounds])
-    return out
+"""Read the oracle's state dumps (oracle/hooks.py) as Fortran-indexed arrays.
+
+Dumps live in one shared cache outside the clones, NEMS_ORACLE_DIR (default ~/dev/oracle-cache),
+one folder per module: <cache>/<module>/out/state/<tag>/<year>/. Until a module has been moved
+there, the clone's own oracle/run*/out is used. A year folder is either raw (`index.txt` and one
+.bin per array, as the Fortran writes it) or packed (`<tag>/<year>.npz`, see scripts/pack_oracle.py).
+"""
+
+import os
+from pathlib import Path
+
+import numpy as np
+
+from nems_open.fortran_array import FArray
+from nems_open.paths import REPO_ROOT
+
+# Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
+RUN_DIRS = {"comm": "run", "resd": "run_resd"}
+ORACLE_DIR = Path(os.environ.get("NEMS_ORACLE_DIR", Path.home() / "dev" / "oracle-cache"))
+
+
+def out_dir(module: str = "comm") -> Path:
+    """The folder holding this module's oracle output: the shared cache if it has state, else the clone's own."""
+    shared = ORACLE_DIR / module / "out"
+    local = REPO_ROOT / "oracle" / RUN_DIRS.get(module, f"run_{module}") / "out"
+    if (shared / "state").is_dir() or not (local / "state").is_dir():
+        return shared
+    return local
+
+
+def state_dir(module: str = "comm") -> Path:
+    return out_dir(module) / "state"
+
+
+def available(tag: str, year: int, module: str = "comm") -> bool:
+    d = state_dir(module) / tag
+    return (d / str(year) / "index.txt").exists() or (d / f"{year}.npz").exists()
+
+
+def _array(raw, rank, bounds):
+    if rank == 0:
+        return raw[0]
+    shape = tuple(hi - lo + 1 for lo, hi in bounds)
+    return FArray(raw.reshape(shape, order="F"), [lo for lo, _ in bounds])
+
+
+def _entries(index_text):
+    for line in index_text.splitlines():
+        parts = line.split()
+        if parts:
+            rank = int(parts[2])
+            yield parts[0], parts[1], rank, [(int(parts[3 + 2 * k]), int(parts[4 + 2 * k])) for k in range(rank)]
+
+
+def load(tag: str, year: int, module: str = "comm", only=None) -> dict:
+    """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name.
+
+    only: read just these names (the industrial dumps are large and slow to load whole)."""
+    base = state_dir(module) / tag
+    folder = base / str(year)
+    if not (folder / "index.txt").exists() and (base / f"{year}.npz").exists():
+        with np.load(base / f"{year}.npz") as z:
+            return {name: _array(z[name], rank, bounds)
+                    for name, code, rank, bounds in _entries(str(z["__index__"])) if only is None or name in only}
+    text = (folder / "index.txt").read_text(encoding="latin-1")
+    return {name: _array(np.fromfile(folder / f"{name}.bin", dtype=np.dtype(code)), rank, bounds)
+            for name, code, rank, bounds in _entries(text) if only is None or name in only}

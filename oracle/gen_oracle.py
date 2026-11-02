@@ -12,6 +12,7 @@ Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-ups
 module is comm (default, run/ and build/) or resd (run_resd/ and build_resd/).
 """
 
+import os
 import re
 import subprocess
 import sys

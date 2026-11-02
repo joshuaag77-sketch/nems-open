@@ -37,6 +37,29 @@ cd run && ./oracle.exe                                   # run it, about a minut
 cd ../.. && python -m pytest                             # check every port against it
 ```
 
+## Run the demand side for one year
+
+`src/nems_open/run_demand.py` runs the ported demand modules (residential and commercial so far) on EIA's AEO2026 prices and macro drivers, and writes their fuel use into QBLK-style arrays. It needs both oracles built and dumped (`bash build.sh` and `bash build.sh resd`, see [SCOPE.md](SCOPE.md)), because the modules start from the oracle's state for that year until their file readers are ported.
+
+```
+python -m nems_open.run_demand 2030
+```
+
+prints each fuel row, US total, next to EIA's. Residential takes seconds; commercial about 5 s per iteration. From Python:
+
+```python
+from nems_open.run_demand import DemandRunner, Inputs
+from nems_open.snapshot import Snapshot
+
+snap = Snapshot()
+gas_up = Inputs(snap, {"AMPBLK/pngrs": 1.5 * snap["AMPBLK/pngrs"]})   # any restart input can be overridden
+runner = DemandRunner(2030, gas_up, sectors=("residential",))
+runner.run_year()
+runner.q["qngrs"][10, 2030 - 1990]   # US residential gas use, trillion Btu
+```
+
+`runner.run_year()` again continues to 2031 with NEMS's two iterations a year. Industrial and transportation keep EIA's values until their ports land. `tests/test_run_demand.py` checks the runner against EIA for 2025, 2030, 2040 and 2050.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Open pieces are listed as GitHub issues.

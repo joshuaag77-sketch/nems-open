@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About NEMS Open</title>
+<meta name="description" content="What NEMS Open is, where its data comes from, and credit to the U.S. Energy Information Administration.">
+<link rel="stylesheet" href="style.css">
+<script>
+  try { const t = localStorage.getItem("nems-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage blocked */ }
+</script>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>About NEMS Open</h1>
+    <p class="sub">An independent, open Python rebuild of the U.S. Energy Information Administration's National Energy Modeling System.</p>
+  </div>
+  <nav class="top-nav" aria-label="Page"><a class="ghost" href="index.html">Back to the sandbox</a></nav>
+</header>
+
+<main class="about">
+  <section class="card">
+    <h2>Credit to EIA</h2>
+    <p>The National Energy Modeling System (NEMS) is built and maintained by the U.S. Energy Information Administration (EIA), which uses it to produce the Annual Energy Outlook. EIA publishes the model's source code and its AEO2026 runs at <a href="https://github.com/EIAgov/NEMS">github.com/EIAgov/NEMS</a>. Everything here starts from that work: the Fortran we port, the oracle we test against, the 11 runs the stand-ins are fitted to, and the reference lines on every chart.</p>
+    <p><b>Not affiliated with EIA.</b> NEMS Open is an independent project. EIA has not reviewed, endorsed or validated it, and its results are not EIA's results. Where this site shows "EIA reference", the numbers are EIA's own published AEO2026 values; everything else is computed by this project.</p>
+    <p>Source: U.S. Energy Information Administration, Annual Energy Outlook 2026, and the National Energy Modeling System AEO2026 release (2026). The reference case shown is the one EIA labels "Counterfactual Baseline".</p>
+  </section>
+
+  <section class="card">
+    <h2>What this is, and is not</h2>
+    <ul>
+      <li>The residential and commercial demand modules are ported line by line from EIA's Fortran and checked array by array against EIA's code compiled with free gfortran.</li>
+      <li>Industrial and transportation demand are being ported. Until then a stub stands in, with price responses fitted to EIA's own side runs.</li>
+      <li>Electricity, natural gas, oil and refining, and coal are stand-ins: reduced-form curves fitted to EIA's AEO2026 runs, to be replaced by ports module by module. Several of EIA's versions run on paid optimization software (AIMMS, GAMS); the ports will need open solvers.</li>
+      <li>The sandbox's 144 scenarios were run ahead of time with the stubs and stand-ins. They show how the pieces fit together and roughly how the system responds. They are not forecasts and should not be cited as EIA analysis.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>License and code</h2>
+    <p>NEMS Open is released under the Apache License 2.0, the same license EIA uses for its open models. Code, method notes and every known limit: <a href="https://github.com/joshuaag77-sketch/nems-open">github.com/joshuaag77-sketch/nems-open</a>. The repository's NOTICE file sets out what comes from EIA.</p>
+    <p>Chart drawing by <a href="https://www.chartjs.org/">Chart.js</a> (MIT license).</p>
+  </section>
+
+  <section class="card">
+    <h2>Who</h2>
+    <p>Started by Josh Agarwal in 2026. Contributions are welcome; see CONTRIBUTING.md in the repository for how a port is judged done.</p>
+  </section>
+</main>
+<footer class="foot">
+  <p>Data: U.S. Energy Information Administration, Annual Energy Outlook 2026 and the NEMS AEO2026 release. NEMS Open is an independent project, not affiliated with or endorsed by EIA.</p>
+</footer>
+</body>
+</html>

@@ -9,3 +9,6 @@ oracle/run_ind/
 oracle/build_ind/
 oracle/build_ind.log
 oracle/cycle.sh
+oracle/run_resd/
+oracle/build_resd/
+/data/
