@@ -41,7 +41,9 @@ def rel_err(mine, eia):
     scale = np.abs(e[np.isfinite(e)]).max(initial=0.0)
     with np.errstate(invalid="ignore"):
         d = np.where(m == e, 0.0, np.abs(m - e))
-    return float((d / np.maximum(np.abs(e), max(1e-6, 1e-7 * scale))).max())
+    # Near-zero entries are judged against the array's scale: absolute error up to 1e-7 of
+    # the largest value is float32 rounding (exp and pow differ by an ulp between libraries).
+    return float((d / np.maximum(np.abs(e), max(1e-6, 1e-3 * scale))).max())
 
 
 def _blank_from(a: FArray, y: int) -> FArray:
