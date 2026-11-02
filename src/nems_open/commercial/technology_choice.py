@@ -288,6 +288,30 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
             tp_P = np.array([tp[p] for p in prefs], dtype=f32)
             fb_L = {f: fuelbytech[T, f] for f in (1, 2, 3)}
             eff_pos = eff_L > 0.0
+            TH = np.array([t for t in range(1, NUM_HP + 1) if techbyservice[1, t] == 1
+                           for v in range(1, int(n_vint[t]) + 1) if by_model[t, v] == 1], dtype=int)
+            VH = np.array([v for t in range(1, NUM_HP + 1) if techbyservice[1, t] == 1
+                           for v in range(1, int(n_vint[t]) + 1) if by_model[t, v] == 1], dtype=int)
+            TB = np.array([t for t, _ in L if t > 2 * NUM_HP], dtype=int)
+            VB = np.array([v for t, v in L if t > 2 * NUM_HP], dtype=int)
+            skip_hp = (T <= NUM_HP) & (s == 2)
+            fi_L = np.array([_first_fuel_of(fuelbytech, t) for t, _ in L], dtype=int)
+            cri2_L = cri[r, s, T, V] == 2.0
+            sub_L, s111_L = tc[r, T, V, I_SUB], tc[r, T, V, I_SUB111D]
+
+            def tic(t, v):
+                if cost_trend_on:
+                    if t <= NUM_HP:
+                        hp = keq_cached(r, cooling_hp, v)
+                        if hp == MAXCOST:
+                            hp = tc[r, cooling_hp, v, I_CAP]
+                        return keq_cached(r, t, v) + hp
+                    return keq_cached(r, t, v)
+                if t <= NUM_HP:
+                    return tc[r, t, v, I_CAP] + tc[r, cooling_hp, v, I_CAP]
+                return tc[r, t, v, I_CAP]
+            tic_L = np.array([tic(t, v) if not ((t <= NUM_HP and s == 2) or unavail_tv[i]) else f32(0.0)
+                              for i, (t, v) in enumerate(L)], dtype=f32)
             TA = np.array([t for t in tlist for v in range(1, int(n_vint[t]) + 1)], dtype=int)
             VA = np.array([v for t in tlist for v in range(1, int(n_vint[t]) + 1)], dtype=int)
 
@@ -501,83 +525,41 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                     SD = {(svc, 1): NSD[r, b, svc] for svc in (1, 2)}
                     SD.update({(svc, 2): RSD[r, b, svc] for svc in (1, 2)})
                     SD.update({(svc, 3): SSD[r, b, svc] for svc in (1, 2)})
-                    hp_tv = [(t, v) for t in range(1, NUM_HP + 1) if techbyservice[1, t] == 1
-                             for v in range(1, int(n_vint[t]) + 1) if by_model[t, v] == 1]
-                    for t, v in hp_tv:
-                        for d in range(1, NUM_DEC + 1):
-                            if SD[2, d] > 0.0:
-                                MS[b, 2, d, t + NUM_HP, v] = (MS[b, 1, d, t, v] * SD[1, d]
-                                                             * degreedays[2, r, y] / degreedays[1, r, y] / SD[2, d])
-                            else:
-                                MS[b, 2, d, t + NUM_HP, v] = 0.0
-                    hp_sd = {}
                     for d in range(1, NUM_DEC + 1):
-                        acc = f32(0.0)
-                        for t, v in hp_tv:
-                            acc += MS[b, 2, d, t + NUM_HP, v] * SD[2, d]
-                        hp_sd[d] = acc
-                    norm = {}
-                    big = [(t, v) for t, v in L if t > 2 * NUM_HP]
+                        if SD[2, d] > 0.0:
+                            MS[b, 2, d, TH + NUM_HP, VH] = (MS[b, 1, d, TH, VH] * SD[1, d]
+                                                           * degreedays[2, r, y] / degreedays[1, r, y] / SD[2, d])
+                        else:
+                            MS[b, 2, d, TH + NUM_HP, VH] = 0.0
                     for d in range(1, NUM_DEC + 1):
-                        acc = f32(0.0)
-                        for t, v in big:
-                            acc += MS[b, 2, d, t, v]
-                        norm[d] = acc
-                    for t, v in big:
-                        for d in range(1, NUM_DEC + 1):
-                            if norm[d] > 0.0:
-                                MS[b, 2, d, t, v] = MS[b, 2, d, t, v] / norm[d]
-                            if SD[2, d] > 0.0:
-                                MS[b, 2, d, t, v] = MS[b, 2, d, t, v] * (SD[2, d] - hp_sd[d]) / SD[2, d]
+                        hp_sd = _seq_total(MS[b, 2, d, TH + NUM_HP, VH] * SD[2, d])
+                        norm = _seq_total(MS[b, 2, d, TB, VB])
+                        if norm > 0.0:
+                            MS[b, 2, d, TB, VB] = MS[b, 2, d, TB, VB] / norm
+                        if SD[2, d] > 0.0:
+                            MS[b, 2, d, TB, VB] = MS[b, 2, d, TB, VB] * (SD[2, d] - hp_sd) / SD[2, d]
 
-                # Investment in purchased equipment (label 314).
-                ird = {}
-                purch_sd = f32(0.0)
-                prt_sd = f32(0.0)
+                # Investment in purchased equipment (label 314), summed in L's order.
+                ms1, ms2, ms3 = MS[b, s, 1, T, V], MS[b, s, 2, T, V], MS[b, s, 3, T, V]
+                gain = ssd * (ms3 - surv_L)
+                ird_L = np.where(ok & (gain > 0.0), gain, f32(0.0))
+                invest = ms1 * nsd + ms2 * rsd + ird_L
+                cnt = ok & ~skip_hp
+                purch_sd = _seq_total(invest[cnt])
+                prt_sd = _seq_total(ird_L[cnt])
                 inv, fed, nonfed, subt, s111d = (ys[k] for k in ("investcost", "fedsubsidyinvestcost",
                                                                  "nonfedsubsidyinvestcost", "subsidyinvestcost",
                                                                  "subsidy111dinvestcost"))
-                for t in tlist:
-                    for v in range(1, int(n_vint[t]) + 1):
-                        ird[t, v] = f32(0.0)
-                        if by_model[t, v] != 1:
-                            continue
-                        if (tc[r, t, v, I_CAP] == MAXCOST or year < avail[r, t, v, 1]
-                                or year > avail[r, t, v, 2] or restrict[t, v, b, r] == 1 or techbyservice[s, t] == 0):
-                            continue
-                        ird[t, v] = max(f32(0.0), ssd * (MS[b, s, 3, t, v] - surv_L[pos[t, v]]))
-                        invest = MS[b, s, 1, t, v] * nsd + MS[b, s, 2, t, v] * rsd + ird[t, v]
-                        if t <= NUM_HP and s == 2:
-                            continue
-                        if cost_trend_on:
-                            if t <= NUM_HP:
-                                hp = keq_cached(r, cooling_hp, v)
-                                if hp == MAXCOST:
-                                    hp = tc[r, cooling_hp, v, I_CAP]
-                                tic = keq_cached(r, t, v) + hp
-                            else:
-                                tic = keq_cached(r, t, v)
-                        elif t <= NUM_HP:
-                            tic = tc[r, t, v, I_CAP] + tc[r, cooling_hp, v, I_CAP]
-                        else:
-                            tic = tc[r, t, v, I_CAP]
-                        cpk = (tic / f32(8760.0)) / cf
-                        s111 = (tc[r, t, v, I_SUB111D] / f32(8760.0)) / cf
-                        fi = _first_fuel_of(fuelbytech, t)
-                        inv[r, s, fi] += invest * cpk
-                        sub = (tc[r, t, v, I_SUB] / f32(8760.0)) / cf
-                        if cri[r, s, t, v] == 2.0:
-                            fed[r, s, fi] += invest * sub
-                        else:
-                            nonfed[r, s, fi] += invest * sub
-                        subt[r, s, fi] = fed[r, s, fi] + nonfed[r, s, fi]
-                        s111d[r, s, fi] += invest * s111
-                        purch_sd += invest
-                        prt_sd += ird[t, v]
+                np.add.at(inv[r, s], fi_L[cnt], (invest * (tic_L / f32(8760.0) / cf))[cnt])
+                sub_v = invest * (sub_L / f32(8760.0) / cf)
+                np.add.at(fed[r, s], fi_L[cnt & cri2_L], sub_v[cnt & cri2_L])
+                np.add.at(nonfed[r, s], fi_L[cnt & ~cri2_L], sub_v[cnt & ~cri2_L])
+                for fi in set(fi_L[cnt].tolist()):
+                    subt[r, s, fi] = fed[r, s, fi] + nonfed[r, s, fi]
+                np.add.at(s111d[r, s], fi_L[cnt], (invest * (s111_L / f32(8760.0) / cf))[cnt])
 
                 # Fuel shares and efficiency by decision (label 270). MS (float32) times the int
                 # fuel flag is float64 in numpy, so these sums run in float64, in L's order.
-                ird_L = np.array([ird[t, v] for t, v in L], dtype=f32)
                 FS, AE = {}, {}
                 for d in range(1, NUM_DEC + 1):
                     ms_d = MS[b, s, d, T, V]
@@ -595,7 +577,6 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                         FSS[r, b, s, f] = (nsd * FS[1, f] + rsd * FS[2, f] + ssd * FS[3, f]) / tot
                         sdbyfuel[f, s, b, r] = (nsd_ns[r, b, s] * FS[1, f] + rsd_ns[r, b, s] * FS[2, f]
                                                 + ssd_ns[r, b, s] * FS[3, f])
-                ms1, ms2, ms3 = MS[b, s, 1, T, V], MS[b, s, 2, T, V], MS[b, s, 3, T, V]
                 tss_L = (nsd * ms1 + rsd * ms2 + ssd * ms3) / tot if tot > 0.0 else np.zeros(nL, dtype=f32)
                 TSS[r, b, s, T, V] = tss_L
                 PTS[r, b, s, T, V] = ((nsd * ms1 + rsd * ms2 + prt_sd * (ird_L / ssd)) / purch_sd
