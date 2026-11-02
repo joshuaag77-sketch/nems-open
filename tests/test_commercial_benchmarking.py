@@ -11,6 +11,8 @@ import pytest
 from nems_open import oracle_state
 from nems_open.commercial.benchmarking import benchmarking, read_kemfac
 
+XDIST_BY_YEAR = True
+
 YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]
 TOL = 1e-4
 FROM_BM_OUT = ["solarpvcontrib", "nohist", "decaybm", "lastdecayyr", "steobm2pct"]
