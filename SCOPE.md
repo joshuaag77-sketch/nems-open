@@ -16,7 +16,7 @@ Rebuild EIA's National Energy Modeling System (NEMS) as open Python that runs wi
 | Module | Where | Size | State | Blocker |
 |---|---|---|---|---|
 | Commercial demand | `source/comm.f` | 13k lines Fortran | To port | None |
-| Residential demand | `source/resd.f` | 17k Fortran | To port | None |
+| Residential demand | `source/resd.f` | 17k Fortran | In progress (oracle built, 3 routines done) | None |
 | Industrial demand | `source/ind.f` | 20k Fortran | To port | None |
 | Transportation demand | `source/tran*.f` | 18k Fortran | To port | None |
 | Renewable fuels | `source/renew.f` | 35k Fortran | To port | None |
@@ -134,6 +134,63 @@ EIA quirks seen so far (keep them):
 Consumption quirks kept: district steam uses `SRElas` left over from the loop before it (last region, distillate) for every fuel; kerosene's minor-fuel formula is missing parentheses, so new floorspace is added unscaled; the spray-valve standard for food service, health care and lodging uses fuel totals that are only partly clamped when electricity is processed.
 
 Port notes: the run switches in the reference case are `CostTrendSwitch=1` (capital costs from `KEqCost`), `STRetBehav=1`, `I4SCNT=2` (current local prices, not price expectations). Speed: about 50 s per year in pure Python; the retrofit searches are the hot spot and can be vectorized later, as long as the strict "only if cheaper" order is kept.
+
+## Residential port (started 2026-11-01)
+
+### Residential oracle
+Same method as commercial, same scripts with a module name:
+```
+cd oracle
+python -I gen_oracle.py ../nems-upstream cb2026 resd
+bash build.sh resd
+cd run_resd && ./oracle.exe
+```
+- Runs 2020 (RECS base year) to 2050 in about 10 s without dumps, 77 s with all 44 routines dumped (18 GB in `run_resd/out/state/`).
+- Matches EIA's `QBLK` residential fuel use (regions 1-9) to float rounding through 2026, within 0.3% after; 2050 US totals within 0.05%. Report arrays (`RESDREP`, `RSCON`, `RSEFF`) agree within 1% from 2021. Same drift pattern as commercial: STEO benchmarking pins the years to 2026, float rounding builds after. `tests/test_oracle_residential.py`.
+- What it took: the include list must cover routine-level includes too. `EXCONS` and `NEMSCN` include `tranrep` for `TRQ_ELEC` (EV home charging, added to `QELRS`); without it electricity was 15% low by 2050. Three more Intel spellings (scalar in parentheses in a READ, `91FORMAT` with no space, an INTEGER 0 under an F format in the lighting debug report). The residential blocks (`RESDREP`, `RSCON`, `RSEFF`) and `QBLK` Q*RS are not loaded from the restart file, so every match is earned.
+- 2020 report cells that the module does not compute (new-equipment efficiencies, some `RSEFF` weights) hold values in EIA's restart file carried from earlier runs. Compare from 2021.
+- State dumps: all residential routines are internal to `SUBROUTINE RESD` and share `MODULE R_`, so the dump routine `USE`s R_. A full dump is 170 MB, so around each target the oracle dumps only the shared arrays that routine (and anything it calls) mentions. Blocks outside R_ (`tranrep`) go through a second routine. Tags and calls: `RESD_TARGETS` in `oracle/hooks.py`. Dump years 2020, 2021, 2022, 2025, 2026, 2027, 2030, 2040, 2050; yearly routines have no 2020 dump.
+- Test pattern: `tests/resd_oracle.py`. Load `<tag>_in`, run the port on a copy, every array in `<tag>_out` must match. Ports work in place on a dict of FArrays, the way the Fortran works on shared COMMON.
+
+### Routine map (resd.f, line numbers in nems-upstream/source/resd.f)
+Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1, then `RDPR`, `EXCONS`, `RSBENCH`, `NEMSCN`, `RESDRP`. Each later year: the yearly chain below. Final year: reports.
+
+| Routine | Lines | What it does | Tag | State |
+|---|---|---|---|---|
+| `RTEKREAD` | 607, 437 | Reads RSMESS.xlsx: RSCLASS, RSMEQP, RSSWITCH, RSMSHL (equipment, switching cost, shell menus) | | To do (reader) |
+| `DEGDAYREAD`, `BLDBASEREAD`, `RSUECSHLREAD`, `RSMELSREAD`, `RSMISCREAD`, `RSMLGTREAD`, `RDRET`, `INTEQT`, `RDSQFOOT`, `RDHTREQC`, `RDEFF`, `RDSTEFF`, `RDESTARHOMES`, `RDUECS`, `RCONSFL` | 1044-2443 | Text input readers (degree days, UECs, MELs, misc controls, lighting menu, retirements, new-home heating shares, floor area, RECS stock, efficiencies, ENERGY STAR homes, fuel maps) | | To do (readers) |
+| `RDPR` | 2086, 61 | Fuel prices to the menu dollar year | pr | Done, bit-exact |
+| `EXCONS` | 2444, 525 | RECS-year consumption by end use | ex | To do |
+| `NEWHSE` | 2969, 44 | New homes from housing starts and survival | nh | Done, bit-exact |
+| `SQFTCALC` | 3013, 85 | Floor area per home | sq | Done, bit-exact |
+| `REPLACE` | 3098, 107 | Logit split of retiring equipment across classes | (via callers) | Ported in `helpers.py`, checked through callers |
+| `RSHVAC` | 3205, 409 | HVAC package and shell choice | hv | To do |
+| `RHTRTEC` / `RHTRADD` / `RHTRCON` | 3614, 3951, 4249 | Space heating: choice, stock added and replaced, consumption | htt, hta, htc | To do |
+| `RCLTEC` / `RCLADD` / `RCLCON` | 4790, 5047, 5361 | Space cooling | clt, cla, clc | To do |
+| `RCWTEC` / `RCWADD` / `RCWCON` | 5844, 6095, 6240 | Clothes washers | cwt, cwa, cwc | To do |
+| `RDWTEC` / `RDWADD` / `RDWCON` | 6466, 6683, 6841 | Dishwashers | dwt, dwa, dwc | To do |
+| `RWHTEC` / `REUADD` (EU 5) / `RWHCON` | 7056, 7387, 7660 | Water heating | wht, wha, whc | To do |
+| `RSTVTEC` / `REUADD` (EU 6) / `RSTOVCON` | 8085, 7387, 8338 | Cooking | ckt, cka, ckc | To do |
+| `RDRYTEC` / `RDRYADD` / `RDRYCON` | 8568, 8783, 9055 | Clothes dryers | dyt, dya, dyc | To do |
+| `RREFTEC` / `RREFADD` / `RREFCON` | 9296, 9562, 9694 | Refrigerators | rft, rfa, rfc | To do |
+| `RFRZTEC` / `RFRZADD` / `RFRZCON` | 9899, 10146, 10279 | Freezers | fzt, fza, fzc | To do |
+| `LTCNS` | 10492, 666 | Lighting choice, stock and use | lt | To do |
+| `APCNS` | 11158, 378 | Miscellaneous electric loads (MELs) | ap | To do |
+| `SHTCNS`, `APPCNS` | 11536, 11628 | Secondary heating, other-fuel appliances | sh, sa | To do |
+| `FUELCN` | 11693, 40 | Fuel totals across end uses | fu | To do |
+| `RSBENCH` | 13673, 223 | Benchmark to SEDS and STEO (pins 2020-2026) | bb (2020), be | To do |
+| `NEMSCN` | 11733, 60 | Writes `QBLK` Q*RS (net of own-use generation, plus EV charging) | nb (2020), ne | To do |
+| `RESDRP` | 11793, 107 | `RESDREP` report arrays | rb (2020), re | To do |
+| `RDISTGEN` | 15065, 1678 | Rooftop PV and other on-site generation | dg | To do |
+| `CALC111D` | 14956, 109 | EPA 111(d) rebates, repealed, off in AEO2026 | | Skip |
+| `RSPITC`, `PITCINIT` | 16773, 16743 | Price-induced technical change, off (IFMAX = 0) | | Skip |
+| `NHTSHR`, `RESDRP2`, `RESDBOUT` | 13610, 11900, 13896 | Final-year reports and debug files | | To do (reports) |
+| `SVRTE`, `RSELAST`, `EQCOST`, `rLearnCost` | 16862-17051 | Survival curve, short-run price response, cost trend, learning curve | | Ported in `helpers.py` |
+
+### Residential quirks kept (do not fix)
+- `RDPR`: wood is priced to distillate in 2020 but to natural gas less carbon tax after.
+- `NEWHSE`: `ALLNEW` keeps only the last building type, and `HHSTOCKBYDIV` divides its running total by a million on every pass of the loop.
+- `REPLACE`: switching cost is looked up as `RPINSCOST(RECCL, RECCLSW)` (EIA's own TODO asks whether that is transposed); computes CAPITAL and RETAIL and never uses them.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.

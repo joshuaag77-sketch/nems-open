@@ -74,6 +74,52 @@ RESD_TARGETS = [
     dict(tag="pr", call=r"IF \(CurCalYr\.GE\.RECSYear\) CALL RDPR\b"),
     dict(tag="nh", call=r"CALL NEWHSE\b"),
     dict(tag="sq", call=r"CALL SQFTCALC\b"),
+    # RECS base year only (2020)
+    dict(tag="ex", call=r"CALL EXCONS\b"),
+    dict(tag="bb", call=r"CALL RSBENCH\b", nth=0),
+    dict(tag="nb", call=r"CALL NEMSCN\b", nth=0),
+    dict(tag="rb", call=r"CALL RESDRP\b", nth=0),
+    # Every year after
+    dict(tag="hv", call=r"CALL RSHVAC\b"),
+    # end uses: ht heating, cl cooling, cw clothes washing, dw dishwashing, wh water
+    # heating, ck cooking, dy drying, rf refrigeration, fz freezing;
+    # t = technology choice, a = equipment added/replaced, c = consumption
+    dict(tag="htt", call=r"CALL RHTRTEC\b"),
+    dict(tag="hta", call=r"CALL RHTRADD\b"),
+    dict(tag="dg", call=r"CALL RDISTGEN\b", nth=1),
+    dict(tag="clt", call=r"CALL RCLTEC\b"),
+    dict(tag="cla", call=r"CALL RCLADD\b"),
+    dict(tag="cwt", call=r"CALL RCWTEC\b"),
+    dict(tag="cwa", call=r"CALL RCWADD\b"),
+    dict(tag="dwt", call=r"CALL RDWTEC\b"),
+    dict(tag="dwa", call=r"CALL RDWADD\b"),
+    dict(tag="wht", call=r"CALL RWHTEC\b"),
+    dict(tag="wha", call=r"CALL REUADD\b", nth=0),  # EU = 5
+    dict(tag="ckt", call=r"CALL RSTVTEC\b"),
+    dict(tag="cka", call=r"CALL REUADD\b", nth=1),  # EU = 6
+    dict(tag="dyt", call=r"CALL RDRYTEC\b"),
+    dict(tag="dya", call=r"CALL RDRYADD\b"),
+    dict(tag="rft", call=r"CALL RREFTEC\b"),
+    dict(tag="rfa", call=r"CALL RREFADD\b"),
+    dict(tag="fzt", call=r"CALL RFRZTEC\b"),
+    dict(tag="fza", call=r"CALL RFRZADD\b"),
+    dict(tag="htc", call=r"CALL RHTRCON\b"),
+    dict(tag="clc", call=r"CALL RCLCON\b"),
+    dict(tag="cwc", call=r"CALL RCWCON\b"),
+    dict(tag="dwc", call=r"CALL RDWCON\b"),
+    dict(tag="whc", call=r"CALL RWHCON\b"),
+    dict(tag="ckc", call=r"CALL RSTOVCON\b"),
+    dict(tag="dyc", call=r"CALL RDRYCON\b"),
+    dict(tag="rfc", call=r"CALL RREFCON\b"),
+    dict(tag="fzc", call=r"CALL RFRZCON\b"),
+    dict(tag="lt", call=r"CALL LTCNS\b"),
+    dict(tag="ap", call=r"CALL APCNS\b"),
+    dict(tag="sh", call=r"CALL SHTCNS\b"),
+    dict(tag="sa", call=r"CALL APPCNS\b"),
+    dict(tag="fu", call=r"CALL FUELCN\b"),
+    dict(tag="be", call=r"CALL RSBENCH\b", nth=1),
+    dict(tag="ne", call=r"CALL NEMSCN\b", nth=1),
+    dict(tag="re", call=r"CALL RESDRP\b", nth=1),
 ]
 RESD_STATE_BLOCK_FILES = ["resdrep", "rtek", "rscon", "rseff"]
 RESD_STATE_EXTRA = ["QELRS", "QNGRS", "QDSRS", "QLGRS", "QKSRS", "QBMRS", "QGERS", "QSTRS", "QPVRS",
@@ -81,7 +127,7 @@ RESD_STATE_EXTRA = ["QELRS", "QNGRS", "QDSRS", "QLGRS", "QKSRS", "QBMRS", "QGERS
 # Other modules' blocks the residential routines can read. Around a target, any of
 # their arrays the routine mentions is dumped too (not in 'final').
 RESD_WIDE_FILES = ["ncntrl", "qblk", "mpblk", "ampblk", "macout", "eusprc", "qsblk", "cogen", "uefpout",
-                   "uecpout", "e111d", "steoblock", "tranrep", "emission", "emablk", "bldglrn"]
+                   "uecpout", "e111d", "steoblock", "emission", "emablk", "bldglrn"]
 RESD_DECL_FILES = ["parametr", "resdrep", "rtek", "rscon", "rseff", "apq"] + RESD_WIDE_FILES
 
 MODULES = {
@@ -90,7 +136,8 @@ MODULES = {
                  module_text=False),
     "resd": dict(build="build_resd", run="run_resd", years=RESD_DUMP_YEARS, targets=RESD_TARGETS,
                  includes=[], use="R_", block_files=RESD_STATE_BLOCK_FILES, extra=RESD_STATE_EXTRA,
-                 decl_files=RESD_DECL_FILES, module_text=True, wide_files=RESD_WIDE_FILES),
+                 decl_files=RESD_DECL_FILES, module_text=True, wide_files=RESD_WIDE_FILES,
+                 outside_files=["tranrep"]),
 }
 CFG = MODULES["comm"]
 
@@ -200,14 +247,30 @@ def module_r_(source_text):
     return text, names
 
 
+def routine_bodies(source_text):
+    """{lowercase name: body text} for every routine and function in the file."""
+    out = {}
+    # Routines nest (all of resd.f sits inside RESD), so find each one's own end.
+    for m in re.finditer(r"^[ \t]*(?:REAL(?:\*4)?[ \t]+)?(?:SUBROUTINE|FUNCTION)[ \t]+(\w+)", source_text, re.I | re.M):
+        e = re.compile(rf"^[ \t]*END[ \t]+(?:SUBROUTINE|FUNCTION)[ \t]+{m.group(1)}\b", re.I | re.M).search(source_text, m.end())
+        if e:
+            body = source_text[m.end():e.start()]
+            out[m.group(1).lower()] = "\n".join(l.split("!", 1)[0] for l in body.splitlines())
+    return out
+
+
 def routine_idents(source_text, routines):
-    """Lowercase identifiers used in the named routines, comments stripped."""
-    used = set()
-    for r in routines:
-        m = re.search(rf"^\s*(?:REAL\s+)?(?:SUBROUTINE|FUNCTION)\s+{r}\b(.*?)^\s*END\s+(?:SUBROUTINE|FUNCTION)\s+{r}\b",
-                      source_text, re.I | re.M | re.S)
-        body = "\n".join(l.split("!", 1)[0] for l in m.group(1).splitlines())
-        used |= {w.lower() for w in re.findall(r"[A-Za-z_]\w*", body)}
+    """Lowercase identifiers used in the named routines and everything they call."""
+    bodies = routine_bodies(source_text)
+    used, todo, seen = set(), [r.lower() for r in routines], set()
+    while todo:
+        r = todo.pop()
+        if r in seen:
+            continue
+        seen.add(r)
+        words = {w.lower() for w in re.findall(r"[A-Za-z_]\w*", bodies[r])}
+        used |= words
+        todo += [w for w in words if w in bodies and w not in seen and w != "resd"]
     return used
 
 
@@ -229,23 +292,43 @@ def write_state_routine(inc_dir, source_text=None):
         return [c.replace("''//tag//''", "tag") for c in cs]
 
     calls = calls_for(names)
+    extra_routine = ""
     if CFG["module_text"]:
         # A full residential dump is about 170 MB. Around a target, dump only the
         # shared arrays its routines mention; the full set is kept for 'final'.
         wide = list(names)
         for n in CFG["wide_files"]:
             wide += common_names((inc_dir / n).read_text(encoding="latin-1"))
-        blocks = []
+        # Blocks only some routines include (tranrep) clash with R_, so their
+        # arrays go through a second routine that includes them instead.
+        outside = []
+        for n in CFG["outside_files"]:
+            decls.update(declarations((inc_dir / n).read_text(encoding="latin-1")))
+            outside += common_names((inc_dir / n).read_text(encoding="latin-1"))
+        blocks, xblocks = [], []
         for tg in map(as_dict, CFG["targets"]):
             used = routine_idents(source_text, tg["routines"])
             sub = calls_for([n for n in wide if n.lower() in used])
-            blocks.append(f"      if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then\n"
-                          + "\n".join(sub) + "\n        return\n      endif")
+            xsub = calls_for([n for n in outside if n.lower() in used])
+            cond = f"if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then"
+            if xsub:
+                sub.append("        call oracle_state_x(tag)")
+                xblocks.append(f"      {cond}\n" + "\n".join(xsub) + "\n      endif")
+            blocks.append(f"      {cond}\n" + "\n".join(sub) + "\n        return\n      endif")
         calls = blocks + calls
+        xinc = "\n".join(f"      include '{n}'" for n in ["parametr", "ncntrl"] + CFG["outside_files"])
+        extra_routine = f"""
+      subroutine oracle_state_x(tag)
+      implicit none
+{xinc}
+      character(*) tag
+{chr(10).join(xblocks)}
+      end subroutine oracle_state_x
+"""
     years = ", ".join(map(str, CFG["years"]))
     inc = "\n".join(f"      include '{n}'" for n in CFG["includes"])
     if CFG["use"]:
-        inc = f"      use {CFG['use']}\n      implicit none"  # USE must come first
+        inc = f"      use {CFG['use']}\n      implicit none\n" + inc  # USE must come first
     else:
         inc = "      implicit none\n" + inc
     body = "\n".join(calls)
@@ -257,7 +340,7 @@ def write_state_routine(inc_dir, source_text=None):
       if (FCRL .ne. 1 .or. .not. any(years == CURIYR)) return
 {body}
       end subroutine oracle_state
-""")
+{extra_routine}""")
     return len(calls)
 
 
