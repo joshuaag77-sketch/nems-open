@@ -52,6 +52,9 @@ CRUDE_PASS_THROUGH = 1.0
 MMBTU_PER_BBL = {"mg": 5.053, "ds": 5.774, "jf": 5.670, "ks": 5.670, "rl": 6.287, "rh": 6.287,
                  "rs": 6.287, "ot": 5.825, "pf": 5.248, "as": 6.636, "tp": 5.400, "lp": 5.825}
 REGIONAL = {"el"}
+SWITCH_ROUNDS = 50
+SWITCH_TOL = 1e-5  # relative change in power-plant fuel burn between rounds
+SWITCH_CLIP = 3.0  # a fuel's effective cost can rise up to e^3 (20x) before the curve stops
 DLOG_CLIP = 1.0  # |dlog| capped at 1 (a factor of e) so a zeroed fuel cannot blow up a price
 
 
@@ -127,6 +130,7 @@ class SupplyStandin:
         coef = json.loads(Path(coefficients).read_text())
         self.price_coef = {k: v["coef"] for k, v in coef["prices"].items()}
         self.power_mix = coef["power_mix"]
+        self.switching = coef.get("power_switching")
         self._accounting = self._accounting_pairs()
         self._calibration = {s: self._calibrate(s) for s in EMISSION_SECTORS}
 
@@ -171,6 +175,59 @@ class SupplyStandin:
         return totals
 
     # Prices ----------------------------------------------------------------
+
+    def _prices(self, totals: dict, brent) -> dict[str, np.ndarray]:
+        """Every MPBLK price before carbon adders."""
+        base = self.base
+        prices = {}
+        names = sorted(k for k in base if k.startswith("MPBLK/p"))
+        # Gas first: electricity prices respond to the price of gas to power plants.
+        for name in sorted(names, key=lambda n: parse_price(n)[0] == "el"):
+            fuel, _ = parse_price(name)
+            if fuel not in DRIVERS:
+                prices[name] = base[name].copy()
+                continue
+            x = regressors(fuel, totals, base, brent, prices.get("MPBLK/pngel"))
+            prices[name] = self._move(name, x, brent)
+        return prices
+
+    # Power-sector fuel switching ------------------------------------------------
+
+    def _cp87(self, carbon_price) -> np.ndarray:
+        """Carbon price in 1987 $ per metric ton CO2, by year."""
+        if carbon_price is None:
+            return np.zeros(61)
+        deflator = self.base["MACOUT/mc_jpgdp"]  # index 0 is 1987
+        cp = np.broadcast_to(np.asarray(carbon_price, dtype=np.float64), (61,))
+        return cp / (deflator[DOLLAR_YEAR - 1987] / deflator[0])
+
+    def _switch(self, power0: dict, prices: dict, cp87: np.ndarray) -> dict[str, np.ndarray]:
+        """Gas and coal burn in power plants moved by their effective fuel cost (delivered
+        price plus carbon cost) against the baseline: log Q = log Q0 + a * dlog cost.
+        Coefficients from fit.fit_power_switching; the change goes to (or comes from)
+        zero-carbon generation, since electricity sales are held."""
+        sw = self.switching
+        if not sw:
+            return power0
+        b = self.base
+        cost = {}
+        for fuel, pname, ename in (("ng", "MPBLK/pngel", "EMEBLK/engel"), ("cl", "MPBLK/pclel", "EMEBLK/eclel")):
+            p, p0 = prices[pname][US], b[pname][US]
+            adder = cp87 * b[ename] * CO2_PER_C / 1000.0
+            ok = (p0 > 0) & (p + adder > 0)
+            cost[fuel] = np.clip(np.log(np.where(ok, p + adder, 1.0) / np.where(ok, p0, 1.0)), -SWITCH_CLIP, SWITCH_CLIP)
+        g0, c0 = b["QBLK/qngel"][US], b["QBLK/qclel"][US]
+        # Symmetric cross effect: the gas burned per unit change in coal cost equals the
+        # coal burned per unit change in gas cost, in Btu (so a_gc * Qgas = a_cg * Qcoal).
+        a_gc = sw["coal_from_gas_cost"] * np.divide(c0, g0, out=np.zeros(61), where=g0 > 0)
+        gas = np.exp(sw["gas_own"] * cost["ng"] + a_gc * cost["cl"])
+        coal = np.exp(sw["coal_from_gas_cost"] * cost["ng"] + sw["coal_own"] * cost["cl"])
+        out = dict(power0)
+        for name in ("QBLK/qngel", "QBLK/qgfel", "QBLK/qgiel"):
+            if name in out:
+                out[name] = power0[name] * gas
+        out["QBLK/qclel"] = power0["QBLK/qclel"] * coal
+        return out
 
     def _move(self, name: str, x: dict, brent) -> np.ndarray:
         coef = self.price_coef.get(name)
@@ -226,20 +283,24 @@ class SupplyStandin:
         base = self.base
         q = self._demand(demand or {})
         d_elec_us = sum(q[f"QBLK/qel{s}"][US] - base[f"QBLK/qel{s}"][US] for s in DEMAND_SECTORS)
-        power = self._power_fuel(d_elec_us)
-        totals = self._totals(q, power)
         brent = base["INTOUT/brent_price"] if brent is None else np.asarray(brent, dtype=np.float64)
-
-        prices = {}
-        names = sorted(k for k in base if k.startswith("MPBLK/p"))
-        # Gas first: electricity prices respond to the price of gas to power plants.
-        for name in sorted(names, key=lambda n: parse_price(n)[0] == "el"):
-            fuel, _ = parse_price(name)
-            if fuel not in DRIVERS:
-                prices[name] = base[name].copy()
-                continue
-            x = regressors(fuel, totals, base, brent, prices.get("MPBLK/pngel"))
-            prices[name] = self._move(name, x, brent)
+        power0 = self._power_fuel(d_elec_us)
+        cp87 = self._cp87(carbon_price)
+        # Power plants switch fuel as fuel costs (carbon included) move, which moves gas
+        # use, which moves the gas price: iterate to a fixed point (a few rounds).
+        power = power0
+        for _ in range(SWITCH_ROUNDS):
+            totals = self._totals(q, power)
+            prices = self._prices(totals, brent)
+            new = self._switch(power0, prices, cp87)
+            change = max(float(np.max(np.abs(new[k] - power[k]) / (np.abs(power[k]) + 1.0))) for k in new)
+            # Damped steps: gas burn and the gas price pull against each other, and a full
+            # step can overshoot back and forth.
+            power = {k: power[k] + 0.7 * (new[k] - power[k]) for k in new}
+            if change < SWITCH_TOL:
+                break
+        totals = self._totals(q, power)
+        prices = self._prices(totals, brent)
 
         all_q = {**{k: v for k, v in base.items() if k.startswith("QBLK/")}, **q, **power}
         co2 = {}
@@ -254,9 +315,7 @@ class SupplyStandin:
         return Result(prices, power, co2, totals, adders)
 
     def _carbon_adders(self, carbon_price, co2_el, elec_sales) -> dict[str, np.ndarray]:
-        deflator = self.base["MACOUT/mc_jpgdp"]  # index 0 is 1987
-        cp87 = np.broadcast_to(np.asarray(carbon_price, dtype=np.float64), (61,))
-        cp87 = cp87 / (deflator[DOLLAR_YEAR - 1987] / deflator[0])
+        cp87 = self._cp87(carbon_price)
         el_intensity = np.divide(co2_el[US], elec_sales[US], out=np.zeros(61),
                                  where=elec_sales[US] > 0)  # t CO2 per MMBtu sold
         adders = {}

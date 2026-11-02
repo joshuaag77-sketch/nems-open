@@ -1529,5 +1529,29 @@
   "QBLK/qtsel": 1.53036,
   "QBLK/qurel": 0.00107,
   "QBLK/qwiel": 0.48836
+ },
+ "power_switching": {
+  "gas_own": -0.7634,
+  "coal_from_gas_cost": 0.7637,
+  "coal_own": -0.7634,
+  "coal_own_assumed": true,
+  "fit_cases": [
+   "hm2026",
+   "lm2026",
+   "higheldmd",
+   "highogs",
+   "lowogs"
+  ],
+  "gas": {
+   "n": 120,
+   "r2": 0.958,
+   "rmse_pct": 5.68
+  },
+  "coal": {
+   "n": 60,
+   "r2": 0.88,
+   "rmse_pct": 6.96,
+   "years": "base coal burn >= 1000 TBtu"
+  }
  }
 }

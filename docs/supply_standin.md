@@ -47,9 +47,19 @@ With baseline demand and no levers it returns the baseline's prices and CO2 exac
    by a fitted amount per Btu sold: gas 0.83, coal 0.08, wind 0.49, solar 0.12 (the full
    list is in the fit report). The change is split across regions by the baseline's
    regional split of that fuel.
-2. **Fuel totals.** Each fuel's total use is the baseline total plus the change in every
+2. **Fuel switching in power plants.** Gas and coal burn then move with each fuel's
+   effective cost to a power plant (delivered price plus carbon cost):
+
+       log Q_gas  = log Q0_gas  - 0.76 * dlog C_gas + a_gc * dlog C_coal
+       log Q_coal = log Q0_coal + 0.76 * dlog C_gas - 0.76 * dlog C_coal
+
+   Whatever gas and coal stop burning is made up by zero-carbon generation (sales are
+   held). Lower gas burn lowers the gas price, which feeds back into burn, so this step
+   and the next iterate to a fixed point (about 10 rounds). See "Power-sector switching"
+   below.
+3. **Fuel totals.** Each fuel's total use is the baseline total plus the change in every
    sector that uses it, power included.
-3. **Prices.** Each MPBLK price moves from the baseline by
+4. **Prices.** Each MPBLK price moves from the baseline by
 
        P = (P_base + crude) * exp(a * dlog Q_fuel + c * dlog P_gas_to_power)
 
@@ -62,9 +72,10 @@ With baseline demand and no levers it returns the baseline's prices and CO2 exac
      the demand-side cases barely move Brent, so a fit cannot identify it. It is tested
      on the two oil and gas supply cases, which move Brent by -15% and +23% and are not
      in the fit. Propane and ethanol do not follow crude.
-4. **Carbon price.** Added on top: each fossil fuel gets its carbon content times the
-   price. Electricity gets the power sector's average CO2 per Btu sold (full pass-through).
-5. **CO2.** Fuel use times EIA's carbon factors (EMEBLK), by sector, scaled to EIA's
+5. **Carbon price.** Added on top: each fossil fuel gets its carbon content times the
+   price. Electricity gets the power sector's average CO2 per Btu sold, after switching
+   (full pass-through).
+6. **CO2.** Fuel use times EIA's carbon factors (EMEBLK), by sector, scaled to EIA's
    reported sector carbon in the baseline (that scale absorbs CCS and feedstocks).
 
 ## Data
@@ -131,14 +142,58 @@ the reference. Largest US error 2027-2050:
 |---|---|---|---|---|---|---|---|---|
 | Electricity, residential | 1.7% | 2.5% | 0.5% | 8.6% | 16% | 3.7% | 3.1% | 5.5% |
 | Gas, residential | 1.3% | 1.3% | 0.7% | 9.0% | 35% | 2.1% | 1.7% | 2.1% |
-| Gas, industrial | 4.2% | 3.8% | 2.4% | 44% | 65% | 7.4% | 4.6% | 6.9% |
+| Gas, industrial | 4.7% | 4.0% | 2.8% | 44% | 64% | 7.4% | 4.5% | 7.0% |
 | Gasoline | 3.3% | 2.2% | 0.6% | 5.4% | 15% | 0.6% | 0.9% | 3.6% |
 | Diesel | 1.9% | 3.6% | 0.3% | 3.5% | 3.6% | 0.6% | 0.5% | 7.1% |
-| Energy CO2 | 0.6% | 1.2% | 0.8% | 7.2% | 13% | 6.9% | 11% | 9.9% |
+| Energy CO2 | 0.8% | 1.2% | 1.2% | 7.4% | 14% | 6.9% | 11% | 9.5% |
 
 The tests hold the three demand-side cases to: electricity 3-4% (US), 10% (any
-division); gas 2-5%; oil products 3-4%; CO2 1.5%. Refined products on the two oil and
+division); gas 2-6% (gas to power plants 6%, it moved from 4.9% to 5.2% on low growth
+when switching was added); oil products 3-4%; CO2 1.5%. Refined products on the two oil and
 gas supply cases, out of sample, within 10%.
+
+## Power-sector switching
+
+No AEO2026 case has a carbon price: every run's carbon adders are zero. So the switching
+response is read from fuel prices instead. To a power plant a carbon price is just a
+higher cost per MMBtu burned, and the high and low oil and gas supply cases move the
+price of gas to power plants by -33% to +200%.
+
+Fit: US, 2027-2050, cases hm2026, lm2026, higheldmd, highogs, lowogs. y is the log of
+actual burn over the burn predicted from electricity sales alone (step 1); x is the log
+change in the gas price to power plants. OLS, no intercept.
+
+| Burn | Gas cost | Coal cost | n | R2 | RMSE |
+|---|---|---|---|---|---|
+| Gas | -0.76 | +0.76 x (coal burn / gas burn), by symmetry | 120 | 0.96 | 5.7% |
+| Coal | +0.76 | -0.76, assumed equal to gas | 60 | 0.88 | 7.0% |
+
+Coal is fitted only on years when the reference still burns at least 1,000 TBtu of it
+(2027-2036); after that it is too close to zero to read.
+
+What it does: at $100 per ton (2024 $), coal burn in 2027-2035 falls about 45-50%, part
+of it moving to gas; gas burn falls about 30% from 2032; power-sector CO2 falls
+20% in 2027 and 40% by 2050.
+
+Limits of this piece:
+
+- **Two of the three numbers are not fitted.** Coal's response to its own price is set
+  equal to gas's, because coal prices barely move across the cases. Gas's response to
+  coal's price follows from symmetry. Both are assumptions.
+- **Out of sample.** The biggest gas-price move in the fit is +200%, a log change of 1.1.
+  A $200 carbon price raises gas's cost to power plants by a log change of about 1.2 in
+  2050, just past that range; coal's by about 2.2, well outside it (capped at 3). Read
+  results above $100 as extrapolation.
+- **Fuel-price changes are not policy.** In the gas supply cases a high gas price lasts
+  the whole run and plants are built for it. A carbon price introduced in 2027 is treated
+  the same way: no lag for building replacement capacity, so early-year cuts are likely
+  too fast.
+- **Renewable build cost is not priced in.** Whatever gas and coal stop burning is
+  replaced by zero-carbon power at no extra cost. Electricity prices only see the carbon
+  cost of the power that is still fossil, so their rise under a carbon price is
+  understated.
+- **Nuclear, CCS and storage do not respond on their own.** They sit inside "zero-carbon"
+  and are not modelled separately.
 
 ## Limits
 
@@ -146,12 +201,8 @@ gas supply cases, out of sample, within 10%.
   gas supply or zero-carbon cost cases from the reference (gas price errors of 40-70%).
   Pick that case as the baseline instead: `SupplyStandin("lowogs")` reproduces it
   exactly and responds to demand around it.
-- **No abatement in the power sector under a carbon price.** A carbon price raises
-  delivered prices and so cuts demand, but the power plant mix only changes with total
-  sales, not with the carbon price. Real NEMS would switch coal to gas to renewables.
-  AEO2026 has no carbon-price case to fit this from, so it is left out rather than
-  guessed. Expect CO2 cuts from a carbon price to be understated, by a lot. This is the
-  first thing the EMM port fixes.
+- **Power-sector switching is a fitted curve, not a dispatch model.** See above. The
+  EMM port replaces it.
 - **Small sample.** Electricity and coal rest on three cases. The electricity fit
   explains about half the spread. Regional electricity errors reach 8-10% where load
   growth is concentrated (data centers in higheldmd). The gasoline slope rests almost

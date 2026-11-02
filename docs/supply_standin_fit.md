@@ -11,20 +11,20 @@ Each case's own end-use demand and Brent price fed through the stand-in (power-s
 | price | hm2026 | lm2026 | higheldmd | highogs | lowogs | highztc | lowztc | altelec | electrnp |
 |---|---|---|---|---|---|---|---|---|---|
 | MPBLK/pelrs | 1.66 | 2.54 | 0.49 | 8.59 | 15.96 | 1.09 | 3.72 | 3.13 | 5.45 |
-| MPBLK/pelcm | 2.32 | 2.44 | 1.24 | 9.87 | 18.07 | 1.2 | 4.94 | 4.01 | 3.58 |
-| MPBLK/pelin | 0.91 | 3.84 | 2.78 | 11.94 | 19.39 | 1.71 | 6.12 | 4.61 | 3.9 |
-| MPBLK/pngrs | 1.28 | 1.26 | 0.65 | 8.99 | 34.87 | 1.64 | 2.06 | 1.67 | 2.11 |
-| MPBLK/pngcm | 2.63 | 1.96 | 0.7 | 10.58 | 39.29 | 1.88 | 2.38 | 1.96 | 2.46 |
-| MPBLK/pngin | 4.17 | 3.75 | 2.41 | 44.34 | 64.65 | 5.38 | 7.36 | 4.57 | 6.9 |
-| MPBLK/pngel | 2.55 | 4.89 | 2.71 | 53.17 | 69.7 | 6.4 | 12.09 | 6.86 | 9.29 |
+| MPBLK/pelcm | 2.2 | 2.54 | 1.18 | 9.83 | 17.9 | 1.21 | 4.95 | 4.01 | 3.59 |
+| MPBLK/pelin | 0.81 | 3.98 | 2.69 | 11.89 | 19.17 | 1.71 | 6.13 | 4.6 | 3.93 |
+| MPBLK/pngrs | 1.42 | 1.32 | 0.64 | 8.96 | 34.65 | 1.63 | 2.06 | 1.66 | 2.14 |
+| MPBLK/pngcm | 2.85 | 2.12 | 0.65 | 10.52 | 38.96 | 1.87 | 2.38 | 1.94 | 2.54 |
+| MPBLK/pngin | 4.71 | 3.95 | 2.76 | 44.01 | 64.17 | 5.35 | 7.38 | 4.53 | 7.02 |
+| MPBLK/pngel | 3.43 | 5.24 | 3.24 | 52.64 | 69.07 | 6.35 | 12.12 | 6.79 | 9.48 |
 | MPBLK/pmgtr | 3.28 | 2.17 | 0.63 | 5.39 | 15.3 | 0.37 | 0.6 | 0.88 | 3.63 |
 | MPBLK/pdstr | 1.94 | 3.6 | 0.31 | 3.54 | 3.62 | 0.29 | 0.61 | 0.51 | 7.05 |
 | MPBLK/pjftr | 1.34 | 2.16 | 0.33 | 8.85 | 9.49 | 0.39 | 0.66 | 0.92 | 7.99 |
 | MPBLK/plgrs | 0.97 | 2.48 | 1.01 | 37.1 | 42.79 | 1.94 | 1.25 | 0.78 | 6.61 |
 | MPBLK/pdsrs | 1.92 | 3.24 | 0.29 | 3.12 | 3.33 | 0.27 | 0.55 | 0.47 | 6.15 |
-| MPBLK/pclel | 18.29 | 11.54 | 7.32 | 11.42 | 20.78 | 24.35 | 9.58 | 15.44 | 14.87 |
+| MPBLK/pclel | 18.31 | 11.52 | 7.32 | 11.41 | 20.78 | 24.35 | 9.58 | 15.44 | 14.87 |
 | MPBLK/pclin | 0.52 | 3.06 | 0.29 | 1.61 | 3.05 | 0.33 | 0.41 | 2.72 | 2.41 |
-| co2_total | 0.62 | 1.17 | 0.8 | 7.21 | 13.03 | 1.92 | 6.88 | 11.4 | 9.85 |
+| co2_total | 0.76 | 1.22 | 1.17 | 7.4 | 14.34 | 1.91 | 6.92 | 11.41 | 9.51 |
 
 ## Power-sector fuel per unit of electricity sold (Btu per Btu)
 
@@ -51,6 +51,15 @@ Each case's own end-use demand and Brent price fed through the stand-in (power-s
 | QBLK/qtsel | 1.53036 |
 | QBLK/qurel | 0.00107 |
 | QBLK/qwiel | 0.48836 |
+
+## Power-sector fuel switching
+
+Elasticity of power-plant fuel burn to the effective cost of the fuel (delivered price plus carbon cost), fitted on hm2026, lm2026, higheldmd, highogs, lowogs.
+
+| burn | gas cost | coal cost | n | R2 | RMSE % |
+|---|---|---|---|---|---|
+| gas | -0.7634 | symmetric with coal's gas term | 120 | 0.958 | 5.68 |
+| coal | 0.7637 | -0.7634 (assumed equal to gas) | 60 | 0.88 | 6.96 |
 
 ## Every fitted price
 

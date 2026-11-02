@@ -130,6 +130,61 @@ def fit_power_mix() -> dict[str, float]:
     return mix
 
 
+SWITCH_CASES = ["hm2026", "lm2026", "higheldmd", "highogs", "lowogs"]
+COAL_MIN = 1000.0  # TBtu: coal years below this are too thin to read a log response from
+
+
+def fit_power_switching(mix: dict) -> dict:
+    """How power plants' gas and coal burn respond to the cost of gas to power plants.
+
+    No AEO2026 case has a carbon price, so the response is read from fuel prices: the
+    oil and gas supply cases move the gas price to power plants by -33% to +200%, and
+    gas and coal burn move with it. A carbon price is the same thing to a power plant: a
+    higher cost per MMBtu burned. y = log(burn / burn predicted from electricity sales
+    alone), x = dlog gas price to power plants, US, 2027-2050, OLS with no intercept.
+
+    Coal's response to its own price cannot be read (coal prices barely move across the
+    cases), so it is set equal to gas's own response: an assumption, flagged as such."""
+    base = load_case(BASE)
+
+    def rows(fuel_q, keep):
+        xs, ys = [], []
+        for c in SWITCH_CASES:
+            z = load_case(c)
+            pred = base[fuel_q][US] + mix[fuel_q] * (z["QBLK/qelas"][US] - base["QBLK/qelas"][US])
+            ok = keep & (pred > 0) & (z[fuel_q][US] > 0)
+            xg = np.log(z["MPBLK/pngel"][US] / base["MPBLK/pngel"][US])
+            xc = np.log(np.where(base["MPBLK/pclel"][US] > 0, z["MPBLK/pclel"][US], 1.0)
+                        / np.where(base["MPBLK/pclel"][US] > 0, base["MPBLK/pclel"][US], 1.0))
+            y = np.log(np.where(ok, z[fuel_q][US], 1.0) / np.where(ok, pred, 1.0))
+            sel = np.zeros(61, bool)
+            sel[YEARS] = True
+            sel &= ok
+            xs.append(np.column_stack([xg[sel], xc[sel]]))
+            ys.append(y[sel])
+        return np.vstack(xs), np.concatenate(ys)
+
+    X, y = rows("QBLK/qngel", np.ones(61, bool))
+    gas_own = float(X[:, 0] @ y / (X[:, 0] @ X[:, 0]))
+    r_g = y - gas_own * X[:, 0]
+    Xc, yc = rows("QBLK/qclel", base["QBLK/qclel"][US] >= COAL_MIN)
+    yc_adj = yc - gas_own * Xc[:, 1]  # take out coal's own-price response (assumed = gas_own)
+    coal_cross = float(Xc[:, 0] @ yc_adj / (Xc[:, 0] @ Xc[:, 0]))
+    r_c = yc_adj - coal_cross * Xc[:, 0]
+    r2 = lambda yy, rr: round(1 - float(rr @ rr) / float(((yy - yy.mean()) ** 2).sum()), 3)
+    return {
+        "gas_own": round(gas_own, 4),
+        "coal_from_gas_cost": round(coal_cross, 4),
+        "coal_own": round(gas_own, 4),
+        "coal_own_assumed": True,
+        "fit_cases": SWITCH_CASES,
+        "gas": {"n": int(len(y)), "r2": r2(y, r_g), "rmse_pct": round(100 * float(np.sqrt(np.mean(r_g ** 2))), 2)},
+        "coal": {"n": int(len(yc)), "r2": r2(yc_adj, r_c),
+                 "rmse_pct": round(100 * float(np.sqrt(np.mean(r_c ** 2))), 2),
+                 "years": f"base coal burn >= {COAL_MIN:.0f} TBtu"},
+    }
+
+
 def end_to_end(case: str, model: SupplyStandin) -> dict[str, float]:
     """Feed a case's end-use demand and Brent through the model built on the reference.
     Returns the largest error in the US price, percent, 2027-2050, for each headline price."""
@@ -152,7 +207,7 @@ def eia_co2(z) -> np.ndarray:
     return sum(z[v][US, 0, :] for v in EMISSION_SECTORS.values()) * CO2_PER_C
 
 
-def write_report(prices: dict, mix: dict, e2e: dict) -> None:
+def write_report(prices: dict, mix: dict, e2e: dict, switching: dict) -> None:
     lines = [
         "# Supply stand-in: fit report",
         "",
@@ -178,6 +233,15 @@ def write_report(prices: dict, mix: dict, e2e: dict) -> None:
     lines += ["", "## Power-sector fuel per unit of electricity sold (Btu per Btu)", "",
               "| fuel | change per Btu sold |", "|---|---|"]
     lines += [f"| {k} | {v} |" for k, v in mix.items()]
+    sw = switching
+    lines += ["", "## Power-sector fuel switching", "",
+              "Elasticity of power-plant fuel burn to the effective cost of the fuel (delivered "
+              "price plus carbon cost), fitted on " + ", ".join(sw["fit_cases"]) + ".", "",
+              "| burn | gas cost | coal cost | n | R2 | RMSE % |", "|---|---|---|---|---|---|",
+              f"| gas | {sw['gas_own']} | symmetric with coal's gas term | {sw['gas']['n']} | "
+              f"{sw['gas']['r2']} | {sw['gas']['rmse_pct']} |",
+              f"| coal | {sw['coal_from_gas_cost']} | {sw['coal_own']} (assumed equal to gas) | "
+              f"{sw['coal']['n']} | {sw['coal']['r2']} | {sw['coal']['rmse_pct']} |"]
     lines += ["", "## Every fitted price", "",
               "| price | coef | n | R2 | RMSE % | sd % | LOCO RMSE % (worst) | held-out RMSE % (worst) |",
               "|---|---|---|---|---|---|---|---|"]
@@ -199,16 +263,19 @@ def main() -> None:
         if f:
             prices[name] = f
     mix = fit_power_mix()
+    switching = fit_power_switching(mix)
     COEFFICIENTS.write_text(json.dumps({"baseline_fitted_on": BASE, "prices": prices,
-                                        "power_mix": mix}, indent=1) + "\n")
+                                        "power_mix": mix, "power_switching": switching},
+                                       indent=1) + "\n")
     model = SupplyStandin(BASE)
     e2e = {c: end_to_end(c, model) for c in CASES if c != BASE}
-    write_report(prices, mix, e2e)
+    write_report(prices, mix, e2e, switching)
     for name in HEADLINE:
         f = prices.get(name)
         if f:
             print(f"{name:14} {f['coef']} R2={f['r2']} rmse={f['rmse_pct']}% sd={f['sd_pct']}%")
     print("power mix", mix)
+    print("switching", switching)
     for c, e in e2e.items():
         print(c, e)
 
