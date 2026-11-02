@@ -16,7 +16,7 @@ Rebuild EIA's National Energy Modeling System (NEMS) as open Python that runs wi
 | Module | Where | Size | State | Blocker |
 |---|---|---|---|---|
 | Commercial demand | `source/comm.f` | 13k lines Fortran | To port | None |
-| Residential demand | `source/resd.f` | 17k Fortran | In progress (oracle built, 3 routines done) | None |
+| Residential demand | `source/resd.f` | 17k Fortran | Yearly chain done and matching (2021-2050); readers and final-year reports to do | None |
 | Industrial demand | `source/ind.f` | 20k Fortran | To port | None |
 | Transportation demand | `source/tran*.f` | 18k Fortran | To port | None |
 | Renewable fuels | `source/renew.f` | 35k Fortran | To port | None |
@@ -160,37 +160,81 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 | `RTEKREAD` | 607, 437 | Reads RSMESS.xlsx: RSCLASS, RSMEQP, RSSWITCH, RSMSHL (equipment, switching cost, shell menus) | | To do (reader) |
 | `DEGDAYREAD`, `BLDBASEREAD`, `RSUECSHLREAD`, `RSMELSREAD`, `RSMISCREAD`, `RSMLGTREAD`, `RDRET`, `INTEQT`, `RDSQFOOT`, `RDHTREQC`, `RDEFF`, `RDSTEFF`, `RDESTARHOMES`, `RDUECS`, `RCONSFL` | 1044-2443 | Text input readers (degree days, UECs, MELs, misc controls, lighting menu, retirements, new-home heating shares, floor area, RECS stock, efficiencies, ENERGY STAR homes, fuel maps) | | To do (readers) |
 | `RDPR` | 2086, 61 | Fuel prices to the menu dollar year | pr | Done, bit-exact |
-| `EXCONS` | 2444, 525 | RECS-year consumption by end use | ex | To do |
+| `EXCONS` | 2444, 525 | RECS-year consumption by end use | ex | Done, bit-exact (`totals.py`) |
 | `NEWHSE` | 2969, 44 | New homes from housing starts and survival | nh | Done, bit-exact |
 | `SQFTCALC` | 3013, 85 | Floor area per home | sq | Done, bit-exact |
 | `REPLACE` | 3098, 107 | Logit split of retiring equipment across classes | (via callers) | Ported in `helpers.py`, checked through callers |
-| `RSHVAC` | 3205, 409 | HVAC package and shell choice | hv | To do |
-| `RHTRTEC` / `RHTRADD` / `RHTRCON` | 3614, 3951, 4249 | Space heating: choice, stock added and replaced, consumption | htt, hta, htc | To do |
-| `RCLTEC` / `RCLADD` / `RCLCON` | 4790, 5047, 5361 | Space cooling | clt, cla, clc | To do |
-| `RCWTEC` / `RCWADD` / `RCWCON` | 5844, 6095, 6240 | Clothes washers | cwt, cwa, cwc | To do |
-| `RDWTEC` / `RDWADD` / `RDWCON` | 6466, 6683, 6841 | Dishwashers | dwt, dwa, dwc | To do |
-| `RWHTEC` / `REUADD` (EU 5) / `RWHCON` | 7056, 7387, 7660 | Water heating | wht, wha, whc | To do |
-| `RSTVTEC` / `REUADD` (EU 6) / `RSTOVCON` | 8085, 7387, 8338 | Cooking | ckt, cka, ckc | To do |
-| `RDRYTEC` / `RDRYADD` / `RDRYCON` | 8568, 8783, 9055 | Clothes dryers | dyt, dya, dyc | To do |
-| `RREFTEC` / `RREFADD` / `RREFCON` | 9296, 9562, 9694 | Refrigerators | rft, rfa, rfc | To do |
-| `RFRZTEC` / `RFRZADD` / `RFRZCON` | 9899, 10146, 10279 | Freezers | fzt, fza, fzc | To do |
-| `LTCNS` | 10492, 666 | Lighting choice, stock and use | lt | To do |
-| `APCNS` | 11158, 378 | Miscellaneous electric loads (MELs) | ap | To do |
-| `SHTCNS`, `APPCNS` | 11536, 11628 | Secondary heating, other-fuel appliances | sh, sa | To do |
-| `FUELCN` | 11693, 40 | Fuel totals across end uses | fu | To do |
-| `RSBENCH` | 13673, 223 | Benchmark to SEDS and STEO (pins 2020-2026) | bb (2020), be | To do |
-| `NEMSCN` | 11733, 60 | Writes `QBLK` Q*RS (net of own-use generation, plus EV charging) | nb (2020), ne | To do |
-| `RESDRP` | 11793, 107 | `RESDREP` report arrays | rb (2020), re | To do |
-| `RDISTGEN` | 15065, 1678 | Rooftop PV and other on-site generation | dg | To do |
+| `RSHVAC` | 3205, 409 | HVAC package and shell choice | hv | Done, 4e-7 (`heating_choice.py`) |
+| `RHTRTEC` / `RHTRADD` / `RHTRCON` | 3614, 3951, 4249 | Space heating: choice, stock added and replaced, consumption | htt, hta, htc | Done: 3e-7, 2e-7, bit-exact (`heating_choice.py`, `heating.py`) |
+| `RCLTEC` / `RCLADD` / `RCLCON` | 4790, 5047, 5361 | Space cooling | clt, cla, clc | Done: 3e-7, bit-exact, bit-exact (`cooling.py`) |
+| `RCWTEC` / `RCWADD` / `RCWCON` | 5844, 6095, 6240 | Clothes washers | cwt, cwa, cwc | Done, bit-exact (`washers.py`) |
+| `RDWTEC` / `RDWADD` / `RDWCON` | 6466, 6683, 6841 | Dishwashers | dwt, dwa, dwc | Done, bit-exact (`washers.py`) |
+| `RWHTEC` / `REUADD` (EU 5) / `RWHCON` | 7056, 7387, 7660 | Water heating | wht, wha, whc | Done: 9e-8, bit-exact, bit-exact (`water_cooking.py`) |
+| `RSTVTEC` / `REUADD` (EU 6) / `RSTOVCON` | 8085, 7387, 8338 | Cooking | ckt, cka, ckc | Done, bit-exact (`water_cooking.py`) |
+| `RDRYTEC` / `RDRYADD` / `RDRYCON` | 8568, 8783, 9055 | Clothes dryers | dyt, dya, dyc | Done, bit-exact (`appliances.py`) |
+| `RREFTEC` / `RREFADD` / `RREFCON` | 9296, 9562, 9694 | Refrigerators | rft, rfa, rfc | Done, bit-exact (`appliances.py`) |
+| `RFRZTEC` / `RFRZADD` / `RFRZCON` | 9899, 10146, 10279 | Freezers | fzt, fza, fzc | Done, bit-exact (`appliances.py`) |
+| `LTCNS` | 10492, 666 | Lighting choice, stock and use | lt | Done, 7e-7 (`lighting_misc.py`) |
+| `APCNS` | 11158, 378 | Miscellaneous electric loads (MELs) | ap | Done, bit-exact (`lighting_misc.py`) |
+| `SHTCNS`, `APPCNS` | 11536, 11628 | Secondary heating, other-fuel appliances | sh, sa | Done, bit-exact (`lighting_misc.py`) |
+| `FUELCN` | 11693, 40 | Fuel totals across end uses | fu | Done, bit-exact (`totals.py`) |
+| `RSBENCH` | 13673, 223 | Benchmark to SEDS and STEO (pins 2020-2026) | bb (2020), be | Done, bit-exact (`totals.py`) |
+| `NEMSCN` | 11733, 60 | Writes `QBLK` Q*RS (net of own-use generation, plus EV charging) | nb (2020), ne | Done, bit-exact (`totals.py`) |
+| `RESDRP` | 11793, 107 | `RESDREP` report arrays | rb (2020), re | Done, bit-exact (`totals.py`) |
+| `RDISTGEN` | 15065, 1678 | Rooftop PV and other on-site generation | dg | Done, bit-exact (`distgen.py`; reads RGENTK and RSGENTK itself) |
 | `CALC111D` | 14956, 109 | EPA 111(d) rebates, repealed, off in AEO2026 | | Skip |
 | `RSPITC`, `PITCINIT` | 16773, 16743 | Price-induced technical change, off (IFMAX = 0) | | Skip |
 | `NHTSHR`, `RESDRP2`, `RESDBOUT` | 13610, 11900, 13896 | Final-year reports and debug files | | To do (reports) |
 | `SVRTE`, `RSELAST`, `EQCOST`, `rLearnCost` | 16862-17051 | Survival curve, short-run price response, cost trend, learning curve | | Ported in `helpers.py` |
 
+### Results (2026-11-01)
+- Every routine RESD calls in a projection year is ported and matches the oracle on every array it touches, in all dump years 2021-2050: most bit-exact, the rest within 7e-7. Base year 2020: EXCONS, RSBENCH, NEMSCN, RESDRP bit-exact.
+- End to end (`src/nems_open/residential/resd.py`, `tests/test_residential_chain.py`): started once from the oracle's 2021 state, Python runs alone to 2050 (two iterations a year, about 140 s). It matches the oracle to 3e-7 on QBLK residential fuel use and within 5e-5 on every RESDREP, RSCON and RSEFF array the yearly chain writes (the largest, heating, from rounding compounding over 30 years). Against EIA's restart file it is within 0.33%, which is the oracle's own gap; 2050 US electricity 6879.7 vs EIA 6882.1 trillion Btu, gas 4096.4 vs 4096.0.
+- Shared EXP, ** and LOG round once from double precision (`common.expf`, `powf`, `logf`). NumPy's float32 versions are an ulp or two off the oracle's libm, and differences of large stock sums magnify that to 1e-5.
+- Carried state the dumps needed (SAVEd locals and PELRSOUT, which is EQUIVALENCEd so the COMMON scan missed it) is listed in `RESD_TARGETS`. `resd.resume_from_dump` fills in the few locals a run started mid-projection cannot get from dumps.
+- Still to do: the input readers (first call of 2020), so a run can start from the input files instead of the oracle's 2021 state; RESDRP2 and NHTSHR (final-year reports, in progress); RESDBOUT (debug file only).
+
 ### Residential quirks kept (do not fix)
 - `RDPR`: wood is priced to distillate in 2020 but to natural gas less carbon tax after.
 - `NEWHSE`: `ALLNEW` keeps only the last building type, and `HHSTOCKBYDIV` divides its running total by a million on every pass of the loop.
 - `REPLACE`: switching cost is looked up as `RPINSCOST(RECCL, RECCLSW)` (EIA's own TODO asks whether that is transposed); computes CAPITAL and RETAIL and never uses them.
+- FUELCN/EXCONS/NEMSCN: division 10 holds the nine-division sum, labelled national (10 is California in parametr).
+- NEMSCN/RESDRP/EXCONS: SLCON(Y,10) used as national; EXCONS adds into it without zeroing.
+- RSBENCH: STEOCN(Y1,1..2,D) filled for all 2021-2027 with the current year's NGRCP/EXRCP; only CurCalYr is read.
+- RSBENCH: distillate and propane STEOCN come only from RSSTEO; after STEO, electricity and gas ignore the tweak when it is 1.0; GLOBALBENCHON=0 freeze branch is dead.
+- RESDRP: RSLTCON for the RECS year cleared and rebuilt every call; RSH2OCON(Y,5) = SLCON(Y,10).
+- EXCONS: CSWCON, DSWCON, REFCON, FRZCON, CKCON, DRYCON zeroed inside the RECCL loop, so only the last record survives; TVRCON/PCRCON/APCON assigned three times in the building loop; xxxCONUS sums never read; TRQ_ELEC(1,MNUMCR,Y) reset inside the fuel loop; H2OCON(.,5,D) not zeroed.
+- NEMSCN: QGFRS = QNGRS*1.0, QGIRS = QNGRS*0.0.
+- STEOCN gas shares are NaN (0/0) where NGRCP is zero; never read.
+- RSHVAC: CLSQRFOOTFAC(Y,HVT,R,B) read in HVOPCOST with the heating type index but written at cooling index HVCT, so it holds the previous iteration's value.
+- RSHVAC: first-pass RTBASEFF(RECSYear,HVCC) uses a class number as a record index; RECCL1 hard-wired 2->13, 9->14, 10->15, else 12; cooling weighted-efficiency loop starts at RTTYEUPT(EU), the last heating record; SHLEVELH divided by TOTEWTN with no zero guard; EQFSHRN reset inside the class loop when TOTEWTN is 0; ALPHA1 overwritten with -0.5.
+- RHTRTEC: OPCOST(3) uses EQCAHVUEC and AHSHELL where other end uses use OPCOST(2); builder OPCOST(2) divided by BLDRWT = 6; HEATSYS SAVEd local chains year to year.
+- Washers: OPCOST(1)=OPCOST(2) from hard-coded BASEUSE 4.0125, BASEMEF 1.57; RTEFFAC computed never used; top/front split by hard-coded EQT<=3; REQTSHR = NEQTSHR; NCWLOAD and ECWLOAD overwritten per class, last wins; new-home penetration *1.0000.
+- Dishwashers: SUM1 unused; penetration grows 1.0048/yr capped at 1; EQCND90 set to x - x when share >= 0.90, tests previous year's value; efficiency is a use ratio; SUEC divides by base efficiency where NUEC and RUEC multiply; RTEFFAC inverted.
+- Washers/dishwashers: electricity priced at PELRSOUT end use 5 and 9; Y>2008 guard on price-induced BETA1.
+- Cooling: heat pumps copy heating shares, BETA1DR etc. set only for non-heat-pump records; EQCPN90 read before written (previous iteration); RECCLCAC/RECCLEHP leftovers across loops; new-shell weighting starts at RTCLEUPT+2; RECCL 11 hard-coded room AC; CACFACT .1 and 90% CAC cap hard-coded; ND - ND = 0 in CAC branch; RCLCON uses leftover S (=4); COOLCNWT uses EQCSIUEC for room AC, EQCSUEC else; geothermal and EHP lookups dead.
+- Lighting: ALPHA -0.15 for app 1, -0.30 after; logit loop runs 6 bins regardless, stale weights for extra bins; bulbbinlife and watts hold last app's values; Y>2008 guard; +.5 in NINT bulb life; LTREPSTK update (a + maxrep) - cumrep.
+- MELs: ceiling fans use CDD ratio squared x income; APCON/APCONWT/APCONIN sum in three orders; EAEQP ignores existing-home growth; ELOTPEN ignores EH.
+- SHTCNS: SHTCONIN omits HDDFACT on existing homes and needs NSHTSHR>0; wood uses distillate shell and price with +0.50 elasticity; propane alone -0.30.
+- APPCNS: LPGGRILL reset to 0.60 each call; table built only 2021 iter 1; propane APLEQP scales by grill share, other fuels ignore NH.
+- DECAY computed only on iteration 1 (static local), same value after.
+- RDRYTEC tests PRICES(F) for the BETA1 adjustment, RREFTEC/RFRZTEC use PRICES(4); EQWTR uses the EQWTN formula, so replacement = new choice; dryer efficiency weighted by weight/efficiency, fridges/freezers by share x efficiency.
+- RDRYADD redoes NEWDRYSAT inside the record loop (idempotent); class 26 hard-coded for DRYERTOT; RSGASCUST only ever raised; SWT, SWF unused.
+- RDRYCON carries ALPHA across iterations (-0.15 for every fuel in the first year); RREFCON/RFRZCON ALPHA = 0.
+- First-year sums use two term orders; RFRZCON mixes both. RDRYCON (LEAPYR*tot)*sel, fridge/freezer LEAPYR*(tot*sel).
+- RWHTEC 2015 standard: hard-coded type numbers (1-3 gas, 4-8 electric/heat pump), 4% and 9% floors every year from 2015; beta price test repeated inside (RWHTEC only); 1/RTBASEFF fallback when WTEQCEFFN is 0 (RWHTEC only).
+- Every TEC/CON overwrites PRICES(4,R,CurCalYr) with its own end-use electricity price (EUPR 3 water, 4 cooking): last writer wins.
+- RWHCON: solar added to H2OCON(...,5,D) inside the RECCL loop, once per class; SLEQCN overwritten each pass; ALPHA carried, -0.15 in 2021.
+- RSTOVCON vintage sums start at RECSYear, RWHCON's at RECSYear+1.
+- REUADD: EQCREP zeroed only for B=1, leftover B=1 for switch totals; NG_WH 18 and NG_STV 23 hard-coded; dead SWF/SWT/SWFT.
+- TrillsOwnUse national: SUM over technologies (9 values) assigned to 4 elements, so (y,11,nt) gets division nt's total, and it accumulates every iteration.
+- ZIP electricity-rate update indexes CenDiv with the division number.
+- In EstYear factor4/factor5 are unset (0 under -finit-local-zero), so lag and income terms drop out.
+- PV calibration uses xAnnualKWh from the last ZIP of the division; adjRPS branch overwrites XVALESAVEBASE leaving XVALESAVEBASEadjRPS stale; xTaxCreditPct cap carries to later divisions/niches; xSizeMax used before set (holds 10).
+- REAL*4 literals promoted to double (.78, .80, 10.8, 1.0533); 10.**12 single.
+- REPLACE's debug loop DO RECCL=1,27 (2021, EU 1, B 1, R 1) overwrites the caller's RECCL with 28 through the argument, so RHTRADD processes only class 1 for B=1, R=1 in 2021.
+- RHTRADD: B=1 left over after the main loops, so the REPLACE flag-2, SWITCHTO, SWF/SWT, EQCND90 loops never touch multifamily or mobile homes. SHARESN zeroed per class and set only for valid records.
+- RHTRCON: AFANUEC rewritten per class, last class wins; FANCONIN divided by Driver2 inside the FCON loop (five times); FANEFF/NFANEFF set only in 2021; EFANUEC set only on iteration 1; EFANUEC/NFANUEC for 2020 never set (0); wood ALPHA +0.5; HEATOT maps F by class number (NG_HP 3, GEO_HP 4).
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
