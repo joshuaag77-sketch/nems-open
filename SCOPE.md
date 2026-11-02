@@ -154,3 +154,32 @@ Risk to check first: the snapshot holds converged end-state values. If the comme
 ## Open questions
 - Repo name and license. Apache 2.0 to match EIA.
 - Does EIA's restart file hold enough intermediate state to test each subroutine alone, or only the module as a whole?
+
+## Industrial module (ind.f): oracle status and map (2026-11-01)
+Branch `industrial`. Source `source/ind.f`, 20,001 lines, 100+ routines, all external (not CONTAINed) and sharing `MODULE I_` through USE.
+
+### Oracle
+Build and run: `NEMS_UPSTREAM=<eia checkout> python -I gen_oracle.py $NEMS_UPSTREAM cb2026 ind`, then `bash build.sh ind`, then `cd run_ind && ./oracle.exe` (about 4 minutes; the run prints thousands of NaN diagnostics, see below). `driver_ind.f90` calls IND for every year 1990-2050: two iterations with NCRL=0 (the second with FCRL=1), then the reporting call with NCRL=1. Output: `run_ind/out/q*in.bin` (all QBLK industrial fuels) and `run_ind/out/state/final/2050/` (INDREP, INDOUT, COGEN, BIFURC). `ORACLE_EXTRA_FLAGS=-ffpe-trap=invalid` stops at a NaN under gdb.
+- Intel patches added to `patch_intel.py` (each commented): parenthesized READ item list, backslash edit descriptor, numeric variable formats `<26-10+1>`, `CHARACTER*name`, `EOF()` (defined inside MODULE I_), scalar assignment to unallocated arrays (Intel ignores it, gfortran writes address 0), `MIN(CARBSHRCA,1.0)` with a NaN (Intel returns 1.0), an I4 descriptor given a REAL in the NaN report format, and skipping `INDSIC`/`INDGRP` (spreadsheet report writers on direct-access CSV).
+- `-std=legacy` is needed for ind only (`shares_calc` is passed arrays shorter than its dummy).
+- Startup data: `ironstlx.xlsx` (steel, paper, Aluminum, Glass, Lime, Cement sheets) and `indcogenx.xlsx` (icogen) go through the same range flattening as `ktekx.xlsx`.
+- Seeding: IND reads its own current-year and next-year outputs before writing them (CALGEN divides by this year's QGFIN and QELIN; CARBSHRCA divides by next year's consumption). So the oracle loads the whole restart file, INDREP and INDOUT included, and no output is zeroed. "Earned" matches need a perturbation test (scale the seed, check the result returns).
+- Same COMMON block, two spellings: `ampblk` calls the price PELIN, `epmmpblk` (used by ind) calls it AELIN. The restart file holds one spelling. `gen_oracle.py` now loads both (`common_aliases`). Without this, adjusted prices were zero.
+
+### Where the oracle stands
+- 1990-2023 reproduce EIA exactly (history from SEDS). Diesel and coal also match through 2026.
+- From 2024, electricity (QELIN), natural gas and several others differ from the restart file. Open problem: a NaN appears in the process-flow (steel/paper) fuel totals `ENPQTY`/`ENSQTY` from the first model year (2022), and EIA's own guard in INDTOTAL (line 8636) drops those fuels. Not yet traced to its source; do that before porting, otherwise the oracle is not the answer key. Some NaNs are intended (0/0 in WEXOG H2_byp_index, fixed on the next line; CARBSHRCA).
+
+### Map (line numbers in ind.f)
+Driver and setup: `IND` 969, `Setup_Mac_and_Price` 1154 (prices, macro, lagged quantities), `ISEAM` 2049 (loop over 24 industries and 4 Census regions: calls RCNTL, PRICE, REXOG, CALPATOT, CALBYPROD, CALBTOT, CALGEN, CALBSC, CALSTOT, INDTOTAL, NATTOTAL, CONTAB, MODCAL, WRQTY, WRBIN/RDBIN).
+Input readers: `RCNTL` 2595, `REXOG` 2768, `IEDATA` 4835, `IRSTEO` 4740, `IRCOGEN` 5020, `READ_IDMinput` 15694, `IS_GETDATA` 16863, `mecsbase` 9324, `uectpc` 9465.
+Energy accounting core (first port target, small and checkable through QBLK): `CALBYPROD` 6892, `CALBTOT` 7667, `CALGEN` 7757, `CALBSC` 8169, `CALSTOT` 8307, `INDTOTAL` 8543, `NATTOTAL` 8741, `WRQTY` 8857, `INDCGN` 8902, `CONTAB` 8970.
+Benchmarking and output to NEMS: `MODCAL` 5778, `WEXOG` 2828 (STEO benchmark to QBLK, feedstocks, H2), `IFINLCALC` 5523, `CO2CALC` 14015, `CALIBRATE` 13898, `CALIBRATE_COAL_ELEC` 13812.
+Cogeneration: `cogent` 9581, `EvalCogen` 9643, `pcoggen` 9826, `addupcogs` 5183, `COGINIT` 5115.
+Technology and process-flow industries: cement 14115-15690 (with CCS), aluminum 15782, glass 15906, iron and steel 18078-18800 (`TECH_STEP` 16046, `PRODFLOW_STEEL` 18107), paper and pulp 18843-19500, `PPSTEAM` 19050.
+Sector subroutines for non-process industries: `AGTPC` 12581, `COALTPC` 12697, `OGSMTPC` 12886, `OTH_MINTPC` 13122, `CONTPC` 13327.
+Pure reporting (not ported): `INDSIC` 9985, `INDGRP` 11311, `TECHSHR_RPT` 17380, `CHECK_*`, `ckstr/ckint/cknum`.
+Note quad precision: `logit_calc` and `shares_calc` use REAL*16. gfortran REAL*16 matches Intel's.
+
+### Port status
+Nothing ported yet. Next steps: (1) find the ENPQTY NaN; (2) add `TARGETS` for the energy accounting routines in `hooks.py` (IND_TARGETS is empty); (3) port CALGEN/CALBSC/CALSTOT/INDTOTAL first.
