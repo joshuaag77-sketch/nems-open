@@ -21,7 +21,7 @@ State the dumps do not hold, and what the port does about it:
 import numpy as np
 
 from nems_open.residential.common import BASEYR, ENDYR, RECSYEAR, expf, f32, powi
-from nems_open.residential.helpers import eqcost, replace, rselast, svrte
+from nems_open.residential.helpers import eqcost, replace, rselast, svrte, vintage_future
 
 NUM_R = 9  # MNUMCR-2 census divisions
 NUM_B = 3  # MNUMBLDG
@@ -347,20 +347,8 @@ def rdryadd(s: dict) -> None:
 def _vintage_future(s, EU):
     """Vintage the equipment bought this year into every future year (EQR90FUT,
     EQR90RPFUT, EQREPFUT, EQADDFUT); the same block ends RDRYADD, RREFADD, RFRZADD."""
-    CY = int(s["curcalyr"])
-    eupt, HDR = s["rtcleupt"], s["hdr"]
-    for B in range(1, NUM_B + 1):
-        for R in range(1, NUM_R + 1):
-            for RECCL in range(int(eupt[EU]) + 1, int(eupt[EU + 1]) + 1):
-                for Y in range(CY, ENDYR + 1):
-                    TEMP = Y - CY
-                    HSR = powi(HDR[B], TEMP)
-                    ESR = svrte(s["rtalpha"][RECCL], TEMP, s["rtk"][RECCL], s["rtlambda"][RECCL])
-                    s["eqr90fut"][CY, Y, RECCL, B, R] = (s["eqcrp90"][CY, RECCL, B, R] * ESR * HSR)
-                    s["eqr90rpfut"][CY, Y, RECCL, B, R] = (s["eqcrp90rp"][CY, RECCL, B, R] * ESR * HSR)
-                    s["eqrepfut"][CY, Y, RECCL, B, R] = (s["eqcrep"][CY, RECCL, B, R] * ESR * HSR)
-                    s["eqaddfut"][CY, Y, RECCL, B, R] = (s["eqcadd"][CY, RECCL, B, R] * ESR * HSR)
-
+    eupt = s["rtcleupt"]
+    vintage_future(s, int(s["curcalyr"]), int(eupt[EU]) + 1, int(eupt[EU + 1]))
 
 def _purchases(s, EU):
     """HEATINGTYPEPURCH by equipment type, for investment analysis (all three ADD routines)."""

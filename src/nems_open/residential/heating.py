@@ -15,7 +15,7 @@ import numpy as np
 from nems_open.fortran_array import FArray
 from nems_open.residential.common import (BASEYR, ENDYR, LASTSTEOYR, MNUMBLDG, MNUMFUEL, NUM_DIV,
                                           RECSYEAR, f32, powi)
-from nems_open.residential.helpers import replace, rselast, svrte
+from nems_open.residential.helpers import replace, rselast, svrte, vintage_future
 
 NSHELLTYPES = 5
 
@@ -202,19 +202,7 @@ def rhtradd(s: dict) -> None:
                                                   / EXS[RECSYEAR, B, D]) * NHSHELL[CurCalYr, 3, D, B]) + f32(1)
 
     # equipment surviving into each future year
-    EQR90FUT, EQR90RPFUT = s["eqr90fut"], s["eqr90rpfut"]
-    EQREPFUT, EQADDFUT = s["eqrepfut"], s["eqaddfut"]
-    for B in range(1, MNUMBLDG + 1):
-        for R in range(1, NUM_DIV + 1):
-            for RECCL in range(c0, c1 + 1):
-                for Y in range(CurCalYr, ENDYR + 1):
-                    TEMP = Y - CurCalYr
-                    HSR = powi(HDR[B], TEMP)
-                    ESR = svrte(RTALPHA[RECCL], TEMP, RTK[RECCL], RTLAMBDA[RECCL])
-                    EQR90FUT[CurCalYr, Y, RECCL, B, R] = EQCRP90[CurCalYr, RECCL, B, R] * ESR * HSR
-                    EQR90RPFUT[CurCalYr, Y, RECCL, B, R] = EQCRP90RP[CurCalYr, RECCL, B, R] * ESR * HSR
-                    EQREPFUT[CurCalYr, Y, RECCL, B, R] = EQCREP[CurCalYr, RECCL, B, R] * ESR * HSR
-                    EQADDFUT[CurCalYr, Y, RECCL, B, R] = EQCADD[CurCalYr, RECCL, B, R] * ESR * HSR
+    vintage_future(s, CurCalYr, c0, c1)
 
     # aggregate heating systems for investment analysis
     T = CurCalYr

@@ -16,7 +16,7 @@ import numpy as np
 
 from nems_open.fortran_array import FArray
 from nems_open.residential.common import BASEYR, COSTTRSW, ENDYR, RECSYEAR, f32, powi
-from nems_open.residential.helpers import _text, eqcost, rselast, svrte
+from nems_open.residential.helpers import _text, eqcost, rselast, svrte, vintage_future
 
 NDIV = 9
 NBLDG = 3
@@ -329,18 +329,7 @@ def rcladd(s: dict) -> None:
                         s["oeqcrep"][Yc, reccl, b, r] = SA[eqc, b, r] - eqcsur[Yc, reccl, b, r]
 
     # equipment by vintage for average stock accounting
-    for b in range(1, NBLDG + 1):
-        for r in range(1, NDIV + 1):
-            for reccl in range(lo, hi + 1):
-                alpha, k, lam = s["rtalpha"][reccl], s["rtk"][reccl], s["rtlambda"][reccl]
-                for y in range(Yc, ENDYR + 1):
-                    temp = y - Yc
-                    hsr = powi(hdr[b], temp)
-                    esr = svrte(alpha, temp, k, lam)
-                    s["eqr90fut"][Yc, y, reccl, b, r] = eqcrp90[Yc, reccl, b, r] * esr * hsr
-                    s["eqr90rpfut"][Yc, y, reccl, b, r] = rp90rp[Yc, reccl, b, r] * esr * hsr
-                    s["eqrepfut"][Yc, y, reccl, b, r] = eqcrep[Yc, reccl, b, r] * esr * hsr
-                    s["eqaddfut"][Yc, y, reccl, b, r] = eqcadd[Yc, reccl, b, r] * esr * hsr
+    vintage_future(s, Yc, lo, hi)
 
     # new shell index
     ncshell = s["ncshell"]

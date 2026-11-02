@@ -13,7 +13,7 @@ LEAPYR is set by RESD each year; it is rebuilt here from CurCalYr when absent.
 import numpy as np
 
 from nems_open.residential.common import BASEYR, ENDYR, LASTSTEOYR, RECSYEAR, expf, f32, powf, powi
-from nems_open.residential.helpers import eqcost, replace, rselast, svrte
+from nems_open.residential.helpers import eqcost, replace, rselast, svrte, vintage_future
 
 COSTTRSW = 0  # PARAMETER in rtek: capital cost is the flat RSMEQP value
 NM = 9  # mNumCR - 2 census divisions
@@ -444,18 +444,7 @@ def reuadd(s: dict, EU: int) -> None:
                 + s["switchto"][Y, reccl, b, r])
 
     # Vintages of this year's equipment for later years' average-stock accounting.
-    for b in range(1, NB + 1):
-        for r in range(1, NM + 1):
-            for reccl in range(lo, hi + 1):
-                alpha, k, lam = s["rtalpha"][reccl], s["rtk"][reccl], s["rtlambda"][reccl]
-                for y in range(Y, ENDYR + 1):
-                    temp = y - Y
-                    hsr = powi(HDR[b], temp)
-                    esr = svrte(alpha, temp, k, lam)
-                    s["eqr90fut"][Y, y, reccl, b, r] = f32(f32(s["eqcrp90"][Y, reccl, b, r] * esr) * hsr)
-                    s["eqr90rpfut"][Y, y, reccl, b, r] = f32(f32(s["eqcrp90rp"][Y, reccl, b, r] * esr) * hsr)
-                    s["eqrepfut"][Y, y, reccl, b, r] = f32(f32(s["eqcrep"][Y, reccl, b, r] * esr) * hsr)
-                    s["eqaddfut"][Y, y, reccl, b, r] = f32(f32(s["eqcadd"][Y, reccl, b, r] * esr) * hsr)
+    vintage_future(s, Y, lo, hi)
 
     # Purchases by equipment type, for investment analysis.
     for b in range(1, NB + 1):

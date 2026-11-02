@@ -6,7 +6,7 @@ They are not dumped on their own; they are checked through the routines that cal
 
 import numpy as np
 
-from nems_open.residential.common import BASEYR, RECSYEAR, expf, f32, logf, powf
+from nems_open.residential.common import BASEYR, ENDYR, MNUMBLDG, NUM_DIV, RECSYEAR, expf, f32, logf, powf, powi
 
 
 _SVRTE = {}
@@ -151,3 +151,23 @@ def replace(s: dict, eu: int, r: int, b: int, reccl: int, flag: int) -> None:
         s["switchesr"][Y, reccl, b, r] = swr
     else:
         s["eqcrep"][Y, reccl, b, r] = s["eqcrep"][Y, reccl, b, r] + retired * (f32(1) - fact)
+
+
+STOCK_FUTURES = (("eqr90fut", "eqcrp90"), ("eqr90rpfut", "eqcrp90rp"), ("eqrepfut", "eqcrep"), ("eqaddfut", "eqcadd"))
+
+
+def vintage_future(s: dict, Y: int, lo: int, hi: int, pairs=STOCK_FUTURES) -> None:
+    """Vintage the equipment of classes lo..hi from year Y into every later year:
+    future[Y, y, class, b, r] = (stock[Y, class, b, r] * survival(y - Y)) * HDR(b) ** (y - Y),
+    the block every ADD routine ends with. One array operation per class, building
+    type and division instead of one per year; the same float32 products."""
+    n = ENDYR - Y + 1
+    HDR = s["hdr"]
+    hsr = {b: np.array([powi(HDR[b], t) for t in range(n)], dtype=np.float32) for b in range(1, MNUMBLDG + 1)}
+    for reccl in range(lo, hi + 1):
+        alpha, k, lam = s["rtalpha"][reccl], s["rtk"][reccl], s["rtlambda"][reccl]
+        esr = np.array([svrte(alpha, t, k, lam) for t in range(n)], dtype=np.float32)
+        for b in range(1, MNUMBLDG + 1):
+            for r in range(1, NUM_DIV + 1):
+                for dst, src in pairs:
+                    s[dst][Y, Y:ENDYR, reccl, b, r] = (s[src][Y, reccl, b, r] * esr) * hsr[b]

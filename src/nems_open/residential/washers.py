@@ -17,7 +17,7 @@ Inputs the oracle dump cannot hold, and what the port does about them:
 import numpy as np
 
 from nems_open.residential.common import BASEYR, LASTSTEOYR, MNUMBLDG, NUM_DIV, RECSYEAR, expf, f32, powf, powi
-from nems_open.residential.helpers import eqcost, rselast, svrte
+from nems_open.residential.helpers import STOCK_FUTURES, eqcost, rselast, svrte, vintage_future
 
 ENDYR = 2050
 COSTTRSW = 0  # PARAMETER in the rtek include
@@ -276,18 +276,7 @@ def rcwadd(s: dict) -> None:
                 REP[Y0, reccl, b, r] = f32(SA - SUR[Y0, reccl, b, r])
 
     # Vintage this year's equipment into every future year
-    for b in range(1, MNUMBLDG + 1):
-        for r in range(1, NUM_DIV + 1):
-            for reccl in range(int(eupt[EU]) + 1, int(eupt[EU + 1]) + 1):
-                for y in range(Y0, ENDYR + 1):
-                    temp = y - Y0
-                    HSR = powi(HDR[b], temp)
-                    ESR = svrte(ALPHA[reccl], temp, K[reccl], LAM[reccl])
-                    s["eqr90fut"][Y0, y, reccl, b, r] = f32(f32(RP90[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqr90rpfut"][Y0, y, reccl, b, r] = f32(f32(RP90RP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqrepfut"][Y0, y, reccl, b, r] = f32(f32(REP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqaddfut"][Y0, y, reccl, b, r] = f32(f32(ADD[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqcesefut"][Y0, y, reccl, b, r] = f32(f32(ESE[Y0, reccl, b, r] * ESR) * HSR)
+    vintage_future(s, Y0, int(eupt[EU]) + 1, int(eupt[EU + 1]), STOCK_FUTURES + (("eqcesefut", "eqcese"),))
 
     _aggregate_purchases(s, EU)
 
@@ -629,17 +618,7 @@ def rdwadd(s: dict) -> None:
 
                 REP[Y0, reccl, b, r] = f32(SA - SUR[Y0, reccl, b, r])
 
-    for b in range(1, MNUMBLDG + 1):
-        for r in range(1, NUM_DIV + 1):
-            for reccl in range(int(eupt[EU]) + 1, int(eupt[EU + 1]) + 1):
-                for y in range(Y0, ENDYR + 1):
-                    temp = y - Y0
-                    HSR = powi(HDR[b], temp)
-                    ESR = svrte(ALPHA[reccl], temp, K[reccl], LAM[reccl])
-                    s["eqr90fut"][Y0, y, reccl, b, r] = f32(f32(RP90[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqr90rpfut"][Y0, y, reccl, b, r] = f32(f32(RP90RP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqrepfut"][Y0, y, reccl, b, r] = f32(f32(REP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqaddfut"][Y0, y, reccl, b, r] = f32(f32(ADD[Y0, reccl, b, r] * ESR) * HSR)
+    vintage_future(s, Y0, int(eupt[EU]) + 1, int(eupt[EU + 1]))
 
     _aggregate_purchases(s, EU)
 
