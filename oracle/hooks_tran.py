@@ -86,7 +86,14 @@ TARGETS = [
     ("tinteg", "tran.f90", r"^\s*CALL TINTEG\s*$", "tinteg"),
     ("tbenchmark", "tran.f90", r"^\s*CALL TBENCHMARK\s*$", "tbenchmark"),
     ("treport", "tran.f90", r"^\s*CALL TREPORT\s*$", "treport"),
+    ("tfrtrpt", "tran.f90", r"^\s*CALL TRANFRT\(1\)", "tfrtrpt"),
+    # TRAN's own statements after TREPORT, from the first one to END (see SPAN).
+    ("tran_tail", "tran.f90", r"^\s*QGFTR\(1:mnumcr,n\)\s*=\s*QNGTR", "tran_tail"),
 ]
+
+# Points whose "_out" goes before a later line instead of right after the matched one;
+# the code in between is also the routine body whose names the dump holds.
+SPAN = {"tran_tail": r"^\s*end subroutine tran\s*$"}
 
 # Points dumped only before the call (the "after" is the next point's "before"); the
 # freight state is about 750 MB a dump, so this halves the disk the freight points take.
@@ -106,11 +113,23 @@ PRIVATE = {
                               "credit_48v_nzev", "credit_78t_nzev", "bank_2b8v_zev", "bank_2b8v_nzev",
                               "bank_78t_zev", "bank_78t_nzev"],
                 "truck_techadopt": ["techpenyr_p2"], "truck_ghgmeet": ["ghgbank"],
-                "truck_choice": ["cpm_r_ice"], "truck_vmt": ["ttonmi", "tvmt", "temp_stk_vmt_ratio"]},
+                "truck_choice": ["cpm_r_ice"], "truck_vmt": ["ttonmi", "tvmt", "temp_stk_vmt_ratio"],
+                # Adoption-curve history, no year axis; dumped on the first GHG try (PRIVATE_GUARD).
+                "truck_pbk": ["start_curve", "midyr_choice", "slope_choice", "midyr_adj"]},
     "tship": {"tship": ["isfdt_b", "lsfo_upgrade", "temp_prhtr"]},
     "tranair": {"tairt": ["pjftr_us"]},
-    "tbenchmark": {"tbenchmark": ["stmgtr_new", "stjftr_new", "stdstr_new", "strstr_new"]},
+    "tbenchmark": {"tbenchmark": ["stmgtr_new", "stjftr_new", "stdstr_new", "strstr_new", "mer_steo_regn"]},
 }
+
+# Extra condition on a routine's private dump (TRUCK_PBK runs on every GHG retry).
+PRIVATE_GUARD = {"truck_pbk": "itryghg.eq.1"}
+# Dumps at routine entry: (first executable line, arrays, condition). TRUCK_GHGMEET spends
+# past years' banked credits, so its bank at the end of a call is not its bank at the start.
+# TRUCK_PBK moves MIDYR_adj on GHG retries, so its year-start value is taken on one of
+# the first try's calls (any one: the first try never moves it).
+PRIVATE_START = {"truck_ghgmeet": (r"^\s*GHG_creds\(6:2017-1989", ["ghgbank"], "itryghg.eq.1"),
+                 "truck_pbk": (r"^\s*buy_shr\(:\) = 0\.0", ["midyr_adj"],
+                               "itryghg.eq.1.and.icafe19.eq.1.and.iregn.eq.1.and.ivmt.eq.1.and.iflt.eq.1")}
 
 # Shared output blocks, dumped at the end of the run.
 FINAL_FILES = ["tranrep", "tranmain", "qblk"]
@@ -264,6 +283,12 @@ def write_state(inc_dir, build):
         mods.append((mod, prefix, own, allocatables(body)))
 
     bodies = routines(build)
+    for tag, src, call_re, routine, *_ in TARGETS:
+        if tag in SPAN:
+            text = code_only((build / src).read_text(encoding="latin-1"))
+            a = re.search(call_re, text, re.I | re.M)
+            b = re.compile(SPAN[tag], re.I | re.M).search(text, a.start())
+            bodies[routine] = text[a.start():b.start()]
     years = ", ".join(map(str, DUMP_YEARS))
     inc_c = "\n".join(f"      include '{n}'" for n in COMMON_INCLUDES)
     parts, counts = [], {}
@@ -345,7 +370,8 @@ def instrument_private(build):
             raise SystemExit(f"hooks_tran: routine {routine} not found")
         body = m.group(0)
         decls = declarations(normalise(body))
-        lines = [f"      IF (CURITR .EQ. 1 .AND. ANY((/ {years} /) == CURIYR)) THEN"]
+        guard = f" .AND. ({PRIVATE_GUARD[routine]})" if routine in PRIVATE_GUARD else ""
+        lines = [f"      IF (CURITR .EQ. 1 .AND. ANY((/ {years} /) == CURIYR){guard}) THEN"]
         for k in names:
             t, rank = decls[k.lower()]
             lines.append(dump_line(f"p_{k.lower()}", k, t, rank, False).replace("(tag,", f"('{tag}_out',"))
@@ -356,7 +382,19 @@ def instrument_private(build):
         tail = body[ret[-1].end():end.start()] if ret else ""
         at = ret[-1].start() if ret and not code_only(tail).strip() else end.start()
         at = body.rfind("\n", 0, at) + 1
-        text = text[:m.start()] + body[:at] + block + body[at:] + text[m.end():]
+        body = body[:at] + block + body[at:]
+        if routine in PRIVATE_START:
+            # Also dump at entry (p0_<name>): for arrays whose past entries the routine rewrites.
+            first_line, start_names, cond = PRIVATE_START[routine]
+            fm = re.search(first_line, body, re.I | re.M)
+            first = [f"      IF (CURITR .EQ. 1 .AND. ANY((/ {years} /) == CURIYR) .AND. ({cond})) THEN"]
+            for k in start_names:
+                t, rank = decls[k.lower()]
+                first.append(dump_line(f"p0_{k.lower()}", k, t, rank, False).replace("(tag,", f"('{tag}_out',"))
+            first.append("      ENDIF")
+            at0 = body.rfind("\n", 0, fm.start()) + 1
+            body = body[:at0] + "\n".join(first) + "\n" + body[at0:]
+        text = text[:m.start()] + body + text[m.end():]
         p.write_text(text, encoding="latin-1")
 
 
@@ -372,8 +410,14 @@ def instrument(build):
         line_end = text.index("\n", m.end())
         guard = f"IF ({GUARD[tag]}) " if tag in GUARD else ""
         after = "" if tag in ONLY_IN else f"    {guard}CALL OST_{tag.upper()}('{tag}_out')\n"
-        text = (text[:line_start] + f"    {guard}CALL OST_{tag.upper()}('{tag}_in')\n" + text[line_start:line_end + 1]
-                + after + text[line_end + 1:])
+        if tag in SPAN:
+            e = re.compile(SPAN[tag], re.I | re.M).search(text, m.end())
+            e_start = text.rfind("\n", 0, e.start()) + 1
+            text = (text[:line_start] + f"    CALL OST_{tag.upper()}('{tag}_in')\n" + text[line_start:e_start]
+                    + after + text[e_start:])
+        else:
+            text = (text[:line_start] + f"    {guard}CALL OST_{tag.upper()}('{tag}_in')\n" + text[line_start:line_end + 1]
+                    + after + text[line_end + 1:])
         p.write_text(text, encoding="latin-1")
 
 

@@ -55,7 +55,10 @@ RULES = [
     # Hex literals in integer comparisons and arithmetic (tran.f UPPERCASE): same value in decimal.
     (re.compile(r"(?<![\w'])[Zz]'([0-9A-Fa-f]+)'(?!')"), lambda m: str(int(m.group(1), 16))),
     # Logical compared with .EQ. (tran.f, tranfrt.f): Intel allows it, gfortran wants .EQV.
-    (re.compile(r"\.eq\.\s*(\.(?:true|false)\.)", re.I), r" .eqv. \1"),
+    # .EQ. binds tighter than .AND. but .EQV. binds looser, so the comparison is
+    # parenthesised: "a.and.X.eq..FALSE." must stay "a.and.(X.eqv..FALSE.)".
+    (re.compile(r"([A-Za-z_]\w*\s*(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))?)\s*\.eq\.\s*(\.(?:true|false)\.)", re.I),
+     r"(\1 .eqv. \2)"),
     # NOT() on a LOGICAL (tran.f FLTHAV): Intel's bitwise NOT of .TRUE./.FALSE. is .NOT.
     (re.compile(r"\bif \(not\(bTaxiUtilErr\(", re.I), "if (.not.(bTaxiUtilErr("),
     # INTEGER initialised with .FALSE. (tran.f TRAIL, tranfrt.f TRANFRT): Intel stores 0.

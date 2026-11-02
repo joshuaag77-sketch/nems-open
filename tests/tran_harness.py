@@ -75,7 +75,9 @@ def run(port, tag, y, tol=TOL, carry=None, start=None, end=None, may_be_empty=Fa
         port(state, **kwargs)
     if carry is not None:
         state.update({f"p_{k}": v for k, v in kwargs["carry"].items()})
-    changed = [k for k in after if rel_err(_raw(before[k]), _raw(after[k])) > 0]
+    # Saved locals dumped at the end point that this stretch was not given are not its output.
+    after = {k: v for k, v in after.items() if k in before or not k.startswith(("p_", "p0_"))}
+    changed = [k for k in after if k in before and rel_err(_raw(before[k]), _raw(after[k])) > 0]
     assert changed or may_be_empty, f"{tag}: nothing changed between _in and _out, so the test proves nothing"
     bad = {}
     for k, v in after.items():
