@@ -293,24 +293,19 @@ def _ltcns(s: dict) -> None:
                             LTMSHR[cy, e, b, d, bin_] = 0.0
 
         # Future streams restart from the first iteration's values on later iterations
-        for bin_ in range(1, nbins + 1):
-            for d in range(1, ND + 1):
-                for b in range(1, NB + 1):
-                    for e in range(1, ntypes + 1):
-                        if itr == 1:
-                            for y1 in range(cy, end_y + 1):
-                                LTNEEDEDFUTLY[app, y1, e, b, d, bin_] = LTNEEDEDFUT[app, y1, e, b, d, bin_]
-                                LTREPFUTLY[app, y1, e, b, d, bin_] = LTREPFUT[app, y1, e, b, d, bin_]
-                                LTREPCONSLY[app, y1, e, b, d, bin_] = LTREPCONS[app, y1, e, b, d, bin_]
-                                LTREPSTKLY[app, y1, e, b, d, bin_] = LTREPSTK[app, y1, e, b, d, bin_]
-                                s["ltnuecly"][app, y1, d, b] = s["ltnuec"][app, y1, d, b]
-                        else:
-                            for y1 in range(cy, end_y + 1):
-                                LTNEEDEDFUT[app, y1, e, b, d, bin_] = LTNEEDEDFUTLY[app, y1, e, b, d, bin_]
-                                LTREPFUT[app, y1, e, b, d, bin_] = LTREPFUTLY[app, y1, e, b, d, bin_]
-                                LTREPCONS[app, y1, e, b, d, bin_] = LTREPCONSLY[app, y1, e, b, d, bin_]
-                                LTREPSTK[app, y1, e, b, d, bin_] = LTREPSTKLY[app, y1, e, b, d, bin_]
-                                s["ltnuec"][app, y1, d, b] = s["ltnuecly"][app, y1, d, b]
+        # (whole-block copies; the Fortran copies them element by element)
+        blk = (app, slice(cy, end_y), slice(1, ntypes), slice(1, NB), slice(1, ND), slice(1, nbins))
+        uec = (app, slice(cy, end_y), slice(1, ND), slice(1, NB))
+        pairs = [(LTNEEDEDFUTLY, LTNEEDEDFUT), (LTREPFUTLY, LTREPFUT), (LTREPCONSLY, LTREPCONS),
+                 (LTREPSTKLY, LTREPSTK)]
+        if itr == 1:
+            for saved, live in pairs:
+                saved[blk] = live[blk]
+            s["ltnuecly"][uec] = s["ltnuec"][uec]
+        else:
+            for saved, live in pairs:
+                live[blk] = saved[blk]
+            s["ltnuec"][uec] = s["ltnuecly"][uec]
 
         # Bulbs for new construction and floorspace added to surviving RECS homes
         for bin_ in range(1, nbins + 1):
