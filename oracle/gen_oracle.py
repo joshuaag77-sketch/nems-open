@@ -11,6 +11,7 @@ And into oracle/build/:
 Usage: python -I gen_oracle.py <upstream> <scenario>   e.g. ../nems-upstream cb2026
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -31,7 +32,7 @@ INCLUDES = [
 ]
 
 # Must match build.sh. Run from oracle/build so the relative include path works.
-FFLAGS = ["-ffree-line-length-none", "-fdec", "-I../../nems-upstream/includes"]
+FFLAGS = ["-ffree-line-length-none", "-fdec", "-I" + os.environ.get("NEMS_UPSTREAM", str(HERE.parent / "nems-upstream")) + "/includes"]
 
 # Spreadsheets the commercial module reads through ReadRngXLSX.
 WORKBOOKS = [("input/cdm/ktekx.xlsx", "ktek")]

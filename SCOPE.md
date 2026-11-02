@@ -57,9 +57,9 @@ Its 9 subroutines become the first 9 GitHub issues:
 |---|---|---|---|
 | `COMFloorspace` + `CMSurvRate` | Done 2026-11-01 | Within 1e-6, all 9 divisions, 11 building types, 2019-2050 | `src/nems_open/commercial/floorspace.py` |
 | `COMServiceDemand` (calculation) | Done 2026-11-01 | Within 4e-7 (float32 rounding) vs oracle, all regions, buildings, services, 9 test years 2019-2050 | `src/nems_open/commercial/service_demand.py` |
-| `COMServiceDemand` (input readers: kintens, ksheff, kmels, ksdela, kvarsdi, ...) | To do. The math takes these tables as inputs; tests use the oracle's copies | | |
+| `COMServiceDemand` (first call: KINTENS, KSHEFF, KMELS, KSDELA, KHURELA, KVARSDI, KDSSTM, KDSEFF, KDSFS, KRENEW, KDEGDAY, BLDBASE, the KTEK technology table, base-year ServDmdIntenBASE) | Done 2026-11-01 | Same arrays as the oracle at the end of the 2019 first call (float32 exact; BLDBASE needs one oracle rebuild to be checked) | `src/nems_open/commercial/inputs.py`, `ktek.py`, `base_year.py`, `src/nems_open/xlsx_ranges.py` |
 | `COMTechnologyChoice` (calculation, non-first calls) | Done 2026-11-01 | Within 2e-6 vs oracle on every output (shares, efficiency, MS, investment, EquipSD, warehouse indices, US averages), tested 2020, 2026, 2040 | `src/nems_open/commercial/technology_choice.py` (about 50 s per year, pure Python) |
-| `COMTechnologyChoice` (first call: KBEHAV, KDELEFF, KCAPFAC, KPREM reads, TimePrefProp normalization, heat pump cost edit) | To do | | |
+| `COMTechnologyChoice` (first call: KBEHAV, KDELEFF, KCAPFAC, KPREM reads, TimePrefProp normalization, heat pump cost edit) | Done 2026-11-01 | Same arrays as the oracle before and after the 2019 first call | `src/nems_open/commercial/technology_choice_inputs.py` |
 | `COMConsumption` (calculation) | Done 2026-11-01 | Within 5e-7 vs oracle on every output, 9 test years 2019-2050; US total matches EIA to 4 decimals | `src/nems_open/commercial/consumption.py` |
 | `COMConsumption` (first call: KSTEO, KMINFL reads, STEO targets into CMSEDS) | To do. KMINFL is re-read every call; tests take it from the oracle | | |
 | `COMBenchmarking` | To do | | |

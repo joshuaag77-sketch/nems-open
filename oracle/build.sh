@@ -2,9 +2,10 @@
 # Build the commercial oracle. Run gen_oracle.py first.
 # Usage: bash build.sh   (from the oracle folder)
 set -e
-U="$(cd ../nems-upstream && pwd)"
+# NEMS_UPSTREAM overrides the checkout; default is ../nems-upstream. Keep the path free of spaces (-I breaks on them).
+U="$(cd "${NEMS_UPSTREAM:-../nems-upstream}" && pwd)"
 # Relative include path: the project folder has spaces, which break -I.
-FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -I../../nems-upstream/includes"
+FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -I$U/includes"
 cd build
 python -I ../patch_intel.py "$U/source/comm.f" comm.f90
 python -I ../hooks.py "$U" comm.f90
