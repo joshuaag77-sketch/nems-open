@@ -18,18 +18,14 @@ pytestmark = pytest.mark.skipif(
 
 YEARS = (2025, 2030, 2040, 2050)
 
-# (quantity, year) -> why the dispatch model misses. Measured with trade="reference".
+# (quantity, year) -> why the dispatch model misses. Measured with sales-based load and interregional links.
 KNOWN_MISSES = {
-    ("gen_coal", 2030): "coal 11% low: EIA keeps more coal running than a pure merit order, from contracts and unit commitment",
-    ("gen_coal", 2040): "coal 80% high: EIA runs 63 TWh from 16 GW of coal, about 44% capacity factor; the LP runs it flat out",
-    ("gen_gas", 2030): "gas generation 15% high: the LP gives gas the load coal and CCS plants do not take",
-    ("gen_gas", 2040): "gas generation 13% high, same cause",
-    ("gen_gas", 2050): "gas generation 14% high: EIA dispatches 100+ TWh of CCS and advanced gas that carry another label",
-    ("gen_renewable", 2025): "2025 renewables 11% high: year-end capacity and other-renewable output overstate a year still building",
-    ("fuel_coal", 2030): "coal fuel 10% low, follows coal generation",
-    ("fuel_coal", 2040): "coal fuel 40% high, follows coal generation",
-    ("fuel_gas", 2025): "gas fuel 12% low: EIA burns more gas per kWh (part-load heat rates, oil/gas dual units) than plant-file heat rates",
-    ("co2", 2040): "CO2 21% high, follows coal generation",
+    ("gen_coal", 2040): "coal 47% high: EIA runs 16 GW of CCS-retrofitted coal at about 40% capacity factor, the LP runs it at its maximum; "
+                        "EIA's 45Q credit lasts 12 years per unit and the LP applies it to all of them",
+    ("fuel_coal", 2040): "coal fuel 64% high, follows coal generation",
+    ("gen_gas", 2030): "gas generation 15% high: EIA's gas fleet runs less than the LP's, and coal and CCS take part of the load",
+    ("gen_gas", 2040): "gas generation 12% high, same cause",
+    ("gen_renewable", 2025): "2025 wind and solar 9% and 18% high against EIA with the same capacity and profiles; 2030 onward matches",
 }
 
 
@@ -42,7 +38,7 @@ def snapshot():
 def results(snapshot):
     out = {}
     for y in YEARS:
-        res = dispatch.solve(dispatch.build_case(snapshot, y, "reference"))
+        res = dispatch.solve(dispatch.build_case(snapshot, y, "none"))
         out[y] = (rep.model(res), rep.reference(snapshot, y), res)
     return out
 
@@ -68,14 +64,15 @@ def test_solution_is_sound(results, year):
         assert (res.generation_twh[g] <= case.capacity[g] * 8.76 + 1e-6).all()
     # Generation meets load: thermal + hydro + renewables + nuclear + storage = net load (+ spill removed).
     total = res.total_generation_twh()
-    assert abs(total - case.net_load_twh.sum()) < 0.01 * case.net_load_twh.sum()
+    assert abs(total - case.net_load_twh.sum()) < 0.03 * case.net_load_twh.sum()      # trade losses and storage
     assert (res.price >= -1e-6).all()
+    assert res.trade_twh.sum() > 0                  # regions do trade
 
 
 def test_regional_marginal_cost_is_sane(results):
     _, _, res = results[2030]
     p = res.average_price()
-    assert np.isfinite(p).all() and 5 < p.mean() < 60       # 1987$/MWh
+    assert np.isfinite(p).all() and 5 < p.mean() < 100      # 1987$/MWh; a few regions run short in 2025 and 2030
 
 
 def test_trade_none_uses_sales_based_load(snapshot):
