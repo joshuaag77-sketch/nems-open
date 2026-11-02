@@ -4,6 +4,11 @@ __pycache__/
 .pytest_cache/
 oracle/run/
 oracle/build/
+oracle/upstream_link
+oracle/run_ind/
+oracle/build_ind/
+oracle/build_ind.log
+oracle/cycle.sh
 oracle/run_resd/
 oracle/build_resd/
 /data/
