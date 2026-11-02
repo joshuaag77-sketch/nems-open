@@ -19,6 +19,9 @@ Options (all keyword):
            Use it to compare one year or skip regions EIA never rewrites.
   call     function (port, inputs, year) -> result, if the port is not called as port(inputs, year).
   get      function (result, name) -> value, default result[name] for dicts, else getattr.
+  before_tag  dump to load as the "before" state, default `<tag>_in`. None: the port needs no
+           before state (a file reader); `inputs` then gets an empty dict.
+  after_tag   dump to compare with, default `<tag>_out`.
 """
 
 import numpy as np
@@ -44,19 +47,21 @@ def _get(res, name):
 
 
 def oracle_test(namespace, *, tag, port, outputs, module="comm", years=YEARS, tol=TOL,
-                inputs=None, select=None, call=None, get=_get):
+                inputs=None, select=None, call=None, get=_get, before_tag="", after_tag=""):
     """Define `test_<tag>` in `namespace` (pass globals())."""
     cache = {}
+    before_tag = f"{tag}_in" if before_tag == "" else before_tag
+    after_tag = after_tag or f"{tag}_out"
 
     def result(y):
         if y not in cache:
-            before = oracle_state.load(f"{tag}_in", y, module)
-            after = oracle_state.load(f"{tag}_out", y, module)
+            before = oracle_state.load(before_tag, y, module) if before_tag else {}
+            after = oracle_state.load(after_tag, y, module)
             inp = inputs(before, after, y) if inputs else dict(before)
             cache[y] = (call(port, inp, y) if call else port(inp, y)), after
         return cache[y]
 
-    @pytest.mark.skipif(not oracle_state.available(f"{tag}_out", years[0], module), reason="oracle state not dumped")
+    @pytest.mark.skipif(not oracle_state.available(after_tag, years[0], module), reason="oracle state not dumped")
     @pytest.mark.parametrize("y", years, ids=lambda y: str(1989 + y))
     @pytest.mark.parametrize("name", outputs)
     def test_output(y, name):

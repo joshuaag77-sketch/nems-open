@@ -1,0 +1,2966 @@
+{
+"agednew": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+61
+]
+},
+"applyramp": {
+"dtype": "<i2"
+},
+"averageefficiency": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+3
+]
+},
+"averageefficiencybase": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+3
+]
+},
+"behaviorshare": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+10,
+11,
+3,
+3
+]
+},
+"capacity": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"capacityfactor": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+10
+]
+},
+"cbecsflrrxb": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+11
+]
+},
+"cbecsflrspc": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10
+]
+},
+"ceffgrowth": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+10
+]
+},
+"cfuelcell_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cgcommcap": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+13
+]
+},
+"cgcommgen": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+13,
+2
+]
+},
+"cgcommq": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+13
+]
+},
+"cgcpvcom": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cgcwncom": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cmavgage": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+11
+]
+},
+"cmcogencrosspriceelast": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+8
+]
+},
+"cmcogenel": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+14,
+61
+]
+},
+"cmcogentetoelratio": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+14
+]
+},
+"cmcogunplanprop": {
+"dtype": "<f4"
+},
+"cmdeltarecipeffic": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+14
+]
+},
+"cmeffind": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+3,
+10,
+11,
+9,
+61
+]
+},
+"cmemissions": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+12,
+8,
+11
+]
+},
+"cmfinalenduse": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+33
+]
+},
+"cmfinalendusecon": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cmfinalunbenchuse": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+61
+]
+},
+"cmfirstyr": {
+"dtype": "<i4"
+},
+"cmgamma": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+11
+]
+},
+"cmicrotur_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cmlastyr": {
+"dtype": "<i4"
+},
+"cmnewfloorspace": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+-165
+],
+"shape": [
+11,
+11,
+227
+]
+},
+"cmnewflrspace": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cmnonbldguse": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+8,
+11,
+61
+]
+},
+"cmnumeqv": {
+"dtype": "<i4",
+"lb": [
+1
+],
+"shape": [
+62
+]
+},
+"cmnumtechsforservice": {
+"dtype": "<i4",
+"lb": [
+1
+],
+"shape": [
+10
+]
+},
+"cmseds": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+8,
+9,
+38
+]
+},
+"cmsurvfloortot": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cmtotalflspc": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+12,
+61
+]
+},
+"cmusavgeff": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+3,
+61
+]
+},
+"cmuscogen": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+61
+]
+},
+"cmusconsumption": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+3,
+61
+]
+},
+"cmusdistserv": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+3,
+3,
+61
+]
+},
+"cmusnewfloortot": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cmuspurcheff": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+3,
+61
+]
+},
+"cmussurvfloortot": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cmvintage": {
+"dtype": "<i4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10
+]
+},
+"coffeebrewers": {
+"dtype": "<f4"
+},
+"com111drensub": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+11
+]
+},
+"comeui": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+10,
+4
+]
+},
+"comsteobm": {
+"dtype": "<i2"
+},
+"coolingtechindexhp": {
+"dtype": "<i4"
+},
+"costparam1": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"costparam2": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"costparam3": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"costtrend": {
+"dtype": "|S10",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"costtrendswitch": {
+"dtype": "<i2"
+},
+"cpv_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ct_flag": {
+"dtype": "<i2",
+"lb": [
+1,
+1
+],
+"shape": [
+5,
+7
+]
+},
+"cwind_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"datactrservpenetration": {
+"dtype": "<f4",
+"lb": [
+29
+],
+"shape": [
+33
+]
+},
+"datctrshare": {
+"dtype": "<f4"
+},
+"dbgb": {
+"dtype": "<i4"
+},
+"dbgr": {
+"dtype": "<i4"
+},
+"dbgs": {
+"dtype": "<i4"
+},
+"dbgy1": {
+"dtype": "<i4"
+},
+"dbgy2": {
+"dtype": "<i4"
+},
+"dcf": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+12,
+10
+]
+},
+"decavgeff": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+10,
+3,
+3,
+61
+]
+},
+"decaybm": {
+"dtype": "<i2"
+},
+"decfuelshare": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+10,
+3,
+3,
+61
+]
+},
+"defaultprices": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+8
+]
+},
+"degreedays": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+2,
+11,
+61
+]
+},
+"diffqbm": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+11
+]
+},
+"distservboilereff": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"distservconsump": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+3,
+3,
+33
+]
+},
+"distservfuelshr": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+3,
+3
+]
+},
+"distservsteam": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"distservsteameui": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+3
+]
+},
+"ef1": {
+"dtype": "<f4"
+},
+"ef2": {
+"dtype": "<f4"
+},
+"ef3": {
+"dtype": "<f4"
+},
+"effgrowthrate": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+10
+]
+},
+"elasbaseyr": {
+"dtype": "<i4"
+},
+"elevators": {
+"dtype": "<f4"
+},
+"elvehicles": {
+"dtype": "<f4"
+},
+"emcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+5,
+8,
+61
+]
+},
+"emcmc": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+8,
+61
+]
+},
+"emissionfactor": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+8
+]
+},
+"enduseconsump": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+3,
+10,
+11,
+11,
+61
+]
+},
+"eprpspr": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+71
+]
+},
+"eprpstgt": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+71
+]
+},
+"equipname": {
+"dtype": "|S44",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+62,
+44
+]
+},
+"equiprestriction": {
+"dtype": "|i1",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+62,
+44,
+11,
+11
+]
+},
+"equipsd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+62,
+44,
+3,
+33
+]
+},
+"escalators": {
+"dtype": "<f4"
+},
+"euconwithdg": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+3,
+10,
+11,
+11,
+61
+]
+},
+"existimprvcl": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+9
+]
+},
+"existimprvht": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+9
+]
+},
+"fedsubsidyinvestcost": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+10,
+3,
+33
+]
+},
+"finalendusecon": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+11,
+33
+]
+},
+"flagregsteo": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+8
+]
+},
+"flooradj": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+9
+]
+},
+"foodsvchlthldgfloortot": {
+"dtype": "<f4"
+},
+"foodsvchlthldgflrprev": {
+"dtype": "<f4"
+},
+"fuelbytech": {
+"dtype": "<i4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+3
+]
+},
+"fuelshareofservice": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+3
+]
+},
+"fuelshareofservicebase": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+3
+]
+},
+"fuelusage": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"fumehoods": {
+"dtype": "<f4"
+},
+"heatpumpcoolingsd": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"hurdleelas": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+10,
+3
+]
+},
+"hwbtu": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"ifmax": {
+"dtype": "<i4"
+},
+"iforward": {
+"dtype": "<i4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"ifueltype": {
+"dtype": "<i4",
+"lb": [
+1
+],
+"shape": [
+11
+]
+},
+"ifwd": {
+"dtype": "<i4"
+},
+"iktechcostyr": {
+"dtype": "<i4"
+},
+"ilaststeoyr": {
+"dtype": "<i4"
+},
+"inumrpscredityrs": {
+"dtype": "<i4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"inumyrsatrpsbaserate": {
+"dtype": "<i4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"invest": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"investcost": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+7,
+3,
+33
+]
+},
+"itequip": {
+"dtype": "<f4"
+},
+"kchpcesgen": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"kitchenvent": {
+"dtype": "<f4"
+},
+"kscale": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"ksteocls": {
+"dtype": "<i2"
+},
+"labreffrz": {
+"dtype": "<f4"
+},
+"lastdecayyr": {
+"dtype": "<i4"
+},
+"laundry": {
+"dtype": "<f4"
+},
+"lrgvidboard": {
+"dtype": "<f4"
+},
+"marketpenetration": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+61
+]
+},
+"marketpenetrationmels": {
+"dtype": "<f4",
+"lb": [
+1,
+29
+],
+"shape": [
+20,
+33
+]
+},
+"marketpenetrationsc": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+5,
+11,
+61
+]
+},
+"mc_jpgdp": {
+"dtype": "<f4",
+"lb": [
+-2
+],
+"shape": [
+64
+]
+},
+"mc_np": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"mc_rmgblusreal": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"medimaging": {
+"dtype": "<f4"
+},
+"melselq": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+20
+]
+},
+"minfuelalpha": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+9,
+5
+]
+},
+"minfuelbeta": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+9,
+5
+]
+},
+"ms": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+10,
+3,
+62,
+44
+]
+},
+"newservdmd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+10,
+11,
+11,
+33
+]
+},
+"nohist": {
+"dtype": "<i2"
+},
+"nonfedsubsidyinvestcost": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+10,
+3,
+33
+]
+},
+"nrgbill": {
+"dtype": "<i4"
+},
+"nsd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+10,
+33
+]
+},
+"nsdnoshell": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+10
+]
+},
+"ntek": {
+"dtype": "<i4"
+},
+"nugfromseds": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+8,
+37,
+9
+]
+},
+"officepbe": {
+"dtype": "<f4"
+},
+"officepcpenetration": {
+"dtype": "<f4",
+"lb": [
+29
+],
+"shape": [
+33
+]
+},
+"officeups": {
+"dtype": "<f4"
+},
+"pclcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pclin": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pctscsavings": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"pdscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pelcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pelcmout": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+16
+]
+},
+"pelme": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pkscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"plgcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pmgcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pngcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"possystems": {
+"dtype": "<f4"
+},
+"prevyraverageefficiency": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+3
+]
+},
+"prevyrfuelshareofservice": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+3
+]
+},
+"prevyrtechshareofservice": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+62,
+44
+]
+},
+"prscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"prsdgsg": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+11
+]
+},
+"prsvshpsavings": {
+"dtype": "<f4"
+},
+"prsvstdsavings": {
+"dtype": "<f4"
+},
+"purchtechshare": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+62,
+44
+]
+},
+"qbmcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qclcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qcmdgsg": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+11
+]
+},
+"qdscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qelcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qgfcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qgicm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qkscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qlgcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qmgcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qngcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qprcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qpvcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qrlcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qrscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qrsdgsg": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+11
+]
+},
+"qsbmcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qstcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"replacementfuelshareofservice": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"replacementshareofservice": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"retireservdmd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+10,
+11,
+11,
+33
+]
+},
+"retrocostfract": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"rfuelcell_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rmicrotur_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rpv_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+10,
+33
+]
+},
+"rsdnoshell": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+10
+]
+},
+"rwind_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"sd": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+2,
+3
+]
+},
+"sdbyfuel": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+3,
+10,
+11,
+9,
+61
+]
+},
+"security": {
+"dtype": "<f4"
+},
+"sedsmistie": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+8,
+9
+]
+},
+"servdmdexbldg": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+10,
+11,
+11,
+33
+]
+},
+"servdmdintenbase": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+10,
+11,
+11
+]
+},
+"servdmdsurv": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+10,
+11,
+11,
+33
+]
+},
+"servicedflrspcprop": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+6,
+2
+]
+},
+"servicesindex": {
+"dtype": "<f4",
+"lb": [
+29
+],
+"shape": [
+33
+]
+},
+"shbtu": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"shellcoolfactor": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+2,
+33
+]
+},
+"shelleffindex": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+2
+]
+},
+"shellheatfactor": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+2,
+33
+]
+},
+"shortrunpriceelasofdmd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+10,
+3
+]
+},
+"shredder": {
+"dtype": "<f4"
+},
+"solarpvavailroofarea": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1
+],
+"shape": [
+33,
+11,
+11
+]
+},
+"solarpvcontrib": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+11
+]
+},
+"solarpvinstalledmw": {
+"dtype": "<f4",
+"lb": [
+29,
+1
+],
+"shape": [
+33,
+11
+]
+},
+"solarpvtechpotentialmw": {
+"dtype": "<f4",
+"lb": [
+29,
+1
+],
+"shape": [
+33,
+11
+]
+},
+"solarpvusedroofarea": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1
+],
+"shape": [
+33,
+11,
+11
+]
+},
+"solarrenewablecontrib": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+6,
+61
+]
+},
+"ssd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+11,
+10,
+33
+]
+},
+"ssdnoshell": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+9,
+11,
+10
+]
+},
+"steobm": {
+"dtype": "<i4"
+},
+"steobm2pct": {
+"dtype": "<i2",
+"lb": [
+1
+],
+"shape": [
+8
+]
+},
+"steodat": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+8,
+38
+]
+},
+"steomistie": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+8,
+9
+]
+},
+"stimulus": {
+"dtype": "<i4"
+},
+"stretbehav": {
+"dtype": "<i2"
+},
+"subsidy111dinvestcost": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+7,
+3,
+33
+]
+},
+"subsidyinvestcost": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+29
+],
+"shape": [
+11,
+7,
+3,
+33
+]
+},
+"sunlightefficacy": {
+"dtype": "<f4"
+},
+"survfloortotal": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+61
+]
+},
+"survivingfuelshareofservice": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"survivingshareofservice": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"techavailability": {
+"dtype": "<i4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+62,
+44,
+2
+]
+},
+"techbymodel": {
+"dtype": "<i4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"techbyservice": {
+"dtype": "<i4",
+"lb": [
+1,
+1
+],
+"shape": [
+10,
+62
+]
+},
+"techcost": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+62,
+44,
+4
+]
+},
+"techcri": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+10,
+62,
+44
+]
+},
+"techeff": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+10,
+62,
+44
+]
+},
+"techlife": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+62,
+44
+]
+},
+"techsforservice": {
+"dtype": "<i4",
+"lb": [
+1,
+1
+],
+"shape": [
+10,
+62
+]
+},
+"techshareofservice": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+62,
+44
+]
+},
+"techshareofservicebase": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+10,
+62,
+44
+]
+},
+"telecomserviceselq": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+9,
+61
+]
+},
+"televisions": {
+"dtype": "<f4"
+},
+"timeprefprem": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+7,
+7,
+61
+]
+},
+"timeprefprop": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+7,
+7,
+61
+]
+},
+"totexplicitmiscelq": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+29
+],
+"shape": [
+9,
+11,
+33
+]
+},
+"tranfromseds": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+8,
+37,
+9
+]
+},
+"trills": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"trillsownuse": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"trillsownuseadj": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+11
+]
+},
+"trq_elec": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+10,
+11,
+61
+]
+},
+"unbenchedcon": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+11,
+11,
+61
+]
+},
+"units": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"upira_appyr": {
+"dtype": "<i4"
+},
+"upv_mw": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"voiceip": {
+"dtype": "<f4"
+},
+"warehouserobots": {
+"dtype": "<f4"
+},
+"waterserviceselq": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+9,
+61
+]
+},
+"whrfoss": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"whse_eff": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+9,
+10,
+3,
+61
+]
+},
+"whse_heatindex": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+4,
+5,
+61
+]
+},
+"whse_lightindex": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+61
+]
+},
+"whse_sd": {
+"dtype": "<f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+9,
+10,
+3,
+61
+]
+},
+"whse_shellindex": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+61
+]
+},
+"whse_ventindex": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+61
+]
+},
+"windavailfs": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1
+],
+"shape": [
+33,
+11,
+11
+]
+},
+"windbldgcount": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1
+],
+"shape": [
+33,
+11,
+11
+]
+},
+"windinstalledmw": {
+"dtype": "<f4",
+"lb": [
+29,
+1
+],
+"shape": [
+33,
+11
+]
+},
+"windtechpotentialmw": {
+"dtype": "<f4",
+"lb": [
+29,
+1
+],
+"shape": [
+33,
+11
+]
+},
+"xcumpensqft": {
+"dtype": "<f4",
+"lb": [
+29,
+1,
+1,
+1
+],
+"shape": [
+33,
+11,
+11,
+11
+]
+},
+"xfmrsdry": {
+"dtype": "<f4"
+},
+"xinxdecay": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+9,
+61
+]
+},
+"xpdscm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+91
+]
+},
+"xpelcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+91
+]
+},
+"xpen": {
+"dtype": "<f4",
+"lb": [
+28,
+1,
+1,
+1,
+1,
+1,
+1
+],
+"shape": [
+34,
+11,
+11,
+11,
+5,
+10,
+6
+]
+},
+"xplicitmiscshr": {
+"dtype": "<f4",
+"lb": [
+1
+],
+"shape": [
+11
+]
+},
+"xpngcm": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+91
+]
+},
+"xpvgenadded": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"xrps": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"xwindgenadded": {
+"dtype": "<f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+}
+}

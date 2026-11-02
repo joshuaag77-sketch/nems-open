@@ -13,6 +13,7 @@ Usage: python -I hooks.py <upstream> <source.f90 to instrument in place> [module
 module is comm (default) or resd.
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -23,6 +24,8 @@ RUN = HERE / "run"
 
 # 2019, 2020, 2021, 2025, 2026, 2027, 2030, 2040, 2050
 DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]
+if os.environ.get("NEMS_ORACLE_YEARS"):       # e.g. "30": a small run for one new dump point
+    DUMP_YEARS = [int(y) for y in os.environ["NEMS_ORACLE_YEARS"].split(",")]
 FIRST_YEAR = 30  # CMFirstYr: first-call dumps are written under this year
 
 # Routine being ported: (tag, the CALL line in COMM, label line at the routine's
@@ -77,7 +80,7 @@ TARGETS += [
 
 # Run once, in the first iteration of the first year: state around the first call
 # of a routine (the file readers and one-time edits live there).
-FIRST_CALL = ["tc"]
+FIRST_CALL = ["tc", "sd"]
 
 # Dump points inside a routine with no call to wrap: (tag, line to follow, private arrays).
 # The dump is the first-call state, so it only fires in the first iteration of the first year.

@@ -13,6 +13,7 @@ from nems_open.commercial.benchmark_inputs import read_kminfl, read_ksteo
 from nems_open.commercial.inputs import CBECS_IDX, CM_FIRST_YR, MNUMYR, read_kmels, read_ksheff
 from nems_open.commercial.kparm import read_kparm
 from nems_open.fortran_array import FArray
+from nems_open.scedes import option
 
 f32 = np.float32
 DEFAULT_PRICES = [18.0, 7.0, 15.0, 8.0, 16.0, 2.0, 16.0, 16.0]   # DATA DefaultPrices (comm.f 7795)
@@ -32,13 +33,13 @@ def services_index(mc_revser: np.ndarray, curiyr: int = CM_FIRST_YR) -> FArray:
     return out
 
 
-def input_tables(mc_revser: np.ndarray, nrgbill: int = 1) -> dict:
+def input_tables(mc_revser: np.ndarray, nrgbill: int | None = None) -> dict:
     """Lower-case Fortran names -> arrays, for the tables the runner has no other source for.
 
-    nrgbill is the NRGBILL option (scedes), 1 in the AEO2026 reference run.
+    nrgbill defaults to the scedes NRGBILL option (1 in the AEO2026 reference run).
     """
-    imprv_ht, imprv_cl, _, _ = read_ksheff()
-    t = {"existimprvht": imprv_ht, "existimprvcl": imprv_cl}
+    imprv_ht, imprv_cl, heat, cool = read_ksheff()
+    t = {"existimprvht": imprv_ht, "existimprvcl": imprv_cl, "shellheatfactor": heat, "shellcoolfactor": cool}
     mels = read_kmels()
     for name in ("dcf", "marketpenetrationmels", "melselq", "xplicitmiscshr", "datactrservpenetration",
                  "officepcpenetration", "marketpenetrationsc", "pctscsavings", "ct_flag"):
@@ -55,5 +56,5 @@ def input_tables(mc_revser: np.ndarray, nrgbill: int = 1) -> dict:
     t["ifueltype"] = FArray(np.asarray(distgen_tables.read_kgentk().IFUELTYPE[1:NTEK + 1], dtype=np.int32), [1])
     t["ntek"] = NTEK
     t["ef1"], t["ef2"], t["ef3"] = f32(0.5), f32(0.35), f32(0.15)
-    t["nrgbill"] = nrgbill
+    t["nrgbill"] = option("NRGBILL") if nrgbill is None else nrgbill
     return t

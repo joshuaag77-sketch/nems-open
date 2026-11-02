@@ -18,7 +18,7 @@ import numpy as np
 from nems_open import oracle_state
 from nems_open.commercial import distgen_tables
 from nems_open.commercial.benchmarking import benchmarking, read_kemfac
-from nems_open.commercial.consumption import consumption
+from nems_open.commercial.consumption import consumption, spray_valve_standard
 from nems_open.commercial.distgen import DgState, distgen
 from nems_open.commercial.floorspace import FIRST_YEAR, NUM_BLDG, NUM_DIV, Floorspace, FloorspaceInputs
 from nems_open.commercial.report import report
@@ -29,6 +29,8 @@ from nems_open.fortran_array import FArray
 f32 = np.float32
 LAST_YEAR = 61  # 2050
 CMFIRSTYR = FIRST_YEAR  # 2019
+KSTEOYR = 37  # comvars: benchmark exactly to STEO through 2026
+CBECS_IDX = 29  # CBECSyear - (BASEYR - 1)
 
 # Fuel use COMBenchmarking writes into QBLK (and QPRCM into QMORE).
 QBLK_NAMES = ("qelcm", "qngcm", "qgfcm", "qgicm", "qdscm", "qrscm", "qrlcm", "qlgcm", "qprcm", "qclcm",
@@ -101,6 +103,48 @@ def _clear_year(a: FArray, axis, y: int) -> FArray:
     idx[ax] = y - a.lb[ax]
     a.a[tuple(idx)] = 0
     return a
+
+
+def floorspace(s: dict, y: int, mc_commflsp: np.ndarray, first_call: bool = False) -> None:
+    """COMFloorspace, driven by the macro model's floorspace growth (MACOUT/mc_commflsp).
+    Rebuilds every year from 2019 to y, so a change to the macro input carries through.
+    first_call=True also sets what the first call leaves for the years before: the CBECS-year totals
+    and the backcast of new floorspace by construction year (comm.f 1040 to 1068)."""
+    fs = Floorspace(FloorspaceInputs.load()).run(mc_commflsp, y)
+    if first_call:
+        cbecs_idx = FIRST_YEAR - 1
+        new = s["cmnewfloorspace"]
+        for yy in range(new.lb[2], FIRST_YEAR):
+            for r in range(1, NUM_DIV + 1):
+                for b in range(1, NUM_BLDG + 1):
+                    new[r, b, yy] = fs.new[r, b, fs._new_ix(yy)]
+        for r in range(1, NUM_DIV + 1):
+            for b in range(1, NUM_BLDG + 2):
+                s["cmtotalflspc"][r, b, cbecs_idx] = fs.total[r, b, cbecs_idx]
+    for yy in range(FIRST_YEAR, y + 1):
+        n = fs._new_ix(yy)
+        for r in range(1, NUM_DIV + 1):
+            for b in range(1, NUM_BLDG + 1):
+                s["survfloortotal"][r, b, yy] = fs.surviving[r, b, yy]
+                s["agednew"][r, b, yy] = fs.aged_new[r, b, yy]
+                s["cmnewfloorspace"][r, b, yy] = fs.new[r, b, n]
+                s["cmtotalflspc"][r, b, yy] = fs.total[r, b, yy]
+            s["cmtotalflspc"][r, NUM_BLDG + 1, yy] = fs.total[r, NUM_BLDG + 1, yy]
+        us_surv = us_new = f32(0.0)
+        for b in range(1, NUM_BLDG + 1):
+            surv = f32(0.0)
+            new = f32(0.0)
+            for r in range(1, NUM_DIV + 1):
+                surv = f32(surv + s["survfloortotal"][r, b, yy])
+                new = f32(new + s["cmnewfloorspace"][r, b, yy])
+            us_surv = f32(us_surv + surv)
+            us_new = f32(us_new + new)
+            s["survfloortotal"][11, b, yy] = surv
+            s["cmnewfloorspace"][11, b, yy] = new
+            s["cmnewflrspace"][b, yy] = new / f32(1000.0)
+            s["cmsurvfloortot"][b, yy] = surv / f32(1000.0)
+        s["cmussurvfloortot"][yy] = us_surv / f32(1000.0)
+        s["cmusnewfloortot"][yy] = us_new / f32(1000.0)
 
 
 class Commercial:
@@ -186,43 +230,46 @@ class Commercial:
             s[key] = undense(getattr(dg, next(a for a, (k, _) in DG_CARRIED.items() if k == key)), t)
         return cls(s, carry, dg, templates)
 
+    @classmethod
+    def start_from_files(cls, inputs=None) -> "Commercial":
+        """COMM before its first call (2019, first iteration), with no oracle dumps: the input
+        files, the restart file and zero (initial_state.initial_state)."""
+        from nems_open.commercial.initial_state import initial_state
+        s = initial_state(inputs)
+        carry = Carry([0, 0, 0], 0, int(s["ifmax"]), KSTEOYR + 1989, CBECS_IDX)
+        dg = DgState.empty()
+        templates = {}
+        for attr, (key, _) in DG_CARRIED.items():
+            templates[key] = s[key]
+            s[key] = undense(getattr(dg, attr), s[key])
+        return cls(s, carry, dg, templates)
+
     # ---- the routines ----
 
     def floorspace(self, y: int, mc_commflsp: np.ndarray) -> None:
         """COMFloorspace, driven by the macro model's floorspace growth (MACOUT/mc_commflsp).
         Rebuilds every year from 2019 to y, so a change to the macro input carries through."""
-        fs = Floorspace(FloorspaceInputs.load()).run(mc_commflsp, y)
-        s = self.s
-        for yy in range(FIRST_YEAR, y + 1):
-            n = fs._new_ix(yy)
-            for r in range(1, NUM_DIV + 1):
-                for b in range(1, NUM_BLDG + 1):
-                    s["survfloortotal"][r, b, yy] = fs.surviving[r, b, yy]
-                    s["agednew"][r, b, yy] = fs.aged_new[r, b, yy]
-                    s["cmnewfloorspace"][r, b, yy] = fs.new[r, b, n]
-                    s["cmtotalflspc"][r, b, yy] = fs.total[r, b, yy]
-                s["cmtotalflspc"][r, NUM_BLDG + 1, yy] = fs.total[r, NUM_BLDG + 1, yy]
-            us_surv = us_new = f32(0.0)
-            for b in range(1, NUM_BLDG + 1):
-                surv = f32(0.0)
-                new = f32(0.0)
-                for r in range(1, NUM_DIV + 1):
-                    surv = f32(surv + s["survfloortotal"][r, b, yy])
-                    new = f32(new + s["cmnewfloorspace"][r, b, yy])
-                us_surv = f32(us_surv + surv)
-                us_new = f32(us_new + new)
-                s["survfloortotal"][11, b, yy] = surv
-                s["cmnewfloorspace"][11, b, yy] = new
-                s["cmnewflrspace"][b, yy] = new / f32(1000.0)
-                s["cmsurvfloortot"][b, yy] = surv / f32(1000.0)
-            s["cmussurvfloortot"][yy] = us_surv / f32(1000.0)
-            s["cmusnewfloortot"][yy] = us_new / f32(1000.0)
+        floorspace(self.s, y, mc_commflsp)
 
     def start_iteration(self, y: int, itr: int) -> None:
         """The top of COMServiceDemand before its calculation: on a year's first iteration,
         last year's shares and efficiencies become the "previous year" values; every
         iteration, solar water heating restarts from zero (comm.f around line 3285)."""
         s = self.s
+        if itr == 1 and y == CMFIRSTYR:
+            # The previous year is the CBECS base year; Misc. (the last service) starts from base-year shares.
+            nfuel = s["prevyrfuelshareofservice"].a.shape[-1]
+            base_fs, base_eff = s["fuelshareofservicebase"].a, s["averageefficiencybase"].a
+            s["prevyrfuelshareofservice"].a[...] = base_fs[..., :nfuel]
+            s["prevyraverageefficiency"].a[...] = base_eff[..., :nfuel]
+            s["fuelshareofservice"].a[:, :, -1, :nfuel] = base_fs[:, :, -1, :nfuel]
+            s["averageefficiency"].a[:, :, -1, :nfuel] = base_eff[:, :, -1, :nfuel]
+            tbm = s["techbymodel"]
+            mask = np.zeros(s["prevyrtechshareofservice"].a.shape[3:], dtype=bool)
+            for t in range(1, mask.shape[0] + 1):
+                for v in range(1, mask.shape[1] + 1):
+                    mask[t - 1, v - 1] = tbm[t, v] == 1
+            s["prevyrtechshareofservice"].a[..., mask] = s["techshareofservicebase"].a[..., mask]
         if itr == 1 and y > CMFIRSTYR:
             nfuel = s["prevyrfuelshareofservice"].a.shape[-1]
             s["prevyrfuelshareofservice"].a[...] = s["fuelshareofservice"].a[..., :nfuel]
@@ -263,7 +310,9 @@ class Commercial:
     def technology_choice(self, y: int) -> None:
         self.s.update(technology_choice(self.s, self.carry, y))
 
-    def consumption(self, y: int) -> None:
+    def consumption(self, y: int, itr: int = 2) -> None:
+        if itr == 1 and y > CMFIRSTYR - 1 and int(self.s["nrgbill"]) > 0:
+            self.s.update(spray_valve_standard(self.s, y))
         self.s.update(consumption(self.s, y))
 
     def benchmarking(self, y: int, itr: int) -> None:
@@ -280,7 +329,7 @@ class Commercial:
         self.service_demand(y)
         self.distgen(y)
         self.technology_choice(y)
-        self.consumption(y)
+        self.consumption(y, itr)
         self.benchmarking(y, itr)
         if y == LAST_YEAR and itr == 2:
             self.report()
