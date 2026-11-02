@@ -16,7 +16,7 @@ Rebuild EIA's National Energy Modeling System (NEMS) as open Python that runs wi
 | Module | Where | Size | State | Blocker |
 |---|---|---|---|---|
 | Commercial demand | `source/comm.f` | 13k lines Fortran | To port | None |
-| Residential demand | `source/resd.f` | 17k Fortran | Yearly chain done and matching (2021-2050); readers and final-year reports to do | None |
+| Residential demand | `source/resd.f` | 17k Fortran | Done and matching 2021-2050 from the oracle's 2021 state; input readers to do | None |
 | Industrial demand | `source/ind.f` | 20k Fortran | To port | None |
 | Transportation demand | `source/tran*.f` | 18k Fortran | To port | None |
 | Renewable fuels | `source/renew.f` | 35k Fortran | To port | None |
@@ -184,20 +184,25 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 | `RDISTGEN` | 15065, 1678 | Rooftop PV and other on-site generation | dg | Done, bit-exact (`distgen.py`; reads RGENTK and RSGENTK itself) |
 | `CALC111D` | 14956, 109 | EPA 111(d) rebates, repealed, off in AEO2026 | | Skip |
 | `RSPITC`, `PITCINIT` | 16773, 16743 | Price-induced technical change, off (IFMAX = 0) | | Skip |
-| `NHTSHR`, `RESDRP2`, `RESDBOUT` | 13610, 11900, 13896 | Final-year reports and debug files | | To do (reports) |
+| `NHTSHR`, `RESDRP2` | 13610, 11900 | Final-year reports: new-home heating shares, the rest of RESDREP | nt, r2 | Done, bit-exact (`reports.py`) |
+| `RESDBOUT` | 13896 | Debug database file only | | Skip |
 | `SVRTE`, `RSELAST`, `EQCOST`, `rLearnCost` | 16862-17051 | Survival curve, short-run price response, cost trend, learning curve | | Ported in `helpers.py` |
 
 ### Results (2026-11-01)
 - Every routine RESD calls in a projection year is ported and matches the oracle on every array it touches, in all dump years 2021-2050: most bit-exact, the rest within 7e-7. Base year 2020: EXCONS, RSBENCH, NEMSCN, RESDRP bit-exact.
-- End to end (`src/nems_open/residential/resd.py`, `tests/test_residential_chain.py`): started once from the oracle's 2021 state, Python runs alone to 2050 (two iterations a year, about 140 s). It matches the oracle to 3e-7 on QBLK residential fuel use and within 5e-5 on every RESDREP, RSCON and RSEFF array the yearly chain writes (the largest, heating, from rounding compounding over 30 years). Against EIA's restart file it is within 0.33%, which is the oracle's own gap; 2050 US electricity 6879.7 vs EIA 6882.1 trillion Btu, gas 4096.4 vs 4096.0.
+- End to end (`src/nems_open/residential/resd.py`, `tests/test_residential_chain.py`): started once from the oracle's 2021 state, Python runs alone to 2050 (two iterations a year, about 140 s). It matches the oracle to 3e-7 on QBLK residential fuel use and within 5e-5 on every RESDREP, RSCON and RSEFF array, final-year reports included, (the largest, heating, from rounding compounding over 30 years). Against EIA's restart file it is within 0.33%, which is the oracle's own gap; 2050 US electricity 6879.7 vs EIA 6882.1 trillion Btu, gas 4096.4 vs 4096.0.
 - Shared EXP, ** and LOG round once from double precision (`common.expf`, `powf`, `logf`). NumPy's float32 versions are an ulp or two off the oracle's libm, and differences of large stock sums magnify that to 1e-5.
 - Carried state the dumps needed (SAVEd locals and PELRSOUT, which is EQUIVALENCEd so the COMMON scan missed it) is listed in `RESD_TARGETS`. `resd.resume_from_dump` fills in the few locals a run started mid-projection cannot get from dumps.
-- Still to do: the input readers (first call of 2020), so a run can start from the input files instead of the oracle's 2021 state; RESDRP2 and NHTSHR (final-year reports, in progress); RESDBOUT (debug file only).
+- Still to do: the input readers (first call of 2020), so a run can start from the input files instead of the oracle's 2021 state. RESDBOUT (debug file only) is skipped.
 
 ### Residential quirks kept (do not fix)
 - `RDPR`: wood is priced to distillate in 2020 but to natural gas less carbon tax after.
 - `NEWHSE`: `ALLNEW` keeps only the last building type, and `HHSTOCKBYDIV` divides its running total by a million on every pass of the loop.
 - `REPLACE`: switching cost is looked up as `RPINSCOST(RECCL, RECCLSW)` (EIA's own TODO asks whether that is transposed); computes CAPITAL and RETAIL and never uses them.
+- RESDRP2: NUME/DEN/NUME1/DEN1 reused across end uses without a reset; refrigerator, freezer, and existing washer/dishwasher blocks read class 1 sums (DEN1(Y,1,B,D)) not EQC; RSNEFDB1 for fridges/freezers divides by class-1 sums for every class.
+- RESDRP2: existing-efficiency sums have no zero-weight guard (EIA divides by zero weights); new cooling uses different formulas for room AC; the E=1 NUME1 line has a doubled `+ +`; RSNEFCL for GEO_HP is (NUME/DEN)/3.412 where elsewhere it is *3.412.
+- RESDRP2: RSEEFFZ loop starts at the RECS year where DEN is 0, so the RECS value stays; RSEEFRF/RSEEFFZ take the last class's base efficiency for 2020; RSREF/RSFRZ zeroed inside the class loop; X=1.0 multiplies RSCOOLERS (RACUnits factor commented out); summation order differs between blocks.
+- NHTSHR only prints; its TESTHT block (HTYSSHR) is declared and unused.
 - FUELCN/EXCONS/NEMSCN: division 10 holds the nine-division sum, labelled national (10 is California in parametr).
 - NEMSCN/RESDRP/EXCONS: SLCON(Y,10) used as national; EXCONS adds into it without zeroing.
 - RSBENCH: STEOCN(Y1,1..2,D) filled for all 2021-2027 with the current year's NGRCP/EXRCP; only CurCalYr is read.

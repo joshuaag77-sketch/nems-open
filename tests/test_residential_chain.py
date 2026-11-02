@@ -74,11 +74,21 @@ def test_full_run_fuel_use(full_run):
 
 def test_full_run_reports(full_run):
     s, fin = full_run
-    # RESDRP2 fills the rest of RESDREP in the final year; see test_residential_reports.py.
-    names = {k.split("/")[1] for k in Snapshot().names() if k.split("/")[0] in REPORT_BLOCKS} & set(s)
+    names = {k.split("/")[1] for k in Snapshot().names() if k.split("/")[0] in REPORT_BLOCKS}
     worst = {}
     for k in names:
         ref = fin[k].a
         worst[k] = rel(s[k].a[31:], ref[31:]) if ref.shape[0] == 61 else rel(s[k].a, ref)
     # Float rounding compounds over 30 years in heating (RSCON/htrcon about 4e-5).
     assert max(worst.values()) < 1e-4, sorted(worst.items(), key=lambda kv: -kv[1])[:5]
+
+
+def test_full_run_reports_vs_eia(full_run):
+    """RESDREP's headline reports against EIA's restart file, 2021-2050: within
+    the oracle's own float-rounding drift."""
+    s, _ = full_run
+    snap = Snapshot()
+    for k in ("rshouses", "rseh", "rsnh", "sqftavg", "rshtrcon", "rscoolcn", "rsh2ocon", "rsltcon",
+              "rsapcon", "rsrefcon", "rshtrs", "rscoolers", "rsnefht", "rseefht", "hshell1", "cshell1"):
+        eia = snap[f"RESDREP/{k}"][31:]
+        assert rel(s[k].a[31:], eia) < 1e-2, k

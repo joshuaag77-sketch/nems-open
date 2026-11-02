@@ -124,6 +124,9 @@ RESD_TARGETS = [
     dict(tag="be", call=r"CALL RSBENCH\b", nth=1),
     dict(tag="ne", call=r"CALL NEMSCN\b", nth=1),
     dict(tag="re", call=r"CALL RESDRP\b", nth=1),
+    # Final year only (2050, dump year 61): reports
+    dict(tag="nt", call=r"CALL NHTSHR\b"),
+    dict(tag="r2", call=r"CALL RESDRP2\b"),
     # Start of each projection year (after RDPR): everything the yearly chain reads,
     # for the end-to-end test that runs every port in RESD's order.
     dict(tag="yb", call=r"CALL NEWHSE\b", routines=[
@@ -131,7 +134,7 @@ RESD_TARGETS = [
         "RCWADD", "RDWTEC", "RDWADD", "RWHTEC", "REUADD", "RSTVTEC", "RDRYTEC", "RDRYADD", "RREFTEC",
         "RREFADD", "RFRZTEC", "RFRZADD", "RHTRCON", "RCLCON", "RCWCON", "RDWCON", "RWHCON", "RSTOVCON",
         "RDRYCON", "RREFCON", "RFRZCON", "LTCNS", "APCNS", "SHTCNS", "APPCNS", "FUELCN", "RSBENCH",
-        "NEMSCN", "RESDRP"]),
+        "NEMSCN", "RESDRP", "NHTSHR", "RESDRP2"]),
 ]
 RESD_STATE_BLOCK_FILES = ["resdrep", "rtek", "rscon", "rseff"]
 RESD_STATE_EXTRA = ["QELRS", "QNGRS", "QDSRS", "QLGRS", "QKSRS", "QBMRS", "QGERS", "QSTRS", "QPVRS",

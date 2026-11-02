@@ -8,13 +8,14 @@ whole state forward the way the Fortran's COMMON and SAVEd locals do.
 
 from nems_open.residential.appliances import (rdryadd, rdrycon, rdrytec, rfrzadd, rfrzcon, rfrztec,
                                               rrefadd, rrefcon, rreftec)
-from nems_open.residential.common import BASEYR
+from nems_open.residential.common import BASEYR, ENDYR as LASTYEAR
 from nems_open.residential.cooling import rcladd, rclcon, rcltec
 from nems_open.residential.distgen import rdistgen
 from nems_open.residential.heating import rhtradd, rhtrcon
 from nems_open.residential.heating_choice import rhtrtec, rshvac
 from nems_open.residential.housing import newhse, rdpr, sqftcalc
 from nems_open.residential.lighting_misc import apcns, appcns, ltcns, shtcns
+from nems_open.residential.reports import nhtshr, resdrp2
 from nems_open.residential.totals import fuelcn, nemscn, resdrp, rsbench
 from nems_open.residential.washers import rcwadd, rcwcon, rdwadd, rdwcon, rcwtec, rdwtec
 from nems_open.residential.water_cooking import reuadd, rstovcon, rstvtec, rwhcon, rwhtec
@@ -72,3 +73,7 @@ def run(s: dict, first_year: int, last_year: int, iterations: int = 2, start_ite
         for itr in range(start_iteration if year == first_year else 1, iterations + 1):
             s["curitr"] = itr
             projection_year(s)
+        if year == LASTYEAR:
+            # RESD's final-year reports, on the last iteration (RESDBOUT only writes files)
+            nhtshr(s)
+            resdrp2(s)
