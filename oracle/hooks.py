@@ -483,6 +483,9 @@ def instrument(comm_path: Path, upstream: Path):
 
 def make_dirs():
     """Create the dump folders and drop old index files (odump appends to them)."""
+    sys.path.insert(0, str(HERE))
+    from cache import link_out
+    link_out(next(k for k, v in MODULES.items() if v is CFG))
     dirs = [RUN / "out" / "state" / "final" / str(CFG["years"][-1])]
     for tg in map(as_dict, CFG["targets"]):
         for side in ("in", "out", "pre"):

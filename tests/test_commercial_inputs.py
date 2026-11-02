@@ -77,7 +77,7 @@ def test_krenew(eia):
     same(contrib.a, eia["solarrenewablecontrib"].a)
 
 
-@pytest.mark.skipif(not (oracle_state.STATE / "frd_out" / "30" / "baselinebkwhcm.bin").exists(),
+@pytest.mark.skipif(not (oracle_state.available("frd_out", 30) and "baselinebkwhcm" in oracle_state.load("frd_out", 30)),
                     reason="BASELINEBKWHCM not in this oracle build's dump")
 def test_bldbase(eia):
     mine = inputs.read_bldbase()
