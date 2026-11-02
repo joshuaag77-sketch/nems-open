@@ -9,8 +9,22 @@ import numpy as np
 from nems_open.residential.common import BASEYR, RECSYEAR, expf, f32, logf, powf
 
 
+_SVRTE = {}
+
+
 def svrte(alpha, y, k, lam):
-    """SVRTE: Weibull survival, the share of equipment still working at age y."""
+    """SVRTE: Weibull survival, the share of equipment still working at age y.
+    Memoized on the arguments' bit patterns (it is pure)."""
+    key = (f32(alpha).tobytes(), f32(y).tobytes(), f32(k).tobytes(), f32(lam).tobytes())
+    v = _SVRTE.get(key)
+    if v is None:
+        if len(_SVRTE) > 500_000:
+            _SVRTE.clear()
+        v = _SVRTE[key] = _svrte(alpha, y, k, lam)
+    return v
+
+
+def _svrte(alpha, y, k, lam):
     if f32(y) - f32(alpha) < 0:
         return f32(1.0)
     k1 = f32(f32(f32(y) - f32(alpha)) / f32(lam))
