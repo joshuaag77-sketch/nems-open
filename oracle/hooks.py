@@ -24,7 +24,10 @@ RUN = HERE / "run"
 DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]
 
 # Routine being ported: (tag, the CALL line in COMM, label line at the routine's
-# end where private arrays are dumped, private arrays to dump there).
+# end where private arrays are dumped, private arrays to dump there, and saved
+# values carried between iterations). Carried values are also dumped at the end
+# of the non-final iteration ("<tag>_pre"), which is their value when the final
+# iteration starts.
 TARGETS = [
     ("sd", r"CALL COMServiceDemand\s*\(RCDBG\)", r"^490\s+CONTINUE", [
         "ExistImprvHt", "ExistImprvCl", "dcf", "MarketPenetrationMels", "MelsElQ",
@@ -35,13 +38,22 @@ TARGETS = [
         "CoffeeBrewers", "ElVehicles", "FumeHoods", "Laundry", "Elevators", "Escalators",
         "ITEquip", "OfficeUPS", "Shredder", "OfficePBE", "VoiceIP", "POSsystems",
         "WarehouseRobots", "Televisions",
-    ]),
+    ], []),
+    ("tc", r"CALL COMTechnologyChoice\s*\(RCDBG\)", r"^\s*9100\s+CONTINUE", [
+        "SDbyFuel", "SSDnoShell", "RSDnoShell", "NSDnoShell", "WHSE_EFF", "WHSE_SD",
+        "PurchTechShare", "EquipSD", "STRetBehav", "CostTrendSwitch",
+    ], ["iforward", "ifwd", "IFMAX", "iLastSTEOyr", "elasbaseyr"]),
 ]
 
 # Shared state dumped around each target call.
-STATE_INCLUDES = ["parametr", "ncntrl", "apq", "macout", "comparm", "comvars", "commrep"]
+STATE_INCLUDES = ["parametr", "ncntrl", "apq", "macout", "eusprc", "mxpblk", "comparm", "comvars", "commrep"]
 STATE_BLOCK_FILES = ["comparm", "comvars", "commrep"]
-STATE_EXTRA = ["QELCM"]  # from QBLK, read by service demand
+# Arrays from other modules' blocks that the commercial routines read.
+STATE_EXTRA = ["QELCM",                                   # service demand
+               "PELCM", "PNGCM", "PDSCM", "XPELCM", "XPNGCM", "XPDSCM",
+               "PELCMOUT", "MC_JPGDP", "MC_RMGBLUSREAL"]  # technology choice
+DECL_FILES = ["parametr", "comparm", "comvars", "commrep", "qblk", "apq", "ampblk",
+              "mpblk", "mxpblk", "eusprc", "macout"]
 
 TYPE_RE = re.compile(r"^(real\*8|double precision|real\*4|real|integer\*1|integer\*2|integer\*4|integer\*8|integer"
                      r"|logical(?:\*\d+)?|character(?:\s*\*\s*(?:\(\s*[\w*]+\s*\)|\d+))?)(?![\w*])(.*)", re.I)
@@ -104,7 +116,8 @@ def type_code(t, name):
     if t == "?":  # implicit typing
         t = "integer" if name[0].lower() in "ijklmn" else "real"
     if t.startswith("character"):
-        return None
+        m = re.match(r"character\*(\d+)$", t)
+        return f"S{m.group(1)}" if m else None  # fixed-length text, e.g. CostTrend
     return {"real*8": "f8", "doubleprecision": "f8", "real*4": "f4", "real": "f4",
             "integer*1": "i1", "integer*2": "i2", "integer*4": "i4", "integer*8": "i8", "integer": "i4"}.get(
         t, "i4" if t.startswith("logical") else None)
@@ -123,6 +136,13 @@ def dump_call(tag, name, t, rank):
     code = type_code(t, name)
     if code is None:
         return None
+    if code.startswith("S"):
+        # Text arrays carry a hidden length argument, so they need a routine
+        # that declares them as text (odump_c in stubs.f90).
+        lb = f"lbound({name})" if rank else "0"
+        ub = f"ubound({name})" if rank else "0"
+        return (f"      call odump_c('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+                f"{rank}, {lb}, {ub})")
     if rank == 0:
         return f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
     return (f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
@@ -131,7 +151,7 @@ def dump_call(tag, name, t, rank):
 
 def write_state_routine(inc_dir):
     decls = {}
-    for n in ["parametr", "comparm", "comvars", "commrep", "qblk", "apq"]:
+    for n in DECL_FILES:
         decls.update(declarations((inc_dir / n).read_text(encoding="latin-1")))
     names = []
     for n in STATE_BLOCK_FILES:
@@ -158,15 +178,20 @@ def write_state_routine(inc_dir):
 def instrument(comm_path: Path, upstream: Path):
     text = comm_path.read_text(encoding="latin-1")
     src_decls = declarations(text)
-    for tag, call_re, end_re, private in TARGETS:
+    for tag, call_re, end_re, private, carried in TARGETS:
         m = re.search(r"^(\s*)(" + call_re + r")", text, re.I | re.M)
         ind = m.group(1)
         text = (text[:m.start()] + f"{ind}CALL ORACLE_STATE('{tag}_in')\n{ind}{m.group(2)}\n"
                 f"{ind}CALL ORACLE_STATE('{tag}_out')" + text[m.end():])
         years = ", ".join(map(str, DUMP_YEARS))
         lines = [f"      IF (FCRL .EQ. 1 .AND. ANY((/ {years} /) == CURIYR)) THEN"]
-        for name in private:
+        for name in private + carried:
             c = dump_call(f"{tag}_out", name, *src_decls.get(name.lower(), ("?", 0)))
+            if c:
+                lines.append(c)
+        lines.append(f"      ELSE IF (ANY((/ {years} /) == CURIYR)) THEN")
+        for name in carried:
+            c = dump_call(f"{tag}_pre", name, *src_decls.get(name.lower(), ("?", 0)))
             if c:
                 lines.append(c)
         lines.append("      ENDIF")
@@ -178,7 +203,7 @@ def instrument(comm_path: Path, upstream: Path):
 
 def make_dirs():
     for tag, *_ in TARGETS:
-        for side in ("in", "out"):
+        for side in ("in", "out", "pre"):
             for y in DUMP_YEARS:
                 (RUN / "out" / "state" / f"{tag}_{side}" / str(y)).mkdir(parents=True, exist_ok=True)
 

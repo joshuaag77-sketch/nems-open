@@ -148,6 +148,29 @@ subroutine odump(tag, name, iyr, x, nbytes, tcode, rnk, lb, ub)
   close(u)
 end subroutine odump
 
+! Same as odump, for fixed-length text arrays.
+subroutine odump_c(tag, name, iyr, x, nbytes, tcode, rnk, lb, ub)
+  implicit none
+  character(*) tag, name, tcode
+  character(*) x(*)
+  integer iyr, rnk, lb(*), ub(*)
+  integer(8) nbytes
+  character(256) dir
+  integer u, k, n
+  n = int(nbytes / len(x))
+  write(dir, '(a,a,a,i0,a)') 'out/state/', tag, '/', iyr, '/'
+  open(newunit=u, file=trim(dir)//name//'.bin', access='stream', form='unformatted', status='replace')
+  write(u) x(1:n)
+  close(u)
+  open(newunit=u, file=trim(dir)//'index.txt', position='append', action='write')
+  write(u, '(a,1x,a,1x,i0)', advance='no') name, tcode, rnk
+  do k = 1, rnk
+    write(u, '(1x,i0,1x,i0)', advance='no') lb(k), ub(k)
+  enddo
+  write(u, *)
+  close(u)
+end subroutine odump_c
+
 subroutine callsys(iret, cmd)
   implicit none
   integer iret
