@@ -21,13 +21,12 @@ What the dumps do not hold, and how it is handled (brief, rule 7):
     RSGENTK.txt) are read here from the same files, by load_inputs().
   * ZIP model state carried between years (Income_L, Households_L, ElecRate_L,
     PopDensity_L, Lag1Installs, Lag2Installs, ProjectedInstalls, CumUnits,
-    CumUnits_L). It is rebuilt by replaying the ZIP model from EstYear to the year
-    before, using the year-by-year inputs that are in the dump (EH, NH, MC_YPDR,
-    PELME, PELRSOUT, ...). That reproduces the carried values exactly only if the
-    history arrays are final-iteration values; it is a stand-in for dumping them.
-  * PELRSOUT is not dumped (EQUIVALENCEd to PELSHRS in the eusprc include, so the
-    dumper never sees it). Expected in s["pelrsout"] with Fortran bounds
-    (1:11, 1:61, 1:10); only end use 2 (space cooling) is read here.
+    CumUnits_L) is read from s under those lowercase names when present (the oracle's
+    "dg_pre" dump, taken as the final iteration starts) and written back at the end.
+    Without them the state starts from the files, as after EIA's first call, and
+    then carries forward from year to year inside s["_dg"].
+  * PELRSOUT comes from s["pelrsout"], Fortran bounds (1:11, 1:61, 1:11); only end
+    use 2 (space cooling) is read here.
   * xSizeMax, a REAL*8 local used before it is set in the niche code, holds 10 from
     the 2020 call on (static storage); taken as 10.
   * xPVGenAdded / xWindGenAdded history is used only in a credit ratio that is
@@ -306,8 +305,6 @@ class _State:
         self.IntRate, self.PVPrice, self.MonthlyPayment = inp.IntRate, inp.PVPrice, inp.MonthlyPayment
         self.factor4 = D(0.0)  # set only after EstYear; zero from -finit-local-zero before
         self.factor5 = D(0.0)
-        self.done_through = inp.EstYear - 1  # last year whose ZIP pass has run
-        self.lagged_year = 0  # year whose first-iteration lag update has run
         self.ExogPVMistie = np.zeros((MNUMYR + 1, 12), dtype=D)
         self.xPVGenAdded = np.zeros((12, MNUMYR + 2), dtype=F)
         self.xWindGenAdded = np.zeros((12, MNUMYR + 2), dtype=F)
@@ -320,15 +317,23 @@ class _State:
         self.zip_by_div = {d: np.nonzero(inp.CenDiv == d)[0] for d in range(1, 10)}
 
 
+_CARRIED = {"income_l": "Income_L", "households_l": "Households_L", "elecrate_l": "ElecRate_L",
+            "popdensity_l": "PopDensity_L", "lag1installs": "Lag1Installs", "lag2installs": "Lag2Installs",
+            "projectedinstalls": "ProjectedInstalls", "cumunits": "CumUnits", "cumunits_l": "CumUnits_L"}
+
+
 def _state(s: dict, inp: Inputs) -> _State:
     z = s.get("_dg")
     if z is None:
         z = s["_dg"] = _State(inp)
+        if "income_l" in s:  # carried ZIP state as the oracle dumps it ("dg_pre")
+            for nm, attr in _CARRIED.items():
+                setattr(z, attr, s[nm].a.copy())
     return z
 
 
 # ---------------------------------------------------------------------------
-# Pieces shared by the main pass and the replay
+# Pieces shared by the passes
 # ---------------------------------------------------------------------------
 
 
@@ -526,26 +531,6 @@ def _elec_rate(s, inp, z, d, Y, y1, rate_L):
     return F(F(rate_L * num) / den)
 
 
-def _catch_up(s, inp, z, Y: int) -> None:
-    """Replay the ZIP model for the years between the last one run and Y-1, first
-    iteration style. Stands in for the carried ZIP state the dumps do not hold."""
-    for yy in range(z.done_through + 1, Y):
-        if yy < inp.EstYear:
-            continue
-        y1 = yy - BASEYR + 1
-        nv = yy - RECSYEAR + 1
-        _inx_decay(inp, z, yy, y1)
-        if yy > inp.EstYear:
-            _zip_lag_update(z)
-            z.lagged_year = yy
-        xAdj = _adj_cost(s, inp, 1, nv, y1)
-        z.xTaxCreditPct = inp.xTxCrPct[1, nv]
-        for d in range(1, inp.NumDiv + 1):
-            _, tr, _, _, _ = _pv_zip_division(s, inp, z, d, yy, nv, xAdj, z.xTaxCreditPct)
-            z.xPVGenAdded[d, y1] = F(tr)
-        z.done_through = yy
-
-
 # ---------------------------------------------------------------------------
 # The routine
 # ---------------------------------------------------------------------------
@@ -576,13 +561,11 @@ def rdistgen(s: dict) -> None:
     for d in range(1, ND + 1):
         for nt in range(1, NumTechs + 1):
             s["x111drensub"][y1, d, nt] = 0.0
-    _catch_up(s, inp, z, Y)
     _inx_decay(inp, z, Y, y1)
 
     # lag update on the first iteration after EstYear (or when the dump starts later)
-    if Y > Est and (itr == 1 or z.lagged_year < Y):
+    if Y > Est and itr == 1:
         _zip_lag_update(z)
-        z.lagged_year = Y
 
     jp = s["mc_jpgdp"]
     iGen = int(s["igencapcostyr"]) if "igencapcostyr" in s else inp.iGenCapCostYr
@@ -666,10 +649,6 @@ def rdistgen(s: dict) -> None:
                     if xCompGen > 0.0:
                         s["cgcpvres" if nt == 1 else "cgcwnres"][d, y1] = F(xCompCredit / xCompGen)
 
-    if Y > Est:
-        z.done_through = max(z.done_through, Y)
-    elif Y == Est:
-        z.done_through = Y
 
     # Outputs to the electric power module and to learning
     s["rfuelcell_mw"][y1] = 0.0
@@ -1018,3 +997,8 @@ def _niche_division(s, inp, z, nt, nv, d, Y, y1, xAdjCost, xtaxcreditmaxKW, xtax
             xhwbtu = xhwbtu + xTemp * D(XWATERHTGMMBTU) / D(E6)
             xInvest = xInvest + xTemp * xCalcEqCost / D(E6)
     return xUnits, xTrills, xCapacity, xTrillsOwnUse, xfuelusage, xhwbtu, xInvest
+
+    # hand the carried ZIP state back to the shared dict when the caller keeps it there
+    for nm, attr in _CARRIED.items():
+        if nm in s:
+            s[nm].a[:] = getattr(z, attr)
