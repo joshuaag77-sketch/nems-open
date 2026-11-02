@@ -161,14 +161,20 @@ class TransportationSector:
         return {k: t["s"][k] for k in SECTOR_QUANTITIES["tr"] if k in t["s"]}
 
 
+# Inputs TRAN writes itself: TRANREP is its own report block (an input only to the
+# buildings modules), and TMPGNEW fills zero E85 prices from gasoline (PETTR) and TMISC
+# the US methanol price (PMETR), so EIA's restart copies of those differ from TRAN's.
+TRAN_WRITES = ("pettr", "pmetr")
+
+
 def apply_transportation(inputs: Inputs, s: dict) -> None:
     """Inputs.apply for TRAN's state. Routines that include AEUSPRC or ANGTDM see those
     blocks under a prefix (oracle/hooks_tran.py ALT_INCLUDES); the plain names are EUSPRC
     and NGTDMOUT, which are not demand inputs, so an AEUSPRC input goes to the prefixed copy."""
-    plain = {k: v for k, v in s.items() if not k.startswith("aeusprc__")}
+    plain = {k: v for k, v in s.items() if not k.startswith("aeusprc__") and k not in TRAN_WRITES}
     aeus = {k[len("aeusprc__"):]: v for k, v in s.items() if k.startswith("aeusprc__")}
     inputs.apply({k: v for k, v in plain.items()
-                  if not inputs.by_var.get(k, "").startswith("AEUSPRC/")})
+                  if not inputs.by_var.get(k, "").startswith(("AEUSPRC/", "TRANREP/"))})
     inputs.apply({k: v for k, v in aeus.items() if inputs.by_var.get(k, "").startswith("AEUSPRC/")})
 
 
@@ -187,13 +193,14 @@ SECTOR_QUANTITIES = {
            "qstrs", "qpvrs"),
     "cm": ("qelcm", "qngcm", "qgfcm", "qgicm", "qclcm", "qmgcm", "qdscm", "qkscm", "qlgcm",
            "qprcm", "qrlcm", "qrscm", "qbmcm", "qstcm", "qpvcm"),
-    # TINTEG's QBLK rows, TRAN's natural gas and residual splits, and aviation gasoline.
+    # TINTEG's QBLK rows (QPRTR is in QMORE), and TRAN's natural gas and residual splits.
     "tr": ("qmgtr", "qmetr", "qettr", "qngtr", "qgftr", "qlgtr", "qprtr", "qeltr", "qh2tr", "qdstr", "qjftr",
-           "qottr", "qagtr", "qrltr", "qrhtr", "qrstr"),
+           "qottr", "qrltr", "qrhtr", "qrstr"),
 }
 # SUMQAS shares the Pacific division to California for these rows.
 CALIFORNIA_SHARED = ("qelrs", "qelcm", "qngrs", "qngcm", "qclrs", "qclcm", "qmgcm", "qdsrs", "qdscm", "qksrs",
-                     "qkscm", "qlgrs", "qlgcm", "qrscm", "qgers", "qbmrs", "qbmcm", "qstrs", "qstcm", "qpvrs", "qpvcm")
+                     "qkscm", "qlgrs", "qlgcm", "qrscm", "qgers", "qbmrs", "qbmcm", "qstrs", "qstcm", "qpvrs", "qpvcm",
+                     "qeltr", "qngtr", "qmgtr", "qjftr", "qdstr", "qlgtr", "qrstr", "qottr", "qmetr", "qettr")
 
 
 def eia_quantities(snapshot: Snapshot) -> dict:
