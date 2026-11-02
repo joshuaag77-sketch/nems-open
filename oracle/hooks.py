@@ -95,11 +95,34 @@ IND_TARGETS = [
          end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[]),
     dict(tag="bsc2", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=0,
          end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[]),
+    dict(tag="stot", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[]),
+    # Single industry and region cases, since each dump holds only one call: food (7) and bulk
+    # chemicals (9) have CHP and share biomass boiler fuel, wood products (19) burns biomass,
+    # mining (3) is nonmanufacturing (no coal boilers).
+    dict(tag="stot7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="stot9", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="stot19", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="stot3", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="bsc3", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="bsc7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
 ]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
 IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "ibyr2", "lastcalyr", "curitr",
-                   "BSCIBYR", "beff", "PRCX", "PRCXIBYR", "PRCXYR", "MAINFUELS", "BSFUELSHR", "BSSHR", "Boiler_Fuel_List", "HPbeff"]
+                   "BSCIBYR", "beff", "PRCX", "PRCXIBYR", "PRCXYR", "MAINFUELS", "BSFUELSHR", "BSSHR", "Boiler_Fuel_List", "HPbeff",
+                   # CALSTOT
+                   "stemcur", "biosteam", "biosteamlag", "prodvx", "prodvxlag", "noncogsteam", "noncogfossteam",
+                   "CogBoilFuel", "FuelFosSteam", "FosFuelSteamSize", "sizeshr", "CALIBIBYR_FOS", "CALIBIBYR_BIO",
+                   "BOILIBYR", "STEMCURIBYR", "COGSTEAMIBYR", "BIOSTEAMIBYR", "ENSQTY", "ENPRQTY", "cogsteamhist",
+                   "maxcogyr", "baseyr", "numflchp", "yr",
+                   "cogthr", "cogelf", "coggrd", "cogcap", "coggen", "genfuel", "rptcap", "rptgen", "cogsteam"]
 IND_DECL_FILES = ["parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
                   "ampblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
@@ -261,8 +284,9 @@ def instrument(comm_path: Path, upstream: Path):
         tag, call_re, end_re, private, carried = tg["tag"], tg["call"], tg["end"], tg["private"], tg["carried"]
         m = list(re.finditer(r"^(\s*)(" + call_re + r")", text, re.I | re.M))[tg["nth"]]
         ind = m.group(1)
-        text = (text[:m.start()] + f"{ind}CALL ORACLE_STATE('{tag}_in')\n{ind}{m.group(2)}\n"
-                f"{ind}CALL ORACLE_STATE('{tag}_out')" + text[m.end():])
+        guard = f"IF ({tg['when']}) " if tg.get("when") else ""
+        text = (text[:m.start()] + f"{ind}{guard}CALL ORACLE_STATE('{tag}_in')\n{ind}{m.group(2)}\n"
+                f"{ind}{guard}CALL ORACLE_STATE('{tag}_out')" + text[m.end():])
         years = ", ".join(map(str, CFG["years"]))
         lines = [f"      IF (FCRL .EQ. 1 .AND. ANY((/ {years} /) == CURIYR)) THEN"]
         for name in private + carried:
