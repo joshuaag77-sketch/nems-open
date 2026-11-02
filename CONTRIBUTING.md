@@ -14,6 +14,38 @@ A port is done when it matches the oracle within 0.1% (in practice we get float 
 4. Write a test in `tests/` that feeds the port the "before" state and compares with the "after" state. Look at `tests/test_commercial_service_demand.py` for the pattern.
 5. Update the status table in SCOPE.md.
 
+## Running the tests
+
+Install `pytest-xdist` once (`pip install pytest-xdist`). Then:
+
+```bash
+export NEMS_UPSTREAM=/path/without/spaces/nems-upstream
+python -m pytest -n auto --dist loadgroup          # everything, in parallel
+python -m pytest -m comm -n auto --dist loadgroup  # one module: comm, resd, tran or ind
+python -m pytest -m "not slow" -n auto --dist loadgroup   # skip the minutes-long files
+python -m pytest tests/test_commercial_report.py   # one file, no xdist needed
+```
+
+Markers come from the file name (`tests/conftest.py`). `slow` marks the files that take minutes on their own (CDistGen, commercial technology choice, the residential full-year chain).
+
+Under `--dist loadgroup` the tests of one file stay on one worker, because they share module-level caches. A file whose years are independent sets `XDIST_BY_YEAR = True` at module level; then each year is its own group and the nine test years spread over the workers. Set it on any new per-year test that is slow. Without xdist (plain `pytest`) nothing changes.
+
+The long pole is the residential full-year chain (`full_run`, about 3 minutes, sequential by nature). Set `OMP_NUM_THREADS=1` when running many workers so numpy does not oversubscribe the CPU.
+
+## Writing a test for a new port
+
+If your port is called as `port(inputs, year)` and returns something with named outputs, the test is a few lines (`tests/oracle_harness.py`):
+
+```python
+from oracle_harness import oracle_test
+from nems_open.commercial.consumption import consumption
+
+XDIST_BY_YEAR = True
+oracle_test(globals(), tag="cn", port=consumption, outputs=["enduseconsump", "cmeffind"])
+```
+
+It loads `<tag>_in` for each test year, calls the port, and compares each named output with `<tag>_out` within 1e-4, one parametrized test per year and output. Options when the plain version does not fit: `module` ("resd"), `inputs(before, after, year)` to add inputs the routine sees from other dumps, `select(obj, name, year)` to compare one year or a subset of regions, `call` and `get` for other calling shapes. See `tests/test_commercial_service_demand.py` (inputs and select) and `test_commercial_consumption.py`. Hand-written tests stay fine for routines that do not fit.
+
 ## Good first issues
 
 The file readers. Each one reads one EIA input file into arrays the oracle already dumps, so the test is just "same arrays". Small, self-contained, and a good way to learn the codebase.
