@@ -6,8 +6,9 @@ it, each sector is one of:
 
 - EIA's ported module, through the demand runner (`nems_open.run_demand`, branch
   demand-runner). Residential and commercial are ported. They start from the oracle's
-  state dumps and are slow (commercial is about 5 minutes per iteration), so they are
-  opt-in: `DemandAdapter(ported=("residential", "commercial"))`.
+  state dumps, so they are opt-in: `DemandAdapter(ported=("residential", "commercial"))`.
+  A requested sector whose state is not dumped for the start year falls back to its
+  stub, with a warning. Industrial is a slot that supplies its oracle's fuel use.
 - A stub: EIA's reference fuel use moved by a price elasticity with a lag. Used for
   industrial and transportation (not ported yet) and, by default, for every sector so
   the loop runs in seconds. Its elasticities are fitted from EIA's side cases where
@@ -21,6 +22,7 @@ Policy levers (`Policy`) are applied here, after the sector models:
 """
 
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -125,6 +127,19 @@ class StubSector:
         self._pending = {}
 
 
+def usable_ported(ported: tuple[str, ...], start_year: int) -> tuple[str, ...]:
+    """The requested ported sectors whose oracle state exists for start_year; the rest fall
+    back to their stubs (with a warning), so a run never fails for a missing dump."""
+    if not ported:
+        return ()
+    from nems_open.run_demand import SECTORS as PORTS
+    usable = tuple(s for s in ported if PORTS.get(s) is not None and PORTS[s].available(start_year))
+    dropped = [s for s in ported if s not in usable]
+    if dropped:
+        warnings.warn(f"no oracle state for {', '.join(dropped)} in {start_year}; using the stub", stacklevel=3)
+    return usable
+
+
 class PortedSectors:
     """EIA's ported modules through the demand runner (branch demand-runner)."""
 
@@ -183,6 +198,7 @@ class DemandAdapter:
     def __init__(self, base: dict, policy: Policy, start_year: int, ported: tuple[str, ...] = ()):
         self.base = base
         self.policy = policy
+        ported = usable_ported(ported, start_year)
         self.ported = PortedSectors(start_year, ported, base) if ported else None
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}
