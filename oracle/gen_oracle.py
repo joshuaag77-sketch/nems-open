@@ -12,6 +12,7 @@ Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-ups
 module is comm (default, run/ and build/) or resd (run_resd/ and build_resd/).
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -55,7 +56,7 @@ WORKBOOKS: list = []
 SKIP_BLOCKS: list[str] = []
 
 # Must match build.sh. Run from oracle/build so the relative include path works.
-FFLAGS = ["-ffree-line-length-none", "-fdec", "-I../../nems-upstream/includes"]
+FFLAGS = ["-ffree-line-length-none", "-fdec", "-I" + os.environ.get("NEMS_UPSTREAM", str(HERE.parent / "nems-upstream")) + "/includes"]
 
 
 def statements(text: str):

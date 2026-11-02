@@ -3,9 +3,9 @@
 # Usage: bash build.sh [comm|resd]   (from the oracle folder; default comm)
 set -e
 MOD="${1:-comm}"
-U="$(cd ../nems-upstream && pwd)"
-# Relative include path: the project folder has spaces, which break -I.
-FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -I../../nems-upstream/includes"
+# NEMS_UPSTREAM overrides the checkout; default is ../nems-upstream. Keep the path free of spaces (-I breaks on them).
+U="$(cd "${NEMS_UPSTREAM:-../nems-upstream}" && pwd)"
+FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -I$U/includes"
 if [ "$MOD" = comm ]; then
   B=build; R=run; SRC=comm; DRIVER=driver
 else
