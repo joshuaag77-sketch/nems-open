@@ -43,6 +43,12 @@ TARGETS = [
         "SDbyFuel", "SSDnoShell", "RSDnoShell", "NSDnoShell", "WHSE_EFF", "WHSE_SD",
         "PurchTechShare", "EquipSD", "STRetBehav", "CostTrendSwitch",
     ], ["iforward", "ifwd", "IFMAX", "iLastSTEOyr", "elasbaseyr"]),
+    ("cn", r"CALL COMConsumption\s*\(RCDBG\)", r"^\s*210 CONTINUE\s+! across Building Types", [
+        "UnBenchedCon", "CMFinalUnbenchUse", "SolarPVContrib", "Trills", "TrillsOwnUse", "TrillsOwnUseAdj",
+        "shbtu", "hwbtu", "fuelusage", "FloorAdj", "defaultprices", "ifueltype", "ntek",
+        "STEOdat", "FlagRegSTEO", "EF1", "EF2", "EF3", "NRGBILL", "STIMULUS",
+        "prsvStdSavings", "prsvShpSavings", "FoodSvcHlthLdgFloorTot", "FoodSvcHlthLdgFlrPrev",
+    ], []),
 ]
 
 # Shared state dumped around each target call.
@@ -51,7 +57,8 @@ STATE_BLOCK_FILES = ["comparm", "comvars", "commrep"]
 # Arrays from other modules' blocks that the commercial routines read.
 STATE_EXTRA = ["QELCM",                                   # service demand
                "PELCM", "PNGCM", "PDSCM", "XPELCM", "XPNGCM", "XPDSCM",
-               "PELCMOUT", "MC_JPGDP", "MC_RMGBLUSREAL"]  # technology choice
+               "PELCMOUT", "MC_JPGDP", "MC_RMGBLUSREAL",  # technology choice
+               "PRSCM", "PLGCM", "PCLCM", "PMGCM", "PKSCM"]  # consumption (minor fuels)
 DECL_FILES = ["parametr", "comparm", "comvars", "commrep", "qblk", "apq", "ampblk",
               "mpblk", "mxpblk", "eusprc", "macout"]
 
