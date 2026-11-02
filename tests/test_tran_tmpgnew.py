@@ -6,7 +6,7 @@ TARGETS tmpg_*), comparing the whole TMPGNEW state at the end.
 
 import pytest
 
-from nems_open.transportation import femcalc, ldv_attrib, ldv_choice, ldv_tech, tmpgnew
+from nems_open.transportation import cafe, femcalc, ldv_attrib, ldv_choice, ldv_tech, tmpgnew
 from tran_harness import YEARS, needs, run
 
 pytestmark = needs("tmpg_lion")
@@ -20,6 +20,8 @@ STRETCHES = {
     "tattrib": (ldv_attrib.tattrib, "tmpg_att1_in", "tmpg_att1_out"),
     "talt2": (ldv_choice.talt2, "tmpg_alt1_in", "tmpg_alt1_out"),
     "talt2x": (ldv_choice.talt2x, "tmpg_altx1_in", "tmpg_altx1_out"),
+    "cafecalc0": (lambda st: cafe.cafecalc(st, 0), "tmpg_cafe0_in", "tmpg_cafe0_out"),
+    "cafecalc1": (lambda st: cafe.cafecalc(st, 1), "tmpg_cafe1_in", "tmpg_cafe1_out"),
 }
 
 
@@ -48,4 +50,4 @@ def test_stretch(name, y):
         kwargs["carry"] = {k: _blank_from(out[f"p_{k}"], y) for k in ("altstat", "predstk")}
     if name == "talt2x" and y <= 35:
         pytest.skip("TALT2X runs only after 2024")
-    assert run(port, "tmpgnew", y, start=start, end=end, tol=tol, may_be_empty=(name == "setup"), **kwargs) == {}
+    assert run(port, "tmpgnew", y, start=start, end=end, tol=tol, may_be_empty=name in ("setup", "cafecalc1"), **kwargs) == {}
