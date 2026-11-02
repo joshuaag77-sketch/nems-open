@@ -120,9 +120,13 @@ class Commercial:
     # ---- set-up ----
 
     @classmethod
-    def start_from_dump(cls, y: int) -> "Commercial":
+    def start_from_dump(cls, y: int, from_files: bool = False) -> "Commercial":
         """The state at the top of year y's final iteration, from the oracle's dumps
-        (y must be a dump year). Arrays the chain writes for year y are cleared."""
+        (y must be a dump year). Arrays the chain writes for year y are cleared.
+
+        from_files=True builds the input tables (SD_TABLES, TC_TABLES, CN_TABLES except the two
+        results, BM_TABLES) from EIA's input files instead (first_call.input_tables), so a change
+        to a file or a lever reaches the chain. The rest still comes from the dumps."""
         load = lambda tag: oracle_state.load(tag, y)
         s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in load("sd_in").items()}
         sd_out, tc_out, cn_out, bm_out = load("sd_out"), load("tc_out"), load("cn_out"), load("bm_out")
@@ -137,6 +141,18 @@ class Commercial:
         for src, private in ((sd_out, SD_PRIVATE), (tc_out, TC_PRIVATE), (cn_out, CN_PRIVATE)):
             for k, axis in private.items():
                 s[k] = _clear_year(src[k], axis, y)
+        if from_files:
+            from nems_open.commercial.first_call import input_tables
+            from nems_open.snapshot import Snapshot
+            files = input_tables(Snapshot()["MACOUT/mc_revser"])
+            for k, v in files.items():
+                if k == "steodat":       # fuels 1 and 2 come from the macro and supply modules
+                    v = v.copy()
+                    v.a[:2] = s[k].a[:2]
+                if k == "servicesindex":  # years before the first call hold what EIA left there
+                    v = v.copy()
+                    v.a[:CMFIRSTYR - v.lb[0]] = s[k].a[:CMFIRSTYR - v.lb[0]]
+                s[k] = v
         bm_pre = oracle_state.load("bm_pre", y) if oracle_state.available("bm_pre", y) else {}
         if "diffqbm" in bm_pre:
             s["diffqbm"] = bm_pre["diffqbm"]
