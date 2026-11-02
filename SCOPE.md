@@ -278,6 +278,17 @@ One commercial iteration went from about 6 minutes to about 5 s (2025: 349 s to 
 - Technology choice (`technology_choice.py`): `_technology_choice_fast` runs whenever price-induced technical change is idle (iforward, ifwd, IFMAX all 0, every AEO2026 year). Otherwise `_technology_choice_reference` runs, the old line-by-line code. Strict running-minimum searches become first-argmin lookups, which give the same winner. The never-reset retrofit minimum becomes `np.minimum.accumulate`, and ordered share sums become `np.add.at`. Numpy's types are kept, including the float64 that int fuel flags bring into some sums.
 - `FArray` indexing has a C-level fast path for integer subscripts (speeds up every port).
 - How it was checked: save the full module state after one iteration with the old code, run the new code, compare every array for exact equality (2025, 2030, 2050).
+- Second round (branch speed-residential): technology choice runs all 11 building types of a region and service as one set of arrays (about 0.8 s down to 0.4-0.8 s), and `FArray` keeps a padded backing block so integer subscripts index numpy directly. A commercial iteration is now 1.0-1.5 s.
+
+## Residential speed (branch speed-residential, 2026-11-02)
+One residential iteration went from about 2.5-3 s to about 1 s, every array bit-identical to the old code over three chained years from 2030 (both iterations each year), and all residential oracle tests pass.
+- `powi` and `svrte` are memoized on their arguments' bit patterns; REPLACE caches its menu-record search per end use and year.
+- `helpers.vintage_future` writes the future-stock arrays of all six ADD routines as one float32 product per class, building type and division.
+- Running sums over vintages (ADD routines' replacement sums, every CON routine's stock-weighted averages, `helpers.stock_average`) are float32 term arrays summed by a sequential accumulate, so the rounding is the Fortran loop's.
+- Lighting: the future-stream copies are block copies, and the needs, totals, stock, investment and efficiency loops are arrays.
+- RDISTGEN runs each division's 30-year cash flow for all niches at once.
+
+Full model (`run_model.run(ported=("residential", "commercial"))`, 2027-2050, 46 passes): 322 s before, 134-154 s after, timed with other sessions loading the machine (CPU 15-76%). Over the 2-minute bar, so the default stays the stubs. About 2.6 s per pass: residential and commercial about 1.2 s each, plus about 3 s of start-up loading the oracle dumps.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
