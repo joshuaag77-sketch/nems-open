@@ -6,7 +6,7 @@ TARGETS tmpg_*), comparing the whole TMPGNEW state at the end.
 
 import pytest
 
-from nems_open.transportation import femcalc, ldv_tech, tmpgnew
+from nems_open.transportation import femcalc, ldv_attrib, ldv_tech, tmpgnew
 from tran_harness import YEARS, needs, run
 
 pytestmark = needs("tmpg_lion")
@@ -16,6 +16,8 @@ STRETCHES = {
     "lioncostcalc": (ldv_tech.lioncostcalc, "tmpg_lion_in", "tmpg_lion_out"),
     "nameplates": (tmpgnew.nameplates, "tmpg_lion_out", "tmpg_fem1_in"),
     "femcalc": (femcalc.femcalc, "tmpg_fem1_in", "tmpg_fem1_out"),
+    "cgshare": (ldv_attrib.cgshare, "tmpg_cgs1_in", "tmpg_cgs1_out"),
+    "tattrib": (ldv_attrib.tattrib, "tmpg_att1_in", "tmpg_att1_out"),
 }
 
 
