@@ -607,9 +607,44 @@ def compiling_includes(incs, inc_dir):
         incs.remove(culprit)
 
 
-def emm_dump_routine(name, incs, inc_dir, used, tag_expr, suffix=None):
+def local_commons(bodies, routines):
+    """COMMON blocks declared inside routine bodies rather than in an include
+    (LDSM's hourly load shapes, /REGSYSLD/ and /EUSYSLD/; EFP's /EFPIT/ and others).
+    Returns (declaration lines, member names, {member: (type, rank)}), first
+    declaration of each block wins."""
+    lines, names, decls, seen = [], [], {}, set()
+    for r in routines:
+        if r not in bodies:
+            continue
+        body = bodies[r][0]
+        bdecl = declarations(body)
+        texts = {}
+        for st in statements(body):
+            m = TYPE_RE.match(st)
+            if m and not re.match(r"\s*function", m.group(2), re.I):
+                for ent in split_top(m.group(2).split("::", 1)[-1]):
+                    em = re.match(r"([\w$]+)\s*(?:\*\s*\d+)?\s*(\(.*\))?", ent)
+                    if em:
+                        texts[em.group(1).lower()] = f"{m.group(1)} {ent.strip()}"
+        for st in statements(body):
+            cm = re.match(r"common\s*/\s*([\w$]+)\s*/(.*)", st, re.I)
+            if not cm or cm.group(1).lower() in seen:
+                continue
+            members = [re.match(r"[\w$]+", e).group(0) for e in split_top(cm.group(2))]
+            if not all(v.lower() in texts for v in members):
+                continue  # typed implicitly or in an include: leave it to the include path
+            seen.add(cm.group(1).lower())
+            lines += [f"      {texts[v.lower()]}" for v in members]
+            lines.append(f"      COMMON /{cm.group(1)}/ " + ", ".join(members))
+            names += members
+            decls.update({v.lower(): bdecl[v.lower()] for v in members})
+    return lines, names, decls
+
+
+def emm_dump_routine(name, incs, inc_dir, used, tag_expr, suffix=None, local=None):
     """A routine that includes `incs` and dumps every COMMON member in them that
-    `used` mentions (all members when used is None)."""
+    `used` mentions (all members when used is None), plus the members of `local`,
+    COMMON blocks declared in the routines themselves (see local_commons)."""
     incs = ["parametr"] + [n for n in incs if n != "parametr"]
     if "ncntrl" not in incs:
         incs.insert(1, "ncntrl")
@@ -622,6 +657,21 @@ def emm_dump_routine(name, incs, inc_dir, used, tag_expr, suffix=None):
         t = (inc_dir / n).read_text(encoding="latin-1")
         decls.update(declarations(t))
         names += [v for v in common_names(t) if used is None or v.lower() in used]
+        # An EQUIVALENCE alias of a COMMON member is shared too (QELINOUT = QELINP
+        # in indout), but no COMMON statement names it.
+        for a, b in re.findall(r"(?im)^\s*equivalence\s*\(\s*([\w$]+)\s*(?:\([^)]*\))?\s*,\s*([\w$]+)", t):
+            names += [v for v in (a, b) if used is not None and v.lower() in used]
+    local_lines = []
+    if local:
+        local_lines, lnames, ldecls = local
+        known = {v.lower() for v in names}
+        clash = [v for v in lnames if v.lower() in known or v.lower() in decls]
+        if clash:  # an include declares the same name: skip the block rather than break the build
+            print(f"  {name}: local COMMON members also in includes, skipped: {clash}")
+            local_lines = []
+        else:
+            names += lnames
+            decls.update(ldecls)
     calls = []
     for v in {s.lower(): s for s in names}.values():
         c = dump_call("@TAG@", v, *decls.get(v.lower(), ("?", 0)))
@@ -634,7 +684,8 @@ def emm_dump_routine(name, incs, inc_dir, used, tag_expr, suffix=None):
     arg = "tag, irg" if suffix else "tag"
     extra = "      integer irg\n      character(4) rsuf\n" if suffix else ""
     pre = "      write(rsuf, '(a,i2.2)') '_r', irg\n" if suffix else ""
-    src = (f"      subroutine {name}({arg})\n      implicit none\n{inc}\n      character(*) tag\n{extra}{pre}"
+    loc = "".join(f"{l}\n" for l in local_lines)
+    src = (f"      subroutine {name}({arg})\n      implicit none\n{inc}\n{loc}      character(*) tag\n{extra}{pre}"
            + "\n".join(calls) + f"\n      end subroutine {name}\n")
     return src, len(calls), incs
 
@@ -654,10 +705,12 @@ def write_state_routine_emm(inc_dir):
             all_used |= used
             all_incs += [n for n in incs if n not in all_incs]
         name = f"oracle_state_{tg['tag']}"
+        reached = [r for r in bodies if r in used or r in {x.lower() for x in tg["routines"]}]
+        local = local_commons(bodies, reached)
         if tg["region"]:
-            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag", suffix="rsuf")
+            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag", suffix="rsuf", local=local)
         else:
-            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag")
+            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag", local=local)
         routines.append(src)
         when = "CURITR .eq. 1" if tg["itr"] == 1 else "FCRL .eq. 1"
         if tg["cond"]:
