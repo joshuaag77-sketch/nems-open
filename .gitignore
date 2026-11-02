@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 oracle/run/
 oracle/build/
+oracle/run_resd/
+oracle/build_resd/
