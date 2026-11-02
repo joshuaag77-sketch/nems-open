@@ -30,6 +30,8 @@ class FArray:
         )
 
     def __getitem__(self, idx):
+        if type(idx) is int:
+            return self.a[idx - self.lb[0]]
         if type(idx) is tuple:
             try:  # fast path for integer subscripts; a slice among them raises TypeError
                 return self.a[tuple(map(sub, idx, self.lb))]
@@ -38,6 +40,9 @@ class FArray:
         return self.a[self._ix(idx)]
 
     def __setitem__(self, idx, value):
+        if type(idx) is int:
+            self.a[idx - self.lb[0]] = value
+            return
         if type(idx) is tuple:
             try:
                 ix = tuple(map(sub, idx, self.lb))

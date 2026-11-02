@@ -71,6 +71,22 @@ def rlearncost(max_cost, beta, c0, cum_ship):
     return min(f32(max_cost), expf(logf(c0) - f32(beta) * logf(cum_ship)))
 
 
+def _first_records(s: dict, eu: int, Y: int) -> dict:
+    """For end use eu in year Y: equipment type -> the first menu record of that type
+    available that year (the search REPLACE runs for every class). The menu tables never
+    change, so it is worked out once per end use and year."""
+    cache = s.setdefault("_first_records", {})
+    if (eu, Y) not in cache:
+        first = {}
+        typt = s["rttyeupt"]
+        for i in range(int(typt[eu]) + 1, int(typt[eu + 1]) + 1):
+            eqt = int(s["rteqtype"][i])
+            if eqt not in first and s["rtinityr"][i] <= Y <= s["rtlastyr"][i]:
+                first[eqt] = i
+        cache[eu, Y] = first
+    return cache[eu, Y]
+
+
 def replace(s: dict, eu: int, r: int, b: int, reccl: int, flag: int) -> None:
     """REPLACE: split retiring equipment of class reccl among all classes of the
     end use by a logit on life-cycle cost plus switching cost.
@@ -91,14 +107,10 @@ def replace(s: dict, eu: int, r: int, b: int, reccl: int, flag: int) -> None:
         retired = s["oeqcrp90"][Y, reccl, 1, r]
         retiredr = s["oeqcrp90r"][Y, reccl, 1, r]
 
+    first = _first_records(s, eu, Y)
     for recclsw in range(int(eupt[eu]) + 1, int(eupt[eu + 1]) + 1):
         eqcsw, eqtsw = int(eqcl[recclsw]), int(rtyp[recclsw])
-        rectysw = 0
-        for i in range(int(typt[eu]) + 1, int(typt[eu + 1]) + 1):
-            if s["rteqtype"][i] == eqtsw and s["rtinityr"][i] <= Y <= s["rtlastyr"][i]:
-                rectysw = i
-                break
-        if rectysw == 0:
+        if first.get(eqtsw, 0) == 0:
             return
         # CAPITAL and RETAIL are computed here in EIA's code but never used.
         rpshare[eqcsw] = expf(f32(s["rtswbias"][recclsw] + s["rtswbeta"][recclsw]
