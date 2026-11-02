@@ -312,7 +312,9 @@ MODULES = {
 }
 CFG = MODULES["comm"]
 
-TYPE_RE = re.compile(r"^(real\*8|double precision|real\*4|real|integer\*1|integer\*2|integer\*4|integer\*8|integer"
+# Spaces are allowed around the * ("REAL *4" in efpnd).
+TYPE_RE = re.compile(r"^(real\s*\*\s*8|double precision|real\s*\*\s*4|real|integer\s*\*\s*1|integer\s*\*\s*2"
+                     r"|integer\s*\*\s*4|integer\s*\*\s*8|integer"
                      r"|logical(?:\*\d+)?|character(?:\s*\*\s*(?:\(\s*[\w*]+\s*\)|\d+))?)(?![\w*])(.*)", re.I)
 
 
