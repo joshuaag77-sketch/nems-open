@@ -55,6 +55,14 @@ The state dumps are big (commercial 7.5 GB, residential about 20 GB as the Fortr
 - **See where the space went.** `python scripts/disk_report.py` prints raw and packed size per module, in the cache and in this clone, and the free space on each drive.
 - The dumps hold only the nine test years already, and every year is read by some test (consumption reads technology choice at all nine), so there is nothing to trim there.
 
+## Starting commercial from files
+
+`Commercial.start_from_files()` builds COMM's state before its first call (2019, first iteration) from EIA's input files, the restart file and zero, with no oracle dump (`src/nems_open/commercial/initial_state.py`). `initial_state.coverage()` says where each of the 286 arrays comes from: files (91), the restart file (43: prices, macro drivers, SEDS history, other modules' output), or computed by the chain (152, zero until it runs). `state_layout.json` holds EIA's declared type, bounds and shape for every array; regenerate it with `python scripts/make_state_layout.py` only if the Fortran declarations change.
+
+Two traps when checking a run against EIA. Benchmarking pulls fuel use to SEDS and STEO in the history years, so a wrong end-use array can leave QBLK exactly right: compare the arrays benchmarking does not touch (`enduseconsump`, `finalendusecon`). And a dump taken at the top of a year's final iteration already holds that year's first-iteration results, so a run restarted from it iterates that year three times: the file start is the more faithful one.
+
+The oracle also dumps the state around the first call of `COMServiceDemand` (`fsd_in`, `fsd_out`). To add a dump point to a small run, set `NEMS_ORACLE_YEARS=30` before `gen_oracle` and `build.sh`.
+
 ## Good first issues
 
 The file readers. Each one reads one EIA input file into arrays the oracle already dumps, so the test is just "same arrays". Small, self-contained, and a good way to learn the codebase.
