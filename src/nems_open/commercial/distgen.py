@@ -83,14 +83,6 @@ def learn_cost(max_cost, beta, c0, cum_ship):
     return min(max_cost, fexp(f32(flog(c0) - f32(beta * flog(cum_ship)))))
 
 
-def xnpv(cash, disc):
-    """XNPV: net present value of a 30-year cash flow (entries 1..30), discounted back to year 1."""
-    npv = f32(0.0)
-    for i in range(30, 1, -1):
-        npv = f32(f32(npv + cash[i]) / f32(f32(1.0) + disc))
-    return f32(npv + cash[1])
-
-
 def _ones_div():
     """Credit multipliers start at 1 for the nine divisions (EIA sets them in the first call)."""
     a = np.zeros((12, MNUMYR + 1), dtype=f32)
@@ -211,18 +203,56 @@ def _historical_cogen(t: DgTables, st: DgState, cogen_el: np.ndarray, y: int) ->
                         * f32(3412.0)))
 
 
-def _cash_flow(p: dict) -> np.float32:
-    """30-year cash flow of one system and its internal rate of return. Returns xIRR."""
-    xcalceqcost, xcalckw = p["xcalceqcost"], p["xcalckw"]
+def _vlog(x):
+    """flog on an array: log in double, rounded to float32 (as Fortran's single-precision LOG here)."""
+    return np.log(np.asarray(x, dtype=np.float64)).astype(f32)
+
+
+def _vexp(x):
+    return np.exp(np.asarray(x, dtype=np.float64)).astype(f32)
+
+
+def _pymin(*xs):
+    """Python's min, elementwise: keep the first value unless a later one is strictly smaller."""
+    out = xs[0]
+    for x in xs[1:]:
+        out = np.where(x < out, x, out)
+    return out
+
+
+def _pymax(*xs):
+    out = xs[0]
+    for x in xs[1:]:
+        out = np.where(x > out, x, out)
+    return out
+
+
+def _fix(x):
+    """f32(float(ifix(x))): truncate toward zero."""
+    return np.trunc(x).astype(f32)
+
+
+def xnpv(cash, disc):
+    """XNPV: net present value of a 30-year cash flow (entries 1..30), discounted back to year 1.
+    Works on arrays of cash flows (one per niche) and one discount rate each."""
+    npv = np.zeros_like(cash[1])
+    d1 = f32(1.0) + disc
+    for i in range(30, 1, -1):
+        npv = (npv + cash[i]) / d1
+    return npv + cash[1]
+
+
+def _cash_flow(p: dict, ceq, kw, fuel_cost, vs_base, vs_adj, vs_norps, comtx):
+    """30-year cash flow of one system in every niche and its internal rate of return.
+    Scalars in `p` are the technology's; the arrays are per niche. Returns xIRR per niche."""
     xdownpaypct, xintrate, xterm, xinflation = p["xdownpaypct"], p["xintrate"], p["xterm"], p["xinflation"]
     xtaxrate = p["xtaxrate"]
-    xmaintcostbase = f32(p["xmaintcst"] * xcalckw)
+    maint_base = p["xmaintcst"] * kw
     xtaxcreditpct = p["xtxcrpct"]
     xtaxcreditmax = p["xtxcrmaxpersys"]
     xlife, xdegradation, xtaxlife = p["xeqlife"], p["xdegrad"], p["xtxlife"]
-    xdownpay = f32(xdownpaypct * xcalceqcost)
-    xpayment = f32(f32(xintrate / f32(f32(1.0) - fpow(f32(f32(1.0) + xintrate), f32(f32(-1.0) * xterm))))
-                   * f32(xcalceqcost - xdownpay))
+    xdownpay = xdownpaypct * ceq
+    xpayment = f32(xintrate / f32(f32(1.0) - fpow(f32(f32(1.0) + xintrate), f32(f32(-1.0) * xterm)))) * (ceq - xdownpay)
 
     # Tax credit phase-down after the Inflation Reduction Act's appropriation year.
     upira = p["upira_appyr"]
@@ -236,102 +266,113 @@ def _cash_flow(p: dict) -> np.float32:
     elif cal >= upira + 3:
         xtaxcreditpct = f32(0.0)
 
-    xtottaxcredit = f32(xcalceqcost * xtaxcreditpct)
+    tot_credit = ceq * xtaxcreditpct
     if xtaxcreditmax > 0.0:
-        xtottaxcredit = min(xtottaxcredit, xtaxcreditmax)
-    xtottaxcredit = f32(xtottaxcredit + f32(xcalceqcost * p["comtxcrpct_div"]))
-    basis = f32(xcalceqcost - f32(xtottaxcredit * f32(0.5)))
+        tot_credit = _pymin(tot_credit, xtaxcreditmax)
+    tot_credit = tot_credit + ceq * comtx
+    basis = ceq - tot_credit * f32(0.5)
     interval_to_use = int(p["iintervalyrs"])
 
-    n = 31
-    xoutlay = [f32(0.0)] * n
-    xvalesave = [f32(0.0)] * n
-    xprin = [f32(0.0)] * n
-    xdepr = [f32(0.0)] * n
-    xmaintcost = [f32(0.0)] * n
-    xintamt = [f32(0.0)] * n
-    xfuelcost = [f32(0.0)] * n
-    xtaxcredit = [f32(0.0)] * n
-    xloanbal = [f32(0.0)] * n
-    net = [f32(0.0)] * n
-    xoutlay[1] = f32(xdownpaypct * xcalceqcost)
-    xloanbal[1] = f32(xcalceqcost * f32(f32(1.0) - xdownpaypct))
-    net[1] = f32(-xoutlay[1])
-    carry = 1
-    claimed = f32(0.0)
+    zero = np.zeros_like(ceq)
+    xoutlay, xvalesave, xdepr, xmaintcost, xintamt, xfuelcost, xtaxcredit, net = ([zero] * 31 for _ in range(8))
+    xoutlay = list(xoutlay); xvalesave = list(xvalesave); xdepr = list(xdepr); xmaintcost = list(xmaintcost)
+    xintamt = list(xintamt); xfuelcost = list(xfuelcost); xtaxcredit = list(xtaxcredit); net = list(net)
+    xoutlay[1] = xdownpaypct * ceq
+    loanbal = ceq * (f32(1.0) - xdownpaypct)
+    net[1] = -xoutlay[1]
+    carry = np.ones(ceq.shape, dtype=bool)
+    claimed = zero
     infl1 = f32(f32(1.0) + xinflation)
     deg1 = f32(f32(1.0) - xdegradation)
     start, phase_out = p["irpsstartyear"], p["irpsphaseoutyear"]
     rps_tech = p["nt"] == 1 or p["nt"] == 11 or p["ifueltype"] == 2
     for iyr in range(2, 31):
-        if carry == 1 and iyr >= 3:
-            xtaxcredit[iyr] = min(f32(xtottaxcredit - claimed), f32(25000.0))
-            xtaxcredit[iyr] = max(xtaxcredit[iyr], f32(0.0))
-            claimed = f32(claimed + xtaxcredit[iyr])
-            carry = 0
-            if xtottaxcredit > claimed:
-                carry = 1
-        if f32(iyr) <= f32(xterm + f32(1.0)):
+        if iyr >= 3:
+            credit = _pymax(_pymin(tot_credit - claimed, f32(25000.0)), f32(0.0))
+            xtaxcredit[iyr] = np.where(carry, credit, f32(0.0))
+            claimed = np.where(carry, claimed + credit, claimed)
+            carry = carry & (tot_credit > claimed)
+        in_term = f32(iyr) <= f32(xterm + f32(1.0))
+        if in_term:
             xoutlay[iyr] = xpayment
-        xintamt[iyr] = f32(xloanbal[iyr - 1] * xintrate)
-        if f32(iyr) <= f32(xterm + f32(1.0)):
-            xprin[iyr] = f32(xpayment - xintamt[iyr])
-        xloanbal[iyr] = f32(xloanbal[iyr - 1] - xprin[iyr])
+        xintamt[iyr] = loanbal * xintrate
+        prin = xpayment - xintamt[iyr] if in_term else zero
+        loanbal = loanbal - prin
         if f32(iyr) <= f32(xtaxlife + f32(1.0)):
-            xdepr[iyr] = f32(f32(f32(basis * p["xdep"]) / f32(100.0)) / xtaxlife)
-            straight = f32(basis / f32(f32(xtaxlife - f32(iyr)) + f32(2.0)))
-            if xdepr[iyr] <= straight:
-                xdepr[iyr] = straight
-            basis = f32(basis - xdepr[iyr])
+            depr = ((basis * p["xdep"]) / f32(100.0)) / xtaxlife
+            straight = basis / f32(f32(xtaxlife - f32(iyr)) + f32(2.0))
+            xdepr[iyr] = np.where(depr <= straight, straight, depr)
+            basis = basis - xdepr[iyr]
         life_ok = f32(iyr) <= f32(xlife + f32(1.0))
+        grow, decay = ipow(infl1, iyr - 2), ipow(deg1, iyr - 2)
         if life_ok:
-            xfuelcost[iyr] = f32(p["xbaseyrfuelcost"] * ipow(infl1, iyr - 2))
+            xfuelcost[iyr] = fuel_cost * grow
         if iyr > 2 and (iyr - 2) % interval_to_use == 0 and iyr != 29 and iyr != 30:
             if life_ok:
-                xmaintcost[iyr] = f32(f32(xmaintcostbase + f32(p["xintervalcst"] * xcalckw)) * ipow(infl1, iyr - 2))
+                xmaintcost[iyr] = (maint_base + p["xintervalcst"] * kw) * grow
             interval_to_use = 2 * interval_to_use + iyr
         elif life_ok:
-            xmaintcost[iyr] = f32(xmaintcostbase * ipow(infl1, iyr - 2))
+            xmaintcost[iyr] = maint_base * grow
         if life_ok:
-            xvalesave[iyr] = f32(f32(p["xvalesavebase"] * ipow(infl1, iyr - 2)) * ipow(deg1, iyr - 2))
+            vs = vs_base
             if rps_tech:
-                def at(v):
-                    return f32(f32(v * ipow(infl1, iyr - 2)) * ipow(deg1, iyr - 2))
                 if cal + iyr - 1 > phase_out:
-                    xvalesave[iyr] = at(p["xvalesavebasenorps"])
+                    vs = vs_norps
                 if cal >= start and iyr > p["inumyrsatrpsbaserate"]:
-                    xvalesave[iyr] = at(p["xvalesavebaseadjrps"])
+                    vs = vs_adj
                 if cal >= start and iyr > p["inumrpscredityrs"]:
-                    xvalesave[iyr] = at(p["xvalesavebasenorps"])
+                    vs = vs_norps
                 if cal < start:
-                    xvalesave[iyr] = at(p["xvalesavebasenorps"])
-        xtaxdeduct = f32(f32(xtaxrate * f32(f32(f32(xintamt[iyr - 1] + xmaintcost[iyr - 1]) + xdepr[iyr - 1])
-                                            + f32(xfuelcost[iyr - 1] - xvalesave[iyr - 1]))) + xtaxcredit[iyr])
-        net[iyr] = f32(f32(f32(f32(-xoutlay[iyr]) - xfuelcost[iyr]) - xmaintcost[iyr]) + xtaxdeduct)
-        net[iyr] = f32(net[iyr] + xvalesave[iyr])
+                    vs = vs_norps
+            xvalesave[iyr] = (vs * grow) * decay
+        xtaxdeduct = xtaxrate * (((xintamt[iyr - 1] + xmaintcost[iyr - 1]) + xdepr[iyr - 1])
+                                 + (xfuelcost[iyr - 1] - xvalesave[iyr - 1])) + xtaxcredit[iyr]
+        net[iyr] = (((-xoutlay[iyr]) - xfuelcost[iyr]) - xmaintcost[iyr]) + xtaxdeduct + xvalesave[iyr]
 
-    xirr = f32(0.0)
-    disc_l = f32(0.0001)
-    npv_l = xnpv(net, disc_l)
-    if npv_l <= 0:
+    # IRR by false position between 0.01% and 30%, per niche.
+    xirr = zero.copy()
+    npv_l = xnpv(net, f32(0.0001))
+    act = np.nonzero(npv_l > 0)[0]
+    if act.size == 0:
         return xirr
-    disc_u = f32(0.3)
-    npv_u = xnpv(net, disc_u)
+    cash = [None] + [c[act] for c in net[1:]]
+    npv_l = npv_l[act]
+    disc_l = np.full(act.size, f32(0.0001), dtype=f32)
+    disc_u = np.full(act.size, f32(0.3), dtype=f32)
+    npv_u = xnpv(cash, disc_u)
+    cur = np.zeros(act.size, dtype=f32)
     for _ in range(100):
-        xirr_prev = xirr
-        xirr = f32(disc_l - f32(f32(npv_l * f32(disc_u - disc_l)) / f32(npv_u - npv_l)))
-        npv_new = xnpv(net, xirr)
-        if abs(npv_new) < 1.0:
+        prev = cur
+        cur = disc_l - (npv_l * (disc_u - disc_l)) / (npv_u - npv_l)
+        npv_new = xnpv(cash, cur)
+        xirr[act] = cur
+        done = (np.abs(npv_new) < 1.0) | (np.abs(prev - cur) < f32(0.0005))
+        keep = np.nonzero(~done)[0]
+        if keep.size == 0:
             break
-        if abs(f32(xirr_prev - xirr)) < f32(0.0005):
-            break
-        if npv_new > 0.0:
-            npv_l = npv_new
-            disc_l = xirr
-        else:
-            npv_u = npv_new
-            disc_u = xirr
+        if keep.size < act.size:
+            act, cash = act[keep], [None] + [c[keep] for c in cash[1:]]
+            npv_l, npv_u, disc_l, disc_u = npv_l[keep], npv_u[keep], disc_l[keep], disc_u[keep]
+            cur, npv_new = cur[keep], npv_new[keep]
+        up = npv_new > 0.0
+        npv_l = np.where(up, npv_new, npv_l)
+        disc_l = np.where(up, cur, disc_l)
+        npv_u = np.where(up, npv_u, npv_new)
+        disc_u = np.where(up, disc_u, cur)
     return xirr
+
+
+def _value_of_savings(annual, excess, elec_avg, retail, sales):
+    """Value of a year's output: all of it at the retail rate if it is all used on site, else the excess is sold."""
+    return np.where(excess < 0.0, annual * retail, excess * sales + elec_avg * retail)
+
+
+def _seq_sum(start, terms, mask):
+    """start + terms[..., 0] + terms[..., 1] + ..., in float32 and in that order, skipping masked-out terms
+    (what the Fortran's running sums do). Sums over the last axis."""
+    t = np.where(mask, terms, f32(0.0)).astype(f32)
+    t = np.concatenate([np.broadcast_to(start, t.shape[:-1])[..., None].astype(f32), t], axis=-1)
+    return np.add.accumulate(t, axis=-1)[..., -1]
 
 
 def distgen(t: DgTables, st: DgState, shared: dict, cogen_el: np.ndarray, y: int) -> DgState:
@@ -341,7 +382,14 @@ def distgen(t: DgTables, st: DgState, shared: dict, cogen_el: np.ndarray, y: int
     PDSCM, PCLIN, PCLCM [div, y] (PELCMOUT [div, y, 2]), MC_JPGDP (dict by index, includes -2),
     EPRPSPR, EPRPSTGT [y], UPIRA_APPYR, SurvFloorTotal and CMNewFloorSpace [div, bld, y],
     COMEUI [div, bld, s, f], RPV_MW, UPV_MW, RFuelCell_MW, RWind_MW, RMicroTur_MW [y].
+
+    The Fortran loops over technology, vintage, division, building type, and then every niche
+    (building size, climate niche, rate level). Here each technology and vintage is one block:
+    every niche of every division and building type is computed at once as float32 arrays,
+    with the same operations in the same order, and the running sums are taken in the
+    Fortran's loop order, so the results are identical.
     """
+    assert y >= CM_FIRST_YR
     sh = shared
     calyear = y + BASEYR - 1
     _zero_year(st, y)
@@ -354,351 +402,333 @@ def distgen(t: DgTables, st: DgState, shared: dict, cogen_el: np.ndarray, y: int
     if y == CM_FIRST_YR:
         st.xpen[y - 1] = np.zeros_like(cur)
         prev = st.xpen[y - 1]
-    jp_ratio_num = sh["MC_JPGDP"][t.iGenCapCostYr - BASEYR + 1]
+    jp_num = sh["MC_JPGDP"][t.iGenCapCostYr - BASEYR + 1]
     jp_den = sh["MC_JPGDP"][-2]
     eprpspr, eprpstgt = sh["EPRPSPR"][y], sh["EPRPSTGT"][y]
     ceschp_const = f32(f32(53.06) / f32(0.82))
-    xsqftperkw = f32(0.0)
     xpct_wind = t.xpctWindSuitable
 
-    xcalckw = f32(0.0)
-    xannualkwh = f32(0.0)
-    xfuelinput = f32(0.0)
-    xwaterhtg = f32(0.0)
-    xspacehtg = f32(0.0)
-    xfuelprice = f32(0.0)
-    xcalceqcost = f32(0.0)
-    xsolarins = f32(0.0)
+    # The niche grid: [div, bld, size, niche, rate], 0-based, broadcast from each table's own axes.
+    D, B, NN = t.NUMDIV, t.NUMBLDG, int(t.NumPVNiche[1:t.NUMDIV + 1].max())
+    g = lambda a: a.astype(f32)
+    DNR = lambda a: g(a[1:D + 1, 1:NN + 1, 1:11])[:, None, None, :, :]
+    BDS = lambda a: g(a[1:B + 1, 1:D + 1, 1:7]).transpose(1, 0, 2)[:, :, :, None, None]
+    Dv = lambda a: g(a[1:D + 1])[:, None, None, None, None]
+    DBv = lambda a: g(a)[:, :, None, None, None]
+    rate_sc = DNR(t.xRateScalar)
+    sqft_share = DNR(t.xSqftShare)
+    cat_share = BDS(t.cbecsFlspcCatShare)
+    avg_sqft = BDS(t.cbecsAVGSQFT)
+    elec_avg = BDS(t.xelecavgkwh)
+    roof_ratio = g(t.xRoofAreatoSqftRatio[1:D + 1, 1:B + 1, 1:NN + 1, 1:11])[:, :, None, :, :]
+    pct_pv = g(t.xpctPVSuitable[1:7])[None, None, :, None, None]
+    niche_ok = (np.arange(1, NN + 1)[None, :] <= t.NumPVNiche[1:D + 1, None])[:, None, None, :, None]
+    valid = np.broadcast_to((cat_share != 0.0) & niche_ok, (D, B, 6, NN, 10))
+    shape = valid.shape
+    flr = g(sh["SurvFloorTotal"][1:D + 1, 1:B + 1, y] + sh["CMNewFloorSpace"][1:D + 1, 1:B + 1, y])
+    flr_prev = g(sh["CMNewFloorSpace"][1:D + 1, 1:B + 1, y - 1] + sh["SurvFloorTotal"][1:D + 1, 1:B + 1, y - 1])
+    pelme, pelcm = Dv(sh["PELME"][:, y]), Dv(sh["PELCM"][:, y])
+    pelcmout = Dv(sh["PELCMOUT"][:, y, 2])
+    sales_norps = ((pelme * C_003412) * jp_num) / jp_den
+    retail_norps_cm = (((pelcm * rate_sc) * C_003412) * jp_num) / jp_den
+    coal = Dv(sh["PCLCM"][:, y]).copy()
+    coal[0] = sh["PCLIN"][1, y]
 
-    for nt in range(1, t.NUMTECHS + 1):
-        for nv in range(1, t.NVINT + 1):
-            if t.IFIRSTYR[nt, nv] > calyear or t.ILASTYR[nt, nv] < calyear:
-                continue
-            # Learning lowers the capital cost of technologies with cumulative shipments.
-            name = t.AEQUIPNAME[nt, nv]
-            xcapcost = t.XCAPCOST[nt, nv]
-            if name == "Fuel_Cell":
-                cumship = f32(st.CFuelCell_MW[y - 1] + sh["RFuelCell_MW"][y - 1])
-                xadjcost = learn_cost(xcapcost, t.XBeta[nt], t.Xc0[nt], cumship)
-            elif name == "Solar_PV":
-                if t.GlobalLearn:
-                    cumship = f32(f32(st.CPV_MW[y - 1] + sh["RPV_MW"][y - 1]) + sh["UPV_MW"][y - 1])
-                else:
-                    cumship = f32(st.CPV_MW[y - 1] + sh["RPV_MW"][y - 1])
-                xadjcost = learn_cost(xcapcost, t.XBeta[nt], t.Xc0[nt], cumship)
-            elif name == "Wind":
-                cumship = f32(st.CWind_MW[y - 1] + sh["RWind_MW"][y - 1])
-                xadjcost = learn_cost(xcapcost, t.XBeta[nt], t.Xc0[nt], cumship)
-            elif name == "Micro_Tur":
-                cumship = f32(st.CMicroTur_MW[y - 1] + sh["RMicroTur_MW"][y - 1])
-                xadjcost = learn_cost(xcapcost, t.XBeta[nt], t.Xc0[nt], cumship)
-            else:
-                xadjcost = xcapcost
-            xadjcost2 = xadjcost
-            fuel_type = int(t.IFUELTYPE[nt])
-            xrps = t.xRPS[nt, y]
-            eleff, loss, kw_menu = t.XELEFF[nt, nv], t.XLOSSFAC[nt, nv], t.XKW[nt, nv]
-
-            for idiv in range(1, t.NUMDIV + 1):
-                # xSalestoGridPRnoRPS = PELME*.003412*J1/J2, left to right
-                sales_norps_base = f32(f32(f32(sh["PELME"][idiv, y] * C_003412) * jp_ratio_num) / jp_den)
-                for ibld in range(1, t.NUMBLDG + 1):
-                    xunits = xtrills = xcapacity = xtrillsownuse = xfuelusage = xhwbtu = xshbtu = xinvest = f32(0.0)
-                    floor = f32(sh["SurvFloorTotal"][idiv, ibld, y] + sh["CMNewFloorSpace"][idiv, ibld, y])
-                    for isize in range(1, 7):
-                        for iniche in range(1, int(t.NumPVNiche[idiv]) + 1):
-                            for irate in range(1, 11):
-                                rate_sc = t.xRateScalar[idiv, iniche, irate]
-                                retail_norps = f32(f32(f32(f32(sh["PELCM"][idiv, y] * rate_sc) * C_003412)
-                                                       * jp_ratio_num) / jp_den)
-                                cat_share = t.cbecsFlspcCatShare[ibld, idiv, isize]
-                                if cat_share == 0.0:
-                                    continue
-                                avg_sqft = t.cbecsAVGSQFT[ibld, idiv, isize]
-                                elec_avg = t.xelecavgkwh[ibld, idiv, isize]
-                                sqft_share = t.xSqftShare[idiv, iniche, irate]
-                                sales_norps = sales_norps_base
-                                if fuel_type == 0 and nt != 11:
-                                    # ---- Solar PV ----
-                                    pelcmout = sh["PELCMOUT"][idiv, y, 2]
-                                    retail = f32(f32(f32(f32(f32(pelcmout * rate_sc) * C_003412)
-                                                         + f32(f32(C_001 * eprpspr) * xrps)) * jp_ratio_num) / jp_den)
-                                    sales = f32(f32(f32(f32(sh["PELME"][idiv, y] * C_003412)
-                                                        + f32(f32(C_001 * eprpspr) * xrps)) * jp_ratio_num) / jp_den)
-                                    retail_norps = f32(f32(f32(f32(pelcmout * rate_sc) * C_003412) * jp_ratio_num) / jp_den)
-                                    sales_adj = f32(f32(f32(f32(sh["PELME"][idiv, y] * C_003412)
-                                                            + f32(f32(C_001 * eprpspr) * f32(1.0))) * jp_ratio_num) / jp_den)
-                                    retail_adj = f32(f32(f32(f32(f32(pelcmout * rate_sc) * C_003412)
-                                                             + f32(f32(C_001 * eprpspr) * f32(1.0))) * jp_ratio_num) / jp_den)
-                                    if calyear < t.iRPSStartYear[nt]:
-                                        retail, sales = retail_norps, sales_norps
-                                    st.SolarPVAvailRoofArea[y, idiv, ibld] = f32(
-                                        st.SolarPVAvailRoofArea[y, idiv, ibld]
-                                        + f32(f32(f32(f32(floor * cat_share) * sqft_share)
-                                                  * t.xRoofAreatoSqftRatio[idiv, ibld, iniche, irate])
-                                              * t.xpctPVSuitable[isize]))
-                                    xsqftperkw = f32(f32(f32(77.0) * f32(0.14)) / eleff)
-                                    if calyear > 2000:
-                                        ins = t.xSolarInsolation[idiv, iniche, irate]
-                                        xsolarins = f32(f32(f32(-1.0686) + f32(f32(1.4421) * ins))
-                                                        - f32(f32(0.0645) * ipow(ins, 2)))
-                                        roof_ratio = t.xRoofAreatoSqftRatio[idiv, ibld, iniche, irate]
-                                        size_roof = f32(f32(f32(f32(avg_sqft * roof_ratio) * t.xpctPVSuitable[isize])
-                                                            / xsqftperkw) / f32(1.75))
-                                        size_kwh = f32(elec_avg / f32(f32(f32(f32(f32(f32(eleff * xsolarins)
-                                                                                      * f32(365.25)) / f32(10.8))
-                                                                              * xsqftperkw) * loss)))
-                                        size_max, size_min = t.xkwmax[nt], t.xkwMin[nt]
-                                        xcalckw = f32(float(ifix(max(min(size_roof, size_kwh, size_max), size_min))))
-                                        xadjcost2 = fexp(f32(flog(xadjcost) - f32(t.xScaleFac[nt] * flog(f32(xcalckw / kw_menu)))))
-                                    else:
-                                        xcalckw = kw_menu
-                                        xadjcost2 = xadjcost
-                                    xannualkwh = f32(f32(f32(f32(f32(f32(eleff * xsolarins) * f32(365.25)) / f32(10.8))
-                                                             * xsqftperkw) * xcalckw) * loss)
-                                    xexcess = f32(xannualkwh - elec_avg)
-                                    xvalesave_base, xvalesave_adj, xvalesave_norps = _value_of_savings(
-                                        xannualkwh, xexcess, elec_avg, retail, sales, retail_adj, sales_adj,
-                                        retail_norps, sales_norps)
-                                    xbaseyrfuelcost = f32(0.0)
-                                    xfuelinput = xwaterhtg = xspacehtg = xfuelprice = f32(0.0)
-                                elif fuel_type == 0:
-                                    # ---- Wind ----
-                                    retail = f32(f32(f32(f32(f32(sh["PELCM"][idiv, y] * rate_sc) * C_003412)
-                                                         + f32(f32(C_001 * eprpspr) * xrps)) * jp_ratio_num) / jp_den)
-                                    sales = f32(f32(f32(f32(sh["PELME"][idiv, y] * C_003412)
-                                                        + f32(f32(C_001 * eprpspr) * xrps)) * jp_ratio_num) / jp_den)
-                                    sales_adj = f32(f32(f32(f32(sh["PELME"][idiv, y] * C_003412)
-                                                            + f32(f32(C_001 * eprpspr) * f32(1.0))) * jp_ratio_num) / jp_den)
-                                    retail_adj = f32(f32(f32(f32(f32(sh["PELCMOUT"][idiv, y, 2] * rate_sc) * C_003412)
-                                                             + f32(f32(C_001 * eprpspr) * f32(1.0))) * jp_ratio_num) / jp_den)
-                                    if calyear < t.iRPSStartYear[nt]:
-                                        retail, sales = retail_norps, sales_norps
-                                    st.WindAvailFS[y, idiv, ibld] = f32(
-                                        st.WindAvailFS[y, idiv, ibld] + f32(f32(f32(floor * cat_share) * sqft_share) * xpct_wind))
-                                    mps = t.xWindSpeed[idiv, iniche, irate]
-                                    poly = f32(f32(f32(f32(0.0645) - f32(f32(0.0670) * mps)) + f32(f32(0.0210) * ipow(mps, 2)))
-                                               - f32(f32(0.0011) * ipow(mps, 3)))
-                                    eff_ratio = f32(eleff / t.XELEFF[nt, 1])
-                                    if calyear > 2000:
-                                        size_kwh = f32(elec_avg / f32(f32(f32(eff_ratio * poly) * f32(8760.0)) * loss))
-                                        size_max, size_min = t.xkwmax[nt], t.xkwMin[nt]
-                                        xcalckw = f32(float(ifix(max(min(size_kwh, size_max), size_min))))
-                                    else:
-                                        xcalckw = kw_menu
-                                    xannualkwh = f32(f32(f32(f32(eff_ratio * poly) * xcalckw) * f32(8760.0)) * loss)
-                                    xexcess = f32(xannualkwh - elec_avg)
-                                    xvalesave_base, xvalesave_adj, xvalesave_norps = _value_of_savings(
-                                        xannualkwh, xexcess, elec_avg, retail, sales, retail_adj, sales_adj,
-                                        retail_norps, sales_norps)
-                                    xbaseyrfuelcost = f32(0.0)
-                                    xfuelinput = xwaterhtg = xspacehtg = xfuelprice = f32(0.0)
-                                    xadjcost2 = xadjcost
-                                else:
-                                    # ---- Fuel-fired: fuel cells, engines, turbines, coal, oil, MSW, hydro, wood ----
-                                    if fuel_type == 2:
-                                        xfuelprice = f32(f32(f32(f32(sh["PNGCM"][idiv, y] * jp_ratio_num) / jp_den)
-                                                             * t.xNGRateScalar[idiv, iniche, irate]))
-                                    if fuel_type == 3:
-                                        xfuelprice = f32(f32(sh["PDSCM"][idiv, y] * jp_ratio_num) / jp_den)
-                                    if fuel_type == 6:
-                                        coal = sh["PCLIN"][idiv, y] if idiv == 1 else sh["PCLCM"][idiv, y]
-                                        xfuelprice = f32(f32(coal * jp_ratio_num) / jp_den)
-                                    coal = sh["PCLIN"][idiv, y] if idiv == 1 else sh["PCLCM"][idiv, y]
-                                    if fuel_type == 10:
-                                        xfuelprice = f32(f32(coal * jp_ratio_num) / jp_den)
-                                    if fuel_type == 11:
-                                        xfuelprice = f32(0.0)
-                                    if fuel_type == 9:
-                                        xfuelprice = f32(f32(coal * jp_ratio_num) / jp_den)
-                                    xwaterhtg = f32(f32(avg_sqft / f32(1000.0)) * sh["COMEUI"][idiv, ibld, 3, 2])
-                                    xspacehtg = f32(f32(avg_sqft / f32(1000.0)) * sh["COMEUI"][idiv, ibld, 1, 2])
-                                    if calyear > CM_COG_HST_YR + (BASEYR - 1):
-                                        size_heat = f32(
-                                            f32(f32(f32(f32(eleff / C_003412) * f32(xwaterhtg + xspacehtg)) * f32(1.00))
-                                                / t.XWHRECOVERY[nt, nv])
-                                            / f32(f32(t.XOPERHOURS[nt] * t.XAVAIL[nt, nv])
-                                                  * f32(f32(1.0) - f32(eleff * loss))))
-                                        size_kwh = f32(f32(elec_avg * f32(0.6)) / f32(f32(t.XOPERHOURS[nt] * t.XAVAIL[nt, nv]) * loss))
-                                        size_max, size_min = t.xkwmax[nt], t.xkwMin[nt]
-                                        xcalckw = f32(float(ifix(min(max(size_heat, size_kwh, size_min), size_max))))
-                                        xadjcost2 = fexp(f32(flog(xadjcost) - f32(t.xScaleFac[nt] * flog(f32(xcalckw / kw_menu)))))
-                                    else:
-                                        xcalckw = kw_menu
-                                        xadjcost2 = xadjcost
-                                    xannualkwh = f32(f32(f32(t.XOPERHOURS[nt] * t.XAVAIL[nt, nv]) * xcalckw) * loss)
-                                    xfuelinput = f32(f32(f32(f32(C_003412 * xcalckw) * t.XOPERHOURS[nt]) * t.XAVAIL[nt, nv]) / eleff)
-                                    xwasteheat = f32(f32(xfuelinput - f32(C_003412 * xannualkwh)) * t.XWHRECOVERY[nt, nv])
-                                    if xwasteheat > xwaterhtg:
-                                        xtemp = f32(xwaterhtg + xspacehtg)
-                                        if xwasteheat < xtemp:
-                                            xspacehtg = f32(xwasteheat - xwaterhtg)
-                                    else:
-                                        xwaterhtg = xwasteheat
-                                        xspacehtg = f32(0.0)
-                                    xbaseyrfuelcost = f32(f32(f32(xfuelinput - xwaterhtg) - xspacehtg) * xfuelprice)
-                                    xexcess = f32(xannualkwh - elec_avg)
-                                    if xexcess < 0.0:
-                                        xvalesave_base = f32(xannualkwh * retail_norps)
-                                    else:
-                                        xvalesave_base = f32(f32(xexcess * sales_norps) + f32(elec_avg * retail_norps))
-                                    xvalesave_norps = xvalesave_base
-                                    xvalesave_adj = f32(0.0)
-                                    if fuel_type == 2:
-                                        xvalesave_norps = xvalesave_base
-                                        if xexcess < 0.0:
-                                            own = f32(xannualkwh)
-                                        else:
-                                            own = f32(xannualkwh - xexcess)
-                                        carbon = f32(xannualkwh * f32(f32(1.0) - f32(ceschp_const * f32(xfuelinput / xannualkwh))))
-                                        credit = f32(carbon - f32(eprpstgt * own))
-                                        xvalesave_base = f32(xvalesave_norps + f32(f32(f32(C_001 * eprpspr) * xrps) * credit))
-                                        xvalesave_adj = f32(xvalesave_norps + f32(f32(f32(C_001 * eprpspr) * f32(1.0)) * credit))
-                                        if xvalesave_base < xvalesave_norps:
-                                            xvalesave_base = xvalesave_norps
-                                        if xvalesave_adj < xvalesave_norps:
-                                            xvalesave_base = xvalesave_norps
-
-                                # ---- Cash flow, IRR and penetration (label 200) ----
-                                xtemp = f32(0.0)
-                                skip = (y < CM_COG_HST_YR and nt not in (1, 2, 8, 11)) or (
-                                    y >= CM_COG_HST_YR and t.ISKIP[nt] == 0)
-                                if not skip:
-                                    xcalceqcost = f32(f32(xadjcost2 + t.XINSTCOST[nt, nv]) * xcalckw)
-                                    xirr = _cash_flow({
-                                        "xcalceqcost": xcalceqcost, "xcalckw": xcalckw,
-                                        "xdownpaypct": t.XDOWNPAYPCT, "xintrate": t.XINTRATE, "xterm": t.XTERM,
-                                        "xinflation": t.XINFLATION, "xtaxrate": t.XTAXRATE,
-                                        "xmaintcst": t.XMAINTCST[nt, nv], "xtxcrpct": t.XTXCRPCT[nt, nv],
-                                        "xtxcrmaxpersys": t.xTXCrMaxPerSys[nt, nv], "xeqlife": t.XEQLIFE[nt, nv],
-                                        "xdegrad": t.XDEGRAD[nt, nv], "xtxlife": t.xtxlife[nt, nv],
-                                        "xdep": t.xdep[nt, nv], "upira_appyr": int(sh["UPIRA_APPYR"]), "curiyr": y,
-                                        "comtxcrpct_div": t.ComTxCrPct_Div[nv, idiv, nt],
-                                        "iintervalyrs": t.iIntervalYrs[nt, nv], "xintervalcst": t.xIntervalCst[nt, nv],
-                                        "nt": nt, "ifueltype": fuel_type,
-                                        "xbaseyrfuelcost": xbaseyrfuelcost, "xvalesavebase": xvalesave_base,
-                                        "xvalesavebaseadjrps": xvalesave_adj, "xvalesavebasenorps": xvalesave_norps,
-                                        "irpsstartyear": int(t.iRPSStartYear[nt]),
-                                        "irpsphaseoutyear": int(t.iRPSPhaseOutYear[nt]), "calyear": calyear,
-                                        "inumyrsatrpsbaserate": int(t.iNumYrsatRPSBaseRate[nt, y]),
-                                        "inumrpscredityrs": int(t.iNumRPSCreditYrs[nt, y])})
-                                    if xirr > 0.0:
-                                        payback = min(f32(29.0), f32(flog(f32(2.0)) / flog(f32(f32(1.0) + xirr))))
-                                    else:
-                                        payback = f32(29.0)
-                                    xmaxpen = min(f32(0.9), f32(t.XPENPARM[nt] / payback))
-                                    if payback > 10.0:
-                                        xmaxpen = f32(0.01)
-                                    if payback > 10.0 and nt == 11:
-                                        xmaxpen = f32(0.0)
-                                    start_yr = 10 if nt in (1, 2, 11) else 9 if nt == 8 else -20
-                                    xb, xa, xc = t.XB[nt, idiv], t.XA[nt, idiv], t.XC[nt, idiv]
-                                    expo = fexp(f32(f32(-xb) * f32(y - start_yr)))
-                                    pen = f32(f32(xmaxpen * f32(xc * f32(f32(1.0) - expo))) / f32(f32(1.0) + f32(xa * expo)))
-                                    cur[idiv, ibld, nt, iniche, irate, isize] = pen
-                                    exog = t.XEXOGPEN
-                                    if y >= KSTEOYR:
-                                        per = f32(avg_sqft / ONE_E6)
-                                        flr_prev = f32(sh["CMNewFloorSpace"][idiv, ibld, y - 1] + sh["SurvFloorTotal"][idiv, ibld, y - 1])
-                                        xtemp = f32(f32(f32(pen * f32(sh["CMNewFloorSpace"][idiv, ibld, y] + sh["SurvFloorTotal"][idiv, ibld, y])) / per)
-                                                    - f32(f32(prev[idiv, ibld, nt, iniche, irate, isize] * flr_prev) / per))
-                                        xtemp = f32(xtemp + f32(f32(t.XBLDGSHARE[nt, ibld] * f32(exog[y, idiv, nt] - exog[y - 1, idiv, nt])) / xcalckw))
-                                        floor_lim = f32(st.UNITS[y - 1, idiv, ibld, nt] * f32(f32(-1.0) / t.XEQLIFE[nt, nv]))
-                                        if xtemp < floor_lim:
-                                            xtemp = floor_lim
-                                    else:
-                                        xtemp = f32(f32(t.XBLDGSHARE[nt, ibld] * f32(exog[y, idiv, nt] - exog[y - 1, idiv, nt])) / xcalckw)
-                                    if y <= SOLAR_BM_YR and nt == 1:
-                                        xtemp = f32(f32(t.XBLDGSHARE[nt, ibld] * f32(exog[y, idiv, nt] - exog[y - 1, idiv, nt])) / xcalckw)
-                                    xtemp = f32(f32(xtemp * cat_share) * sqft_share)
-                                    xtemp = f32(f32(ifix(f32(f32(f32(100.0) * xtemp) + f32(0.5)))) / f32(100.0))
-                                # label 350
-                                if y <= CM_COG_HST_YR and nt not in (1, 2, 8, 11):
-                                    xtemp = f32(f32(f32(st.UNITS[y, idiv, ibld, nt] - st.UNITS[y - 1, idiv, ibld, nt])
-                                                    * cat_share) * sqft_share)
-                                if f32(xtemp * xcalckw) < 0.0 and nt == 1:
-                                    pass
-                                else:
-                                    xunits = f32(xunits + xtemp)
-                                    xcapacity = f32(xcapacity + f32(xtemp * xcalckw))
-                                    xtrills = f32(xtrills + f32(f32(f32(xtemp * xannualkwh) * f32(3412.0)) / ONE_E12))
-                                    if xannualkwh > elec_avg:
-                                        xtrillsownuse = f32(xtrillsownuse + f32(f32(f32(xtemp * elec_avg) * f32(3412.0)) / ONE_E12))
-                                    else:
-                                        xtrillsownuse = f32(xtrillsownuse + f32(f32(f32(xtemp * xannualkwh) * f32(3412.0)) / ONE_E12))
-                                    xfuelusage = f32(xfuelusage + f32(f32(xtemp * xfuelinput) / ONE_E6))
-                                    xhwbtu = f32(xhwbtu + f32(f32(xtemp * xwaterhtg) / ONE_E6))
-                                    xshbtu = f32(xshbtu + f32(f32(xtemp * xspacehtg) / ONE_E6))
-                                    xinvest = f32(xinvest + f32(f32(xtemp * xcalceqcost) / ONE_E6))
-                                if nt == 11:
-                                    st.WindTechPotentialMW[y, idiv] = f32(
-                                        st.WindTechPotentialMW[y, idiv]
-                                        + f32(f32(f32(f32(f32(f32(floor * ONE_E6) * cat_share) / avg_sqft) * sqft_share)
-                                                  * xpct_wind) * f32(xcalckw / f32(1000.0))))
-                    # ---- end of size, niche, rate loops: roll up to the building type ----
-                    st.UNITS[y, idiv, ibld, nt] = f32(st.UNITS[y - 1, idiv, ibld, nt] + xunits)
-                    st.TRILLS[y, idiv, ibld, nt] = f32(st.TRILLS[y - 1, idiv, ibld, nt] + xtrills)
-                    st.capacity[y, idiv, ibld, nt] = f32(st.capacity[y - 1, idiv, ibld, nt] + xcapacity)
-                    st.TRILLSOWNUSE[y, idiv, ibld, nt] = f32(st.TRILLSOWNUSE[y - 1, idiv, ibld, nt] + xtrillsownuse)
-                    st.fuelusage[y, idiv, ibld, nt] = f32(st.fuelusage[y - 1, idiv, ibld, nt] + xfuelusage)
-                    st.HWBTU[y, idiv, ibld, nt] = f32(st.HWBTU[y - 1, idiv, ibld, nt] + xhwbtu)
-                    st.SHBTU[y, idiv, ibld, nt] = f32(st.SHBTU[y - 1, idiv, ibld, nt] + xshbtu)
-                    st.INVEST[y, idiv, ibld, nt] = xinvest
-                    for isize in range(1, 7):
-                        st.xCumPenSqft[y, idiv, ibld, nt] = f32(
-                            st.xCumPenSqft[y, idiv, ibld, nt]
-                            + f32(f32(st.UNITS[y, idiv, ibld, nt] * t.cbecsFlspcCatShare[ibld, idiv, isize])
-                                  * f32(t.cbecsAVGSQFT[ibld, idiv, isize] / ONE_E6)))
-                    if nt == 1:
-                        st.SolarPVInstalledMW[y, idiv] = f32(st.SolarPVInstalledMW[y, idiv] + f32(st.capacity[y, idiv, ibld, nt] / f32(1000.0)))
-                        st.SolarPVUsedRoofArea[y, idiv, ibld] = f32(
-                            st.SolarPVUsedRoofArea[y, idiv, ibld]
-                            + f32(f32(f32(st.capacity[y, idiv, ibld, nt] * xsqftperkw) / ONE_E6) / f32(1.75)))
-                        st.SolarPVTechPotentialMW[y, idiv] = f32(
-                            st.SolarPVTechPotentialMW[y, idiv]
-                            + f32(f32(f32(st.SolarPVAvailRoofArea[y, idiv, ibld] * ONE_E6) / f32(xsqftperkw * f32(1000.0))) / f32(1.75)))
-                    if nt == 11:
-                        st.WindInstalledMW[y, idiv] = f32(st.WindInstalledMW[y, idiv] + f32(st.capacity[y, idiv, ibld, nt] / f32(1000.0)))
-                        st.WindBldgCount[y, idiv, ibld] = f32(st.WindBldgCount[y, idiv, ibld] + st.UNITS[y - 1, idiv, ibld, nt])
-                    st.com111drensub[y, idiv, nt] = f32(
-                        st.com111drensub[y, idiv, nt] + f32(st.INVEST[y, idiv, ibld, nt] * t.ComTxCrPct_Div[nv, idiv, nt]))
-                    if y == CM_FIRST_YR:
-                        st.INVEST[y, idiv, ibld, nt] = f32(0.0)
-                # ---- RPS credit multipliers for PV and wind ----
-                if nt in (1, 11):
-                    added = st.xPVGenAdded if nt == 1 else st.xWindGenAdded
-                    out_credit = st.CGCPVCOM if nt == 1 else st.CGCWNCOM
-                    xtr = f32(0.0)
-                    for ibld in range(1, t.NUMBLDG + 1):
-                        xtr = f32(xtr + f32(st.TRILLS[y, idiv, ibld, nt] - st.TRILLS[y - 1, idiv, ibld, nt]))
-                    added[idiv, y] = xtr
-                    comp_credit = comp_gen = f32(0.0)
-                    credit = f32(1.0)
-                    for iyr in range(CM_FIRST_YR, y + 1):
-                        icalyr = iyr + BASEYR - 1
-                        bonus = f32(0.0)
-                        comp_gen = f32(comp_gen + added[idiv, iyr])
-                        if calyear < t.iRPSStartYear[nt] and icalyr >= t.iRPSGrandFatherYear[nt]:
-                            bonus = f32(t.xRPS[nt, y] - f32(1.0))
-                        elif y < iyr + t.iNumYrsatRPSBaseRate[nt, iyr] and calyear < t.iRPSPhaseOutYear[nt]:
-                            bonus = f32(t.xRPS[nt, iyr] - f32(1.0))
-                        elif y < iyr + t.iNumRPSCreditYrs[nt, iyr] and calyear < t.iRPSPhaseOutYear[nt]:
-                            bonus = f32(t.xRPS[nt, y] - f32(1.0))
-                        comp_credit = f32(comp_credit + f32(added[idiv, iyr] * f32(credit + bonus)))
-                    if comp_gen > 0.0:
-                        out_credit[idiv, y] = f32(comp_credit / comp_gen)
+    grid = dict(valid=valid, shape=shape, rate_sc=rate_sc, sqft_share=sqft_share, cat_share=cat_share,
+                avg_sqft=avg_sqft, elec_avg=elec_avg, roof_ratio=roof_ratio, pct_pv=pct_pv, flr=flr,
+                flr_prev=flr_prev, pelme=pelme, pelcm=pelcm, pelcmout=pelcmout, sales_norps=sales_norps,
+                retail_norps_cm=retail_norps_cm, coal=coal, jp_num=jp_num, jp_den=jp_den, eprpspr=eprpspr,
+                eprpstgt=eprpstgt, ceschp_const=ceschp_const, xpct_wind=xpct_wind, DNR=DNR, Dv=Dv, DBv=DBv)
+    last_ceq = f32(0.0)    # xCalcEqCost: a skipped block keeps the last one computed (only used times 0)
+    xsqftperkw = f32(0.0)  # carried the same way
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        for nt in range(1, t.NUMTECHS + 1):
+            for nv in range(1, t.NVINT + 1):
+                if t.IFIRSTYR[nt, nv] > calyear or t.ILASTYR[nt, nv] < calyear:
+                    continue
+                last_ceq, xsqftperkw = _block(t, st, sh, nt, nv, y, calyear, prev, cur, grid, last_ceq,
+                                              xsqftperkw)
 
     _finish_year(t, st, cogen_el, y, eprpstgt)
     return st
 
 
-def _value_of_savings(annual, excess, elec_avg, retail, sales, retail_adj, sales_adj, retail_norps, sales_norps):
-    """Value of a year's output: all of it at the retail rate if it is all used on site, else the excess is sold."""
-    if excess < 0.0:
-        return f32(annual * retail), f32(annual * retail_adj), f32(annual * retail_norps)
-    return (f32(f32(excess * sales) + f32(elec_avg * retail)),
-            f32(f32(excess * sales_adj) + f32(elec_avg * retail_adj)),
-            f32(f32(excess * sales_norps) + f32(elec_avg * retail_norps)))
+def _learned_cost(t, st, sh, nt, nv, y):
+    """Capital cost after learning from cumulative shipments (commercial plus residential, plus utility for PV)."""
+    name, xcapcost = t.AEQUIPNAME[nt, nv], t.XCAPCOST[nt, nv]
+    if name == "Fuel_Cell":
+        cumship = f32(st.CFuelCell_MW[y - 1] + sh["RFuelCell_MW"][y - 1])
+    elif name == "Solar_PV":
+        if t.GlobalLearn:
+            cumship = f32(f32(st.CPV_MW[y - 1] + sh["RPV_MW"][y - 1]) + sh["UPV_MW"][y - 1])
+        else:
+            cumship = f32(st.CPV_MW[y - 1] + sh["RPV_MW"][y - 1])
+    elif name == "Wind":
+        cumship = f32(st.CWind_MW[y - 1] + sh["RWind_MW"][y - 1])
+    elif name == "Micro_Tur":
+        cumship = f32(st.CMicroTur_MW[y - 1] + sh["RMicroTur_MW"][y - 1])
+    else:
+        return xcapcost
+    return learn_cost(xcapcost, t.XBeta[nt], t.Xc0[nt], cumship)
+
+
+def _block(t, st, sh, nt, nv, y, calyear, prev, cur, v, last_ceq, xsqftperkw):
+    """One technology and vintage, every niche at once (the inner loops of CDISTGEN, labels 100-350)."""
+    D, B = t.NUMDIV, t.NUMBLDG
+    valid, shape = v["valid"], v["shape"]
+    rate_sc, sqft_share, cat_share = v["rate_sc"], v["sqft_share"], v["cat_share"]
+    avg_sqft, elec_avg, flr = v["avg_sqft"], v["elec_avg"], v["flr"]
+    jp_num, jp_den, eprpspr, eprpstgt = v["jp_num"], v["jp_den"], v["eprpspr"], v["eprpstgt"]
+    sales_norps, retail_norps = v["sales_norps"], v["retail_norps_cm"]
+    xadjcost = _learned_cost(t, st, sh, nt, nv, y)
+    fuel_type = int(t.IFUELTYPE[nt])
+    xrps = t.xRPS[nt, y]
+    eleff, loss, kw_menu = t.XELEFF[nt, nv], t.XLOSSFAC[nt, nv], t.XKW[nt, nv]
+    rps = f32(f32(C_001 * eprpspr) * xrps)
+    rps1 = f32(f32(C_001 * eprpspr) * f32(1.0))
+    zero = np.zeros(shape, dtype=f32)
+    full = lambda a: np.broadcast_to(a, shape)
+    fuelinput = water = space = base_fuel = zero
+    flr5 = flr[:, :, None, None, None]
+
+    if fuel_type == 0 and nt != 11:
+        # ---- Solar PV ----
+        pelme, pelcmout = v["pelme"], v["pelcmout"]
+        retail = ((((pelcmout * rate_sc) * C_003412) + rps) * jp_num) / jp_den
+        sales = (((pelme * C_003412) + rps) * jp_num) / jp_den
+        retail_norps = (((pelcmout * rate_sc) * C_003412) * jp_num) / jp_den
+        sales_adj = (((pelme * C_003412) + rps1) * jp_num) / jp_den
+        retail_adj = ((((pelcmout * rate_sc) * C_003412) + rps1) * jp_num) / jp_den
+        if calyear < t.iRPSStartYear[nt]:
+            retail, sales = retail_norps, sales_norps
+        area = (((flr5 * cat_share) * sqft_share) * v["roof_ratio"]) * v["pct_pv"]
+        st.SolarPVAvailRoofArea[y, 1:D + 1, 1:B + 1] = _seq_sum(
+            st.SolarPVAvailRoofArea[y, 1:D + 1, 1:B + 1], full(area).reshape(D, B, -1), valid.reshape(D, B, -1))
+        xsqftperkw = f32(f32(f32(77.0) * f32(0.14)) / eleff)
+        ins = v["DNR"](t.xSolarInsolation)
+        solarins = (f32(-1.0686) + f32(1.4421) * ins) - f32(0.0645) * (ins * ins)
+        size_roof = (((avg_sqft * v["roof_ratio"]) * v["pct_pv"]) / xsqftperkw) / f32(1.75)
+        size_kwh = elec_avg / (((((eleff * solarins) * f32(365.25)) / f32(10.8)) * xsqftperkw) * loss)
+        kw = _fix(_pymax(_pymin(size_roof, size_kwh, t.xkwmax[nt]), t.xkwMin[nt]))
+        adjcost2 = _vexp(flog(xadjcost) - t.xScaleFac[nt] * _vlog(kw / kw_menu))
+        annual = (((((eleff * solarins) * f32(365.25)) / f32(10.8)) * xsqftperkw) * kw) * loss
+        excess = annual - elec_avg
+        vs_base = _value_of_savings(annual, excess, elec_avg, retail, sales)
+        vs_adj = _value_of_savings(annual, excess, elec_avg, retail_adj, sales_adj)
+        vs_norps = _value_of_savings(annual, excess, elec_avg, retail_norps, sales_norps)
+    elif fuel_type == 0:
+        # ---- Wind ----
+        pelme, pelcm, pelcmout = v["pelme"], v["pelcm"], v["pelcmout"]
+        retail = ((((pelcm * rate_sc) * C_003412) + rps) * jp_num) / jp_den
+        sales = (((pelme * C_003412) + rps) * jp_num) / jp_den
+        sales_adj = (((pelme * C_003412) + rps1) * jp_num) / jp_den
+        retail_adj = ((((pelcmout * rate_sc) * C_003412) + rps1) * jp_num) / jp_den
+        if calyear < t.iRPSStartYear[nt]:
+            retail, sales = retail_norps, sales_norps
+        avail = ((flr5 * cat_share) * sqft_share) * v["xpct_wind"]
+        st.WindAvailFS[y, 1:D + 1, 1:B + 1] = _seq_sum(
+            st.WindAvailFS[y, 1:D + 1, 1:B + 1], full(avail).reshape(D, B, -1), valid.reshape(D, B, -1))
+        mps = v["DNR"](t.xWindSpeed)
+        poly = ((f32(0.0645) - f32(0.0670) * mps) + f32(0.0210) * (mps * mps)) - f32(0.0011) * ((mps * mps) * mps)
+        eff_ratio = f32(eleff / t.XELEFF[nt, 1])
+        size_kwh = elec_avg / (((eff_ratio * poly) * f32(8760.0)) * loss)
+        kw = _fix(_pymax(_pymin(size_kwh, t.xkwmax[nt]), t.xkwMin[nt]))
+        annual = (((eff_ratio * poly) * kw) * f32(8760.0)) * loss
+        excess = annual - elec_avg
+        vs_base = _value_of_savings(annual, excess, elec_avg, retail, sales)
+        vs_adj = _value_of_savings(annual, excess, elec_avg, retail_adj, sales_adj)
+        vs_norps = _value_of_savings(annual, excess, elec_avg, retail_norps, sales_norps)
+        adjcost2 = full(xadjcost)
+    else:
+        # ---- Fuel-fired: fuel cells, engines, turbines, coal, oil, MSW, hydro, wood ----
+        Dv = v["Dv"]
+        if fuel_type == 2:
+            price = (((Dv(sh["PNGCM"][:, y]) * jp_num) / jp_den) * v["DNR"](t.xNGRateScalar))
+        elif fuel_type == 3:
+            price = (Dv(sh["PDSCM"][:, y]) * jp_num) / jp_den
+        elif fuel_type in (6, 9, 10):
+            price = (v["coal"] * jp_num) / jp_den
+        elif fuel_type == 11:
+            price = f32(0.0)
+        else:
+            raise NotImplementedError(f"CDISTGEN fuel type {fuel_type}")
+        eui = v["DBv"](sh["COMEUI"][1:D + 1, 1:B + 1, 3, 2]), v["DBv"](sh["COMEUI"][1:D + 1, 1:B + 1, 1, 2])
+        water = (avg_sqft / f32(1000.0)) * eui[0]
+        space = (avg_sqft / f32(1000.0)) * eui[1]
+        oph, av, whr = t.XOPERHOURS[nt], t.XAVAIL[nt, nv], t.XWHRECOVERY[nt, nv]
+        if calyear > CM_COG_HST_YR + (BASEYR - 1):
+            size_heat = ((((eleff / C_003412) * (water + space)) * f32(1.00)) / whr) / (
+                f32(oph * av) * f32(f32(1.0) - f32(eleff * loss)))
+            size_kwh = (elec_avg * f32(0.6)) / f32(f32(oph * av) * loss)
+            kw = _fix(_pymin(_pymax(size_heat, size_kwh, t.xkwMin[nt]), t.xkwmax[nt]))
+            adjcost2 = _vexp(flog(xadjcost) - t.xScaleFac[nt] * _vlog(kw / kw_menu))
+        else:
+            kw = full(kw_menu)
+            adjcost2 = full(xadjcost)
+        annual = (f32(oph * av) * kw) * loss
+        fuelinput = (((C_003412 * kw) * oph) * av) / eleff
+        waste = (fuelinput - C_003412 * annual) * whr
+        over = waste > water
+        space = np.where(over, np.where(waste < water + space, waste - water, space), f32(0.0))
+        water = np.where(over, water, waste)
+        base_fuel = ((fuelinput - water) - space) * price
+        excess = annual - elec_avg
+        vs_base = np.where(excess < 0.0, annual * retail_norps, excess * sales_norps + elec_avg * retail_norps)
+        vs_norps = vs_base
+        vs_adj = zero
+        if fuel_type == 2:
+            own = np.where(excess < 0.0, annual, annual - excess)
+            carbon = annual * (f32(1.0) - ceschp_const * (fuelinput / annual)) if False else \
+                annual * (f32(1.0) - v["ceschp_const"] * (fuelinput / annual))
+            credit = carbon - eprpstgt * own
+            base = vs_norps + rps * credit
+            vs_adj = vs_norps + rps1 * credit
+            base = np.where(base < vs_norps, vs_norps, base)
+            vs_base = np.where(vs_adj < vs_norps, vs_norps, base)  # EIA tests the adjusted value, resets the base
+
+    kw, annual = full(kw), full(annual)
+    elec5 = full(elec_avg)
+    cells = np.nonzero(valid.reshape(-1))[0]  # in the Fortran's loop order
+
+    # ---- Cash flow, IRR and penetration (label 200) ----
+    skip = (y < CM_COG_HST_YR and nt not in (1, 2, 8, 11)) or (y >= CM_COG_HST_YR and t.ISKIP[nt] == 0)
+    xtemp = zero
+    if skip:
+        ceq = full(last_ceq)
+    else:
+        ceq = full((adjcost2 + t.XINSTCOST[nt, nv]) * kw)
+        if cells.size:
+            last_ceq = ceq.reshape(-1)[cells[-1]]
+        pick = lambda a: full(a).reshape(-1)[cells]
+        comtx = full(v["Dv"](t.ComTxCrPct_Div[nv, :, nt]))
+        xirr_c = _cash_flow({
+            "xdownpaypct": t.XDOWNPAYPCT, "xintrate": t.XINTRATE, "xterm": t.XTERM,
+            "xinflation": t.XINFLATION, "xtaxrate": t.XTAXRATE,
+            "xmaintcst": t.XMAINTCST[nt, nv], "xtxcrpct": t.XTXCRPCT[nt, nv],
+            "xtxcrmaxpersys": t.xTXCrMaxPerSys[nt, nv], "xeqlife": t.XEQLIFE[nt, nv],
+            "xdegrad": t.XDEGRAD[nt, nv], "xtxlife": t.xtxlife[nt, nv],
+            "xdep": t.xdep[nt, nv], "upira_appyr": int(sh["UPIRA_APPYR"]), "curiyr": y,
+            "iintervalyrs": t.iIntervalYrs[nt, nv], "xintervalcst": t.xIntervalCst[nt, nv],
+            "nt": nt, "ifueltype": fuel_type,
+            "irpsstartyear": int(t.iRPSStartYear[nt]), "irpsphaseoutyear": int(t.iRPSPhaseOutYear[nt]),
+            "inumyrsatrpsbaserate": int(t.iNumYrsatRPSBaseRate[nt, y]),
+            "inumrpscredityrs": int(t.iNumRPSCreditYrs[nt, y])},
+            pick(ceq), pick(kw), pick(base_fuel), pick(vs_base), pick(vs_adj), pick(vs_norps), pick(comtx))
+        xirr = np.zeros(valid.size, dtype=f32)
+        xirr[cells] = xirr_c
+        xirr = xirr.reshape(shape)
+        payback = np.where(xirr > 0.0, _pymin(f32(29.0), flog(f32(2.0)) / _vlog(f32(1.0) + xirr)), f32(29.0))
+        maxpen = _pymin(f32(0.9), t.XPENPARM[nt] / payback)
+        maxpen = np.where(payback > 10.0, f32(0.0) if nt == 11 else f32(0.01), maxpen)
+        start_yr = 10 if nt in (1, 2, 11) else 9 if nt == 8 else -20
+        xb, xa, xc = (v["Dv"](a[nt, :]) for a in (t.XB, t.XA, t.XC))
+        expo = _vexp(-xb * f32(y - start_yr))
+        pen = (maxpen * (xc * (f32(1.0) - expo))) / (f32(1.0) + xa * expo)
+        # cur is [div, bld, nt, niche, rate, size]; the grid is [div, bld, size, niche, rate]
+        tgt = cur[1:D + 1, 1:B + 1, nt, 1:pen.shape[3] + 1, 1:11, 1:7].transpose(0, 1, 4, 2, 3)
+        tgt[valid] = pen[valid]
+        exog = t.XEXOGPEN
+        dexog = v["Dv"](exog[y, :, nt] - exog[y - 1, :, nt])
+        bshare = g5b(t.XBLDGSHARE[nt, 1:B + 1])
+        exog_term = (bshare * dexog) / kw
+        if y >= KSTEOYR:
+            per = avg_sqft / ONE_E6
+            pen_prev = prev[1:D + 1, 1:B + 1, nt, 1:pen.shape[3] + 1, 1:11, 1:7].transpose(0, 1, 4, 2, 3)
+            fp = v["flr_prev"][:, :, None, None, None]
+            xtemp = ((pen * flr5) / per) - ((pen_prev * fp) / per)
+            xtemp = xtemp + exog_term
+            floor_lim = st.UNITS[y - 1, 1:D + 1, 1:B + 1, nt][:, :, None, None, None] * f32(f32(-1.0) / t.XEQLIFE[nt, nv])
+            xtemp = np.where(xtemp < floor_lim, floor_lim, xtemp)
+        else:
+            xtemp = exog_term
+        if y <= SOLAR_BM_YR and nt == 1:
+            xtemp = exog_term
+        xtemp = (xtemp * cat_share) * sqft_share
+        xtemp = _fix((f32(100.0) * xtemp) + f32(0.5)) / f32(100.0)
+    # label 350
+    if y <= CM_COG_HST_YR and nt not in (1, 2, 8, 11):
+        du = (st.UNITS[y, 1:D + 1, 1:B + 1, nt] - st.UNITS[y - 1, 1:D + 1, 1:B + 1, nt])[:, :, None, None, None]
+        xtemp = (du * cat_share) * sqft_share
+    xtemp = full(xtemp)
+    ok = valid & ~((xtemp * kw < 0.0) & (nt == 1))
+    flat = lambda a: full(a).reshape(D, B, -1)
+    okf = ok.reshape(D, B, -1)
+    acc = lambda term: _seq_sum(f32(0.0), flat(term), okf)
+    tr = ((xtemp * annual) * f32(3412.0)) / ONE_E12
+    sums = {
+        "xunits": acc(xtemp), "xcapacity": acc(xtemp * kw), "xtrills": acc(tr),
+        "xtrillsownuse": acc(np.where(annual > elec5, ((xtemp * elec5) * f32(3412.0)) / ONE_E12, tr)),
+        "xfuelusage": acc((xtemp * fuelinput) / ONE_E6), "xhwbtu": acc((xtemp * water) / ONE_E6),
+        "xshbtu": acc((xtemp * space) / ONE_E6), "xinvest": acc((xtemp * ceq) / ONE_E6)}
+    if nt == 11:
+        term = (((((flr5 * ONE_E6) * cat_share) / avg_sqft) * sqft_share) * v["xpct_wind"]) * (kw / f32(1000.0))
+        st.WindTechPotentialMW[y, 1:D + 1] = _seq_sum(st.WindTechPotentialMW[y, 1:D + 1], full(term).reshape(D, -1),
+                                                      valid.reshape(D, -1))
+    _roll_up(t, st, nt, nv, y, sums, xsqftperkw)
+    return last_ceq, xsqftperkw
+
+
+def g5b(a):
+    """A per-building-type vector on the niche grid."""
+    return a.astype(f32)[None, :, None, None, None]
+
+
+def _roll_up(t, st, nt, nv, y, s, xsqftperkw):
+    """End of the niche loops: add this year's units to last year's stock, by division and building type."""
+    D, B = t.NUMDIV, t.NUMBLDG
+    ix = (y, slice(1, D + 1), slice(1, B + 1), nt)
+    px = (y - 1, slice(1, D + 1), slice(1, B + 1), nt)
+    st.UNITS[ix] = st.UNITS[px] + s["xunits"]
+    st.TRILLS[ix] = st.TRILLS[px] + s["xtrills"]
+    st.capacity[ix] = st.capacity[px] + s["xcapacity"]
+    st.TRILLSOWNUSE[ix] = st.TRILLSOWNUSE[px] + s["xtrillsownuse"]
+    st.fuelusage[ix] = st.fuelusage[px] + s["xfuelusage"]
+    st.HWBTU[ix] = st.HWBTU[px] + s["xhwbtu"]
+    st.SHBTU[ix] = st.SHBTU[px] + s["xshbtu"]
+    st.INVEST[ix] = s["xinvest"]
+    units = st.UNITS[ix]
+    cum = st.xCumPenSqft[ix]
+    for isize in range(1, 7):
+        cum = cum + (units * t.cbecsFlspcCatShare[1:B + 1, 1:D + 1, isize].T.astype(f32)) * (
+            t.cbecsAVGSQFT[1:B + 1, 1:D + 1, isize].T.astype(f32) / ONE_E6)
+    st.xCumPenSqft[ix] = cum
+    cap = st.capacity[ix]
+    if nt == 1:
+        st.SolarPVInstalledMW[y, 1:D + 1] = _seq_sum(st.SolarPVInstalledMW[y, 1:D + 1], cap / f32(1000.0), True)
+        st.SolarPVUsedRoofArea[y, 1:D + 1, 1:B + 1] = st.SolarPVUsedRoofArea[y, 1:D + 1, 1:B + 1] + (
+            ((cap * xsqftperkw) / ONE_E6) / f32(1.75))
+        st.SolarPVTechPotentialMW[y, 1:D + 1] = _seq_sum(
+            st.SolarPVTechPotentialMW[y, 1:D + 1],
+            ((st.SolarPVAvailRoofArea[y, 1:D + 1, 1:B + 1] * ONE_E6) / f32(xsqftperkw * f32(1000.0))) / f32(1.75), True)
+    if nt == 11:
+        st.WindInstalledMW[y, 1:D + 1] = _seq_sum(st.WindInstalledMW[y, 1:D + 1], cap / f32(1000.0), True)
+        st.WindBldgCount[y, 1:D + 1, 1:B + 1] = st.WindBldgCount[y, 1:D + 1, 1:B + 1] + st.UNITS[px]
+    st.com111drensub[y, 1:D + 1, nt] = _seq_sum(
+        st.com111drensub[y, 1:D + 1, nt], st.INVEST[ix] * t.ComTxCrPct_Div[nv, 1:D + 1, nt][:, None].astype(f32), True)
+    if y == CM_FIRST_YR:
+        st.INVEST[ix] = f32(0.0)
+    # ---- RPS credit multipliers for PV and wind ----
+    if nt in (1, 11):
+        calyear = y + BASEYR - 1
+        added = st.xPVGenAdded if nt == 1 else st.xWindGenAdded
+        out_credit = st.CGCPVCOM if nt == 1 else st.CGCWNCOM
+        added[1:D + 1, y] = _seq_sum(f32(0.0), st.TRILLS[ix] - st.TRILLS[px], True)
+        for idiv in range(1, D + 1):
+            comp_credit = comp_gen = f32(0.0)
+            credit = f32(1.0)
+            for iyr in range(CM_FIRST_YR, y + 1):
+                icalyr = iyr + BASEYR - 1
+                bonus = f32(0.0)
+                comp_gen = f32(comp_gen + added[idiv, iyr])
+                if calyear < t.iRPSStartYear[nt] and icalyr >= t.iRPSGrandFatherYear[nt]:
+                    bonus = f32(t.xRPS[nt, y] - f32(1.0))
+                elif y < iyr + t.iNumYrsatRPSBaseRate[nt, iyr] and calyear < t.iRPSPhaseOutYear[nt]:
+                    bonus = f32(t.xRPS[nt, iyr] - f32(1.0))
+                elif y < iyr + t.iNumRPSCreditYrs[nt, iyr] and calyear < t.iRPSPhaseOutYear[nt]:
+                    bonus = f32(t.xRPS[nt, y] - f32(1.0))
+                comp_credit = f32(comp_credit + f32(added[idiv, iyr] * f32(credit + bonus)))
+            if comp_gen > 0.0:
+                out_credit[idiv, y] = f32(comp_credit / comp_gen)
 
 
 def _finish_year(t: DgTables, st: DgState, cogen_el: np.ndarray, y: int, eprpstgt) -> None:

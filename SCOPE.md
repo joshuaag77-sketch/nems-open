@@ -58,15 +58,15 @@ Its 9 subroutines become the first 9 GitHub issues:
 | `COMFloorspace` + `CMSurvRate` | Done 2026-11-01 | Within 1e-6, all 9 divisions, 11 building types, 2019-2050 | `src/nems_open/commercial/floorspace.py` |
 | `COMServiceDemand` (calculation) | Done 2026-11-01 | Within 4e-7 (float32 rounding) vs oracle, all regions, buildings, services, 9 test years 2019-2050 | `src/nems_open/commercial/service_demand.py` |
 | `COMServiceDemand` (first call: KINTENS, KSHEFF, KMELS, KSDELA, KHURELA, KVARSDI, KDSSTM, KDSEFF, KDSFS, KRENEW, KDEGDAY, BLDBASE, the KTEK technology table, base-year ServDmdIntenBASE) | Done 2026-11-01 | Same arrays as the oracle at the end of the 2019 first call (float32 exact; BLDBASE needs one oracle rebuild to be checked) | `src/nems_open/commercial/inputs.py`, `ktek.py`, `base_year.py`, `src/nems_open/xlsx_ranges.py` |
-| `COMTechnologyChoice` (calculation, non-first calls) | Done 2026-11-01 | Within 2e-6 vs oracle on every output (shares, efficiency, MS, investment, EquipSD, warehouse indices, US averages), tested 2020, 2026, 2040 | `src/nems_open/commercial/technology_choice.py` (about 50 s per year, pure Python) |
+| `COMTechnologyChoice` (calculation, non-first calls) | Done 2026-11-01 | Within 2e-6 vs oracle on every output (shares, efficiency, MS, investment, EquipSD, warehouse indices, US averages), tested 2020, 2026, 2040 | `src/nems_open/commercial/technology_choice.py` (about 2 s per year since issue #6) |
 | `COMTechnologyChoice` (first call: KBEHAV, KDELEFF, KCAPFAC, KPREM reads, TimePrefProp normalization, heat pump cost edit) | Done 2026-11-01 | Same arrays as the oracle before and after the 2019 first call | `src/nems_open/commercial/technology_choice_inputs.py` |
 | `COMConsumption` (calculation) | Done 2026-11-01 | Within 5e-7 vs oracle on every output, 9 test years 2019-2050; US total matches EIA to 4 decimals | `src/nems_open/commercial/consumption.py` |
 | `COMConsumption` (first call: KSTEO, KMINFL reads, STEO targets into CMSEDS) | To do. KMINFL is re-read every call; tests take it from the oracle | | |
 | `COMBenchmarking` | Done 2026-11-01 | Bit-for-bit (float32) vs oracle on every output, 9 test years 2019-2050 | `src/nems_open/commercial/benchmarking.py` |
 | `COMReport` (the national totals it leaves in COMMREP; the printed KRPT/KSDOUT/KDBOUT tables are not ported) | Done 2026-11-01 | Same arrays as the oracle before and after the 2050 call | `src/nems_open/commercial/report.py` |
-| `CDISTGEN` (KCOGEN and KGENTK readers, learning, cash flow and IRR, Bass diffusion, RPS credits, CGCOMM outputs) | Done 2026-11-01 | Within 1e-4 on every output, 9 test years 2019-2050 (about 100 s a year in pure Python; the cash flow search is the hot spot) | `src/nems_open/commercial/distgen.py`, `distgen_tables.py` |
+| `CDISTGEN` (KCOGEN and KGENTK readers, learning, cash flow and IRR, Bass diffusion, RPS credits, CGCOMM outputs) | Done 2026-11-01 | Within 1e-4 on every output, 9 test years 2019-2050 (under 1 s a year since issue #6) | `src/nems_open/commercial/distgen.py`, `distgen_tables.py` |
 | `CALC111D` | To do | | |
-| `COMM` driver | To do | | |
+| `COMM` driver (yearly chain) | Done 2026-11-02 | Within 4e-7 vs oracle on QBLK fuel use, 2025-2050, one year or chained | `src/nems_open/commercial/comm.py` |
 
 Run the tests: `python -m pytest` from the project root. The harness pieces are `src/nems_open/snapshot.py` (reads EIA's restart file) and `src/nems_open/fortran_io.py` (mimics Fortran's text reads).
 
@@ -137,7 +137,7 @@ EIA quirks seen so far (keep them):
 
 Consumption quirks kept: district steam uses `SRElas` left over from the loop before it (last region, distillate) for every fuel; kerosene's minor-fuel formula is missing parentheses, so new floorspace is added unscaled; the spray-valve standard for food service, health care and lodging uses fuel totals that are only partly clamped when electricity is processed.
 
-Port notes: the run switches in the reference case are `CostTrendSwitch=1` (capital costs from `KEqCost`), `STRetBehav=1`, `I4SCNT=2` (current local prices, not price expectations). Speed: about 50 s per year in pure Python; the retrofit searches are the hot spot and can be vectorized later, as long as the strict "only if cheaper" order is kept.
+Port notes: the run switches in the reference case are `CostTrendSwitch=1` (capital costs from `KEqCost`), `STRetBehav=1`, `I4SCNT=2` (current local prices, not price expectations). Speed: see "Commercial speed (issue #6)" below.
 
 ## Residential port (started 2026-11-01)
 
@@ -244,6 +244,40 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 - REPLACE's debug loop DO RECCL=1,27 (2021, EU 1, B 1, R 1) overwrites the caller's RECCL with 28 through the argument, so RHTRADD processes only class 1 for B=1, R=1 in 2021.
 - RHTRADD: B=1 left over after the main loops, so the REPLACE flag-2, SWITCHTO, SWF/SWT, EQCND90 loops never touch multifamily or mobile homes. SHARESN zeroed per class and set only for valid records.
 - RHTRCON: AFANUEC rewritten per class, last class wins; FANCONIN divided by Driver2 inside the FCON loop (five times); FANEFF/NFANEFF set only in 2021; EFANUEC set only on iteration 1; EFANUEC/NFANUEC for 2020 never set (0); wood ALPHA +0.5; HEATOT maps F by class number (NG_HP 3, GEO_HP 4).
+
+## Supply stand-in (2026-11-02)
+Track two of the plan: a playable full model first, real supply ports after. `src/nems_open/supply_standin/` takes end-use demand (QBLK) and returns MPBLK prices, power-sector fuel use and CO2, from price curves fitted across EIA's 11 AEO2026 runs (their restart files sit in `nems-upstream/output/aeo2026/`; only cb2026 had an npz, but every `restart.rlx` is an npz too). Reproduces any case exactly when used as its baseline; on the demand-side cases (high/low growth, high electricity demand) US prices land within 2-5%. Supply shocks (oil and gas supply, zero-carbon cost) are baselines, not levers. Biggest gap: no power-sector abatement under a carbon price. Details and limits: `docs/supply_standin.md`. Upstream defect found: the `alttrnp` run is a byte copy of `electrnp`.
+
+## Phase 2: demand runner (started 2026-11-02)
+`src/nems_open/run_demand.py` runs the ported demand modules for a year on EIA's prices and writes QBLK-style fuel use. `python -m nems_open.run_demand 2030`; README has the Python API. Test: `tests/test_run_demand.py`.
+
+- Order: NEMS's (RESD, COMM, IND, TRAN). Industrial and transportation are `None` in `SECTORS` and keep EIA's QBLK rows until their ports land; a new sector is a class with `start`, `iteration`, `quantities`.
+- Inputs: every array in the restart blocks AMPBLK, AEUSPRC, MXPBLK, MACOUT, QSBLK, EMABLK, UEFPOUT, UECPOUT, TRANREP that a module's state holds is overwritten from `Inputs` (restart file plus overrides). PELRSOUT and PELCMOUT are EQUIVALENCEd onto the AEUSPRC end-use price arrays, so they are rebuilt from them. Applied to the oracle's state this changes nothing: the oracle ran on exactly these inputs.
+- Start: the input readers are not all ported, so each module starts from the oracle's state at the top of the year's final iteration (`resd.start_from_dump`, `Commercial.start_from_dump`), with the run year cleared from every array the chain writes. `DemandRunner.run_year()` again carries on to the next year with two iterations.
+- Commercial year driver: `src/nems_open/commercial/comm.py` (the "COMM driver" row above). It chains floorspace (from MACOUT/mc_commflsp), service demand, CDistGen, technology choice, consumption, benchmarking, and COMReport in 2050. It also ports the small pieces at the top of COMServiceDemand the calculation port left out: the first-iteration roll of last year's shares and efficiencies into the PrevYr arrays, and the reset of solar water heating. CALC111D writes no fuel use and is skipped. Speed: about 5 s per iteration (issue #6).
+- Totals: the part of SUMQAS (source/util_sumqas.f90) that touches these sectors: US = sum of divisions 1-9, California = Pacific times the CALSHR share, then QTP, QTR, QTS for each sector.
+- Results (2025, 2030, 2040, 2050): the runner matches the oracle to 4e-7 on QBLK fuel use for both sectors, and 2026 reached from 2025 matches too. Against EIA it inherits the oracle's own gfortran vs Intel drift:
+
+| Sector | Year | US total (QTS) vs EIA | Worst electricity or gas cell |
+|---|---|---|---|
+| Commercial | 2025 | 5e-6 | 6e-6 |
+| Commercial | 2030 | 1.3e-4 | 1.5e-3 |
+| Commercial | 2040 | 6e-5 | 1.5e-3 |
+| Commercial | 2050 | 7e-5 | 1.7e-3 |
+| Residential | 2025 | 4e-6 | 3e-5 |
+| Residential | 2030 | 8e-5 | 1.2e-3 |
+| Residential | 2040 | 2.4e-4 | 2.3e-3 |
+| Residential | 2050 | 2.4e-4 | 1.2e-3 |
+
+- Oracle gaps it inherits, worth a look later: commercial kerosene (QKSCM, 2050 US 1.7 vs EIA 0.5 trillion Btu), residual oil (QRSCM, up to 7% of a 2 trillion Btu row), solar thermal (up to 8% in 2040 in both sectors). All tiny next to sector totals.
+- Gotcha fixed: `residential/totals.py` read rssteo.txt from the repo folder, ignoring NEMS_UPSTREAM.
+
+## Commercial speed (issue #6, 2026-11-02)
+One commercial iteration went from about 6 minutes to about 5 s (2025: 349 s to 5.3 s; 2030: 268 s to 5.3 s; 2050: 367 s to 4.7 s, all timed with other sessions loading the machine). Every array in the module's state is bit-identical to the old version in all three years, and the 839 commercial oracle tests pass.
+- CDistGen (`distgen.py`): each technology and vintage is one block. Every niche of every division and building type is computed at once in float32 numpy, with the same operations in the same order. Running sums use a sequential accumulate in the Fortran's loop order, and the cash flow and IRR search run over all niches together. Transcendentals stay as double then rounded to float32.
+- Technology choice (`technology_choice.py`): `_technology_choice_fast` runs whenever price-induced technical change is idle (iforward, ifwd, IFMAX all 0, every AEO2026 year). Otherwise `_technology_choice_reference` runs, the old line-by-line code. Strict running-minimum searches become first-argmin lookups, which give the same winner. The never-reset retrofit minimum becomes `np.minimum.accumulate`, and ordered share sums become `np.add.at`. Numpy's types are kept, including the float64 that int fuel flags bring into some sums.
+- `FArray` indexing has a C-level fast path for integer subscripts (speeds up every port).
+- How it was checked: save the full module state after one iteration with the old code, run the new code, compare every array for exact equality (2025, 2030, 2050).
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.

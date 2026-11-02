@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nems_open.paths import REPO_ROOT
+from nems_open.paths import INPUT
 from nems_open.residential.common import BASEYR, RECSYEAR, f32
 
 f64 = np.float64
@@ -31,7 +31,7 @@ BENCHALLYRS = f32(1.0)
 GLOBALBENCHON = 1
 STEOBM = 1  # options.txt of the oracle run (STEOBM 1)
 
-RSSTEO_PATH = REPO_ROOT / "nems-upstream" / "input" / "rdm" / "rssteo.txt"
+RSSTEO_PATH = INPUT / "rdm" / "rssteo.txt"
 
 _steo = {}  # COMMON/STEO is SAVEd between RSBENCH calls; the dumps do not hold it
 
