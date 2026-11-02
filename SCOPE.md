@@ -135,6 +135,78 @@ Consumption quirks kept: district steam uses `SRElas` left over from the loop be
 
 Port notes: the run switches in the reference case are `CostTrendSwitch=1` (capital costs from `KEqCost`), `STRetBehav=1`, `I4SCNT=2` (current local prices, not price expectations). Speed: about 50 s per year in pure Python; the retrofit searches are the hot spot and can be vectorized later, as long as the strict "only if cheaper" order is kept.
 
+## Transportation module (started 2026-11-01, branch `transportation`)
+
+### Oracle
+EIA's `tran.f`, `tranfrt.f` and `tranair.f` (18,377 lines) run standalone with gfortran, same method as commercial. Folders `oracle/build_tran/` and `oracle/run_tran/`.
+
+```
+cd oracle
+python -I gen_oracle.py "$NEMS_UPSTREAM" cb2026 tran
+bash build.sh tran
+cd run_tran && ./oracle.exe      # about 2 minutes with state dumps, 5.3 GB of dumps
+```
+`NEMS_UPSTREAM` points at EIA's checkout (default `../nems-upstream`, as before). The build folder gets its own copy of the includes (`inc/`), so the upstream path can contain spaces.
+
+What it took (all generic, commercial unchanged and its 262 tests still pass):
+- `gen_oracle.py` takes a module (`comm`, `tran`); `MODULES` lists each one's sources, includes and workbooks. Same layout as the residential session's version, so the two merge by adding entries.
+- `patch_intel.py`: Intel range lists in array constructors (`[4:8,13:maxldv]`), hex literals in comparisons, `.EQ. .TRUE.`, `NOT()` on a logical, `INTEGER x/.false./`, `INTEGER NAME*2`, and `CAFE4`, a REAL constant (MODULE `F_` has implicit typing) used as a dimension.
+- `stubs.f90` FILE_MGR: reads the `NEW` flag as one byte (tran.f passes `LOGICAL*1`; reading 4 bytes picked up garbage and asked for write access), never writes over a file in `filelist.txt`, matches names on 18 characters like NEMS (`TRNSTOCKX_HDV_PRE2012` arrives cut to 18), hands out positive unit numbers from 200 (tranair.f closes its debug unit in 2050, then writes to it again), and actually closes files on `'C'`.
+- `xlsx_ranges.py` reads only the first two corners of a named range, as EIA's `Parse_RangeStr2` does. `CRCOVID` in trnldvx.xlsx is defined as `$B$3446:$BE$3454:'trnldv'!$BE$3453` and was being dropped.
+- `driver_tran.f90` runs every year 1990-2050 (TRAN returns before 1995) with **3 iterations a year**. Evidence: `TAIRT` adds to `LFDOMAVG` on every call (an EIA bug, kept), and EIA's `TRTRAVLD(3,:)` is exactly 1.5 times the 2-iteration value in every year.
+- `hooks_tran.py` dumps state around each routine's CALL in TRAN. Most state here is Fortran MODULE variables (`T_`, `F_`, `AIRMOD`), so it parses the module declarations and dumps every module or COMMON variable the routine, or anything it calls, names. F_ files are prefixed `f_`, AIRMOD `a_`. Dumps are on the **first** iteration of 2020, 2025, 2030, 2040, 2050: on the final iteration the "before" state already holds the answer. Python: `oracle_state.load(tag, year, run="run_tran")`.
+
+Oracle vs EIA's restart file (`tests/test_tran_oracle.py`, census divisions 1-9):
+- 1995-2025: gasoline, diesel, jet fuel, electricity, other within 3e-7 (float rounding). Natural gas, LPG and ethanol within 0.7% from 2011 on.
+- 2026-2050: gasoline within 0.23%, diesel 0.8%, jet fuel 0.05%, electricity 0.7%, residual 0.2%. Truck natural gas (9%), ethanol (12%) and hydrogen (up to 42% in 2030 on a small base) drift more.
+- Why: NEMS calls TRAN with each iteration's unconverged prices, and several routines work only on the first iteration (`CURITR == 1`: FEM pass reset, CAFE pass, HAV stock weights, freight lag copies). The oracle sees converged prices all three times. Freight truck fuel choice (payback and S-curve adoption) amplifies small differences. Not fixable without the per-iteration price history.
+- Also outside TRAN: the refinery model (LFMM, `refine.f`) overwrites `E85AVAIL` history for 2010-2012 after TRAN runs; QBLK region 10 (California) and 11 (US) totals are filled by NEMS, not TRAN.
+
+### Module map
+Call order inside `TRAN` (tran.f), with code lines. One port test per routine, at the routine's CALL.
+
+| # | Routine | Lines | What it does | Calls |
+|---|---|---|---|---|
+| 0 | `READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA` | 870+170+140+165+340 | First-call input reads (trnldvx.xlsx, VMT, stock, FEM history, NHTSA) | |
+| 1 | `TMAC` | 68 | Fuel tax, income, population by age/sex, licensing rates, licensed drivers | |
+| 2 | `NEWLDV` | 87 | New car and light truck sales by region (car/truck split logit) | |
+| 3 | `TMPGNEW` | 658 | New vehicle fuel economy: technology penetration (FEM), CAFE/GHG compliance, attributes, vehicle choice | `FEMCALC` (1,070), `CAFECALC` (520), `CAFEGHG_MEET` (320), `TATTRIB`, `TALT2`, `TALT2X`, `CGSHARE`, `AFVADJ`, `LIONCOSTCALC` and battery/EV cost routines |
+| 4 | `TREG` | 88 | Regional sales by fuel type | |
+| 5 | `TFLTSTKS` | 112 | Fleet vehicle stocks | |
+| 6 | `FLTHAV` | 323 | Taxi / ride-hail adoption of automated vehicles (only once lidar is available) | `HAVCALC`, `LIDARCOSTCALC` |
+| 7 | `TFLTVMTS` | 20 | Fleet VMT | |
+| 8 | `TSMOD` | 124 | Light-duty stock model (survival, vintages) | |
+| 9 | `TMPGSTK` | 262 | Stock average fuel economy | |
+| 10 | `TCURB` | 35 | Curb weight | |
+| 11 | `TFLTMPGS` | 290 | Fleet fuel economy | |
+| 12 | `TFLTCONS` | 71 | Fleet fuel use | |
+| 13 | `TVMT` | 145 | Household VMT from licensed drivers, income, fuel cost | |
+| 14 | `TRANFRT(0)`, `TRANFRT(1)` | 5,700 (tranfrt.f) | Freight trucks: sales, technology adoption, Phase 2 GHG and ZEV rules, fuel choice, stock, VMT, fuel; commercial light trucks; report call | `TRUCK_NEW`, `TRUCK_CHOICE`, `TRUCK_STOCK`, `TRUCK_VMT`, `TRUCK_FUEL`, `TCOMMCL_TRK`, `CFREAD` |
+| 15 | `TMPGAG` | 39 | Aggregate fuel economy | |
+| 16 | `TRAIL` | 146 | Freight and passenger rail | |
+| 17 | `TSHIP` | 289 (tranfrt.f) | Domestic and international shipping | |
+| 18 | `TRANAIR` | 1,720 (tranair.f) | Air travel demand, aircraft stock and efficiency, jet fuel | `READAIR`, `TAIRT`, `TAIREFF`, `TAREPORT` |
+| 19 | `TMISC` | 440 | Military, buses, recreational boats, lubricants, pipeline | |
+| 20 | `TCONS` | 59 | Light-duty fuel use | |
+| 21 | `TINTEG` | 118 | Fuel use by fuel and region into QBLK | |
+| 22 | `TBENCHMARK` | 473 | Benchmark to SEDS history and STEO | `TRANEASY` |
+| 23 | `TREPORT` | 555 | TRANREP report arrays | |
+| 24 | rest of `TRAN` | 90 | QGFTR / QRHTR / QRLTR splits, average vehicle prices, rail and ship gas | |
+
+Port order: the small light-duty routines first (1, 2, 4, 5, 7-13, 15, 16, 19-21), then `TMPGNEW`, the freight module, air, benchmarking and reports.
+
+### Port progress
+
+| Routine | State | Match vs oracle | Python |
+|---|---|---|---|
+| `TMAC` | Done 2026-11-01 | Every dumped array within 1e-4 (float rounding), 2020, 2025, 2030, 2040, 2050 | `src/nems_open/transportation/tmac.py` |
+
+Tests: `tests/test_tran_<routine>.py`, all through `tests/tran_harness.py`. A test feeds the port the state before EIA's routine and compares every dumped array with the state after; it also fails if nothing changed, so it can't pass by doing nothing.
+
+### EIA quirks kept (transportation)
+- `TAIRT` accumulates `LFDOMAVG(N)` and `LFINTAVG(N)` on every call instead of resetting them, so the reported load factors are 3 times too big (one per NEMS iteration).
+- `TAIREFF` closes the air debug file in 2050, then `TAREPORT` writes to it.
+
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
 2. Run the Python commercial module year by year with those inputs.

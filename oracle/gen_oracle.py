@@ -8,10 +8,14 @@ Writes into oracle/run/:
 And into oracle/build/:
   load_restart.f90 Fortran that reads dump/*.bin into the COMMON blocks
 
-Usage: python -I gen_oracle.py <upstream> <scenario>   e.g. ../nems-upstream cb2026
+Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 tran
+module is comm (default, run/ and build/), resd or tran (run_<module>/ and build_<module>/).
+The build folder also gets a copy of the upstream includes in inc/, so the compile
+works wherever the upstream checkout lives (spaces in its path break -I).
 """
 
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -19,22 +23,44 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+
+# One entry per ported module. includes: same includes, same order, as the module's
+# entry routine sees them (nested includes such as apq -> qblk are followed).
+# workbooks: spreadsheets read through ReadRngXLSX, as (file, sheet).
+# skip_blocks: restart blocks the module itself writes. They are not loaded, so any
+# match against EIA is earned.
+MODULES = {
+    "comm": dict(
+        source=["comm.f"], run="run", build="build",
+        includes=["parametr", "ncntrl", "apq", "macout", "eusprc", "qsblk", "mxpblk", "uefpout",
+                  "uecpout", "emission", "emmparm", "steoblock", "cogen", "bldglrn", "commrep",
+                  "tranrep", "e111d", "comparm"],
+        workbooks=[("input/cdm/ktekx.xlsx", "ktek")],
+        skip_blocks=[],
+    ),
+    "tran": dict(
+        source=["tran.f", "tranfrt.f", "tranair.f"], run="run_tran", build="build_tran",
+        # Every include in the three files: MODULE T_, F_ and AIRMOD plus the routines.
+        includes=["parametr", "ncntrl", "apq", "aponroad", "qsblk", "macout", "cdsparms", "coalout",
+                  "convfact", "tranrep", "tranmain", "intout", "ngtdmout", "angtdm", "aeusprc",
+                  "eusprc", "ampblk", "lfmmout", "ngtdmrep", "ogsmout", "pmmout", "pmmrpt",
+                  "steoblock"],
+        workbooks=[("input/tdm/trnldvx.xlsx", "trnldv"), ("input/tdm/trnnhtsax.xlsx", "trnnhtsa"),
+                   ("input/tdm/trnairx.xlsx", "trnair")]
+                  + [("input/tdm/trnhdvx.xlsx", s) for s in ("trnhdv", "tech_adopt", "ACT", "Phase_2")],
+        skip_blocks=[],
+    ),
+}
+
+# Set by main() from MODULES.
 RUN = HERE / "run"
 BUILD = HERE / "build"
+INCLUDES: list[str] = []
+WORKBOOKS: list = []
+SKIP_BLOCKS: list[str] = []
 
-# Same includes, same order, as SUBROUTINE COMM sees them. Nested includes
-# (apq -> qblk, ampblk) are followed automatically.
-INCLUDES = [
-    "parametr", "ncntrl", "apq", "macout", "eusprc", "qsblk", "mxpblk", "uefpout",
-    "uecpout", "emission", "emmparm", "steoblock", "cogen", "bldglrn", "commrep",
-    "tranrep", "e111d", "comparm",
-]
-
-# Must match build.sh. Run from oracle/build so the relative include path works.
-FFLAGS = ["-ffree-line-length-none", "-fdec", "-I../../nems-upstream/includes"]
-
-# Spreadsheets the commercial module reads through ReadRngXLSX.
-WORKBOOKS = [("input/cdm/ktekx.xlsx", "ktek")]
+# Must match build.sh. Run from the build folder, which holds its own copy of the includes.
+FFLAGS = ["-ffree-line-length-none", "-fdec", "-Iinc"]
 
 
 def statements(text: str):
@@ -114,7 +140,7 @@ def dump_restart(upstream: Path, scenario: str, members):
     loaded = []
     for key in z.files:
         block, _, var = key.partition("/")
-        if (block.upper(), var.lower()) not in members:
+        if (block.upper(), var.lower()) not in members or block.upper() in SKIP_BLOCKS:
             continue
         try:
             a = z[key]
@@ -128,11 +154,12 @@ def dump_restart(upstream: Path, scenario: str, members):
     return loaded
 
 
-def include_prefixes(source: Path):
-    """For each include, the include list of the first comm.f routine that uses it,
+def include_prefixes(sources):
+    """For each include, the include list of the first module routine that uses it,
     up to and including it. That ordering already compiles, so it is safe."""
     prefixes = {}
-    for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function)?\s*\w*\s*$", source.read_text(encoding="latin-1")):
+    text = "\n".join(s.read_text(encoding="latin-1") for s in sources)
+    for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function|module)?\s*\w*\s*$", text):
         seq = [n.lower() for n in re.findall(r"(?im)^\s*include\s*'(\w+)'", routine)]
         for i, n in enumerate(seq):
             prefixes.setdefault(n, seq[: i + 1])
@@ -158,9 +185,9 @@ def pick_prefix(top: str, prefixes) -> list[str] | None:
     return next((c for c in candidates if compiles(c)), None)
 
 
-def write_loader(loaded, inc_dir: Path, source: Path):
+def write_loader(loaded, inc_dir: Path, sources):
     """One loader routine per include file, each with an include order that compiles."""
-    prefixes = include_prefixes(source)
+    prefixes = include_prefixes(sources)
     routines, calls, done = [], [], set()
     for top in INCLUDES:
         if top == "parametr":
@@ -210,9 +237,14 @@ def write_loader(loaded, inc_dir: Path, source: Path):
 
 
 def main():
+    global RUN, BUILD, INCLUDES, WORKBOOKS, SKIP_BLOCKS
     upstream, scenario = Path(sys.argv[1]).resolve(), sys.argv[2]
+    mod = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
+    RUN, BUILD = HERE / mod["run"], HERE / mod["build"]
+    INCLUDES, WORKBOOKS, SKIP_BLOCKS = mod["includes"], mod["workbooks"], mod["skip_blocks"]
     RUN.mkdir(exist_ok=True)
     BUILD.mkdir(exist_ok=True)
+    shutil.copytree(upstream / "includes", BUILD / "inc", dirs_exist_ok=True)
     inc_dir = upstream / "includes"
     includes = walk_includes(INCLUDES, inc_dir)
     members = common_members(inc_dir, includes)
@@ -221,7 +253,7 @@ def main():
     loaded = dump_restart(upstream, scenario, members)
     subprocess.run([sys.executable, str(HERE / "steo_fill.py"), str(upstream),
                     str(RUN / "dump" / "steo_var_com__eq.bin")], check=True)
-    n = write_loader(loaded, inc_dir, upstream / "source" / "comm.f")
+    n = write_loader(loaded, inc_dir, [upstream / "source" / f for f in mod["source"]])
     print(f"{len(includes)} includes, {len(loaded)} restart variables dumped, {n} wired into the loader, {len(rows)} files")
 
 
