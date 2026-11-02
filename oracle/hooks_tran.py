@@ -66,6 +66,23 @@ TARGETS = [
     ("treport", "tran.f90", r"^\s*CALL TREPORT\s*$", "treport"),
 ]
 
+# Saved local arrays a routine reads back from last year (see instrument_private).
+# {tag: {routine (the target or one it calls): [arrays]}}. Found by scanning for locals
+# read at a year index minus something (n-1, iyr-1, ...).
+PRIVATE = {
+    "trail": {"trail": ["rail_fuel_shr", "lng_locom_inccost", "adoptlng"]},
+    "tmisc": {"tmisc": ["hyway", "ftvmt"]},
+    "tmpgnew": {"talt2": ["altstat", "predstk"]},
+    "tranfrt": {"truck_act": ["credit_2b3_zev", "credit_48v_zev", "credit_78t_zev", "credit_2b3_nzev",
+                              "credit_48v_nzev", "credit_78t_nzev", "bank_2b8v_zev", "bank_2b8v_nzev",
+                              "bank_78t_zev", "bank_78t_nzev"],
+                "truck_techadopt": ["techpenyr_p2"], "truck_ghgmeet": ["ghgbank"],
+                "truck_choice": ["cpm_r_ice"], "truck_vmt": ["ttonmi", "tvmt", "temp_stk_vmt_ratio"]},
+    "tship": {"tship": ["isfdt_b", "lsfo_upgrade", "temp_prhtr"]},
+    "tranair": {"tairt": ["pjftr_us"]},
+    "tbenchmark": {"tbenchmark": ["stmgtr_new", "stjftr_new", "stdstr_new", "strstr_new"]},
+}
+
 # Shared output blocks, dumped at the end of the run.
 FINAL_FILES = ["tranrep", "tranmain", "qblk"]
 FINAL_INCLUDES = ["parametr", "ncntrl", "qblk", "tranrep", "tranmain"]
@@ -77,6 +94,11 @@ COMMON_INCLUDES = ["parametr", "apq", "aponroad", "ncntrl", "qsblk", "macout", "
                    "pmmrpt", "lfmmout", "ogsmout", "ngtdmrep"]  # steoblock clashes (MPG); TBENCHMARK only
 
 MODULES = [("T_", "tran.f90", ""), ("F_", "tranfrt.f90", "f_"), ("AIRMOD", "tranair.f90", "a_")]
+
+# Blocks that reuse another block's variable names: ANGTDM (natural gas prices, also
+# in NGTDMOUT) and AEUSPRC (also in EUSPRC). Routines that include them see these
+# values, so they are dumped as <include>__<name>, e.g. angtdm__pgftrfv (TMISC).
+ALT_INCLUDES = ["angtdm", "aeusprc"]
 
 START = re.compile(r"^\s*(?:(?:real|integer|logical)(?:\*\d|\(\w+\))?\s+)?(?:recursive\s+)?"
                    r"(subroutine|function)\s+(\w+)", re.I | re.M)
@@ -237,6 +259,17 @@ def write_state(inc_dir, build):
             subs.append(f"      call ost_{tag}_c(tag)")
             parts.append(f"      subroutine ost_{tag}_c(tag)\n{inc_c}\n      character(*) tag\n"
                          + "\n".join(cl) + f"\n      end subroutine ost_{tag}_c\n")
+        for alt in ALT_INCLUDES:
+            txt = (inc_dir / alt).read_text(encoding="latin-1")
+            adecls = declarations(txt)
+            al = [l for l in (dump_line(f"{alt}__{k.lower()}", k, *adecls.get(k.lower(), ("?", 0)), False)
+                              for k in dict.fromkeys(common_names(txt)) if k.lower() in used) if l]
+            if al:
+                n_total += len(al)
+                subs.append(f"      call ost_{tag}_{alt}(tag)")
+                parts.append(f"      subroutine ost_{tag}_{alt}(tag)\n      include 'parametr'\n      include 'ncntrl'\n"
+                             f"      include '{alt}'\n      character(*) tag\n"
+                             + "\n".join(al) + f"\n      end subroutine ost_{tag}_{alt}\n")
         parts.append("\n".join(subs) + f"\n      end subroutine ost_{tag}\n")
         counts[tag] = n_total
 
@@ -265,7 +298,41 @@ def write_state(inc_dir, build):
     return counts
 
 
+def instrument_private(build):
+    """Dump each routine's saved local arrays at its end, into <tag>_out as p_<name>.
+
+    These hold last year's values the routine reads back (with -fno-automatic, as in
+    EIA's Intel build, every local is saved). Their year n-1 entries are the carried
+    state a port needs; the year n entries are a check."""
+    years = ", ".join(map(str, DUMP_YEARS))
+    for tag, routine, names in ((t, r, ns) for t, rs in PRIVATE.items() for r, ns in rs.items()):
+        for src in ("tran.f90", "tranfrt.f90", "tranair.f90"):
+            p = build / src
+            text = p.read_text(encoding="latin-1")
+            m = re.search(rf"^\s*SUBROUTINE {routine}\b.*?^\s*END SUBROUTINE {routine}\b", text, re.I | re.M | re.S)
+            if m:
+                break
+        else:
+            raise SystemExit(f"hooks_tran: routine {routine} not found")
+        body = m.group(0)
+        decls = declarations(normalise(body))
+        lines = [f"      IF (CURITR .EQ. 1 .AND. ANY((/ {years} /) == CURIYR)) THEN"]
+        for k in names:
+            t, rank = decls[k.lower()]
+            lines.append(dump_line(f"p_{k.lower()}", k, t, rank, False).replace("(tag,", f"('{tag}_out',"))
+        lines.append("      ENDIF")
+        block = "\n".join(lines) + "\n"
+        end = re.search(rf"^\s*END SUBROUTINE {routine}\b", body, re.I | re.M)
+        ret = list(re.finditer(r"^\s*RETURN\s*$", body[:end.start()], re.I | re.M))
+        tail = body[ret[-1].end():end.start()] if ret else ""
+        at = ret[-1].start() if ret and not code_only(tail).strip() else end.start()
+        at = body.rfind("\n", 0, at) + 1
+        text = text[:m.start()] + body[:at] + block + body[at:] + text[m.end():]
+        p.write_text(text, encoding="latin-1")
+
+
 def instrument(build):
+    instrument_private(build)
     for tag, src, call_re, _ in TARGETS:
         p = build / src
         text = p.read_text(encoding="latin-1")

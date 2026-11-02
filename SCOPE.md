@@ -199,13 +199,36 @@ Port order: the small light-duty routines first (1, 2, 4, 5, 7-13, 15, 16, 19-21
 
 | Routine | State | Match vs oracle | Python |
 |---|---|---|---|
-| `TMAC` | Done 2026-11-01 | Every dumped array within 1e-4 (float rounding), 2020, 2025, 2030, 2040, 2050 | `src/nems_open/transportation/tmac.py` |
+| `TMAC` | Done 2026-11-01 | Every dumped array within 1e-4 (float rounding), 2020, 2025, 2030, 2040, 2050 | `transportation/tmac.py` |
+| `NEWLDV` | Done 2026-11-01 | Same | `transportation/newldv.py` |
+| `TREG`, `TFLTVMTS`, `TCURB`, `TMPGAG` | Done 2026-11-01 | Same | `transportation/small.py` |
+| `TFLTSTKS` | Done 2026-11-01 | Same | `transportation/fleet.py` |
+| `TSMOD` | Done 2026-11-01 | Same | `transportation/stock.py` |
+| `TMPGSTK` | Done 2026-11-01 | Same | `transportation/stock_mpg.py` |
+| `TFLTMPGS` | Done 2026-11-01 | Same | `transportation/fleet_mpg.py` |
+| `TFLTCONS`, `TVMT` | Done 2026-11-01 | Same | `transportation/travel.py` |
+| `TCONS`, `TINTEG` | Done 2026-11-01 | Same | `transportation/totals.py` |
+| `TRAIL`, `TMISC` | Done 2026-11-01 | Same, including their saved local arrays | `transportation/misc_modes.py` |
+| `MEAN_FUNCS` | Done 2026-11-01 | Through its callers | `transportation/mean_funcs.py` |
+| `TMPGNEW` (+ FEM, CAFE, vehicle choice), `FLTHAV`, `TRANFRT` (freight), `TSHIP`, `TRANAIR`, `TBENCHMARK`, `TREPORT`, end of `TRAN` | To do | Oracle dumps for all of them are already in place | |
+| Input readers (`READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA`, `CFREAD`, `READAIR`) | To do. Tests take the oracle's copies of the input tables | | |
 
-Tests: `tests/test_tran_<routine>.py`, all through `tests/tran_harness.py`. A test feeds the port the state before EIA's routine and compares every dumped array with the state after; it also fails if nothing changed, so it can't pass by doing nothing.
+Tests: `tests/test_tran_<routine>.py`, all through `tests/tran_harness.py`. A test feeds the port the state before EIA's routine and compares every dumped array with the state after; it also fails if nothing changed, so it can't pass by doing nothing. Loop indexes are MODULE variables here (`IREGN`, `ILDV`, ...), so ports leave them where the Fortran loops leave them; later routines can read them.
+
+Port conventions: a routine is `name(s)` where `s` is the state dict (lowercase Fortran names, `FArray` with Fortran bounds), updated in place. Saved local arrays that carry last year's values are a second argument, `carry`; the oracle dumps them as `p_<name>` (`PRIVATE` in `hooks_tran.py`). `common.fsum` adds float32 in Fortran's element order (numpy's pairwise sum rounds differently). `misc_modes.powi` does REAL**INTEGER the way gfortran does (square and multiply).
+
+Name clash to watch: `ANGTDM` and `NGTDMOUT` are two COMMON blocks with the same variable names (natural gas prices), as are `AEUSPRC` and `EUSPRC`. A routine sees whichever it includes. Dumps carry the ANGTDM and AEUSPRC copies as `angtdm__<name>` and `aeusprc__<name>`. `TMISC`, most of tranfrt.f, and a few tran.f routines include `ANGTDM`.
 
 ### EIA quirks kept (transportation)
 - `TAIRT` accumulates `LFDOMAVG(N)` and `LFINTAVG(N)` on every call instead of resetting them, so the reported load factors are 3 times too big (one per NEMS iteration).
 - `TAIREFF` closes the air debug file in 2050, then `TAREPORT` writes to it.
+- `NEWLDV`: the national car share counts every automation level in the numerator and only level 1 in the denominator.
+- `TMPGSTK` and `TFLTMPGS`: the US new-vehicle MPG uses `DEN1 = ...` instead of `DEN1 = DEN1 + ...`, so it is the last region with sales, not a sum. The oldest vintage's MPG uses ELSEIF, so the 25-year-old vintage only counts when the 24-year-old one is empty.
+- `TFLTSTKS`: the national total inside the stock loop uses `IAGE` left at `MAXAGE`, so only the oldest vintage gets one (overwritten right after).
+- `TSMOD`: the low-macro survival tweak has a `CURCALYR == STOCKYR` branch inside a `CURCALYR > STOCKYR+1` test, so it never runs.
+- `TVMT`: `ildv.le.7.or.ildv.ge.15.and.X.and.Y` binds as `ildv <= 7 .or. (ildv >= 15 .and. X .and. Y)`, so powertrains 1-7 are always counted. `TEMP_MPG(ildv)` is a local array sized by the module variable `ILDV` at entry.
+- `TMISC`: the school bus CNG share for this year is updated after it was copied into the fuel shares, so it takes effect a year late. The transit bus Btu-per-mile formula `X*TBSYSEFF*1-(...)*1+(...)` subtracts and adds where it looks like it should multiply.
+- `TBENCHMARK`: `MER_STEO_regn` is a saved local filled in the last SEDS year and read in the MER year.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.

@@ -42,13 +42,31 @@ def rel_err(mine, eia):
     return float((d / np.maximum(np.abs(e), max(1e-6, 1e-7 * scale))).max())
 
 
-def run(port, tag, y, tol=TOL, **kwargs):
-    """Run a port on <tag>_in for year y; return {name: error} for every array it got wrong."""
+def _blank_from(a: FArray, y: int) -> FArray:
+    """Copy with year y and later zeroed, on the array's year axis (bounds 1..61)."""
+    a = a.copy()
+    axis = max(i for i, (lo, n) in enumerate(zip(a.lb, a.a.shape)) if lo == 1 and n == 61)
+    idx = [slice(None)] * a.a.ndim
+    idx[axis] = slice(y - 1, None)
+    a.a[tuple(idx)] = 0
+    return a
+
+
+def run(port, tag, y, tol=TOL, carry=None, **kwargs):
+    """Run a port on <tag>_in for year y; return {name: error} for every array it got wrong.
+
+    carry: the routine's saved local arrays (dumped as p_<name> in <tag>_out). The port
+    gets them with this year and later blanked, as `carry`, and must fill them in."""
     before = oracle_state.load(f"{tag}_in", y, run=RUN)
     after = oracle_state.load(f"{tag}_out", y, run=RUN)
     state = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in before.items()}
+    if carry is not None:
+        kwargs["carry"] = {k: _blank_from(after[f"p_{k}"], y) for k in carry}
+        before = dict(before, **{f"p_{k}": v for k, v in kwargs["carry"].items()})
     with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
         port(state, **kwargs)
+    if carry is not None:
+        state.update({f"p_{k}": v for k, v in kwargs["carry"].items()})
     changed = [k for k in after if rel_err(_raw(before[k]), _raw(after[k])) > 0]
     assert changed, f"{tag}: nothing changed between _in and _out, so the test proves nothing"
     bad = {}
