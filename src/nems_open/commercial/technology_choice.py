@@ -232,7 +232,7 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
             T = np.array([t for t, _ in L])
             V = np.array([v for _, v in L])
             ep_f = {f: (pelcmout[r, y, s], pngcm[r, y], pdscm[r, y])[f - 1] * jpgdp[ik] / jpgdp[-2] for f in (1, 2, 3)}
-            fuel_L = [fuel[t] for t, _ in L]
+            fuel_L = np.array([fuel[t] for t, _ in L], dtype=int)
 
             # What does not depend on building type, per preference group p and technology (t, v).
             eh_p, eha_pf, ehr_pf = {}, {}, {}
@@ -272,6 +272,7 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
             life_L = life[T, V]
             retro_L = retro_frac[T, V]
             tp = {p: tpp[s, p, y] for p in prefs}
+            tp_P = np.array([tp[p] for p in prefs], dtype=f32)
 
             # Candidate sets for the searches, as positions in L.
             same_fuel = {f: np.array([i for i, (t, _) in enumerate(L) if fuelbytech[t, f] == 1], dtype=int)
@@ -399,77 +400,62 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                 for i, (t, v) in enumerate(L):
                     MS[b, s, 2, t, v] = bs[2, 1] * lcmsr[i] + bs[2, 2] * sfmsr[i] + bs[2, 3] * stmsr[i]
 
-                # Retrofit: cost of keeping existing equipment (label 180).
+                # Retrofit: cost of keeping existing equipment (label 180), then for every
+                # preference group and existing technology the same-fuel (SF), all-fuel (AF)
+                # and same-technology (ST) winners, as positions in L (-1: no choice).
                 ace = maint_L - retro_L * capr_L / cf * ehr_PL / denr_PL + fpe_L * shell[I_EXIST]
                 ace = np.where(ret_unavail, MAXCOST, ace)
-                ret_sf, ret_af, ret_st = {}, {}, {}
-                min_af = None  # carried past this loop into the next (EIA quirk)
-                sf_min = {}
-                for p in prefs:
-                    aca, ac = ACA[I_EXIST][p], AC[I_EXIST][p]
-                    kaf = int(np.argmin(ac)) if nL else -1
-                    sf_best = {}
-                    for f in (1, 2, 3):
-                        cand = same_fuel[f]
-                        kk = int(np.argmin(aca[cand])) if cand.size else -1
-                        sf_best[f] = (aca[cand[kk]], L[cand[kk]]) if kk >= 0 else (None, None)
-                    sf_min[p] = sf_best
-                    st_best = {}
+                aca_P, ac_P = ACA[I_EXIST][1:], AC[I_EXIST][1:]          # [p, position]
+                live = ace < MAXCOST
+                me = np.broadcast_to(np.arange(nL), (NUM_PREF, nL))
+                sf_m = np.empty((NUM_PREF, 4), dtype=f32)                  # cheapest same-fuel cost, by fuel
+                sf_k = np.zeros((NUM_PREF, 4), dtype=int)
+                for f in (1, 2, 3):
+                    cand = same_fuel[f]
+                    if cand.size:
+                        kk = np.argmin(aca_P[:, cand], axis=1)
+                        sf_k[:, f] = cand[kk]
+                        sf_m[:, f] = aca_P[np.arange(NUM_PREF), cand[kk]]
+                ret_sf = np.where(sf_m[:, fuel_L] < ace, sf_k[:, fuel_L], me)
+                kaf = np.argmin(ac_P, axis=1)
+                maf = ac_P[np.arange(NUM_PREF), kaf]
+                beat = maf[:, None] < ace
+                ret_af = np.where(beat, kaf[:, None], me)
+                m_af = np.where(beat, maf[:, None], ace)
+                if st_ret:
+                    st_m, st_k = np.empty((NUM_PREF, nL), dtype=f32), np.zeros((NUM_PREF, nL), dtype=int)
                     for t in tlist:
                         idx = of_tech[t]
-                        kk = int(np.argmin(aca[idx]))
-                        st_best[t] = (aca[idx[kk]], Lt[t][kk])
-                    for i, (t, v) in enumerate(L):
-                        a0 = ace[p - 1, i]
-                        if a0 == MAXCOST:
-                            ret_sf[p, t, v] = ret_af[p, t, v] = (0, 0)
-                            ret_st[p, t, v] = 0
-                            continue
-                        m, arg = sf_best[fuel[t]]
-                        ret_sf[p, t, v] = arg if m is not None and m < a0 else (t, v)
-                        if kaf >= 0 and ac[kaf] < a0:
-                            ret_af[p, t, v], min_af = L[kaf], ac[kaf]
-                        else:
-                            ret_af[p, t, v], min_af = (t, v), a0
-                        if st_ret:
-                            m, vb = st_best[t]
-                            ret_st[p, t, v] = vb if m < a0 else v
-                        else:
-                            ret_st[p, t, v] = v
-                for p in prefs:
-                    for i, (t, v) in enumerate(L):
-                        if ace[p - 1, i] < MAXCOST:
-                            m, arg = sf_min[p][fuel[ret_af[p, t, v][0]]]
-                            if m is not None and m < min_af:
-                                min_af = m
-                                ret_af[p, t, v] = arg
-
-                lcm_ret, sfm_ret, stm_ret = zero_L(), zero_L(), zero_L()
-                for k, (tech, vint) in enumerate(L):
-                    ss = surv_L[k]
-                    for p in prefs:
-                        i = pos.get(ret_af[p, tech, vint])
-                        if i is not None:
-                            lcm_ret[i] += ss * tp[p]
-                for k, (tech, vint) in enumerate(L):
-                    ss = surv_L[k]
-                    for p in prefs:
-                        i = pos.get(ret_sf[p, tech, vint])
-                        if i is not None:
-                            sfm_ret[i] += ss * tp[p]
-                if st_ret:
-                    for t in tlist:
-                        for k in of_tech[t]:
-                            vint = L[k][1]
-                            ss = surv_L[k]
-                            for p in prefs:
-                                i = pos.get((t, ret_st[p, t, vint]))
-                                if i is not None:
-                                    stm_ret[i] += ss * tp[p]
+                        kk = np.argmin(aca_P[:, idx], axis=1)
+                        st_k[:, idx] = idx[kk][:, None]
+                        st_m[:, idx] = aca_P[np.arange(NUM_PREF), idx[kk]][:, None]
+                    ret_st = np.where(st_m < ace, st_k, me)
                 else:
-                    stm_ret = list(surv_L)
-                for i, (t, v) in enumerate(L):
-                    MS[b, s, 3, t, v] = bs[3, 1] * lcm_ret[i] + bs[3, 2] * sfm_ret[i] + bs[3, 3] * stm_ret[i]
+                    ret_st = me.copy()
+                ret_sf, ret_af, ret_st = (np.where(live, x, -1) for x in (ret_sf, ret_af, ret_st))
+                # Second all-fuel pass: cheapest adjusted cost within the winner's fuel. Its running
+                # minimum is never reset (EIA quirk): it starts from the last first-pass minimum and
+                # only falls, across every preference group and technology in turn.
+                pi, ii = np.nonzero(live)
+                if pi.size:
+                    fmin = fuel_L[ret_af[pi, ii]]
+                    c = sf_m[pi, fmin]
+                    run = np.minimum.accumulate(np.concatenate([[m_af[pi[-1], ii[-1]]], c]))
+                    hit = c < run[:-1]
+                    ret_af[pi[hit], ii[hit]] = sf_k[pi[hit], fmin[hit]]
+
+                # Shares of the surviving stock each technology wins, summed in the Fortran's order
+                # (existing technology, then preference group); np.add.at adds repeats in order.
+                contrib = (surv_L[:, None] * tp_P[None, :]).reshape(-1)     # [position, p]
+                def won(ret):
+                    tgt = ret.T.reshape(-1)
+                    keep = tgt >= 0
+                    acc = np.zeros(nL, dtype=f32)
+                    np.add.at(acc, tgt[keep], contrib[keep])
+                    return acc
+                lcm_ret, sfm_ret = won(ret_af), won(ret_sf)
+                stm_ret = won(ret_st) if st_ret else surv_L
+                MS[b, s, 3, T, V] = bs[3, 1] * lcm_ret + bs[3, 2] * sfm_ret + bs[3, 3] * stm_ret
 
                 NSD[r, b, s] = nd_in[s, b, r]
                 RSD[r, b, s] = rd_in[s, b, r]
