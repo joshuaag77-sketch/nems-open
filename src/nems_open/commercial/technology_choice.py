@@ -134,6 +134,14 @@ def _first_min(vals: np.ndarray, init):
     return (k, vals[k]) if vals[k] < init else (-1, init)
 
 
+def _row_totals(a: np.ndarray, dtype):
+    """Each row's Fortran running sum from 0.0, in column order (sequential accumulate);
+    float32 zeros if there are no columns."""
+    if a.shape[-1] == 0:
+        return np.zeros(a.shape[:-1], dtype=np.float32)
+    return np.add.accumulate(a.astype(dtype, copy=False), axis=-1)[..., -1]
+
+
 def _seq_total(terms: np.ndarray):
     """A Fortran running sum from 0.0 (float32) over `terms` in order: the last element of a
     sequential accumulate in the terms' dtype, or float32 zero if there are none."""
@@ -321,278 +329,291 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
             fuel_seq = {f: np.array([i for i, (t, _) in enumerate(L) if fuel[t] == f], dtype=int) for f in (1, 2, 3)}
             of_tech = {t: np.array([pos[t, v] for v in Lt[t]], dtype=int) for t in tlist}
             t1 = tlist[0]
-            sides = (I_EXIST, I_NEW) if s < 3 else (I_EXIST,)
-            new_side = I_NEW if s < 3 else I_EXIST
-            reg_fs_num = {}
+            t1pos = pos.get((t1, 1), -1)
 
-            for b in range(1, NUM_BLDG + 1):
-                if s < 3:
-                    shf = sh_h if s == 1 else sh_c
-                    shell = {I_EXIST: shf[b, r, 1], I_NEW: shf[b, r, 2]}
-                else:
-                    shell = {I_EXIST: f32(1.0), I_NEW: f32(1.0)}
-
-                # Retiring and surviving shares of last year's equipment.
-                ptss = prev_tss[r, b, s, T, V]
-                has_life = life_L > 0.0
-                rp = _seq_total((ptss / life_L)[has_life])
-                surv_ok = has_life & ((f32(1.0) - rp) > 0.0)
-                repl_ok = has_life & (rp > 0.0)
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    surv_L = np.where(surv_ok, ptss * (f32(1.0) - (f32(1.0) / life_L)) / (f32(1.0) - rp), f32(0.0)).astype(f32)
-                    repl_L = np.where(repl_ok, ptss * (f32(1.0) / life_L) / rp, f32(0.0)).astype(f32)
-                # float32 times an int fuel flag is float64, as in the reference version
-                repl_fs = [None] + [_seq_total((repl_L * fb_L[f])[repl_ok]) for f in (1, 2, 3)]
-
-                # Annualized cost of every technology (label 90).
-                ok = ~(unavail_tv | (restrict[T, V, b, r] == 1))
-                cf = capfac[r, b, s]
-                ca = cap_L / cf * eha_PL / dena_PL + maint_L
-                c = cap_L / cf * eh_PL / den_PL + maint_L
-                fuel_e = fpe_L * shell[I_EXIST]
-                a_ex, c_ex = np.where(ok, ca + fuel_e, MAXCOST), np.where(ok, c + fuel_e, MAXCOST)
-                if s < 3:
-                    fuel_n = fpe_L * shell[I_NEW]
-                    a_nw, c_nw = np.where(ok, ca + fuel_n, MAXCOST), np.where(ok, c + fuel_n, MAXCOST)
-                else:
-                    a_nw, c_nw = np.where(ok, ca, MAXCOST), np.where(ok, c, MAXCOST)
-                acta[1:, T, V, I_EXIST], act[1:, T, V, I_EXIST] = a_ex, c_ex
-                acta[1:, T, V, I_NEW], act[1:, T, V, I_NEW] = a_nw, c_nw
-                AC = {I_EXIST: act[:, T, V, I_EXIST], I_NEW: act[:, T, V, I_NEW]}
-                ACA = {I_EXIST: acta[:, T, V, I_EXIST], I_NEW: acta[:, T, V, I_NEW]}
-
-                # New and Replacement: least-cost searches (label 100), all preference groups at once.
-                lc_af, lc_sf, lcv_st = {}, {}, {}
-                for sd in sides:
-                    ac, aca = AC[sd][1:], ACA[sd][1:]                 # [p, position]
-                    k = np.argmin(ac, axis=1)
-                    m = ac[P7, k]
-                    init = act[1:, t1, 1, sd]
-                    win = m < init
-                    best = np.where(win, m, init)
-                    first = [L[k[i]] if win[i] else (t1, 1) for i in range(NUM_PREF)]
-                    sfk, sfm = {}, {}
-                    for f in (1, 2, 3):
-                        cand = same_fuel[f]
-                        if cand.size:
-                            kf = cand[np.argmin(aca[:, cand], axis=1)]
-                            sfk[f], sfm[f] = kf, aca[P7, kf]
-                    for i, p in enumerate(prefs):
-                        f = fuel[first[i][0]]
-                        lc_af[p, sd] = L[sfk[f][i]] if f in sfk and sfm[f][i] < best[i] else first[i]
-                    for f in (1, 2, 3):
-                        seq = fuel_seq[f]
-                        init = acta[1:, t1, 1, sd] if f == fuel[t1] else np.full(NUM_PREF, MAXCOST, dtype=f32)
-                        iarg = (t1, 1) if f == fuel[t1] else (0, 0)
-                        if seq.size:
-                            kf = seq[np.argmin(aca[:, seq], axis=1)]
-                            mf = aca[P7, kf]
-                        else:
-                            kf, mf = None, init
-                        for i, p in enumerate(prefs):
-                            if seq.size and mf[i] < init[i]:
-                                lc_sf[p, f, sd] = L[kf[i]]
-                            else:
-                                lc_sf[p, f, sd] = (0, 0) if init[i] == MAXCOST else iarg
-                    for t in tlist:
-                        idx = of_tech[t]
-                        init = acta[1:, t, 1, sd]
-                        if idx.size:
-                            kk = np.argmin(aca[:, idx], axis=1)
-                            mt = aca[P7, idx[kk]]
-                        for i, p in enumerate(prefs):
-                            if idx.size and mt[i] < init[i]:
-                                lcv_st[p, t, sd] = Lt[t][kk[i]]
-                            else:
-                                lcv_st[p, t, sd] = 0 if init[i] == MAXCOST else 1
-
-                zero_L = lambda: [f32(0.0)] * nL
-                lcmsn, lcmsr, sfmsn, sfmsr, stmsn, stmsr = (zero_L() for _ in range(6))
-                for p in prefs:
-                    i = pos.get(lc_af[p, I_EXIST])
-                    if i is not None:
-                        lcmsr[i] += tp[p]
-                    i = pos.get(lc_af[p, new_side])
-                    if i is not None:
-                        lcmsn[i] += tp[p]
-                for f in range(1, 4):
-                    pf = prev_fss[r, b, s, f]
-                    for p in prefs:
-                        if s < 3:
-                            i = pos.get(lc_sf[p, f, I_EXIST])
-                            if i is not None:
-                                sfmsr[i] += tp[p] * repl_fs[f]
-                            i = pos.get(lc_sf[p, f, I_NEW])
-                            if i is not None:
-                                sfmsn[i] += tp[p] * pf
-                        else:
-                            i = pos.get(lc_sf[p, f, I_EXIST])
-                            if i is not None:
-                                sfmsn[i] += tp[p] * pf
-                                sfmsr[i] += tp[p] * repl_fs[f]
+            def per_tech_total(vals):
+                """Each position's technology total over its vintages (a float32 running sum), per
+                building type (vals is [b, position])."""
+                out = np.zeros(vals.shape, dtype=f32)
                 for t in tlist:
-                    share_n = f32(0.0)
-                    share_r = f32(0.0)
-                    for i in of_tech[t]:
-                        share_n += ptss[i]
-                        share_r += repl_L[i]
-                    for p in prefs:
-                        if s < 3:
-                            i = pos.get((t, lcv_st[p, t, I_EXIST]))
-                            if i is not None:
-                                stmsr[i] += tp[p]
-                            i = pos.get((t, lcv_st[p, t, I_NEW]))
-                            if i is not None:
-                                stmsn[i] += tp[p]
-                        else:
-                            i = pos.get((t, lcv_st[p, t, I_EXIST]))
-                            if i is not None:
-                                stmsn[i] += tp[p]
-                                stmsr[i] += tp[p]
-                    for i in of_tech[t]:
-                        stmsn[i] = stmsn[i] * share_n
-                        stmsr[i] = stmsr[i] * share_r
-                bs = bshare[s, b]
-                for i, (t, v) in enumerate(L):
-                    MS[b, s, 1, t, v] = bs[1, 1] * lcmsn[i] + bs[1, 2] * sfmsn[i] + bs[1, 3] * stmsn[i]
-                for i, (t, v) in enumerate(L):
-                    MS[b, s, 2, t, v] = bs[2, 1] * lcmsr[i] + bs[2, 2] * sfmsr[i] + bs[2, 3] * stmsr[i]
+                    idx = of_tech[t]
+                    if idx.size:
+                        out[:, idx] = _row_totals(vals[:, idx], f32)[:, None]
+                return out
+            sides = (I_EXIST, I_NEW) if s < 3 else (I_EXIST,)
+            new_side = n_side = I_NEW if s < 3 else I_EXIST
 
-                # Retrofit: cost of keeping existing equipment (label 180), then for every
-                # preference group and existing technology the same-fuel (SF), all-fuel (AF)
-                # and same-technology (ST) winners, as positions in L (-1: no choice).
-                ace = maint_L - retro_L * capr_L / cf * ehr_PL / denr_PL + fpe_L * shell[I_EXIST]
-                ace = np.where(ret_unavail, MAXCOST, ace)
-                aca_P, ac_P = ACA[I_EXIST][1:], AC[I_EXIST][1:]          # [p, position]
-                live = ace < MAXCOST
-                me = np.broadcast_to(np.arange(nL), (NUM_PREF, nL))
-                sf_m = np.empty((NUM_PREF, 4), dtype=f32)                  # cheapest same-fuel cost, by fuel
-                sf_k = np.zeros((NUM_PREF, 4), dtype=int)
-                for f in (1, 2, 3):
+            # Every building type at once: arrays carry a leading [b] axis (b = 1..11). Nothing
+            # couples the building types inside a region and service except the running
+            # investment totals (summed in the Fortran's order below) and the persistent cost
+            # table, which is only read at entries this service never writes.
+            bb = np.arange(1, NUM_BLDG + 1)
+            NBd = NUM_BLDG
+            if s < 3:
+                shf = sh_h if s == 1 else sh_c
+                sh_ex, sh_nw = shf[bb, r, 1], shf[bb, r, 2]
+            else:
+                sh_ex = sh_nw = np.ones(NBd, dtype=f32)
+            Bc, Tr, Vr = bb[:, None], T[None, :], V[None, :]
+
+            # Retiring and surviving shares of last year's equipment.
+            ptss = prev_tss[r, Bc, s, Tr, Vr]                                  # [b, position]
+            has_life = life_L > 0.0
+            rp = _row_totals((ptss / life_L)[:, has_life], f32)
+            surv_ok = has_life & ((f32(1.0) - rp)[:, None] > 0.0)
+            repl_ok = has_life & (rp[:, None] > 0.0)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                surv_L = np.where(surv_ok, ptss * (f32(1.0) - (f32(1.0) / life_L)) / (f32(1.0) - rp)[:, None],
+                                  f32(0.0)).astype(f32)
+                repl_L = np.where(repl_ok, ptss * (f32(1.0) / life_L) / rp[:, None], f32(0.0)).astype(f32)
+            # float32 times an int fuel flag is float64, as in the reference version; a building
+            # type with nothing retiring keeps a float32 zero
+            has_repl = repl_ok.any(axis=1)
+            rfs = np.stack([np.zeros(NBd)] + [_row_totals(np.where(repl_ok, repl_L * fb_L[f], 0.0), np.float64)
+                                              for f in (1, 2, 3)], axis=1)   # [b, fuel]
+
+            # Annualized cost of every technology (label 90): [b, p, position].
+            ok = ~(unavail_tv[None, :] | (restrict[T[:, None], V[:, None], bb[None, :], r] == 1).T)
+            cf = capfac[r, bb, s]
+            cf3 = cf[:, None, None]
+            ca = cap_L / cf3 * eha_PL[None] / dena_PL[None] + maint_L
+            c = cap_L / cf3 * eh_PL[None] / den_PL[None] + maint_L
+            fuel_e = (fpe_L[None, :] * sh_ex[:, None])[:, None, :]
+            ok3 = ok[:, None, :]
+            AC = {I_EXIST: np.where(ok3, c + fuel_e, MAXCOST)}
+            ACA = {I_EXIST: np.where(ok3, ca + fuel_e, MAXCOST)}
+            if s < 3:
+                fuel_n = (fpe_L[None, :] * sh_nw[:, None])[:, None, :]
+                AC[I_NEW], ACA[I_NEW] = np.where(ok3, c + fuel_n, MAXCOST), np.where(ok3, ca + fuel_n, MAXCOST)
+            else:
+                AC[I_NEW], ACA[I_NEW] = np.where(ok3, c, MAXCOST), np.where(ok3, ca, MAXCOST)
+
+            def vint1(tab, arrs, t, sd):
+                """The (t, vintage 1) entry as each building type sees it: this service's own cost
+                if (t, 1) is in L, otherwise what the persistent table holds."""
+                p1 = pos.get((t, 1))
+                return arrs[sd][:, :, p1] if p1 is not None else np.broadcast_to(tab[1:, t, 1, sd], (NBd, NUM_PREF))
+
+            def at(a, k):
+                return np.take_along_axis(a, k[..., None], axis=-1)[..., 0]
+
+            # New and Replacement: least-cost searches (label 100). Winners are positions in L;
+            # -1 is a choice outside L (EIA's (0,0), or a starting (t, 1) the model does not
+            # track), which wins no share.
+            af_pos, sf_pos, st_pos = {}, {}, {}
+            for sd in sides:
+                ac, aca = AC[sd], ACA[sd]
+                k = np.argmin(ac, axis=2)
+                m = at(ac, k)
+                init = vint1(act, AC, t1, sd)
+                win = m < init
+                best = np.where(win, m, init)
+                won_af = np.where(win, k, t1pos)
+                won_fuel = np.where(win, fuel_L[k], fuel[t1])
+                for f in (1, 2, 3):  # second pass: cheapest adjusted cost within the winner's fuel
                     cand = same_fuel[f]
                     if cand.size:
-                        kk = np.argmin(aca_P[:, cand], axis=1)
-                        sf_k[:, f] = cand[kk]
-                        sf_m[:, f] = aca_P[np.arange(NUM_PREF), cand[kk]]
-                ret_sf = np.where(sf_m[:, fuel_L] < ace, sf_k[:, fuel_L], me)
-                kaf = np.argmin(ac_P, axis=1)
-                maf = ac_P[np.arange(NUM_PREF), kaf]
-                beat = maf[:, None] < ace
-                ret_af = np.where(beat, kaf[:, None], me)
-                m_af = np.where(beat, maf[:, None], ace)
-                if st_ret:
-                    st_m, st_k = np.empty((NUM_PREF, nL), dtype=f32), np.zeros((NUM_PREF, nL), dtype=int)
-                    for t in tlist:
-                        idx = of_tech[t]
-                        kk = np.argmin(aca_P[:, idx], axis=1)
-                        st_k[:, idx] = idx[kk][:, None]
-                        st_m[:, idx] = aca_P[np.arange(NUM_PREF), idx[kk]][:, None]
-                    ret_st = np.where(st_m < ace, st_k, me)
-                else:
-                    ret_st = me.copy()
-                ret_sf, ret_af, ret_st = (np.where(live, x, -1) for x in (ret_sf, ret_af, ret_st))
-                # Second all-fuel pass: cheapest adjusted cost within the winner's fuel. Its running
-                # minimum is never reset (EIA quirk): it starts from the last first-pass minimum and
-                # only falls, across every preference group and technology in turn.
-                pi, ii = np.nonzero(live)
-                if pi.size:
-                    fmin = fuel_L[ret_af[pi, ii]]
-                    c = sf_m[pi, fmin]
-                    run = np.minimum.accumulate(np.concatenate([[m_af[pi[-1], ii[-1]]], c]))
-                    hit = c < run[:-1]
-                    ret_af[pi[hit], ii[hit]] = sf_k[pi[hit], fmin[hit]]
+                        kf = cand[np.argmin(aca[:, :, cand], axis=2)]
+                        won_af = np.where((won_fuel == f) & (at(aca, kf) < best), kf, won_af)
+                af_pos[sd] = won_af
+                sfp = np.full((NBd, NUM_PREF, 4), -1, dtype=int)
+                for f in (1, 2, 3):
+                    seq = fuel_seq[f]
+                    if f == fuel[t1]:  # EIA starts the first technology's fuel at its vintage 1
+                        init, iarg = vint1(acta, ACA, t1, sd), t1pos
+                    else:
+                        init, iarg = np.full((NBd, NUM_PREF), MAXCOST, dtype=f32), -1
+                    res = np.where(init == MAXCOST, -1, iarg)
+                    if seq.size:
+                        kf = seq[np.argmin(aca[:, :, seq], axis=2)]
+                        res = np.where(at(aca, kf) < init, kf, res)
+                    sfp[:, :, f] = res
+                sf_pos[sd] = sfp
+                stp = []
+                for t in tlist:
+                    idx = of_tech[t]
+                    init = vint1(acta, ACA, t, sd)
+                    res = np.where(init == MAXCOST, -1, pos.get((t, 1), -1))
+                    if idx.size:
+                        kk = idx[np.argmin(aca[:, :, idx], axis=2)]
+                        res = np.where(at(aca, kk) < init, kk, res)
+                    stp.append(res)
+                st_pos[sd] = np.concatenate(stp, axis=1)                    # [b, (t, p)]
 
-                # Shares of the surviving stock each technology wins, summed in the Fortran's order
-                # (existing technology, then preference group); np.add.at adds repeats in order.
-                contrib = (surv_L[:, None] * tp_P[None, :]).reshape(-1)     # [position, p]
-                def won(ret):
-                    tgt = ret.T.reshape(-1)
-                    keep = tgt >= 0
-                    acc = np.zeros(nL, dtype=f32)
-                    np.add.at(acc, tgt[keep], contrib[keep])
-                    return acc
-                lcm_ret, sfm_ret = won(ret_af), won(ret_sf)
-                stm_ret = won(ret_st) if st_ret else surv_L
-                MS[b, s, 3, T, V] = bs[3, 1] * lcm_ret + bs[3, 2] * sfm_ret + bs[3, 3] * stm_ret
+            def won(targets, values, dtype=f32):
+                """Per building type, add values[b, k] to position targets[b, k] in k's order
+                (np.add.at adds repeats in order); -1 targets are dropped."""
+                acc = np.zeros((NBd, nL), dtype=dtype)
+                targets = targets.reshape(NBd, -1)
+                values = np.broadcast_to(values, targets.shape) if np.ndim(values) < 2 else values.reshape(NBd, -1)
+                keep = targets >= 0
+                np.add.at(acc.reshape(-1), (targets + np.arange(NBd)[:, None] * nL)[keep], values[keep])
+                return acc
 
-                NSD[r, b, s] = nd_in[s, b, r]
-                RSD[r, b, s] = rd_in[s, b, r]
-                SSD[r, b, s] = sd_in[s, b, r]
-                nsd, rsd, ssd = NSD[r, b, s], RSD[r, b, s], SSD[r, b, s]
+            # Shares each technology wins (the Fortran's loop order). float32 times REPL_FS
+            # (float64 when set) is float64, as in the reference version; MS2 keeps that split.
+            lcmsr = won(af_pos[I_EXIST], tp_P)
+            lcmsn = won(af_pos[new_side], tp_P)
+            pf = prev_fss[r, bb, s, 1:4]                                     # [b, fuel]
+            sfmsn = won(sf_pos[n_side][:, :, 1:].transpose(0, 2, 1), tp_P[None, None, :] * pf[:, :, None])
+            tg = np.where(has_repl[:, None, None], sf_pos[I_EXIST][:, :, 1:].transpose(0, 2, 1), -1)
+            sfmsr64 = won(tg, tp_P.astype(np.float64)[None, None, :] * rfs[:, 1:, None], np.float64)
+            is64 = won(tg, np.ones(tg.shape), np.float64) > 0
+            tp_rep = np.tile(tp_P, len(tlist))
+            stmsr = won(st_pos[I_EXIST], tp_rep) * per_tech_total(repl_L)
+            stmsn = won(st_pos[n_side], tp_rep) * per_tech_total(ptss)
+            bsh = bshare[s, bb]                                              # [b, decision, behavior]
+            g = lambda d, k: bsh[:, d, k][:, None]
+            MS[Bc, s, 1, Tr, Vr] = g(1, 1) * lcmsn + g(1, 2) * sfmsn + g(1, 3) * stmsn
+            m32 = g(2, 1) * lcmsr + g(2, 2) * np.zeros((NBd, nL), dtype=f32) + g(2, 3) * stmsr
+            m64 = ((g(2, 1) * lcmsr).astype(np.float64) + g(2, 2).astype(np.float64) * sfmsr64) \
+                + (g(2, 3) * stmsr).astype(np.float64)
+            MS[Bc, s, 2, Tr, Vr] = np.where(is64, m64.astype(f32), m32)
 
-                # Heat pumps chosen for heating also cool (label after 240).
-                if s == 2:
-                    SD = {(svc, 1): NSD[r, b, svc] for svc in (1, 2)}
-                    SD.update({(svc, 2): RSD[r, b, svc] for svc in (1, 2)})
-                    SD.update({(svc, 3): SSD[r, b, svc] for svc in (1, 2)})
+            # Retrofit: cost of keeping existing equipment (label 180), then for every
+            # preference group and existing technology the same-fuel (SF), all-fuel (AF) and
+            # same-technology (ST) winners, as positions in L (-1: no choice).
+            ace = maint_L - retro_L * capr_L / cf3 * ehr_PL[None] / denr_PL[None] + fuel_e
+            ace = np.where(ret_unavail, MAXCOST, ace)
+            aca_P, ac_P = ACA[I_EXIST], AC[I_EXIST]
+            live = ace < MAXCOST
+            me = np.broadcast_to(np.arange(nL), ace.shape)
+            sf_m = np.zeros((NBd, NUM_PREF, 4), dtype=f32)                  # cheapest same-fuel cost, by fuel
+            sf_k = np.zeros((NBd, NUM_PREF, 4), dtype=int)
+            for f in (1, 2, 3):
+                cand = same_fuel[f]
+                if cand.size:
+                    sf_k[:, :, f] = cand[np.argmin(aca_P[:, :, cand], axis=2)]
+                    sf_m[:, :, f] = at(aca_P, sf_k[:, :, f])
+            ret_sf = np.where(sf_m[:, :, fuel_L] < ace, sf_k[:, :, fuel_L], me)
+            kaf = np.argmin(ac_P, axis=2)
+            maf = at(ac_P, kaf)[:, :, None]
+            beat = maf < ace
+            ret_af = np.where(beat, kaf[:, :, None], me)
+            m_af = np.where(beat, maf, ace)
+            if st_ret:
+                st_m, st_k = np.zeros(ace.shape, dtype=f32), np.zeros(ace.shape, dtype=int)
+                for t in tlist:
+                    idx = of_tech[t]
+                    kk = idx[np.argmin(aca_P[:, :, idx], axis=2)]
+                    st_k[:, :, idx] = kk[:, :, None]
+                    st_m[:, :, idx] = at(aca_P, kk)[:, :, None]
+                ret_st = np.where(st_m < ace, st_k, me)
+            else:
+                ret_st = np.array(me)
+            # Second all-fuel pass: cheapest adjusted cost within the winner's fuel. Its running
+            # minimum is never reset (EIA quirk): it starts from the last first-pass minimum and
+            # only falls, across every preference group and technology in turn.
+            flat_live = live.reshape(NBd, -1)
+            fmin = fuel_L[ret_af].reshape(NBd, -1)
+            pp = np.broadcast_to(np.arange(NUM_PREF)[:, None], (NUM_PREF, nL)).reshape(-1)
+            rows = np.arange(NBd)[:, None]
+            cnd = np.where(flat_live, sf_m.reshape(NBd, -1)[rows, pp * 4 + fmin], np.inf)
+            any_live = flat_live.any(axis=1)
+            last = flat_live.shape[1] - 1 - np.argmax(flat_live[:, ::-1], axis=1)
+            m0 = np.where(any_live, m_af.reshape(NBd, -1)[np.arange(NBd), last], np.inf)
+            run = np.minimum.accumulate(np.concatenate([m0[:, None], cnd], axis=1), axis=1)
+            hit = cnd < run[:, :-1]
+            ra = ret_af.reshape(NBd, -1).copy()
+            ra[hit] = sf_k.reshape(NBd, -1)[rows, pp * 4 + fmin][hit]
+            ret_af = ra.reshape(ace.shape)
+            ret_sf, ret_af, ret_st = (np.where(live, x, -1) for x in (ret_sf, ret_af, ret_st))
+
+            # Shares of the surviving stock each technology wins, summed in the Fortran's order
+            # (existing technology, then preference group).
+            contrib = surv_L[:, :, None] * tp_P[None, None, :]              # [b, position, p]
+            lcm_ret = won(ret_af.transpose(0, 2, 1), contrib)
+            sfm_ret = won(ret_sf.transpose(0, 2, 1), contrib)
+            stm_ret = won(ret_st.transpose(0, 2, 1), contrib) if st_ret else surv_L
+            MS[Bc, s, 3, Tr, Vr] = g(3, 1) * lcm_ret + g(3, 2) * sfm_ret + g(3, 3) * stm_ret
+
+            NSD[r, bb, s] = nd_in[s, bb, r]
+            RSD[r, bb, s] = rd_in[s, bb, r]
+            SSD[r, bb, s] = sd_in[s, bb, r]
+            nsd, rsd, ssd = NSD[r, bb, s], RSD[r, bb, s], SSD[r, bb, s]
+
+            # Heat pumps chosen for heating also cool (label after 240).
+            if s == 2:
+                SD = {(svc, 1): NSD[r, bb, svc] for svc in (1, 2)}
+                SD.update({(svc, 2): RSD[r, bb, svc] for svc in (1, 2)})
+                SD.update({(svc, 3): SSD[r, bb, svc] for svc in (1, 2)})
+                THc, VHc, TBc, VBc = (TH + NUM_HP)[None, :], VH[None, :], TB[None, :], VB[None, :]
+                with np.errstate(divide="ignore", invalid="ignore"):
                     for d in range(1, NUM_DEC + 1):
-                        if SD[2, d] > 0.0:
-                            MS[b, 2, d, TH + NUM_HP, VH] = (MS[b, 1, d, TH, VH] * SD[1, d]
-                                                           * degreedays[2, r, y] / degreedays[1, r, y] / SD[2, d])
-                        else:
-                            MS[b, 2, d, TH + NUM_HP, VH] = 0.0
+                        sd2 = SD[2, d][:, None]
+                        MS[Bc, 2, d, THc, VHc] = np.where(
+                            sd2 > 0.0, MS[Bc, 1, d, TH[None, :], VHc] * SD[1, d][:, None]
+                            * degreedays[2, r, y] / degreedays[1, r, y] / sd2, f32(0.0))
                     for d in range(1, NUM_DEC + 1):
-                        hp_sd = _seq_total(MS[b, 2, d, TH + NUM_HP, VH] * SD[2, d])
-                        norm = _seq_total(MS[b, 2, d, TB, VB])
-                        if norm > 0.0:
-                            MS[b, 2, d, TB, VB] = MS[b, 2, d, TB, VB] / norm
-                        if SD[2, d] > 0.0:
-                            MS[b, 2, d, TB, VB] = MS[b, 2, d, TB, VB] * (SD[2, d] - hp_sd) / SD[2, d]
+                        sd2 = SD[2, d][:, None]
+                        hp_sd = _row_totals(MS[Bc, 2, d, THc, VHc] * sd2, f32)[:, None]
+                        norm = _row_totals(MS[Bc, 2, d, TBc, VBc], f32)[:, None]
+                        big = MS[Bc, 2, d, TBc, VBc]
+                        big = np.where(norm > 0.0, big / norm, big)
+                        MS[Bc, 2, d, TBc, VBc] = np.where(sd2 > 0.0, big * (sd2 - hp_sd) / sd2, big)
 
-                # Investment in purchased equipment (label 314), summed in L's order.
-                ms1, ms2, ms3 = MS[b, s, 1, T, V], MS[b, s, 2, T, V], MS[b, s, 3, T, V]
-                gain = ssd * (ms3 - surv_L)
-                ird_L = np.where(ok & (gain > 0.0), gain, f32(0.0))
-                invest = ms1 * nsd + ms2 * rsd + ird_L
-                cnt = ok & ~skip_hp
-                purch_sd = _seq_total(invest[cnt])
-                prt_sd = _seq_total(ird_L[cnt])
-                inv, fed, nonfed, subt, s111d = (ys[k] for k in ("investcost", "fedsubsidyinvestcost",
-                                                                 "nonfedsubsidyinvestcost", "subsidyinvestcost",
-                                                                 "subsidy111dinvestcost"))
-                np.add.at(inv[r, s], fi_L[cnt], (invest * (tic_L / f32(8760.0) / cf))[cnt])
-                sub_v = invest * (sub_L / f32(8760.0) / cf)
-                np.add.at(fed[r, s], fi_L[cnt & cri2_L], sub_v[cnt & cri2_L])
-                np.add.at(nonfed[r, s], fi_L[cnt & ~cri2_L], sub_v[cnt & ~cri2_L])
-                for fi in set(fi_L[cnt].tolist()):
-                    subt[r, s, fi] = fed[r, s, fi] + nonfed[r, s, fi]
-                np.add.at(s111d[r, s], fi_L[cnt], (invest * (s111_L / f32(8760.0) / cf))[cnt])
+            # Investment in purchased equipment (label 314), summed in the Fortran's order:
+            # building type, then technology.
+            ms1, ms2, ms3 = MS[Bc, s, 1, Tr, Vr], MS[Bc, s, 2, Tr, Vr], MS[Bc, s, 3, Tr, Vr]
+            gain = ssd[:, None] * (ms3 - surv_L)
+            ird_L = np.where(ok & (gain > 0.0), gain, f32(0.0))
+            invest = ms1 * nsd[:, None] + ms2 * rsd[:, None] + ird_L
+            cnt = ok & ~skip_hp[None, :]
+            purch_sd = _row_totals(np.where(cnt, invest, f32(0.0)), f32)
+            prt_sd = _row_totals(np.where(cnt, ird_L, f32(0.0)), f32)
+            inv, fed, nonfed, subt, s111d = (ys[k] for k in ("investcost", "fedsubsidyinvestcost",
+                                                             "nonfedsubsidyinvestcost", "subsidyinvestcost",
+                                                             "subsidy111dinvestcost"))
+            fi2 = np.broadcast_to(fi_L, cnt.shape)
+            cf2 = cf[:, None]
+            np.add.at(inv[r, s], fi2[cnt], (invest * (tic_L / f32(8760.0) / cf2))[cnt])
+            sub_v = invest * (sub_L / f32(8760.0) / cf2)
+            fedm = cnt & cri2_L[None, :]
+            np.add.at(fed[r, s], fi2[fedm], sub_v[fedm])
+            np.add.at(nonfed[r, s], fi2[cnt & ~fedm], sub_v[cnt & ~fedm])
+            for fi in set(fi2[cnt].tolist()):
+                subt[r, s, fi] = fed[r, s, fi] + nonfed[r, s, fi]
+            np.add.at(s111d[r, s], fi2[cnt], (invest * (s111_L / f32(8760.0) / cf2))[cnt])
 
-                # Fuel shares and efficiency by decision (label 270). MS (float32) times the int
-                # fuel flag is float64 in numpy, so these sums run in float64, in L's order.
-                FS, AE = {}, {}
+            # Fuel shares and efficiency by decision (label 270). MS (float32) times the int
+            # fuel flag is float64 in numpy, so these sums run in float64, in L's order.
+            FS, AE = {}, {}
+            rr = np.full((NBd, 1), r)
+            with np.errstate(divide="ignore", invalid="ignore"):
                 for d in range(1, NUM_DEC + 1):
-                    ms_d = MS[b, s, d, T, V]
+                    ms_d = MS[Bc, s, d, Tr, Vr]
                     for f in range(1, NUM_FUEL + 1):
                         terms = ms_d * fb_L[f]
-                        fs = _seq_total(terms)
-                        den = _seq_total((terms / eff_L)[eff_pos])
+                        fs = _row_totals(terms, np.float64)
+                        den = _row_totals((terms / eff_L)[:, eff_pos], np.float64)
                         FS[d, f] = fs
-                        AE[d, f] = fs / den if den > 0.0 else f32(0.0)
+                        AE[d, f] = np.where(den > 0.0, fs / den, 0.0)
                 tot = nsd + rsd + ssd
+                live_t = tot > 0.0
                 for f in range(1, NUM_FUEL + 1):
-                    FSS[r, b, s, f] = 0.0
-                    sdbyfuel[f, s, b, r] = 0.0
-                    if tot > 0.0:
-                        FSS[r, b, s, f] = (nsd * FS[1, f] + rsd * FS[2, f] + ssd * FS[3, f]) / tot
-                        sdbyfuel[f, s, b, r] = (nsd_ns[r, b, s] * FS[1, f] + rsd_ns[r, b, s] * FS[2, f]
-                                                + ssd_ns[r, b, s] * FS[3, f])
-                tss_L = (nsd * ms1 + rsd * ms2 + ssd * ms3) / tot if tot > 0.0 else np.zeros(nL, dtype=f32)
-                TSS[r, b, s, T, V] = tss_L
-                PTS[r, b, s, T, V] = ((nsd * ms1 + rsd * ms2 + prt_sd * (ird_L / ssd)) / purch_sd
-                                      if purch_sd > 0.0 else f32(0.0))
-                tss_L = TSS[r, b, s, T, V]
+                    FSS[r, bb, s, f] = np.where(live_t, (nsd * FS[1, f] + rsd * FS[2, f] + ssd * FS[3, f]) / tot, 0.0)
+                    sdbyfuel[f, s, bb, r] = np.where(live_t, nsd_ns[r, bb, s] * FS[1, f] + rsd_ns[r, bb, s] * FS[2, f]
+                                                     + ssd_ns[r, bb, s] * FS[3, f], 0.0)
+                TSS[rr, Bc, s, Tr, Vr] = np.where(live_t[:, None], (nsd[:, None] * ms1 + rsd[:, None] * ms2
+                                                                    + ssd[:, None] * ms3) / tot[:, None], f32(0.0))
+                PTS[rr, Bc, s, Tr, Vr] = np.where(
+                    (purch_sd > 0.0)[:, None],
+                    (nsd[:, None] * ms1 + rsd[:, None] * ms2 + prt_sd[:, None] * (ird_L / ssd[:, None]))
+                    / purch_sd[:, None], f32(0.0))
+                tss_L = TSS[rr, Bc, s, Tr, Vr]
                 for f in range(1, NUM_FUEL + 1):
-                    den = _seq_total((tss_L * fb_L[f] / eff_L)[eff_pos])
-                    AVE[r, b, s, f] = FSS[r, b, s, f] / den if den > 0.0 else prev_ae[r, b, s, f]
-                    if b == 10:
-                        whse_eff[r, s, f] = AVE[r, 10, s, f]
-                        whse_sd[r, s, f] = sdbyfuel[f, s, 10, r]
-                for d, dmd in ((1, nsd), (2, rsd), (3, ssd)):
-                    add = MS[b, s, d, TA, VA] * dmd
-                    eqy[r, b, TA, VA, d] += add
-                    eqy[11, b, TA, VA, d] += add
-                reg_fs_num[b] = (FS, AE)
+                    den = _row_totals((tss_L * fb_L[f] / eff_L)[:, eff_pos], np.float64)
+                    AVE[r, bb, s, f] = np.where(den > 0.0, FSS[r, bb, s, f] / den, prev_ae[r, bb, s, f])
+                    whse_eff[r, s, f] = AVE[r, 10, s, f]
+                    whse_sd[r, s, f] = sdbyfuel[f, s, 10, r]
+            TAc, VAc = TA[None, :], VA[None, :]
+            for d, dmd in ((1, nsd), (2, rsd), (3, ssd)):
+                add = MS[Bc, s, d, TAc, VAc] * dmd[:, None]
+                eqy[rr, Bc, TAc, VAc, d] += add
+                eqy[rr * 0 + 11, Bc, TAc, VAc, d] += add
+            # The persistent cost table ends this service holding the last building type's costs.
+            for sd in (I_EXIST, I_NEW):
+                act[1:, T, V, sd], acta[1:, T, V, sd] = AC[sd][-1], ACA[sd][-1]
 
             # Decision-type fuel shares and efficiency for the region (labels 340, 350).
             for f in range(1, NUM_FUEL + 1):
@@ -601,16 +622,15 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                     num = f32(0.0)
                     den = f32(0.0)
                     for b in range(1, NUM_BLDG + 1):
-                        num += reg_fs_num[b][0][d, f] * dmd[r, b, s]
+                        num += FS[d, f][b - 1] * dmd[r, b, s]
                         den += dmd[r, b, s]
                     ys["decfuelshare"][r, s, d, f] = num / den if den > 0.0 else f32(0.0)
                     num = f32(0.0)
                     den = f32(0.0)
                     for b in range(1, NUM_BLDG + 1):
-                        FS, AE = reg_fs_num[b]
-                        if AE[d, f] > 0.0:
-                            num += FS[d, f] * dmd[r, b, s]
-                            den += FS[d, f] * dmd[r, b, s] / AE[d, f]
+                        if AE[d, f][b - 1] > 0.0:
+                            num += FS[d, f][b - 1] * dmd[r, b, s]
+                            den += FS[d, f][b - 1] * dmd[r, b, s] / AE[d, f][b - 1]
                     ys["decavgeff"][r, s, d, f] = num / den if den > 0.0 else f32(0.0)
             for f in range(1, NUM_FUEL + 1):
                 for name in ("investcost", "subsidyinvestcost", "subsidy111dinvestcost"):

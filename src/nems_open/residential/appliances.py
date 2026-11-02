@@ -21,7 +21,7 @@ State the dumps do not hold, and what the port does about it:
 import numpy as np
 
 from nems_open.residential.common import BASEYR, ENDYR, RECSYEAR, expf, f32, powi
-from nems_open.residential.helpers import eqcost, replace, rselast, svrte
+from nems_open.residential.helpers import eqcost, replace, rselast, stock_average, svrte, vintage_future
 
 NUM_R = 9  # MNUMCR-2 census divisions
 NUM_B = 3  # MNUMBLDG
@@ -347,20 +347,8 @@ def rdryadd(s: dict) -> None:
 def _vintage_future(s, EU):
     """Vintage the equipment bought this year into every future year (EQR90FUT,
     EQR90RPFUT, EQREPFUT, EQADDFUT); the same block ends RDRYADD, RREFADD, RFRZADD."""
-    CY = int(s["curcalyr"])
-    eupt, HDR = s["rtcleupt"], s["hdr"]
-    for B in range(1, NUM_B + 1):
-        for R in range(1, NUM_R + 1):
-            for RECCL in range(int(eupt[EU]) + 1, int(eupt[EU + 1]) + 1):
-                for Y in range(CY, ENDYR + 1):
-                    TEMP = Y - CY
-                    HSR = powi(HDR[B], TEMP)
-                    ESR = svrte(s["rtalpha"][RECCL], TEMP, s["rtk"][RECCL], s["rtlambda"][RECCL])
-                    s["eqr90fut"][CY, Y, RECCL, B, R] = (s["eqcrp90"][CY, RECCL, B, R] * ESR * HSR)
-                    s["eqr90rpfut"][CY, Y, RECCL, B, R] = (s["eqcrp90rp"][CY, RECCL, B, R] * ESR * HSR)
-                    s["eqrepfut"][CY, Y, RECCL, B, R] = (s["eqcrep"][CY, RECCL, B, R] * ESR * HSR)
-                    s["eqaddfut"][CY, Y, RECCL, B, R] = (s["eqcadd"][CY, RECCL, B, R] * ESR * HSR)
-
+    eupt = s["rtcleupt"]
+    vintage_future(s, int(s["curcalyr"]), int(eupt[EU]) + 1, int(eupt[EU + 1]))
 
 def _purchases(s, EU):
     """HEATINGTYPEPURCH by equipment type, for investment analysis (all three ADD routines)."""
@@ -388,20 +376,8 @@ def _eqcauec(s, RECCL, B, D):
     if CY == RECSYEAR + 1:
         s["eqcauec"][CY, RECCL, B, D] = s["eqcnuec"][CY, RECCL, B, D]
     else:
-        TEMP = f32(0.0)
-        for Y in range(RECSYEAR, CY):
-            TEMP = (TEMP + s["eqr90fut"][Y, CY, RECCL, B, D] + s["eqaddfut"][Y, CY, RECCL, B, D]
-                    + s["eqrepfut"][Y, CY, RECCL, B, D] + s["eqr90rpfut"][Y, CY, RECCL, B, D])
-        if TEMP <= 0.0:
-            s["eqcauec"][CY, RECCL, B, D] = s["eqcnuec"][CY, RECCL, B, D]
-        else:
-            s["eqcauec"][CY, RECCL, B, D] = 0.0
-            for Y in range(RECSYEAR, CY):
-                s["eqcauec"][CY, RECCL, B, D] = s["eqcauec"][CY, RECCL, B, D] + (
-                    (s["eqr90fut"][Y, CY, RECCL, B, D] * s["eqcruec"][Y, RECCL, B, D])
-                    + ((s["eqaddfut"][Y, CY, RECCL, B, D] + s["eqrepfut"][Y, CY, RECCL, B, D]
-                        + s["eqr90rpfut"][Y, CY, RECCL, B, D]) * s["eqcnuec"][Y, RECCL, B, D])) / TEMP
-
+        _, avg = stock_average(s, CY, RECCL, B, D, RECSYEAR, "eqcruec", "eqcnuec")
+        s["eqcauec"][CY, RECCL, B, D] = s["eqcnuec"][CY, RECCL, B, D] if avg is None else avg
 
 def _wteqceffa(s, EU):
     """WTEQCEFFA, the stock-average efficiency (same in all CON routines)."""
@@ -413,20 +389,8 @@ def _wteqceffa(s, EU):
                 if CY == RECSYEAR + 1:
                     s["wteqceffa"][RECSYEAR + 1, RECCL, B, D] = s["wteqceffn"][RECSYEAR + 1, RECCL, B, D]
                 else:
-                    TEMP = f32(0.0)
-                    for Y in range(RECSYEAR, CY):
-                        TEMP = (TEMP + s["eqr90fut"][Y, CY, RECCL, B, D] + s["eqaddfut"][Y, CY, RECCL, B, D]
-                                + s["eqrepfut"][Y, CY, RECCL, B, D] + s["eqr90rpfut"][Y, CY, RECCL, B, D])
-                    if TEMP > 0.0:
-                        s["wteqceffa"][CY, RECCL, B, D] = 0.0
-                        for Y in range(RECSYEAR, CY):
-                            s["wteqceffa"][CY, RECCL, B, D] = s["wteqceffa"][CY, RECCL, B, D] + (
-                                (s["eqr90fut"][Y, CY, RECCL, B, D] * s["wteqceffr"][Y, RECCL, B, D])
-                                + ((s["eqaddfut"][Y, CY, RECCL, B, D] + s["eqrepfut"][Y, CY, RECCL, B, D]
-                                    + s["eqr90rpfut"][Y, CY, RECCL, B, D]) * s["wteqceffn"][Y, RECCL, B, D])) / TEMP
-                    else:
-                        s["wteqceffa"][CY, RECCL, B, D] = s["wteqceffn"][CY, RECCL, B, D]
-
+                    _, avg = stock_average(s, CY, RECCL, B, D, RECSYEAR, "wteqceffr", "wteqceffn")
+                    s["wteqceffa"][CY, RECCL, B, D] = s["wteqceffn"][CY, RECCL, B, D] if avg is None else avg
 
 def _stock_efficiency(s, EU):
     """RTBASEFF(CurCalYr) follows the stock efficiency once past the RECS year."""

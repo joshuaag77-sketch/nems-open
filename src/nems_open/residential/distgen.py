@@ -713,6 +713,77 @@ def rdistgen(s: dict) -> None:
         own[y1, nat, nt] = own[y1, nat, nt] + acc
 
 
+def _paybacks(cells, inp, nt, nv, Y, y1, XLIFE, xIntervalCst, xDegradation):
+    """The 30-year cash flow (lines around 15990-16080) for every niche at once, then each
+    niche's simple payback. Same float32 and float64 operations as the per-niche loop."""
+    XTAXRATE, XTERM, XINFLATION = inp.XTAXRATE, inp.XTERM, inp.XINFLATION
+    col = lambda k, dt=np.float32: np.array([c[k] for c in cells], dtype=dt)
+    n = len(cells)
+    zero = np.zeros(n, dtype=np.float32)
+    kw = col("xCalcKW", np.float64)
+    payment, intrate = col("XPAYMENT"), col("XINTRATE")
+    maint_base, fuel2 = col("XMAINTCOSTBASE"), col("XFUELCOST2")
+    vs, vs_no, vs_adj = col("XVALESAVEBASE"), col("XVALESAVEBASEnoRPS"), col("XVALESAVEBASEadjRPS")
+    outlay = {1: col("XOUTLAY1")}
+    loanbal = col("XLOANBAL1")
+    intamt = {1: zero}
+    taxcredit3 = col("XTAXCREDIT3")
+    cum = {1: -outlay[1]}
+    net = {1: -outlay[1]}
+    fuel = {2: fuel2}
+    interval = int(inp.iIntervalYrs[nt, nv])
+    in_life = lambda iyr: F(iyr) <= F(XLIFE + C1)
+    f = lambda x: np.asarray(x, dtype=np.float32)  # F(): round to float32
+    for iyr in range(2, 31):
+        in_term = F(iyr) <= F(XTERM + C1)
+        out = payment if in_term else zero
+        intamt[iyr] = f(loanbal * intrate)
+        prin = f(payment - intamt[iyr]) if in_term else zero
+        loanbal = f(loanbal - prin)
+        taxd = f(f(XTAXRATE * f(intamt[iyr - 1] + zero)) + (taxcredit3 if iyr == 3 else zero))  # XDEPR is 0
+        inflp = powi(F(C1 + XINFLATION), iyr - 2)
+        fl = fuel[2] if iyr == 2 else zero
+        if in_life(iyr):
+            fl = f(fuel[2] * inflp)
+        fuel[iyr] = fl
+        if iyr > 2 and interval != 0 and (iyr - 2) % interval == 0 and iyr != 29 and iyr != 30:
+            m = f((maint_base.astype(np.float64) + D(xIntervalCst) * kw) * D(inflp)) if in_life(iyr) else zero
+            interval = 2 * interval + iyr
+        else:
+            m = f(maint_base * inflp) if in_life(iyr) else zero
+        vale = zero
+        if in_life(iyr):
+            degp = powi(F(C1 - xDegradation), iyr - 2)
+            vale = f(f(vs * inflp) * degp)
+            if nt == 1 or nt == 3:
+                if Y + iyr - 1 > inp.iRPSPhaseOutYear:
+                    vale = f(f(vs_no * inflp) * degp)
+                if Y >= inp.iRPSStartYear and iyr > inp.iNumYrsatRPSBaseRate[nt, y1]:
+                    vale = f(f(vs_adj * inflp) * degp)
+                if Y >= inp.iRPSStartYear and iyr > inp.iNumRPSCreditYrs[nt, y1]:
+                    vale = f(f(vs_no * inflp) * degp)
+                if Y < inp.iRPSStartYear:
+                    vale = f(f(vs_no * inflp) * degp)
+        net[iyr] = f(f(f(f((-out) - fl) - m) + taxd) + vale)
+        cum[iyr] = f(cum[iyr - 1] + net[iyr])
+
+    paybacks = []
+    for i in range(n):
+        flow = [None] + [cum[k][i] for k in range(1, 31)] + [C0] * 5
+        xSimplePayback = D(29.0)
+        for iyr in range(1, 31):
+            if iyr <= 20 and all(flow[iyr + k] >= 0.0 for k in range(9)):
+                xSimplePayback = D(F(iyr - 1))
+                if xSimplePayback < 1.0:
+                    xSimplePayback = D(1.0)
+                if iyr < 15:
+                    with np.errstate(all="ignore"):
+                        xSimplePayback = xSimplePayback - D(F(flow[iyr] / net[iyr][i]))
+                break
+        paybacks.append(xSimplePayback)
+    return paybacks
+
+
 def _pv_calibrate(s, inp, z, d, y1, xKW, xCalcKW, xAnnualKWh, xEqCost, nv):
     """PVzipcalib (lines 16395-16432): force PV capacity to the exogenous history in
     EstYear and the year after, adjusting units, generation and investment."""
@@ -770,6 +841,7 @@ def _niche_division(s, inp, z, nt, nv, d, Y, y1, xAdjCost, xtaxcreditmaxKW, xtax
 
     # grid sales price, $/kWh in the dollar year of the capital costs
     xSalestoGridPR = F(F(F(s["pelme"][d, y1] * C003412) * jpg) / jpm2)
+    cells = []
 
     for iNiche in range(1, int(inp.NumPVNiche[d]) + 1):
         for iRateLevel in range(1, 4):
@@ -881,121 +953,59 @@ def _niche_division(s, inp, z, nt, nv, d, Y, y1, xAdjCost, xtaxcreditmaxKW, xtax
                 XMAINTCOSTBASE = F(D(xMaintCst) * xCalcKW)
             z.XVALESAVEBASEnoRPS, z.XVALESAVEBASEadjRPS = XVALESAVEBASEnoRPS, XVALESAVEBASEadjRPS
 
-            # ---- 30-year cash flow and payback ----
+            # ---- 30-year cash flow: this niche's inputs; the flows run below for all niches at once ----
             xCalcEqCost = D(xEqCost) * xCalcKW / D(xKW)
             XINTRATE = F(s["mc_rmmtg30con"][y1] / C100)
             XDOWNPAY = F(D(XDOWNPAYPCT) * xCalcEqCost)
             XPAYMENT = F(F(XINTRATE / F(C1 - _powf(F(C1 + XINTRATE), F(F(-1.0) * XTERM)))) * (xCalcEqCost - D(XDOWNPAY)))
-
-            XCUMNETFLOW = [C0] * 36
-            XOUTLAY = [C0] * 31
-            XFUELCOST = [C0] * 31
-            XMAINTCOST = [C0] * 31
-            XLOANBAL = [C0] * 31
-            XTAXCREDIT = [C0] * 31
-            XINTAMT = [C0] * 31
-            XPRIN = [C0] * 31
-            XDEPR = [C0] * 31
-            XTAXDEDUCT = [C0] * 31
-            XVALESAVE = [C0] * 31
-            XNETCASHFLOW = [C0] * 31
-            XOUTLAY[1] = F(D(XDOWNPAYPCT) * xCalcEqCost)
-            XFUELCOST[2] = XBaseYrFUELCOST
-            XMAINTCOST[2] = XMAINTCOSTBASE
-            XLOANBAL[1] = F(xCalcEqCost * D(F(C1 - XDOWNPAYPCT)))
-            XTAXCREDIT[3] = F(xCalcEqCost * D(z.xTaxCreditPct))
+            XTAXCREDIT3 = F(xCalcEqCost * D(z.xTaxCreditPct))
             if xtaxcreditmaxKW > 0.0:
-                XTAXCREDIT[3] = F(min(D(XTAXCREDIT[3]), D(xtaxcreditmaxKW) * xCalcKW))
+                XTAXCREDIT3 = F(min(D(XTAXCREDIT3), D(xtaxcreditmaxKW) * xCalcKW))
             if xtaxcreditmax > 0.0:
-                XTAXCREDIT[3] = min(XTAXCREDIT[3], xtaxcreditmax)
-            XTAXCREDIT[3] = F(D(XTAXCREDIT[3]) + xCalcEqCost * D(inp.xTxCrPct_Div[nv, d, nt]))
-            XNETCASHFLOW[1] = -XOUTLAY[1]
-            XCUMNETFLOW[1] = -XOUTLAY[1]
-            iIntervalYrstoUse = int(inp.iIntervalYrs[nt, nv])
+                XTAXCREDIT3 = min(XTAXCREDIT3, xtaxcreditmax)
+            XTAXCREDIT3 = F(D(XTAXCREDIT3) + xCalcEqCost * D(inp.xTxCrPct_Div[nv, d, nt]))
+            cells.append(dict(
+                hhshare=hhshare, xElecAvgUEC=xElecAvgUEC, xCalcKW=xCalcKW, xAnnualKWh=xAnnualKWh,
+                xCalcEqCost=xCalcEqCost, XINTRATE=XINTRATE, XPAYMENT=XPAYMENT, XTAXCREDIT3=XTAXCREDIT3,
+                XOUTLAY1=F(D(XDOWNPAYPCT) * xCalcEqCost), XLOANBAL1=F(xCalcEqCost * D(F(C1 - XDOWNPAYPCT))),
+                XFUELCOST2=XBaseYrFUELCOST, XMAINTCOSTBASE=XMAINTCOSTBASE, XVALESAVEBASE=XVALESAVEBASE,
+                XVALESAVEBASEnoRPS=XVALESAVEBASEnoRPS, XVALESAVEBASEadjRPS=XVALESAVEBASEadjRPS,
+                XGASINPUT=XGASINPUT, XWATERHTGMMBTU=XWATERHTGMMBTU))
 
-            for iyr in range(2, 31):
-                XVALESAVE[iyr] = C0
-                if F(iyr) <= F(XTERM + C1):
-                    XOUTLAY[iyr] = XPAYMENT
-                XINTAMT[iyr] = F(XLOANBAL[iyr - 1] * XINTRATE)
-                XPRIN[iyr] = C0
-                if F(iyr) <= F(XTERM + C1):
-                    XPRIN[iyr] = F(XPAYMENT - XINTAMT[iyr])
-                XLOANBAL[iyr] = F(XLOANBAL[iyr - 1] - XPRIN[iyr])
-                XDEPR[iyr] = C0
-                XTAXDEDUCT[iyr] = F(F(XTAXRATE * F(XINTAMT[iyr - 1] + XDEPR[iyr - 1])) + XTAXCREDIT[iyr])
-                if iyr > 2:
-                    XFUELCOST[iyr] = C0
-                inflp = powi(F(C1 + XINFLATION), iyr - 2)
-                if F(iyr) <= F(XLIFE + C1):
-                    XFUELCOST[iyr] = F(XFUELCOST[2] * inflp)
-                XMAINTCOST[iyr] = C0
-                # inverter replacement years get the interval cost; the interval then stretches
-                if iyr > 2 and iIntervalYrstoUse != 0 and (iyr - 2) % iIntervalYrstoUse == 0 and iyr != 29 and iyr != 30:
-                    if F(iyr) <= F(XLIFE + C1):
-                        XMAINTCOST[iyr] = F((D(XMAINTCOSTBASE) + D(xIntervalCst) * xCalcKW) * D(inflp))
-                    iIntervalYrstoUse = 2 * iIntervalYrstoUse + iyr
-                else:
-                    if F(iyr) <= F(XLIFE + C1):
-                        XMAINTCOST[iyr] = F(XMAINTCOSTBASE * inflp)
-                if F(iyr) <= F(XLIFE + C1):
-                    degp = powi(F(C1 - xDegradation), iyr - 2)
-                    XVALESAVE[iyr] = F(F(XVALESAVEBASE * inflp) * degp)
-                    if nt == 1 or nt == 3:
-                        if Y + iyr - 1 > inp.iRPSPhaseOutYear:
-                            XVALESAVE[iyr] = F(F(XVALESAVEBASEnoRPS * inflp) * degp)
-                        if Y >= inp.iRPSStartYear and iyr > inp.iNumYrsatRPSBaseRate[nt, y1]:
-                            XVALESAVE[iyr] = F(F(XVALESAVEBASEadjRPS * inflp) * degp)
-                        if Y >= inp.iRPSStartYear and iyr > inp.iNumRPSCreditYrs[nt, y1]:
-                            XVALESAVE[iyr] = F(F(XVALESAVEBASEnoRPS * inflp) * degp)
-                        if Y < inp.iRPSStartYear:
-                            XVALESAVE[iyr] = F(F(XVALESAVEBASEnoRPS * inflp) * degp)
-                XNETCASHFLOW[iyr] = F(F(F(F(-XOUTLAY[iyr] - XFUELCOST[iyr]) - XMAINTCOST[iyr]) + XTAXDEDUCT[iyr])
-                                      + XVALESAVE[iyr])
-                XCUMNETFLOW[iyr] = F(XCUMNETFLOW[iyr - 1] + XNETCASHFLOW[iyr])
+    if not cells:
+        return xUnits, xTrills, xCapacity, xTrillsOwnUse, xfuelusage, xhwbtu, xInvest
+    paybacks = _paybacks(cells, inp, nt, nv, Y, y1, XLIFE, xIntervalCst, xDegradation)
 
-            iPayback = [1] * 31
-            for iyr in range(1, 21):
-                if all(XCUMNETFLOW[iyr + k] >= 0.0 for k in range(9)):
-                    iPayback[iyr] = 0
+    for c, xSimplePayback in zip(cells, paybacks):
+        hhshare, xElecAvgUEC, xCalcKW = c["hhshare"], c["xElecAvgUEC"], c["xCalcKW"]
+        xAnnualKWh, xCalcEqCost = c["xAnnualKWh"], c["xCalcEqCost"]
+        XGASINPUT, XWATERHTGMMBTU = c["XGASINPUT"], c["XWATERHTGMMBTU"]
+        # ---- penetration from payback ----
+        xMaxPen = xPenParm / xSimplePayback
+        XValue = F(Y - (RECSYEAR + 1))
+        if XValue > 25.0:
+            XValue = F(25.0)
+        xPen = min(D(F(0.75)), xMaxPen - xMaxPen / (D(1.0) + xMaxPen * _exp(xAlpha * (D(XValue) - xSimplePayback))))
+        if Y <= inp.iExogHistYr[nt]:
+            xPen = D(0.0)  # historical years: exogenous capacity only
+        xExistPen = F(min(xPen / D(F(40.0)), D(F(0.005))))
+        xex = inp.xExogPen
+        xTemp = (xPen * D(xInxDecay) * D(hseadd[Y, 1, d])
+                 + (D(xex[y1, d, nt]) - D(xex[y1 - 1, d, nt])) / xCalcKW
+                 + D(F(xExistPen * xInxDecay)) * (D(eh[Y, 1, d]) - units[y1 - 1, d, nt]))
+        xTemp = xTemp * D(hhshare)
+        xTemp = D(F(F(nint(xTemp * D(F(100.0)) + D(F(0.5)))) / C100))
 
-            xSimplePayback = D(29.0)
-            for iyr in range(1, 31):
-                if iPayback[iyr] == 0:
-                    xSimplePayback = D(F(iyr - 1))
-                    if xSimplePayback < 1.0:
-                        xSimplePayback = D(1.0)
-                    if iyr < 15:
-                        with np.errstate(all="ignore"):
-                            xSimplePayback = xSimplePayback - D(F(XCUMNETFLOW[iyr] / XNETCASHFLOW[iyr]))
-                    break
-
-            # ---- penetration from payback ----
-            xMaxPen = xPenParm / xSimplePayback
-            XValue = F(Y - (RECSYEAR + 1))
-            if XValue > 25.0:
-                XValue = F(25.0)
-            xPen = min(D(F(0.75)), xMaxPen - xMaxPen / (D(1.0) + xMaxPen * _exp(xAlpha * (D(XValue) - xSimplePayback))))
-            if Y <= inp.iExogHistYr[nt]:
-                xPen = D(0.0)  # historical years: exogenous capacity only
-            xExistPen = F(min(xPen / D(F(40.0)), D(F(0.005))))
-            xex = inp.xExogPen
-            xTemp = (xPen * D(xInxDecay) * D(hseadd[Y, 1, d])
-                     + (D(xex[y1, d, nt]) - D(xex[y1 - 1, d, nt])) / xCalcKW
-                     + D(F(xExistPen * xInxDecay)) * (D(eh[Y, 1, d]) - units[y1 - 1, d, nt]))
-            xTemp = xTemp * D(hhshare)
-            xTemp = D(F(F(nint(xTemp * D(F(100.0)) + D(F(0.5)))) / C100))
-
-            xUnits = xUnits + xTemp
-            xTrills = xTrills + xTemp * D(xAnnualKWh) * D(F(3412.0)) / D(E12)
-            xCapacity = xCapacity + xTemp * xCalcKW
-            if xAnnualKWh > xElecAvgUEC:
-                xTrillsOwnUse = xTrillsOwnUse + xTemp * D(xElecAvgUEC) * D(F(3412.0)) / D(E12)
-            else:
-                xTrillsOwnUse = xTrillsOwnUse + xTemp * D(xAnnualKWh) * D(F(3412.0)) / D(E12)
-            xfuelusage = xfuelusage + xTemp * D(XGASINPUT) / D(E6)
-            xhwbtu = xhwbtu + xTemp * D(XWATERHTGMMBTU) / D(E6)
-            xInvest = xInvest + xTemp * xCalcEqCost / D(E6)
+        xUnits = xUnits + xTemp
+        xTrills = xTrills + xTemp * D(xAnnualKWh) * D(F(3412.0)) / D(E12)
+        xCapacity = xCapacity + xTemp * xCalcKW
+        if xAnnualKWh > xElecAvgUEC:
+            xTrillsOwnUse = xTrillsOwnUse + xTemp * D(xElecAvgUEC) * D(F(3412.0)) / D(E12)
+        else:
+            xTrillsOwnUse = xTrillsOwnUse + xTemp * D(xAnnualKWh) * D(F(3412.0)) / D(E12)
+        xfuelusage = xfuelusage + xTemp * D(XGASINPUT) / D(E6)
+        xhwbtu = xhwbtu + xTemp * D(XWATERHTGMMBTU) / D(E6)
+        xInvest = xInvest + xTemp * xCalcEqCost / D(E6)
     return xUnits, xTrills, xCapacity, xTrillsOwnUse, xfuelusage, xhwbtu, xInvest
 
     # hand the carried ZIP state back to the shared dict when the caller keeps it there

@@ -16,9 +16,25 @@ NUM_DIV = MNUMCR - 2  # census divisions 1-9
 COSTTRSW = 0  # rtek PARAMETER: 0 = menu costs, EQCOST trend off
 
 
+_POWI = {}
+
+
 def powi(x, m: int):
     """REAL*4 ** INTEGER as gfortran evaluates it (libgcc __powisf2): repeated
-    squaring in single precision, so the last bit matches."""
+    squaring in single precision, so the last bit matches. Memoized on the
+    argument's bit pattern (so -0.0 and 0.0 stay apart); the routines ask for the
+    same few powers thousands of times a year."""
+    x = f32(x)
+    key = (x.tobytes(), m)
+    y = _POWI.get(key)
+    if y is None:
+        if len(_POWI) > 500_000:
+            _POWI.clear()
+        y = _POWI[key] = _powi(x, m)
+    return y
+
+
+def _powi(x, m: int):
     x = f32(x)
     n = -m if m < 0 else m
     y = x if n % 2 else f32(1.0)
