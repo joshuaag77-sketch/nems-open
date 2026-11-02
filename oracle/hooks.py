@@ -248,16 +248,19 @@ EMM_TARGETS += [
 # and a final-iteration one. Each region's books (EFP's direct-access files) are
 # loaded into COMMON by ELGLTR before these calls, so they are in the dumps.
 _EFP = dict(file="uefp", home=["uefp", "udaf"], region="NRGN")
+# GL and AVRPRC reach most of EFP, so their dumps are about 50 MB a region: keep
+# them to region 1 in 2030 (few=True). The routine-level dumps below stay full.
+_EFP_FEW = dict(_EFP, few=True)
 EMM_TARGETS += [
-    dict(tag="gg", call=r"CALL GL\(NRGN,ICALL\)", nth=0, routines=["GL"], **_EFP),
-    dict(tag="gt", call=r"CALL GL\(NRGN,ICALL\)", nth=1, routines=["GL"], **_EFP),
-    dict(tag="gd", call=r"CALL GL\(NRGN,ICALL\)", nth=2, routines=["GL"], **_EFP),
-    dict(tag="ag", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=0, routines=["AVRPRC"], **_EFP),
-    dict(tag="ag1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=0, routines=["AVRPRC"], itr=1, **_EFP),
-    dict(tag="at", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], **_EFP),
-    dict(tag="at1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], itr=1, **_EFP),
-    dict(tag="ad", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], **_EFP),
-    dict(tag="ad1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], itr=1, **_EFP),
+    dict(tag="gg", call=r"CALL GL\(NRGN,ICALL\)", nth=0, routines=["GL"], **_EFP_FEW),
+    dict(tag="gt", call=r"CALL GL\(NRGN,ICALL\)", nth=1, routines=["GL"], **_EFP_FEW),
+    dict(tag="gd", call=r"CALL GL\(NRGN,ICALL\)", nth=2, routines=["GL"], **_EFP_FEW),
+    dict(tag="ag", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=0, routines=["AVRPRC"], **_EFP_FEW),
+    dict(tag="ag1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=0, routines=["AVRPRC"], itr=1, **_EFP_FEW),
+    dict(tag="at", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], **_EFP_FEW),
+    dict(tag="at1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], itr=1, **_EFP_FEW),
+    dict(tag="ad", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], **_EFP_FEW),
+    dict(tag="ad1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], itr=1, **_EFP_FEW),
 ]
 # Inside AVRPRC, routine by routine, for the generation component only (site_cond
 # is tested where the call is, since ICALL is local). Transmission and
@@ -279,6 +282,9 @@ EMM_TARGETS += [dict(tag=tag, call=call, routines=[name], itr=itr, **_G) for tag
     ("x_rate", "ELRATE", r"CALL ELRATE\(ICALL,NRGN\)", None),
     ("x_stmt", "STMTS", r"IF \(EFPFCRL \.EQ\. 1\) CALL STMTS\(NRGN,ICALL\)", None),
 ]]
+for _t in EMM_TARGETS:
+    if _t["tag"] == "x_rate":  # ELRATE reaches most of EFP too: about 50 MB a region
+        _t["few"] = True
 # ELGLTR's cost routines, after it has loaded the region's books (generation;
 # CAPCOST once per ownership type), and COMPPRC, which GENERA runs when USW_POL=4
 # (it is in cb2026). Calls on a continuation line are matched as the whole IF.
@@ -780,6 +786,9 @@ def write_state_routine_emm(inc_dir):
         if tg["region"] is True:
             when += f" .and. any(regions == RNB) .and. any(ryears == CURIYR)"
             call = f"call {name}(tag, int(RNB))"
+        elif tg["region"] and tg.get("few"):
+            when += f" .and. irg == {EMM_DUMP_REGIONS[0]} .and. CURIYR == {EMM_REGION_YEARS[1]}"
+            call = f"call {name}(tag, irg)"
         elif tg["region"]:  # passed in by the call: ORACLE_STATE_RG(tag, region)
             when += f" .and. any(regions == irg) .and. any(ryears == CURIYR)"
             call = f"call {name}(tag, irg)"
