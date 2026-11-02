@@ -16,7 +16,11 @@
     <h1>NEMS Open policy sandbox</h1>
     <p class="sub">An open Python rebuild of EIA's National Energy Modeling System, run to 2050. Move a lever, see what changes against EIA's AEO2026 reference.</p>
   </div>
-  <button id="theme" class="ghost" type="button" aria-label="Switch light or dark mode">Dark</button>
+  <nav class="top-nav" aria-label="Page">
+    <button id="go-how" class="ghost" type="button">How this works</button>
+    <a class="ghost" href="about.html">About</a>
+    <button id="theme" class="ghost" type="button" aria-label="Switch light or dark mode">Dark</button>
+  </nav>
 </header>
 
 <main class="layout">
@@ -41,6 +45,11 @@
       <div class="ticks"><span>EIA</span><span>-5%</span><span>-10%</span><span>-20%</span></div>
     </div>
     <button id="reset" class="ghost" type="button">Back to EIA reference</button>
+    <div class="share">
+      <button id="copy-link" class="ghost" type="button">Copy link to this scenario</button>
+      <button id="download-csv" class="ghost" type="button">Download CSV</button>
+      <p class="fine" id="share-msg" role="status"></p>
+    </div>
     <p class="fine">Every combination was run ahead of time (144 runs), so the sliders snap to the grid. Prices are 2024 dollars.</p>
   </aside>
 
@@ -94,6 +103,33 @@
       </div>
     </div>
 
+    <div class="card how" id="how">
+      <h2>How this works</h2>
+      <div class="how-grid">
+        <div>
+          <h3>The loop</h3>
+          <p>Each year from 2027 to 2050, the demand modules take delivered prices and return fuel use by sector, fuel and census division. The supply side takes that fuel use and returns new prices and CO2. They take turns until no price moves more than 0.1%, the same relaxation NEMS's integrating module uses. The engine view above replays that log.</p>
+          <h3>How a port is checked</h3>
+          <p>We compile EIA's own Fortran with the free gfortran compiler and instrument it to dump every array before and after each routine. That build is the oracle. A Python port counts as done when it reproduces those arrays: most routines bit for bit, the rest within float rounding (largest gap 1e-4, in commercial on-site generation). Whole modules are then checked against EIA's published AEO2026 run, within 0.3%.</p>
+          <h3>Where the numbers come from</h3>
+          <p>EIA's 11 finished AEO2026 runs ship with EIA's NEMS release. The stand-ins are fitted to them, and the reference lines on the chart are EIA's own numbers. The 144 scenarios here were run ahead of time with the fast demand stub; each run takes seconds.</p>
+        </div>
+        <div>
+          <h3>Ported and stand-in, today</h3>
+          <table class="rt" id="status-table"><thead><tr><th>Module</th><th>Status</th><th>EIA lines</th><th>Tests</th></tr></thead><tbody></tbody></table>
+          <p class="fine" id="status-note"></p>
+          <h3>Read more</h3>
+          <ul class="links">
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open">Repository</a></li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/SCOPE.md">SCOPE.md</a>: every module, routine and quirk kept</li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/docs/supply_standin.md">Supply stand-in</a>: fits and limits</li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/docs/run_model.md">The loop and the demand stub</a></li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/docs/demand_elasticities.md">Demand elasticities</a>: fit report</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
     <div class="card note">
       <h2>What is real and what is a stand-in</h2>
       <ul>
@@ -103,10 +139,13 @@
         <li><b>Power plants.</b> A carbon price now switches power plants from coal to gas to zero-carbon power, using a response fitted to how plants reacted to gas prices in EIA's high and low gas supply runs (no AEO2026 run has a carbon price). Coal's response to its own cost is assumed, not fitted. Above $100 per ton the curve is extrapolated, and the cost of building replacement renewables is not in the power price, so power prices rise too little.</li>
         <li><b>Stub demand is fitted.</b> How much each sector's use of each fuel responds to its price is fitted to EIA's own side runs (for example -0.28 for home electricity, -0.06 for gasoline). A few fuels without a usable fit keep a placeholder. The stub only responds to a fuel's own price. The EV lever shifts fuel use as the fleet turns over; building efficiency is a flat cut.</li>
       </ul>
-      <p class="fine">EIA's reference here is the AEO2026 Counterfactual Baseline. Source and method: github.com/joshuaag77-sketch/nems-open, docs/supply_standin.md and docs/run_model.md.</p>
+      <p class="fine">EIA's reference here is the AEO2026 Counterfactual Baseline. Method and limits: see "How this works" and the docs linked there.</p>
     </div>
   </section>
 </main>
+<footer class="foot">
+  <p>Data: U.S. Energy Information Administration, Annual Energy Outlook 2026 and the NEMS AEO2026 release. NEMS Open is an independent project, not affiliated with or endorsed by EIA. <a href="about.html">About and credits</a>.</p>
+</footer>
 <dialog id="module-dialog" aria-label="Module details">
   <button id="module-close" class="ghost close" type="button" aria-label="Close">Close</button>
   <div id="module-body"></div>

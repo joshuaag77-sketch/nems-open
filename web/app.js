@@ -93,7 +93,7 @@
         interaction: { mode: "index", intersect: false },
         onClick: (e, items, c) => {
           const pts = c.getElementsAtEventForMode(e, "index", { intersect: false }, false);
-          if (pts.length) { traceYear = years[pts[0].index]; trace(s); }
+          if (pts.length) { traceYear = years[pts[0].index]; trace(s); writeHash(); }
         },
         plugins: {
           legend: { display: false },
@@ -326,6 +326,91 @@
     at(finish);
   }
 
+  // ---- share link (URL hash) ----------------------------------------------------
+  // #c=100&ev=80&b=90&m=pel&y=2035: levers, chart measure, traced year.
+  const evCode = (v) => (v === null ? "ref" : String(Math.round(v * 100)));
+  function writeHash() {
+    const c = current();
+    const h = `c=${c.carbon}&ev=${evCode(c.ev)}&b=${Math.round(c.bld * 100)}&m=${measure.key}&y=${traceYear}`;
+    if (location.hash.slice(1) !== h) history.replaceState(null, "", "#" + h);
+  }
+  function readHash() {
+    const q = new URLSearchParams(location.hash.slice(1));
+    const pick = (list, val, code) => { const i = list.findIndex((v) => code(v) === val); return i >= 0 ? i : null; };
+    const ci = pick(meta.carbon, q.get("c"), String);
+    const ei = pick(meta.ev2035, q.get("ev"), evCode);
+    const bi = pick(meta.buildings2050, q.get("b"), (v) => String(Math.round(v * 100)));
+    if (ci !== null) levers.carbon.value = ci;
+    if (ei !== null) levers.ev.value = ei;
+    if (bi !== null) levers.bld.value = bi;
+    const m = MEASURES.find((x) => x.key === q.get("m"));
+    if (m) { measure = m; [...tabs.children].forEach((b, i) => b.setAttribute("aria-selected", MEASURES[i] === m)); }
+    const y = +q.get("y");
+    if (years.includes(y)) traceYear = y;
+  }
+  const say = (msg) => { el("share-msg").textContent = msg; setTimeout(() => (el("share-msg").textContent = ""), 4000); };
+  el("copy-link").addEventListener("click", async () => {
+    writeHash();
+    try {
+      await navigator.clipboard.writeText(location.href);
+      say("Link copied.");
+    } catch (e) {
+      const t = document.createElement("textarea");
+      t.value = location.href;
+      document.body.appendChild(t);
+      t.select();
+      const ok = document.execCommand && document.execCommand("copy");
+      t.remove();
+      say(ok ? "Link copied." : "Copy the address bar: it now holds this scenario.");
+    }
+  });
+
+  // ---- CSV download ------------------------------------------------------------
+  function csv() {
+    const c = current(), s = c.s;
+    const cols = [
+      ["US energy CO2 (million metric tons)", (d) => d.co2],
+      ["Electricity price, all sectors (2024 cents/kWh)", (d) => d.prices.electricity],
+      ["Natural gas price, homes (2024 $/MMBtu)", (d) => d.prices.gas_home],
+      ["Gasoline price, transport (2024 $/gal)", (d) => d.prices.gasoline],
+      ["Diesel price, transport (2024 $/gal)", (d) => d.prices.diesel],
+      ["Gasoline use (billion gallons)", (d) => d.gasoline_bgal],
+      ["Electricity sold (quads)", (d) => d.power_sales],
+      ...Object.keys(s.energy).map((k) => [`Delivered energy, ${k} (quads)`, (d) => d.energy[k]]),
+      ...Object.keys(s.trace.co2_sector).map((k) => [`CO2, ${({ rs: "residential", cm: "commercial", in: "industrial", tr: "transportation", el: "electric power" })[k]} (million metric tons)`, (d) => d.trace.co2_sector[k]]),
+    ];
+    const head = ["year", ...cols.flatMap(([n]) => [`${n}, this run`, `${n}, EIA reference`])];
+    const q = (v) => (/[",]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const lines = [head.map(q).join(",")];
+    years.forEach((y, i) => lines.push([y, ...cols.flatMap(([, g]) => [g(s)[i], g(ref)[i]])].join(",")));
+    const about = [
+      `# NEMS Open policy sandbox, scenario ${s.id}: carbon price $${c.carbon}/t CO2 (2024 $) from 2027; plug-in share of new light-duty sales in 2035 ${c.ev === null ? "EIA reference" : Math.round(c.ev * 100) + "%"}; building energy use ${c.bld === 1 ? "as EIA" : Math.round((1 - c.bld) * 100) + "% below EIA"} by 2050.`,
+      "# Reference: EIA AEO2026 Counterfactual Baseline. Demand from a fitted stub, supply from a fitted stand-in; see How this works. Not affiliated with or endorsed by EIA.",
+    ];
+    return about.join("\n") + "\n" + lines.join("\n") + "\n";
+  }
+  el("download-csv").addEventListener("click", () => {
+    const blob = new Blob([csv()], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `nems-open_${current().s.id}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    say("CSV downloaded.");
+  });
+
+  // ---- how this works --------------------------------------------------------------
+  (function statusTable() {
+    const label = { real: "Ported, matches EIA", partial: "Being ported (stub)", stand: "Stand-in" };
+    el("status-table").querySelector("tbody").innerHTML = Object.entries(ENGINE.modules).map(([key, m]) =>
+      `<tr><td><button type="button" class="link" data-mod="${key}">${m.name}</button></td><td><i class="dot ${m.kind}"></i>${label[m.kind]}</td><td>${fmt(m.eia_lines)}</td><td>${fmt(m.tests)}</td></tr>`).join("");
+    el("status-table").querySelectorAll("[data-mod]").forEach((b) => b.addEventListener("click", () => openModule(b.dataset.mod)));
+    el("status-note").textContent = `From the repo on ${ENGINE.totals.generated}: ${fmt(ENGINE.totals.tests)} tests in all. EIA lines count every source file the module replaces, AIMMS models included.`;
+  })();
+  el("go-how").addEventListener("click", () => el("how").scrollIntoView({ behavior: "smooth", block: "start" }));
+
   // ---- wiring ------------------------------------------------------------------
   function render(animate) {
     const c = current();
@@ -336,6 +421,7 @@
     drawChart(c.s);
     trace(c.s);
     engine(c.s, animate);
+    writeHash();
   }
   Object.values(levers).forEach((l) => l.addEventListener("input", () => render(true)));
   el("year").addEventListener("input", () => engine(current().s, true));
@@ -360,5 +446,7 @@
   });
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { label(); render(false); });
   label();
+  readHash();
+  window.addEventListener("hashchange", () => { readHash(); render(false); });
   render(true);
 })();
