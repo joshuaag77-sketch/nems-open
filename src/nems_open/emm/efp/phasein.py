@@ -14,26 +14,32 @@ from nems_open.emm.efp.common import f32, i
 NDLIFE = 50
 
 
+# COMMON /EFPND/ in order, up to the last REAL*4 member (efpnd include).
+_EFPND = [("ndtaxr", 50), ("nestesc", 50), ("ndadmnr", 0), ("ndearnr", 0), ("ndtcmon", 0), ("ndpser", 3),
+          ("ndpscu", 3), ("nucap", 120), ("nuppr", 120), ("ndest", 120), ("ndcbal", 120), ("ndcapmt", 120)]
+
+
+def _efpnd(s, name, k):
+    """name(k) as Fortran reads it from COMMON /EFPND/, past the end of the array
+    if k is (size 0 marks a scalar). Quirk kept: NDTAXR and NESTESC have
+    NDLIFE = 50 elements but are indexed by year index (up to 61), so the tail
+    years read NESTESC, then NDADMNR, NDEARNR, NDTCMON, NDPSER, NDPSCU, NUCAP."""
+    off = 0
+    for n, size in _EFPND:
+        if n == name:
+            break
+        off += max(size, 1)
+    off += k - 1
+    for n, size in _EFPND:
+        width = max(size, 1)
+        if off < width:
+            return s[n] if size == 0 else s[n][off + 1]
+        off -= width
+    raise IndexError(f"{name}({k}) beyond the REAL*4 part of /EFPND/")
+
+
 def _ndtaxr(s, k):
-    """NDTAXR(k) as Fortran reads it. NDTAXR has NDLIFE = 50 elements, but NDRANN
-    indexes it by year index (up to UNYEAR = 61), so elements 51.. are whatever follows
-    in COMMON /EFPND/: NESTESC(1..50), then NDADMNR, NDEARNR, NDTCMON, NDPSER(1..3),
-    NDPSCU(1..3), NUCAP(1..)."""
-    if k <= NDLIFE:
-        return s["ndtaxr"][k]
-    k -= NDLIFE
-    if k <= NDLIFE:
-        return s["nestesc"][k]
-    k -= NDLIFE
-    if k <= 3:
-        return (s["ndadmnr"], s["ndearnr"], s["ndtcmon"])[k - 1]
-    k -= 3
-    if k <= 3:
-        return s["ndpser"][k]
-    k -= 3
-    if k <= 3:
-        return s["ndpscu"][k]
-    return s["nucap"][k - 3]
+    return _efpnd(s, "ndtaxr", k)
 
 
 def ndrann(s, n, starty, endy, curey):
@@ -68,7 +74,7 @@ def ndrann(s, n, starty, endy, curey):
     if curey != -1:
         for iy in range(usyear1, curey + 1):
             k = iy - usyear1 + 1
-            cure = f32(cure * s["nestesc"][k])
+            cure = f32(cure * _efpnd(s, "nestesc", k))
     rann = f32(f32(unit * f32(cure - curb)) / annbal)
     if rann < 0.0:
         rann = f32(0.0)
@@ -103,7 +109,7 @@ def elnd(s, nrgn, iout, icall):
     ndearnr, ndadmnr, ndtcmon = f32(s["ndearnr"]), f32(s["ndadmnr"]), f32(s["ndtcmon"])
     ndcatch = i(s, "ndcatch")
     yr = int(s["usyear"][curiyr])
-    taxr_now = s["ndtaxr"][curiyr]
+    taxr_now = _ndtaxr(s, curiyr)
     ndcbal, ndcapmt, ndest = s["ndcbal"], s["ndcapmt"], s["ndest"]
     earn = tax = adm = pmt = f32(0.0)
     for n in range(1, i(s, "nucnum") + 1):
@@ -119,7 +125,7 @@ def elnd(s, nrgn, iout, icall):
         if not (yr <= retfce):
             continue
         toearly = False
-        ndest[n] = f32(ndest[n] * s["nestesc"][curiyr])
+        ndest[n] = f32(ndest[n] * _efpnd(s, "nestesc", curiyr))
         if yr < ndcatch and yr < rets:
             # flat payment schedule before the catch-up year
             if yr == s["ndcbaly"][n]:

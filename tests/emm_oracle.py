@@ -41,8 +41,14 @@ def before_after(tag, y, region=None):
 
 
 def rel_err(mine, ref):
+    """Worst relative error. NaN where the oracle has NaN counts as a match; NaN
+    on one side only is an infinite error (a plain max would skip it)."""
     mine, ref = np.asarray(mine, dtype=np.float64), np.asarray(ref, dtype=np.float64)
-    return float((np.abs(mine - ref) / np.maximum(np.abs(ref), 1e-6)).max(initial=0.0))
+    both = (np.isnan(mine) & np.isnan(ref)) | (mine == ref)  # equal infinities match too
+    with np.errstate(invalid="ignore"):
+        err = np.abs(mine - ref) / np.maximum(np.abs(ref), 1e-6)
+    err = np.where(both, 0.0, np.where(np.isnan(err), np.inf, err))
+    return float(err.max(initial=0.0))
 
 
 def assert_matches(state, after, tol=TOL, skip=()):
