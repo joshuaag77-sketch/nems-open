@@ -57,11 +57,12 @@ def _blank_from(a: FArray, y: int) -> FArray:
     return a
 
 
-def run(port, tag, y, tol=TOL, carry=None, start=None, end=None, may_be_empty=False, **kwargs):
+def run(port, tag, y, tol=TOL, carry=None, start=None, end=None, may_be_empty=False, skip=(), **kwargs):
     """Run a port on <tag>_in for year y; return {name: error} for every array it got wrong.
 
     carry: the routine's saved local arrays (dumped as p_<name> in <tag>_out). The port
     gets them with this year and later blanked, as `carry`, and must fill them in.
+    skip: dumped names not to compare (dumped somewhere other than the end point's moment).
     start, end: other dump folders to run between, e.g. "tmpg_lion_out" to "tmpg_fem1_in"
     for a stretch of TMPGNEW."""
     before = oracle_state.load(start or f"{tag}_in", y, run=RUN)
@@ -81,6 +82,8 @@ def run(port, tag, y, tol=TOL, carry=None, start=None, end=None, may_be_empty=Fa
     assert changed or may_be_empty, f"{tag}: nothing changed between _in and _out, so the test proves nothing"
     bad = {}
     for k, v in after.items():
+        if k in skip:
+            continue
         e = rel_err(_raw(state[k]), _raw(v)) if k in state else np.inf
         if e > tol:
             bad[k] = e

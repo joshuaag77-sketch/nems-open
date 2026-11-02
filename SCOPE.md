@@ -210,7 +210,12 @@ Port order: the small light-duty routines first (1, 2, 4, 5, 7-13, 15, 16, 19-21
 | `TCONS`, `TINTEG` | Done 2026-11-01 | Same | `transportation/totals.py` |
 | `TRAIL`, `TMISC` | Done 2026-11-01 | Same, including their saved local arrays | `transportation/misc_modes.py` |
 | `MEAN_FUNCS` | Done 2026-11-01 | Through its callers | `transportation/mean_funcs.py` |
-| `TMPGNEW` (+ FEM, CAFE, vehicle choice), `FLTHAV`, `TRANFRT` (freight), `TSHIP`, `TRANAIR`, `TBENCHMARK`, `TREPORT`, end of `TRAN` | To do | Oracle dumps for all of them are already in place | |
+| `TMPGNEW` (+ FEMCALC, CAFECALC, CAFEGHG_MEET, TATTRIB, TALT2, TALT2X, battery and EV cost routines) | Done 2026-11-02 | Each stretch between dump points inside TMPGNEW within 1e-4; FEM passes and whole TMPGNEW within 1e-3 (expf last-bit differences grow through the FEM loop) | `transportation/tmpgnew.py`, `femcalc.py`, `ldv_tech.py`, `ldv_attrib.py`, `ldv_choice.py`, `cafe.py`, `cafe_meet.py` |
+| `FLTHAV`, `HAVCALC`, `LIDARCOSTCALC` | Done 2026-11-02 | Within 1e-4 | `transportation/hav.py` |
+| `TRANFRT(0)` (TRUCK_NEW with its GHG retry loop, TRUCK_STOCK, TRUCK_VMT, TCOMMCL_TRK, TRUCK_FUEL) | Done 2026-11-02 | Stretches between dump points within 1e-4; choice, ACT and the whole TRUCK_NEW loop within 1e-3 | `transportation/frt_*.py` |
+| `TFRTRPT`, `TSHIP` | Done 2026-11-02 | Within 1e-4 | `transportation/frt_rpt.py`, `frt_ship.py` |
+| `TRANAIR` (TAIRT, TAIREFF, TAREPORT) | Done 2026-11-02 | Within 1e-3: new aircraft are demand minus stock, so last-bit exp/pow differences grow to about 1e-4 | `transportation/air_*.py` |
+| `TBENCHMARK`, `TRANEASY`, `TREPORT`, end of `TRAN` | Done 2026-11-02 | Within 1e-4 | `transportation/bench.py`, `report.py` |
 | Input readers (`READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA`, `CFREAD`, `READAIR`) | To do. Tests take the oracle's copies of the input tables | | |
 
 Tests: `tests/test_tran_<routine>.py`, all through `tests/tran_harness.py`. A test feeds the port the state before EIA's routine and compares every dumped array with the state after; it also fails if nothing changed, so it can't pass by doing nothing. Loop indexes are MODULE variables here (`IREGN`, `ILDV`, ...), so ports leave them where the Fortran loops leave them; later routines can read them.
@@ -229,6 +234,18 @@ Name clash to watch: `ANGTDM` and `NGTDMOUT` are two COMMON blocks with the same
 - `TVMT`: `ildv.le.7.or.ildv.ge.15.and.X.and.Y` binds as `ildv <= 7 .or. (ildv >= 15 .and. X .and. Y)`, so powertrains 1-7 are always counted. `TEMP_MPG(ildv)` is a local array sized by the module variable `ILDV` at entry.
 - `TMISC`: the school bus CNG share for this year is updated after it was copied into the fuel shares, so it takes effect a year late. The transit bus Btu-per-mile formula `X*TBSYSEFF*1-(...)*1+(...)` subtracts and adds where it looks like it should multiply.
 - `TBENCHMARK`: `MER_STEO_regn` is a saved local filled in the last SEDS year and read in the MER year.
+- `TMPGNEW`: `temp_cnt` counts car groups for trucks too. `TATTRIB` swaps the DC and L2 charging multipliers after 2023, and its IRA test is `ildv.le.7`. `FLEXSHR` keeps `BETAP(1)` from the last call. `TALT2` keeps `sta_rat_base` from the last call.
+- `CAFEGHG_MEET`: passes a REAL to an INTEGER sort argument; lifetime miles are hard-coded (195264 cars, 225865 trucks).
+- `FLTHAV`: the 4-year fuel price average divides by 3; `taxi_util` is read before it is updated.
+- `TRUCK_TECHADOPT`: `PREFF_P2 = 1.0` resets the whole array inside the technology loop; `MAX_SHARE_S` keeps entries from the previous fuel or class when a supersede note reads them.
+- `TRUCK_INCCOST`: the FCHEV refuelling cost subtracts 2. `TRUCK_CHOICE`: FCHEV uses `h2_refuelopcost` index 1.
+- `TRUCK_GHGMEET`: `MAX_SPEND_SHR` is an INTEGER set to 0.5, so it is 0 and no credits trade across averaging sets; the bank is spent again on every retry.
+- `TRUCK_AGGVARS`: the age-34 commercial light truck line indexes across. `TRUCK_STOCK`: the oldest vintage's survivors use the age-34 survival rate.
+- `TRUCK_FUEL`: the PHEV charging correction uses the class 2b share for every class, and the charging split tests `IFLT`, left at 3, so every non-sleeper truck counts as depot charging.
+- `TAIREFF`: the 48-year-old aircraft vintage takes in last year's 47- and 48-year-olds, so it never empties.
+- `TREPORT`: 100-mile EV fuel use (`TRLDQTEK(4)`) adds fleet use of 200-mile EVs (index 7). `cmpg_2`, `tmpg_2`, `lmpg_2` are never reset.
+
+Oracle build note: `patch_intel.py` rewrites Intel's `X .eq. .FALSE.` as `.eqv.`. Until 2026-11-02 it did so without parentheses, and `.eqv.` binds looser than `.and.`, so TRUCK_PBK's "push HEV/PHEV when GHG fails" test ran on the first try. Fixed; the oracle was rebuilt and rerun.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
