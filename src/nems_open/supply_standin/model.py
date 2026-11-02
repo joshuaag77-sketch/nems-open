@@ -267,18 +267,23 @@ class SupplyStandin:
 
     # The call --------------------------------------------------------------
 
-    def solve(self, demand: dict | None = None, brent=None, carbon_price=None) -> Result:
+    def solve(self, demand: dict | None = None, brent=None, carbon_price=None,
+              power_fuel: dict | None = None, co2_el: np.ndarray | None = None) -> Result:
         """Prices and emissions for one set of end-use demands.
 
         demand: QBLK-style arrays for the residential, commercial, industrial and
             transportation sectors (e.g. "QBLK/qelrs"), trillion Btu, (11, 61). Missing
             entries keep the baseline. Power-sector and all-sector entries are ignored:
-            the stand-in computes those.
+            the stand-in computes those, unless power_fuel is given.
         brent: Brent crude price by year, 1987 $/bbl like INTOUT/brent_price, (61,).
             Default: the baseline's.
         carbon_price: 2024 $ per metric ton CO2, scalar or by year (61,). Added to every
             delivered fossil price by its carbon content, and to electricity by the power
             sector's average CO2 per unit sold.
+        power_fuel: QBLK/q*el arrays (11, 61) from a better electricity model. They replace the
+            stand-in's power-sector fuel use and its fuel switching; fuels not listed keep the
+            stand-in's value. Gas and coal prices then respond to that fuel use.
+        co2_el: power-sector CO2 (11, 61), million metric tons, replacing the stand-in's own.
         """
         base = self.base
         q = self._demand(demand or {})
@@ -289,7 +294,9 @@ class SupplyStandin:
         # Power plants switch fuel as fuel costs (carbon included) move, which moves gas
         # use, which moves the gas price: iterate to a fixed point (a few rounds).
         power = power0
-        for _ in range(SWITCH_ROUNDS):
+        if power_fuel is not None:
+            power = {**power0, **{k: np.asarray(v, dtype=np.float64) for k, v in power_fuel.items()}}
+        for _ in range(0 if power_fuel is not None else SWITCH_ROUNDS):
             totals = self._totals(q, power)
             prices = self._prices(totals, brent)
             new = self._switch(power0, prices, cp87)
@@ -306,6 +313,8 @@ class SupplyStandin:
         co2 = {}
         for s in EMISSION_SECTORS:
             co2[s] = self._calibration[s] * self._carbon(s, all_q) * CO2_PER_C
+        if co2_el is not None:
+            co2["el"] = np.asarray(co2_el, dtype=np.float64)
 
         adders = {}
         if carbon_price is not None:
