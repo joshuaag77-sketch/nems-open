@@ -219,6 +219,15 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
         return keq[r, t, v]
 
     prefs = range(1, NUM_PREF + 1)
+    P7 = np.arange(NUM_PREF)
+    powc = {}
+
+    def crf_den(rate, tl):
+        """1 - (1 + rate) ** -life, computed once per distinct pair (numpy float32 scalars)."""
+        key = (float(rate), float(tl))
+        if key not in powc:
+            powc[key] = f32(1.0) - (f32(1.0) + rate) ** (f32(-1.0) * tl)
+        return powc[key]
     for r in range(1, NUM_DIV + 1):
         for s in range(1, NUM_MAJ_SERV + 1):
             conv0 = f32(8.76)
@@ -270,11 +279,9 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
             eh_PL = np.array([[eh_p[p]] * nL for p in prefs], dtype=f32)
             eha_PL = np.array([[eha_pf[p, f] for f in fuel_L] for p in prefs], dtype=f32)
             ehr_PL = np.array([[ehr_pf[p, f] for f in fuel_L] for p in prefs], dtype=f32)
-            den_PL = np.array([[f32(1.0) - (f32(1.0) + eh_p[p]) ** (f32(-1.0) * life[t, v]) for t, v in L] for p in prefs], dtype=f32)
-            dena_PL = np.array([[f32(1.0) - (f32(1.0) + eha_pf[p, fuel[t]]) ** (f32(-1.0) * life[t, v]) for t, v in L]
-                                for p in prefs], dtype=f32)
-            denr_PL = np.array([[f32(1.0) - (f32(1.0) + ehr_pf[p, fuel[t]]) ** (f32(-1.0) * life[t, v]) for t, v in L]
-                                for p in prefs], dtype=f32)
+            den_PL = np.array([[crf_den(eh_p[p], life[t, v]) for t, v in L] for p in prefs], dtype=f32)
+            dena_PL = np.array([[crf_den(eha_pf[p, fuel[t]], life[t, v]) for t, v in L] for p in prefs], dtype=f32)
+            denr_PL = np.array([[crf_den(ehr_pf[p, fuel[t]], life[t, v]) for t, v in L] for p in prefs], dtype=f32)
             life_L = life[T, V]
             retro_L = retro_frac[T, V]
             tp = {p: tpp[s, p, y] for p in prefs}
@@ -304,22 +311,14 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                 # Retiring and surviving shares of last year's equipment.
                 ptss = prev_tss[r, b, s, T, V]
                 has_life = life_L > 0.0
-                rp = f32(0.0)
-                for x in (ptss / life_L)[has_life]:
-                    rp += x
+                rp = _seq_total((ptss / life_L)[has_life])
                 surv_ok = has_life & ((f32(1.0) - rp) > 0.0)
                 repl_ok = has_life & (rp > 0.0)
                 with np.errstate(divide="ignore", invalid="ignore"):
                     surv_L = np.where(surv_ok, ptss * (f32(1.0) - (f32(1.0) / life_L)) / (f32(1.0) - rp), f32(0.0)).astype(f32)
                     repl_L = np.where(repl_ok, ptss * (f32(1.0) / life_L) / rp, f32(0.0)).astype(f32)
-                surv_fs = [f32(0.0)] * (NUM_FUEL + 1)
-                repl_fs = [f32(0.0)] * (NUM_FUEL + 1)
-                for f in range(1, NUM_FUEL + 1):
-                    fb = fuelbytech[T, f]
-                    for x in (surv_L * fb)[surv_ok]:  # float32 times an int flag: float64, as in the reference
-                        surv_fs[f] += x
-                    for x in (repl_L * fb)[repl_ok]:
-                        repl_fs[f] += x
+                # float32 times an int fuel flag is float64, as in the reference version
+                repl_fs = [None] + [_seq_total((repl_L * fb_L[f])[repl_ok]) for f in (1, 2, 3)]
 
                 # Annualized cost of every technology (label 90).
                 ok = ~(unavail_tv | (restrict[T, V, b, r] == 1))
@@ -338,25 +337,50 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
                 AC = {I_EXIST: act[:, T, V, I_EXIST], I_NEW: act[:, T, V, I_NEW]}
                 ACA = {I_EXIST: acta[:, T, V, I_EXIST], I_NEW: acta[:, T, V, I_NEW]}
 
-                # New and Replacement: least-cost searches (label 100).
+                # New and Replacement: least-cost searches (label 100), all preference groups at once.
                 lc_af, lc_sf, lcv_st = {}, {}, {}
-                for p in prefs:
-                    for sd in sides:
-                        k, best = _first_min(AC[sd][p], act[p, t1, 1, sd])
-                        arg = L[k] if k >= 0 else (t1, 1)
-                        f_min = fuel[arg[0]]
-                        cand = same_fuel[f_min]
-                        k2, best = _first_min(ACA[sd][p][cand], best)
-                        lc_af[p, sd] = L[cand[k2]] if k2 >= 0 else arg
-                        for f in (1, 2, 3):
-                            init = acta[p, t1, 1, sd] if f == fuel[t1] else MAXCOST
-                            iarg = (t1, 1) if f == fuel[t1] else (0, 0)
-                            seq = fuel_seq[f]
-                            k3, m = _first_min(ACA[sd][p][seq], init)
-                            lc_sf[p, f, sd] = (0, 0) if m == MAXCOST else (L[seq[k3]] if k3 >= 0 else iarg)
-                        for t in tlist:
-                            k4, m = _first_min(ACA[sd][p][of_tech[t]], acta[p, t, 1, sd])
-                            lcv_st[p, t, sd] = 0 if m == MAXCOST else (Lt[t][k4] if k4 >= 0 else 1)
+                for sd in sides:
+                    ac, aca = AC[sd][1:], ACA[sd][1:]                 # [p, position]
+                    k = np.argmin(ac, axis=1)
+                    m = ac[P7, k]
+                    init = act[1:, t1, 1, sd]
+                    win = m < init
+                    best = np.where(win, m, init)
+                    first = [L[k[i]] if win[i] else (t1, 1) for i in range(NUM_PREF)]
+                    sfk, sfm = {}, {}
+                    for f in (1, 2, 3):
+                        cand = same_fuel[f]
+                        if cand.size:
+                            kf = cand[np.argmin(aca[:, cand], axis=1)]
+                            sfk[f], sfm[f] = kf, aca[P7, kf]
+                    for i, p in enumerate(prefs):
+                        f = fuel[first[i][0]]
+                        lc_af[p, sd] = L[sfk[f][i]] if f in sfk and sfm[f][i] < best[i] else first[i]
+                    for f in (1, 2, 3):
+                        seq = fuel_seq[f]
+                        init = acta[1:, t1, 1, sd] if f == fuel[t1] else np.full(NUM_PREF, MAXCOST, dtype=f32)
+                        iarg = (t1, 1) if f == fuel[t1] else (0, 0)
+                        if seq.size:
+                            kf = seq[np.argmin(aca[:, seq], axis=1)]
+                            mf = aca[P7, kf]
+                        else:
+                            kf, mf = None, init
+                        for i, p in enumerate(prefs):
+                            if seq.size and mf[i] < init[i]:
+                                lc_sf[p, f, sd] = L[kf[i]]
+                            else:
+                                lc_sf[p, f, sd] = (0, 0) if init[i] == MAXCOST else iarg
+                    for t in tlist:
+                        idx = of_tech[t]
+                        init = acta[1:, t, 1, sd]
+                        if idx.size:
+                            kk = np.argmin(aca[:, idx], axis=1)
+                            mt = aca[P7, idx[kk]]
+                        for i, p in enumerate(prefs):
+                            if idx.size and mt[i] < init[i]:
+                                lcv_st[p, t, sd] = Lt[t][kk[i]]
+                            else:
+                                lcv_st[p, t, sd] = 0 if init[i] == MAXCOST else 1
 
                 zero_L = lambda: [f32(0.0)] * nL
                 lcmsn, lcmsr, sfmsn, sfmsr, stmsn, stmsr = (zero_L() for _ in range(6))
