@@ -4,6 +4,8 @@ Ports index with the same subscripts as the Fortran, a[r, b, y], so each line ca
 be checked against the original. `.a` is the raw 0-based NumPy array.
 """
 
+from operator import sub
+
 import numpy as np
 
 
@@ -28,10 +30,22 @@ class FArray:
         )
 
     def __getitem__(self, idx):
+        if type(idx) is tuple:
+            try:  # fast path for integer subscripts; a slice among them raises TypeError
+                return self.a[tuple(map(sub, idx, self.lb))]
+            except TypeError:
+                pass
         return self.a[self._ix(idx)]
 
     def __setitem__(self, idx, value):
-        self.a[self._ix(idx)] = value
+        if type(idx) is tuple:
+            try:
+                ix = tuple(map(sub, idx, self.lb))
+            except TypeError:
+                ix = self._ix(idx)
+        else:
+            ix = self._ix(idx)
+        self.a[ix] = value
 
     def copy(self):
         return FArray(self.a.copy(), self.lb)
