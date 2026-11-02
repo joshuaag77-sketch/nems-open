@@ -15,11 +15,12 @@ case "$U" in
 esac
 FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -I$INC"
 FLAGS="$FLAGS $ORACLE_EXTRA_FLAGS"   # e.g. -ffpe-trap=invalid to stop at the first NaN
+STUBFLAGS="-cpp"
 case "$MOD" in
   comm) B=build; R=run; SRC=comm; DRIVER=driver ;;
   # ind.f passes short arrays to longer dummy arguments (shares_calc), which gfortran
   # only allows under -std=legacy.
-  ind) B=build_ind; R=run_ind; SRC=ind; DRIVER=driver_ind; FLAGS="$FLAGS -std=legacy" ;;
+  ind) STUBFLAGS="-cpp -DPOSUNIT"; B=build_ind; R=run_ind; SRC=ind; DRIVER=driver_ind; FLAGS="$FLAGS -std=legacy" ;;
   *) B=build_$MOD; R=run_$MOD; SRC=resd; DRIVER=driver_$MOD ;;
 esac
 cd $B
@@ -27,6 +28,7 @@ python -I ../patch_intel.py "$U/source/$SRC.f" $SRC.f90
 python -I ../hooks.py "$U" $SRC.f90 $MOD
 python -I ../wk1_subset.py "$U/source/nemswk1.f" wk1_raw.f
 python -I ../patch_intel.py wk1_raw.f wk1_subset.f90
-gfortran $FLAGS -c $SRC.f90 wk1_subset.f90 ../readrng_stub.f90 ../stubs.f90 load_restart.f90 oracle_state.f90 ../$DRIVER.f90
+gfortran $FLAGS -c $SRC.f90 wk1_subset.f90 ../readrng_stub.f90 load_restart.f90 oracle_state.f90 ../$DRIVER.f90
+gfortran $FLAGS $STUBFLAGS -c ../stubs.f90
 gfortran -o ../$R/oracle.exe $SRC.o wk1_subset.o readrng_stub.o stubs.o load_restart.o oracle_state.o $DRIVER.o
 echo built $R/oracle.exe

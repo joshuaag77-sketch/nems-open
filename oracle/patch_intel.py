@@ -61,6 +61,21 @@ RULES = [
     # indt.csv) through direct-access CSV code gfortran rejects. They compute nothing the
     # module keeps, so the oracle skips the calls.
     (re.compile(r"^(\s*)(call\s+(?:indsic|indgrp)\s*\()", re.I | re.M), r"\1! oracle skips report: \2"),
+    # MECSBASE reads prodflow.txt front to back and BACKSPACEs a record it is not ready for,
+    # which only works if IEDATA asks for (industry, region) in file order. ISEAM does not:
+    # it asks (12,1..4), (13,1), (12,2..4), (14,1), (13,2), and the sections for 13 go missing.
+    # Make each call self-contained: rewind, skip sections that come before the requested
+    # one, stop at the first one that comes after. Same data in the same arrays.
+    (re.compile(r"do while \(inpreg\.le\.indreg\.and\. &\s*\r?\n\s*inpind\.le\.inddir\)", re.I), "do"),
+    (re.compile(r"^(\s*)if\(iunit\.le\.0\) return\s*$(?=(?:\r?\n.*){0,3}\r?\n\s*inpind=0)", re.I | re.M),
+     r"\1if(iunit.le.0) return\n\1rewind(iunit)"),
+    (re.compile(r"^(\s*)backspace\(iunit\)\s*\r?\n\s*return\s*$", re.I | re.M),
+     r"\1if (inpind.gt.inddir.or.(inpind.eq.inddir.and.inpreg.gt.indreg)) return"),
+    # ENPROD's STEPBYP records give the fuel number as "33.00". ifort reads that into an
+    # INTEGER in a list-directed READ; gfortran stops with "Bad integer". Read it as a real.
+    (re.compile(r"(INTEGER IFL,IERR,IDUM,IFX,ISTP,IFLAG)", re.I), r"\1\n      REAL RFX_"),
+    (re.compile(r"(READ\(ISTR2,\*,ERR=100,IOSTAT=IOSi\) IDUM,)IFX(, &\s*\r?\n\s*\(TEMP\(J\),J=1,4\))", re.I),
+     r"\1RFX_\2\n      IFX = nint(RFX_)"),
     # ININT is Intel's round-to-INTEGER*2. NINT rounds the same way and the
     # assignment narrows to INTEGER*2.
     (re.compile(r"\binint\s*\(", re.I), "nint("),

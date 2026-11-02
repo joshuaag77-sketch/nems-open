@@ -159,7 +159,7 @@ Risk to check first: the snapshot holds converged end-state values. If the comme
 Branch `industrial`. Source `source/ind.f`, 20,001 lines, 100+ routines, all external (not CONTAINed) and sharing `MODULE I_` through USE.
 
 ### Oracle
-Build and run: `NEMS_UPSTREAM=<eia checkout> python -I gen_oracle.py $NEMS_UPSTREAM cb2026 ind`, then `bash build.sh ind`, then `cd run_ind && ./oracle.exe` (about 4 minutes; the run prints thousands of NaN diagnostics, see below). `driver_ind.f90` calls IND for every year 1990-2050: two iterations with NCRL=0 (the second with FCRL=1), then the reporting call with NCRL=1. Output: `run_ind/out/q*in.bin` (all QBLK industrial fuels) and `run_ind/out/state/final/2050/` (INDREP, INDOUT, COGEN, BIFURC). `ORACLE_EXTRA_FLAGS=-ffpe-trap=invalid` stops at a NaN under gdb.
+Build and run: `NEMS_UPSTREAM=<eia checkout> python -I gen_oracle.py $NEMS_UPSTREAM cb2026 ind`, then `bash build.sh ind`, then `cd run_ind && ./oracle.exe` (about 4 minutes). `driver_ind.f90` calls IND for every year 1990-2050: two iterations with NCRL=0 (the second with FCRL=1), then the reporting call with NCRL=1. Output: `run_ind/out/q*in.bin` (all QBLK industrial fuels) and `run_ind/out/state/final/2050/` (INDREP, INDOUT, COGEN, BIFURC). `ORACLE_EXTRA_FLAGS=-ffpe-trap=invalid` stops at a NaN under gdb.
 - Intel patches added to `patch_intel.py` (each commented): parenthesized READ item list, backslash edit descriptor, numeric variable formats `<26-10+1>`, `CHARACTER*name`, `EOF()` (defined inside MODULE I_), scalar assignment to unallocated arrays (Intel ignores it, gfortran writes address 0), `MIN(CARBSHRCA,1.0)` with a NaN (Intel returns 1.0), an I4 descriptor given a REAL in the NaN report format, and skipping `INDSIC`/`INDGRP` (spreadsheet report writers on direct-access CSV).
 - `-std=legacy` is needed for ind only (`shares_calc` is passed arrays shorter than its dummy).
 - Startup data: `ironstlx.xlsx` (steel, paper, Aluminum, Glass, Lime, Cement sheets) and `indcogenx.xlsx` (icogen) go through the same range flattening as `ktekx.xlsx`.
@@ -182,4 +182,4 @@ Pure reporting (not ported): `INDSIC` 9985, `INDGRP` 11311, `TECHSHR_RPT` 17380,
 Note quad precision: `logit_calc` and `shares_calc` use REAL*16. gfortran REAL*16 matches Intel's.
 
 ### Port status
-Nothing ported yet. Next steps: (1) find the ENPQTY NaN; (2) add `TARGETS` for the energy accounting routines in `hooks.py` (IND_TARGETS is empty); (3) port CALGEN/CALBSC/CALSTOT/INDTOTAL first.
+Nothing ported yet. Next steps: (1) add `TARGETS` for the energy accounting routines in `hooks.py` (IND_TARGETS is empty); (3) port CALGEN/CALBSC/CALSTOT/INDTOTAL first.
