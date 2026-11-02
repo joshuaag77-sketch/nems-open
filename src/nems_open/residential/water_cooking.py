@@ -365,6 +365,14 @@ def reuadd(s: dict, EU: int) -> None:
                 if b == 1:
                     s["eqcrep"][Y, reccl, b, r] = 0.0
 
+    # Survival and housing-decay factors by vintage age (Y - y for y = RECSYEAR+1..Y)
+    ages = np.arange(Y - RECSYEAR - 1, -1, -1)
+    vint = {c: (np.array([svrte(s["rtalpha"][c], t, s["rtk"][c], s["rtlambda"][c]) for t in ages], dtype=np.float32),
+                np.array([f32(svrte(s["rtalpha"][c], t - 1, s["rtk"][c], s["rtlambda"][c])
+                              - svrte(s["rtalpha"][c], t, s["rtk"][c], s["rtlambda"][c])) for t in ages], dtype=np.float32))
+            for c in range(lo, hi + 1)}
+    hpow = {b: np.array([powi(HDR[b], t) for t in ages], dtype=np.float32) for b in range(1, NB + 1)}
+
     for r in range(1, NM + 1):
         for b in range(1, NB + 1):
             for reccl in range(lo, hi + 1):
@@ -386,30 +394,26 @@ def reuadd(s: dict, EU: int) -> None:
                         f32(f32(s["eqcret"][Y, reccl] - s["eqcret"][Y - 1, reccl]) * s["eqcese"][RECSYEAR, reccl, b, r])
                         * powi(HDR[b], Y - RECSYEAR))
 
-                alpha, k, lam = s["rtalpha"][reccl], s["rtk"][reccl], s["rtlambda"][reccl]
-                # Replacements of replacements, by vintage.
+                # Replacements of replacements by vintage, then surviving replacements: running
+                # sums over vintages in year order (float32 term arrays, sequential accumulate).
+                # The first sum runs through Y itself, whose term reads the running total.
                 if Y > RECSYEAR + 1:
-                    for y in range(RECSYEAR + 1, Y + 1):
-                        temp = Y - y
-                        esr = f32(svrte(alpha, temp - 1, k, lam) - svrte(alpha, temp, k, lam))
-                        h = powi(HDR[b], temp)
-                        a1 = f32(f32(s["eqcrp90"][y, reccl, b, r] * esr) * h)
-                        a2 = f32(f32(s["eqcrp90rp"][y, reccl, b, r] * esr) * h)
-                        s["eqcrp90rp"][Y, reccl, b, r] = f32(s["eqcrp90rp"][Y, reccl, b, r] + f32(a1 + a2))
-
-                if Y > RECSYEAR + 1:
-                    for y in range(RECSYEAR + 1, Y):
-                        temp = Y - y
-                        esr = svrte(alpha, temp, k, lam)
-                        h = powi(HDR[b], temp)
-                        a1 = f32(f32(s["eqcrp90"][y, reccl, b, r] * esr) * h)
-                        a2 = f32(f32(s["eqcrp90rp"][y, reccl, b, r] * esr) * h)
-                        s["eqcsr90"][Y, reccl, b, r] = f32(s["eqcsr90"][Y, reccl, b, r] + f32(a1 + a2))
-                        hsr = h
-                        SA = f32(SA + f32(s["eqcadd"][y, reccl, b, r] * hsr))
-                        s["eqcsur"][Y, reccl, b, r] = f32(
-                            s["eqcsur"][Y, reccl, b, r]
-                            + f32(f32(s["eqcadd"][y, reccl, b, r] + s["eqcrep"][y, reccl, b, r]) * f32(hsr * esr)))
+                    sv0, sv1 = vint[reccl]
+                    h = hpow[b]
+                    a = slice(RECSYEAR + 1, Y - 1)
+                    rp90, rp90rp = s["eqcrp90"][a, reccl, b, r], s["eqcrp90rp"][a, reccl, b, r]
+                    run = _running(s["eqcrp90rp"][Y, reccl, b, r],
+                                   (rp90 * sv1[:-1]) * h[:-1] + (rp90rp * sv1[:-1]) * h[:-1])
+                    a1 = f32(f32(s["eqcrp90"][Y, reccl, b, r] * sv1[-1]) * h[-1])
+                    a2 = f32(f32(run * sv1[-1]) * h[-1])
+                    s["eqcrp90rp"][Y, reccl, b, r] = f32(run + f32(a1 + a2))
+                    h0, e0 = h[:-1], sv0[:-1]
+                    s["eqcsr90"][Y, reccl, b, r] = _running(
+                        s["eqcsr90"][Y, reccl, b, r], (rp90 * e0) * h0 + (rp90rp * e0) * h0)
+                    add = s["eqcadd"][RECSYEAR + 1:Y - 1, reccl, b, r]
+                    SA = _running(SA, add * h0)
+                    s["eqcsur"][Y, reccl, b, r] = _running(
+                        s["eqcsur"][Y, reccl, b, r], (add + s["eqcrep"][RECSYEAR + 1:Y - 1, reccl, b, r]) * (h0 * e0))
 
                 # REPLACE spreads single-family replacements across classes; multifamily and
                 # mobile homes replace with like.
@@ -481,6 +485,11 @@ def reuadd(s: dict, EU: int) -> None:
         yy = RECSYEAR if first else Y
         if s[tot][yy, r] > s["rsgascust"][yy, r]:
             s["rsgascust"][yy, r] = s[tot][yy, r]
+
+
+def _running(start, terms):
+    """start + terms[0] + terms[1] + ... in float32, in order (a Fortran running sum)."""
+    return np.add.accumulate(np.concatenate([[np.float32(start)], terms.astype(np.float32)]))[-1]
 
 
 def _wsum(u, cwl, load, q):

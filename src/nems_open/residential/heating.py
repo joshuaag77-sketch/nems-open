@@ -42,6 +42,13 @@ def rhtradd(s: dict) -> None:
     EQCRP90, EQCRP90RP, EQCSR90 = s["eqcrp90"], s["eqcrp90rp"], s["eqcsr90"]
     EQCESE, EQCRET, HSEADD = s["eqcese"], s["eqcret"], s["hseadd"]
 
+    # Survival and housing-decay factors by vintage age (CurCalYr - Y for Y = RECSYEAR+1..CurCalYr-1)
+    ages = np.arange(CurCalYr - RECSYEAR - 1, 0, -1)
+    vint = {c: (np.array([svrte(RTALPHA[c], a, RTK[c], RTLAMBDA[c]) for a in ages], dtype=np.float32),
+                np.array([svrte(RTALPHA[c], a - 1, RTK[c], RTLAMBDA[c]) - svrte(RTALPHA[c], a, RTK[c], RTLAMBDA[c])
+                          for a in ages], dtype=np.float32)) for c in range(c0, c1 + 1)}
+    hpow = {b: np.array([powi(HDR[b], a) for a in ages], dtype=np.float32) for b in range(1, MNUMBLDG + 1)}
+
     # SHARESN is a local in EIA's code, zeroed per class before use
     SHARESN = np.zeros((NHTRFL + 20, MNUMBLDG + 1, NUM_DIV + 1), dtype=np.float32)
 
@@ -76,28 +83,23 @@ def rhtradd(s: dict) -> None:
                     EQCRP90[CurCalYr, RECCL, B, R] = ((EQCRET[CurCalYr, RECCL] - EQCRET[CurCalYr - 1, RECCL])
                         * EQCESE[RECSYEAR, RECCL, B, R] * powi(HDR[B], CurCalYr - RECSYEAR))
 
-                # vintage replacements of replacements
+                # vintage replacements of replacements, and surviving replacements: running
+                # sums over earlier vintages in year order (terms as float32 arrays, summed
+                # by a sequential accumulate, so the same rounding as the Fortran's loop)
                 if CurCalYr > RECSYEAR + 1:
-                    for Y in range(RECSYEAR + 1, CurCalYr):
-                        TEMP = CurCalYr - Y
-                        ESR = (svrte(RTALPHA[RECCL], TEMP - 1, RTK[RECCL], RTLAMBDA[RECCL])
-                               - svrte(RTALPHA[RECCL], TEMP, RTK[RECCL], RTLAMBDA[RECCL]))
-                        EQCRP90RP[CurCalYr, RECCL, B, R] = (EQCRP90RP[CurCalYr, RECCL, B, R]
-                            + (EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
-                               + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)))
-
-                # surviving replacements
-                if CurCalYr > RECSYEAR + 1:
-                    for Y in range(RECSYEAR + 1, CurCalYr):
-                        TEMP = CurCalYr - Y
-                        ESR = svrte(RTALPHA[RECCL], TEMP, RTK[RECCL], RTLAMBDA[RECCL])
-                        EQCSR90[CurCalYr, RECCL, B, R] = (EQCSR90[CurCalYr, RECCL, B, R]
-                            + (EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
-                               + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)))
-                        HSR = powi(HDR[B], TEMP)
-                        SA = SA + EQCADD[Y, RECCL, B, R] * HSR
-                        EQCSUR[CurCalYr, RECCL, B, R] = (EQCSUR[CurCalYr, RECCL, B, R]
-                            + ((EQCADD[Y, RECCL, B, R] + EQCREP[Y, RECCL, B, R]) * (HSR * ESR)))
+                    v = slice(RECSYEAR + 1, CurCalYr - 1)
+                    sv, hp = vint[RECCL], hpow[B]
+                    rp90, rp90rp = EQCRP90[v, RECCL, B, R], EQCRP90RP[v, RECCL, B, R]
+                    esr = sv[1]  # svrte(age - 1) - svrte(age), oldest vintage first
+                    EQCRP90RP[CurCalYr, RECCL, B, R] = _running(
+                        EQCRP90RP[CurCalYr, RECCL, B, R], rp90 * esr * hp + rp90rp * esr * hp)
+                    esr = sv[0]  # svrte(age)
+                    EQCSR90[CurCalYr, RECCL, B, R] = _running(
+                        EQCSR90[CurCalYr, RECCL, B, R], rp90 * esr * hp + rp90rp * esr * hp)
+                    add = EQCADD[v, RECCL, B, R]
+                    SA = _running(SA, add * hp)
+                    EQCSUR[CurCalYr, RECCL, B, R] = _running(
+                        EQCSUR[CurCalYr, RECCL, B, R], (add + EQCREP[v, RECCL, B, R]) * (hp * esr))
 
                 if B == 1:
                     # what replacements would be without switching, then REPLACE spreads them
@@ -236,6 +238,11 @@ def rhtradd(s: dict) -> None:
             for B in range(1, MNUMBLDG + 1):
                 GC[CurCalYr, R] = (GC[CurCalYr, R] + HEATOT[CurCalYr, 3, B, R]
                                    + HEATOT[CurCalYr, 4, B, R] + HEATOT[CurCalYr, 10, B, R])
+
+
+def _running(start, terms):
+    """start + terms[0] + terms[1] + ... in float32, in order (a Fortran running sum)."""
+    return np.add.accumulate(np.concatenate([[np.float32(start)], terms.astype(np.float32)]))[-1]
 
 
 def _powf(x, y):
