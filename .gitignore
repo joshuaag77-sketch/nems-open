@@ -1,0 +1,6 @@
+nems-upstream/
+__pycache__/
+*.pyc
+.pytest_cache/
+oracle/run/
+oracle/build/

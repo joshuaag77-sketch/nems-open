@@ -1,0 +1,14 @@
+[project]
+name = "nems-open"
+version = "0.0.1"
+description = "Open Python rebuild of EIA's National Energy Modeling System"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
