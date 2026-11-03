@@ -43,3 +43,8 @@ Fidelity: `python scripts/fidelity.py` builds `data/fidelity.js` and `data/fidel
 
 Data center story: `datacenter.html` steps through four load cases; `engine3d.html` shows them as cards, and the ring animates each module's change between steps. `src/nems_open/datacenter_load.json` holds every load assumption with its source and every choice that is ours. `python scripts/datacenter_runs.py` runs them with ported residential, commercial and transportation and the dispatch LP (23 to 38 minutes each, one at a time, resumable) and writes `data/datacenter/*.json` and `data/datacenter.js`. Rerun `scripts/fidelity.py` after. Precomputed, not live.
 Uncertainty bands: the "How sure is this?" card reads `data/uncertainty.js` (`python -m nems_open.uncertainty run` then `summary`; method in `docs/uncertainty.md`). 10th, 50th and 90th percentiles of US CO2, household energy bill and home gas price over many runs of the fast loop on EIA's side-case inputs, a bar chart of which input explains the spread, and a table of the ranges. They are our sampling on stand-ins, not EIA's, and the card says so. If the file is missing the card hides itself.
+
+Switch atlas (`switches.html`): every key in EIA's scedes files, where the code reads it,
+what it does, and which AEO side cases change it. `python scripts/build_switches.py` writes
+`data/switches.json` and `data/switches.js` from `scripts/switches_meanings.json` (what readers
+established from the code) and `scripts/switch_sites.py` (what a script can establish).

@@ -50,7 +50,7 @@ def _census_of_region() -> np.ndarray:
 
 
 class ElectricityLP:
-    def __init__(self, supply, hours_per_block: int = 3, added_load=None):
+    def __init__(self, supply, hours_per_block: int = 3, capacity_scale=None, added_load=None):
         if supply.baseline != "cb2026":
             raise ValueError("elec='lp' takes its capacity from the cb2026 reference run, so the baseline must be cb2026")
         self.supply = supply
@@ -58,6 +58,7 @@ class ElectricityLP:
         self.snapshot = Snapshot()
         self.hours_per_block = hours_per_block
         self.added_load = added_load          # datacenter.AddedLoad: already in the loop's commercial sales
+        self.capacity_scale = capacity_scale   # year -> {group: multiplier}, from a lever (nems_open.levers)
         self._cases = {}
         self._census = _census_of_region()
         self.last: dict[int, LPResult] = {}
@@ -92,7 +93,10 @@ class ElectricityLP:
             q0["QBLK/qelcm"][:9, j] = q["QBLK/qelcm"][:9, j] - self.added_load.tbtu(j)
             extra = {"flat_twh": np.maximum(net - demand.net_load_twh(self.snapshot, year, sales=q0), 0.0),
                      "flex_share": self.added_load.flex_share}
-        case = replace(case0, net_load_twh=net, price=self._scaled_prices(case0, prices, j), carbon_price=float(cp87), **extra)
+        scale = self.capacity_scale(year) if self.capacity_scale else {}
+        capacity = {g: v * scale.get(g, 1.0) for g, v in case0.capacity.items()}
+        case = replace(case0, capacity=capacity, net_load_twh=net, price=self._scaled_prices(case0, prices, j),
+                       carbon_price=float(cp87), **extra)
         res = dispatch.solve(case)
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: dispatch {res.status}")
