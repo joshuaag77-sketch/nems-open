@@ -1,24 +1,17 @@
 """ELEFP and the routines around each EFP component (src/nems_open/emm/efp/elefp.py)
 against the oracle.
 
-What the books snapshots are. oracle/run_emm/efp_books/32 and /41 were meant to be EFP's
-direct-access files just before EFP in 2021 and 2030. They are not: the two directories are
-byte-identical, they were copied seconds before the oracle run that wrote the dumps started,
-and they hold EFP's files at the end of the PREVIOUS run, after 2050 (tests/test_efp_books.py
-shows the files equal the state fp_out holds for 2050; the build file lists builds that start
-as late as 2051). snapshot_efp.py waits for ld_out's index to reach 205 lines, which a
-leftover dump from the earlier run had already done. So ELEFP cannot be matched to fp_out
-from them, and test_elefp_year skips once it has run when it sees that.
+oracle/run_emm/efp_books/<year> are EFP's direct-access files just before ELEFP in that
+year (final iteration), so ELEFP from fp_in plus the snapshot must give fp_out.
 
-What is checked meanwhile. Region 1 in 2030 is dumped around every call of its three
-components (gg, gt, gd = GL; ag, at, ad = AVRPRC; cp = COMPPRC; y_cap1 = CAPCOST), and fp_out
-holds the U* arrays ELLGTR stored for region 1. The only inputs that are not in a dump are the
-two records the stale snapshot gets wrong: RC record 1 (last year's lagged values: 32 of the
-record's members; the rest are static inputs the snapshot has right) and the BILDIN record
-the ECP wrote. Those are taken from the dumps (the OUTRC members GETRC leaves in the state at
-gg_in, gt_in and gd_in; the EBILDN y_cap1_out holds after CAPCOST's STRBLD), and everything
-else runs through the store: GETRCY, CAPCOST (with GETBLD/STRBLD), ALLFAC, GETRC, the U*
-arrays, GL, AVRPRC, COMPPRC, ELLGTR and STRRC.
+One snapshot quirk: the copy was taken while region 25's distribution component was in
+progress in the year's first iteration (the build list already holds that region's new build,
+but STREB has not written the EB arrays; see test_efp_books). The first-iteration step that
+copies RC record 2 to record 1 (GETRC(...,2); STRRC(...,1) in ELGLTR) had not yet run for
+region 25 D, so its record 1 is last year's second-to-last state. ELEFP's iteration-2 read of
+that record needs the copy done: `finish_snapshot` does that one step. With it, ELEFP matches
+exactly; without it only region 25's distribution component is off (EROBL, hence EROB and the
+interest and preferred dividends that follow, and through ELSET the prices).
 """
 
 import functools
@@ -35,7 +28,6 @@ from test_efp_phasein import _fix_efpnd
 
 ids = lambda y: str(1989 + y)  # noqa: E731
 BOOKS = REPO_ROOT / "oracle" / "run_emm" / "efp_books"
-LAG_NAMES = [lag for lag, _ in elefp.LAGS]
 # EFPND (nuclear decommissioning) is dumped with REAL*4 items typed as INTEGER; same fix as
 # test_efp_phasein, but for a dump with no region suffix
 EFPND_REAL = {"ndtaxr": 50, "nestesc": 50, "ndadmnr": None, "ndearnr": None, "ndtcmon": None,
@@ -99,6 +91,15 @@ def fix_efpnd_region(d, tag, y, r):
     return _fix_efpnd(d, tag, y, r)
 
 
+def finish_snapshot(bk):
+    """Region 25 D's iteration-1 prologue: RC record 2 copied to record 1 (see the docstring).
+    Most likely cause: region 25 D is the last record EFP writes before the snapshot,
+    and gfortran had not yet flushed the file buffer when oracle/snapshot_efp.py copied
+    the file (the oracle cannot be rebuilt with a flush under the current Windows block)."""
+    bk._write(bk.rc, bk.rc_rec(25, "D", 1), books.RC_RECL, bk._read(bk.rc, bk.rc_rec(25, "D", 2), books.RC_RECL))
+    return bk
+
+
 def snapshot(y):
     folder = BOOKS / str(y)
     if not (folder / "EMM_EFPR.daf").exists():
@@ -106,31 +107,20 @@ def snapshot(y):
     return books.Books.from_dir(folder)
 
 
-def stale(bk, y):
-    """Builds that start more than ten years after the run year cannot be in the files yet."""
-    syr = np.frombuffer(bytes(bk.builds.data), dtype=books._EBFMT)["syr"]
-    return bool(syr.max() > y + 10)
-
-
 # ---- ELEFP, whole
 
 
 @pytest.mark.parametrize("y", [32, 41], ids=ids)
 def test_elefp_year(y):
-    """Python ELEFP from fp_in plus the year's books equals fp_out, for every array the oracle
-    dumped. Runs on any snapshot (it must not fail on one), but compares only on a snapshot
-    that is the year's own."""
+    """Python ELEFP from fp_in plus the year's books equals fp_out, for every array the oracle dumped."""
     s, after = before_after("fp", y)
-    bk = snapshot(y)
+    bk = finish_snapshot(snapshot(y))
     fix_efpnd(s, "fp_in", y)
     fix_efpnd(after, "fp_out", y)
     with np.errstate(all="ignore"):
         elefp.elefp(s, bk, dispout(y))
     for r in range(1, 26):   # every region's three components wrote their RC record 2
         assert bk.rc_rec(r, "D", 2) <= len(bk.rc) // books.RC_RECL
-    if stale(bk, y):
-        pytest.skip("the books snapshot is EFP's files after 2050, not before EFP in this year "
-                    "(see this file's docstring); ELEFP ran, nothing to compare")
     worst = check(s, after)
     print(f"ELEFP {ids(y)}: worst relative error {max(worst.values()):.3g}")
 
@@ -159,22 +149,7 @@ def test_elefp_switches(monkeypatch):
         assert (int(t["efpfcrl"]), int(t["efpitprt"])) == want
 
 
-# ---- region 1 in 2030, component by component, with the two stale records taken from the dumps
-
-
-def patch_rc(bk, r, icall, dump):
-    """RC record 1 of (r, icall): the lagged members (ELxxx) from an OUTRC the oracle holds after GETRC."""
-    a = bk.rc_rec(r, icall, 1)
-    raw = bytearray(bk._read(bk.rc, a, books.RC_RECL))
-    blk = books.BLOCKS["rc"]
-    for n in LAG_NAMES:
-        blk.encode(raw, n, dump[n])
-    bk._write(bk.rc, a, books.RC_RECL, bytes(raw))
-
-
-def patch_bildin(bk, s, r, cap_out):
-    """The BILDIN record region r holds when CAPCOST's STRBLD has written it (EBILDN of y_cap1_out)."""
-    bk._write(bk.bld, bk.bld_rec(s, 1, r), books.BLD_RECL * books.EBLK_BLD, cap_out["ebildn"].a.tobytes())
+# ---- region 1 in 2030, component by component
 
 
 @pytest.mark.parametrize("y", [41], ids=ids)
@@ -188,9 +163,6 @@ def test_components_of_region_1(y):
     fix_efpnd(fp_out, "fp_out", y)
     bk = snapshot(y)
     s["_efpbld"] = bk.builds
-    patch_bildin(bk, s, r, before_after("y_cap1", y, r)[1])
-    for icall, tag in (("G", "gg"), ("T", "gt"), ("D", "gd")):
-        patch_rc(bk, r, icall, before_after(tag, y, r)[0])
     elefp.put(s, "efpfcrl", 1)   # ELEFP sets it before EFP
     get = dispout(y)
 
@@ -228,37 +200,3 @@ def test_components_of_region_1(y):
     for icall in "GTD":
         rec = bk._read(bk.rc, bk.rc_rec(r, icall, 2), books.RC_RECL)
         assert rec != bytes(books.RC_RECL)
-
-
-@pytest.mark.parametrize("y", [41], ids=ids)
-def test_elefp_whole_year_region_1(y):
-    """The whole ELEFP, 25 regions and ELSET, with region 1's two stale records replaced from
-    the dumps (the other regions run on the stale snapshot and are wrong). What region 1
-    determines alone must match fp_out: its row of the prices ELSET reports, its cost of
-    service, its competitive-pricing entries, and the peaks ELEFP sets for every region."""
-    r = 1
-    if not (available("gg_in", y) and available("y_cap1_out", y)):
-        pytest.skip(f"region dumps not available for {1989 + y}")
-    s, fp_out = before_after("fp", y)
-    fix_efpnd(s, "fp_in", y)
-    bk = snapshot(y)
-    patch_bildin(bk, s, r, before_after("y_cap1", y, r)[1])
-    for icall, tag in (("G", "gg"), ("T", "gt"), ("D", "gd")):
-        patch_rc(bk, r, icall, before_after(tag, y, r)[0])
-    with np.errstate(all="ignore"):
-        elefp.elefp(s, bk, dispout(y))
-    curiyr = int(s["curiyr"])
-    worst = {
-        "eprice": rel_err(s["eprice"].a[:, :, r - 1], fp_out["eprice"].a[:, :, r - 1]),
-        "costserv": rel_err(s["costserv"].a[:, r - 1, curiyr - 1], fp_out["costserv"].a[:, r - 1, curiyr - 1]),
-        "efdpeak": rel_err(s["efdpeak"].a, fp_out["efdpeak"].a),
-        "compcap": rel_err(s["compcap"].a[r - 1], fp_out["compcap"].a[r - 1]),
-        "compex": rel_err(s["compex"].a[r - 1], fp_out["compex"].a[r - 1]),
-        "dgapold": rel_err(s["dgapold"].a[r - 1], fp_out["dgapold"].a[r - 1]),
-        "efpfcrl": rel_err(s["efpfcrl"], fp_out["efpfcrl"]),
-        "efpitprt": rel_err(s["efpitprt"], fp_out["efpitprt"]),
-    }
-    for u in ("urbde", "urpsdv", "urrcwp"):
-        worst[u] = rel_err(s[u].a[:, :, r - 1], fp_out[u].a[:, :, r - 1])
-    print(f"ELEFP {ids(y)}, region 1 only: worst relative error {max(worst.values()):.3g} over {len(worst)} arrays")
-    assert max(worst.values()) < 1e-6, {k: v for k, v in worst.items() if v >= 1e-6}

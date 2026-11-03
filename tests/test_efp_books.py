@@ -1,12 +1,9 @@
 """EFP's books store (src/nems_open/emm/efp/books.py): the codec from record bytes to
 each COMMON block's named arrays, and the get/put routines on the snapshot files.
 
-The snapshots in oracle/run_emm/efp_books/ (32 and 41) are identical, and they are
-EFP's files as they stood at the END of the oracle run, after 2050's last EFP call,
-not the books before EFP in 2021 or 2030 (see tests/test_efp_elefp.py). That is
-enough to test the store itself: the dump after the run's last year (fp_out for 2050)
-holds the byte views and named arrays that EFP last wrote there, so the files must
-hold the same bytes.
+The snapshots in oracle/run_emm/efp_books/<year> are EFP's files just before ELEFP in
+that year. fp_in is the oracle's state at that point, so the BILDIN record in the file
+must equal EBILDN there, and the build lists must hold what BLDLNK says.
 """
 
 import functools
@@ -19,7 +16,8 @@ from nems_open import oracle_state
 from nems_open.emm.efp import books, capcost
 from nems_open.paths import REPO_ROOT
 
-SNAPSHOT = REPO_ROOT / "oracle" / "run_emm" / "efp_books" / "32"
+BOOKS = REPO_ROOT / "oracle" / "run_emm" / "efp_books"
+SNAPSHOT = BOOKS / "32"
 VIEWS = {"outrcy": "rcy", "outrc": "rc", "outr": "r", "ebildn": "bld"}
 ids = lambda y: str(1989 + y)  # noqa: E731
 
@@ -42,8 +40,8 @@ def value(v):
     return v.a if hasattr(v, "a") else v
 
 
-def fresh():
-    return books.Books.from_dir(SNAPSHOT)
+def fresh(y=32):
+    return books.Books.from_dir(BOOKS / str(y))
 
 
 def test_layouts():
@@ -113,37 +111,29 @@ def test_rcy_records_hold_the_calendar_year_inputs(y, r):
 
 
 @needs_files
-def test_files_hold_the_state_after_the_last_efp_call():
-    """fp_out for 2050 is the oracle's state after its last EFP call. Region 25's last component
-    (D) left its books in the files: RC slot 2 and the EFPR record (written in the year's first
-    iteration), the BILDIN record GL read, and the build list EB arrays."""
-    if not available("fp_out", 61):
-        pytest.skip("no 2050 dump")
-    s = oracle_state.load("fp_out", 61, "emm")
-    b = fresh()
-    rc = b._read(b.rc, b.rc_rec(25, "D", 2), books.RC_RECL)
-    assert rc.rstrip(bytes(1)) == bytes(s["outrc"]).rstrip(bytes(1))
-    r = b"".join(b._read(b.r, 3 * 24 + k, books.R_RECL, books.R_USED) for k in (1, 2, 3))
-    assert r == s["outr"].a.tobytes()
-    bld = b"".join(b._read(b.bld, b.bld_rec(s, 1, 25) + j, books.BLD_RECL) for j in range(books.EBLK_BLD))
-    assert bld == s["ebildn"].a.tobytes()
-    # the same records through the state
+@pytest.mark.parametrize("y", [32, 41], ids=ids)
+def test_files_hold_what_fp_in_holds(y):
+    """BILDIN: EBILDN in fp_in is the last record GL read (region 25, year 1), which the file
+    holds. Builds: GETEB on region 25's distribution list fills the EB arrays the way fp_in has them."""
+    s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in _dump("fp_in", y).items()}
+    b = fresh(y)
     t = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in s.items()}
-    b.getrc(t, 25, "D", 2)
-    assert bytes(t["outrc"]).rstrip(bytes(1)) == bytes(s["outrc"]).rstrip(bytes(1))
-    for n in books.BLOCKS["rc"].members:
-        assert np.array_equal(value(t[n]), value(s[n]), equal_nan=True), n
     b.getbld(t, 1, 25)
     assert t["ebildn"].a.tobytes() == s["ebildn"].a.tobytes()
-    # EB arrays: the D list of region 25, as GETEB reads it
+    for n in books.BLOCKS["bld"].members:
+        if n in s:
+            assert np.array_equal(value(t[n]), value(s[n]), equal_nan=True), n
     t["ebnum"] = np.int32(0)
     b.geteb(t, 25, "D")
-    assert int(t["ebnum"]) == int(s["ebnum"]) == 28
     n = int(s["ebnum"])
-    for name in ("ebditc", "ebafdc", "ebbkvl", "ebasvl", "ebbcwp", "ebrcwp", "ebpcap", "ebabde"):
-        assert np.array_equal(t[name].a[:n], s[name].a[:n]), name
-    for name in ("ebpcst", "ebserp", "ebptyp", "ebsyr"):
-        assert np.array_equal(t[name].a[:n], s[name].a[:n]), name
+    assert int(t["ebnum"]) == n
+    # The snapshot was taken inside region 25's distribution component, after ELDIST appended
+    # this year's build (a record of zeros) and before STREB wrote the EB arrays back: the
+    # last entry is not yet what fp_in holds.
+    m = max(n - 1, 0)
+    for name in ("ebditc", "ebafdc", "ebbkvl", "ebasvl", "ebbcwp", "ebrcwp", "ebpcap", "ebabde",
+                 "ebpcst", "ebserp", "ebptyp", "ebsyr"):
+        assert np.array_equal(t[name].a[:m], s[name].a[:m]), name
 
 
 @needs_files
@@ -221,7 +211,7 @@ def test_build_file_is_big_endian_and_round_trips():
 def test_build_lists_follow_the_state_links(y):
     """BLDLNK (state) holds each list's first and last record; the last is on the chain from the first."""
     s = _dump("fp_in", y)
-    b = fresh()
+    b = fresh(y)
     seen = 0
     for r in range(1, 26):
         for k in (1, 3, 5):
@@ -241,12 +231,13 @@ def test_build_lists_follow_the_state_links(y):
 
 @needs_files
 def test_streb_writes_the_eb_arrays_back_over_the_list():
-    s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in _dump("fp_out", 61).items()}
-    b = fresh()
+    s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in _dump("fp_in", 41).items()}
+    b = fresh(41)
     b.geteb(s, 25, "D")
     n = int(s["ebnum"])
+    assert n >= 3
     b.streb(s, 25, "D")                      # unchanged: no byte changes
-    assert b.builds.flush() == bytes(fresh().builds.data)
+    assert b.builds.flush() == bytes(fresh(41).builds.data)
     s["ebbkvl"][2, 1] = np.float32(77.0)
     s["ebptyp"][n] = 3
     b.streb(s, 25, "D")
@@ -254,7 +245,7 @@ def test_streb_writes_the_eb_arrays_back_over_the_list():
     first = int(s["bldlnk"][25, 5])
     second = b.builds[first]["blink"]
     assert b.builds[second]["bkvl"][0] == np.float32(77.0)
-    ref = fresh().builds.flush()
+    ref = fresh(41).builds.flush()
     differs = [k for k in range(1, len(file) // books.EB_RECL + 1)
                if file[(k - 1) * 84: k * 84] != ref[(k - 1) * 84: k * 84]]
     assert len(differs) == 2                 # the second record's book value and the last one's plant type
@@ -264,7 +255,7 @@ def test_streb_writes_the_eb_arrays_back_over_the_list():
 @needs_files
 def test_unewbld_appends_to_the_file_and_links_it():
     s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in _dump("fp_in", 41).items()}
-    b = fresh()
+    b = fresh(41)
     s["_efpbld"] = b.builds
     s["lastbld"] = np.int32(len(b.builds))
     last_d = int(s["bldlnk"][4, 6])
