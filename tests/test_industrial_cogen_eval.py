@@ -29,8 +29,8 @@ _cache = {}
 
 def run(tag, y):
     if (tag, y) not in _cache:
-        before = oracle_state.load(f"{tag}_in", y, "ind", INPUTS + OUT)
-        after = oracle_state.load(f"{tag}_out", y, "ind", OUT)
+        before = oracle_state.load(f"{tag}_in", y, "ind", only=INPUTS + OUT)
+        after = oracle_state.load(f"{tag}_out", y, "ind", only=OUT)
         s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in before.items()}
         evalcogen(s, int(s["curcalyr"]))
         _cache[(tag, y)] = s, after

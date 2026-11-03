@@ -31,7 +31,7 @@ def rel_err(mine, eia):
 
 def run(tag, y):
     if (tag, y) not in _cache:
-        before, after = oracle_state.load(f"{tag}_in", y, "ind", NEED), oracle_state.load(f"{tag}_out", y, "ind", NEED)
+        before, after = oracle_state.load(f"{tag}_in", y, "ind", only=NEED), oracle_state.load(f"{tag}_out", y, "ind", only=NEED)
         s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in before.items()}
         calbsc(s, int(s["inddir"]), int(s["indreg"]))
         _cache[(tag, y)] = s, after

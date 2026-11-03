@@ -27,8 +27,8 @@ _cache = {}
 
 def run(tag, y):
     if (tag, y) not in _cache:
-        before = oracle_state.load(f"{tag}_in", y, "ind", NEED)
-        after = oracle_state.load(f"{tag}_out", y, "ind", NEED)
+        before = oracle_state.load(f"{tag}_in", y, "ind", only=NEED)
+        after = oracle_state.load(f"{tag}_out", y, "ind", only=NEED)
         s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in before.items()}
         indtotal(s, int(s["inddir"]), int(s["indreg"]), int(s["indnum"]))
         _cache[(tag, y)] = s, after
