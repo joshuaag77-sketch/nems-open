@@ -63,6 +63,17 @@ Two traps when checking a run against EIA. Benchmarking pulls fuel use to SEDS a
 
 The oracle also dumps the state around the first call of `COMServiceDemand` (`fsd_in`, `fsd_out`). To add a dump point to a small run, set `NEMS_ORACLE_YEARS=30` before `gen_oracle` and `build.sh`.
 
+### Commercial levers and starting the runner from files
+
+`CommercialLevers` (`src/nems_open/commercial/levers.py`) edits input tables before the run, so the ported routines answer a different input file: `shell_improvement` and `shell_start_year` lower new buildings' heating and cooling shell factors (KSHEFF); `standards=(Standard(service, min_eff, year, fuel),)` ends the sale of equipment below a minimum efficiency (KTEK availability years, the way EIA encodes its own standards); `minor_efficiency_growth` sets yearly efficiency gain for office and other loads (KDELEFF, zero in the reference case).
+
+```python
+DemandRunner(2030, sectors=("commercial",), commercial_levers=CommercialLevers(shell_improvement=0.2))
+DemandRunner(2030, sectors=("commercial",), commercial_from_files=True)   # no lever, no dump
+```
+
+With no oracle dump for the start year, or with a lever, commercial starts from the files and runs 2019 to the year before at about 4 s a year. Benchmarking holds fuel use to SEDS and STEO through 2026, so a lever shows from 2027.
+
 ## Good first issues
 
 The file readers. Each one reads one EIA input file into arrays the oracle already dumps, so the test is just "same arrays". Small, self-contained, and a good way to learn the codebase.
