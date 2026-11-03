@@ -54,7 +54,7 @@
     document.querySelectorAll(".setswitch button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.set === set));
     el("set-note").textContent = set === "fast"
       ? "Every demand sector on a fitted stub, supply on curves fitted to EIA's runs. Seconds a run, so the full grid is here."
-      : "Residential and commercial run EIA's ported code, electricity runs the dispatch LP. Industrial, transportation, gas, oil, coal and retail power prices stay fitted. About 30 minutes a run, so a smaller grid.";
+      : "Residential and commercial run EIA's ported code, electricity runs the dispatch LP. Industrial, transportation, gas, oil, coal and retail power prices stay fitted. The LP dispatches EIA's reference plant fleet and builds nothing, so a carbon price cuts power CO2 less here than in the fast set. Ten to 45 minutes a run, so a smaller grid.";
     el("grid-note").textContent = set === "fast"
       ? "Every combination was run ahead of time (144 runs), so the sliders snap to the grid. Prices are 2024 dollars."
       : "Every combination was run ahead of time (16 runs), so the sliders snap to the grid. Prices are 2024 dollars.";

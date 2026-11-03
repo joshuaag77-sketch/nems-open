@@ -5,7 +5,10 @@
 Grid: carbon 0/50/100/200 $/t (2024 $), 2035 EV share at EIA's path or 80%, building
 energy at EIA's or 10% below by 2050. 16 runs. Residential and commercial are EIA's ported
 modules, electricity is the dispatch LP (elec="lp"); industrial and transportation stay on
-the stub and gas, oil and coal on the stand-in. About 30 minutes a run.
+the stub and gas, oil and coal on the stand-in. 10 to 45 minutes a run.
+
+Memory: each worker needs about 2 GB. Three workers ran out on a machine with 6 GB free; use
+--workers 1 there.
 
 The ported modules start each year from the oracle's dumps. --oracle-root is a clone whose
 oracle/run and oracle/run_resd hold them (default: the main NEMS Open folder); it is only
