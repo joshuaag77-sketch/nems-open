@@ -133,7 +133,7 @@ def unwrap_do_items(text: str) -> str:
         if i < 0 or i >= len(text) or top_eq:
             continue
         inner = text[start + 1:i]
-        if "," not in inner:
+        if "," not in inner or inner.lstrip().startswith("/"):   # no comma, or an array constructor (/ ... /)
             continue
         after = re.match(r"\s*(?:&\s*\n\s*&?)?\s*,\s*(?:&\s*\n\s*&?)?\s*\w+\s*=", text[i + 1:])
         if after:
