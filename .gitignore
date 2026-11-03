@@ -11,4 +11,6 @@ oracle/build_ind.log
 oracle/cycle.sh
 oracle/run_resd/
 oracle/build_resd/
+oracle/run_emm/
+oracle/build_emm/
 /data/
