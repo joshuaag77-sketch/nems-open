@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from nems_open.converge import MAXITR, NRUNS, Control, Settings, worst_change
+from nems_open import levers
 from nems_open.demand_adapter import DemandAdapter, Policy
 from nems_open.supply_standin import SupplyStandin
 from nems_open.supply_standin.data import FIRST_YEAR, LAST_YEAR, US
@@ -106,6 +107,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     supply = SupplyStandin(baseline, base=base)
     base = supply.base
     carbon = policy.carbon()
+    oil, shifts = levers.brent(policy, base), levers.supply_shifts(policy, supply)
     within, between = Settings.load("conv"), Settings.load("icnv")
     prices = {k: v.copy() for k, v in base.items() if k.startswith("MPBLK/")}
     q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
@@ -115,7 +117,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     wholesale = wholesale_us = generation = None
     if elec == "lp":
         from nems_open.emm.couple import ElectricityLP
-        lp = ElectricityLP(supply)
+        lp = ElectricityLP(supply, capacity_scale=levers.capacity_scale(policy))
         wholesale = np.full((25, 61), np.nan)
         wholesale_us = np.full(61, np.nan)
         generation = {}
@@ -138,7 +140,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             """The supply side on the loop's current demand and prices; returns the result and
             the power-sector fuel use it priced (the LP's, relaxed as EIA relaxes EMM's outputs)."""
             if lp is None:
-                s = supply.solve(q, carbon_price=carbon)
+                s = supply.solve(q, oil, carbon, shifts=shifts)
                 fuel = {k: v[:, j] for k, v in s.power_fuel.items()}
             else:
                 r = lp.solve(FIRST_YEAR + j, q, prices, float(cp87[j]))
@@ -150,7 +152,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                         pf[k][:, j] = v
                 else:
                     pf = r.power_fuel
-                s = supply.solve(q, carbon_price=carbon, power_fuel=pf, co2_el=r.co2_el)
+                s = supply.solve(q, oil, carbon, power_fuel=pf, co2_el=r.co2_el, shifts=shifts)
             if efp is not None:   # retail electricity prices from EFP on this iteration's sales
                 for k, v in efp.price_pass(FIRST_YEAR + j, q, itr, fcrl).items():
                     s.prices[k][:, j] = v
@@ -228,6 +230,9 @@ def main(argv=None) -> None:
     ap.add_argument("--shell-year", type=int, default=2027, help="first year of the commercial building code")
     ap.add_argument("--standard", action="append", default=[], metavar="SERVICE:MIN_EFF:YEAR[:FUEL]",
                     help="commercial minimum efficiency, e.g. 2:3.5:2030:1 (cooling, electric); repeatable")
+    for v in levers.LEVERS.values():
+        if v.name not in ("carbon_price", "ev_share"):
+            ap.add_argument("--" + v.name.replace("_", "-"), type=float, default=v.off, help=f"{v.title}: {v.unit}")
     ap.add_argument("--start", type=int, default=2027)
     ap.add_argument("--end", type=int, default=LAST_YEAR)
     ap.add_argument("--baseline", default="cb2026")
@@ -241,18 +246,23 @@ def main(argv=None) -> None:
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
     ap.add_argument("--cycles", type=int, default=1, help=f"passes over all years, relaxed between (EIA cb2026: {NRUNS})")
     a = ap.parse_args(argv)
-    levers = None
+    commercial = None
     if a.shell_code or a.standard:
         from nems_open.commercial.levers import CommercialLevers, Standard
         stds = []
         for text in a.standard:
             f = text.split(":")
             stds.append(Standard(int(f[0]), float(f[1]), int(f[2]), int(f[3]) if len(f) > 3 else None))
-        levers = CommercialLevers(shell_improvement=a.shell_code, shell_start_year=a.shell_year, standards=tuple(stds))
-    policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=levers)
+        commercial = CommercialLevers(shell_improvement=a.shell_code, shell_start_year=a.shell_year, standards=tuple(stds))
+    policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
+                    **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price,
             maxitr=a.maxitr, cycles=a.cycles)
     print(r.report())
+    for name, v in levers.LEVERS.items():
+        if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
+            grade, why = levers.fidelity(name, tuple(a.ported), a.elec)
+            print(f"{levers.label(name, tuple(a.ported), a.elec)}: {grade}. {why}")
     supply = SupplyStandin(a.baseline)
     base, base_co2 = supply.base, supply.solve().co2_total
     j = a.end - FIRST_YEAR
