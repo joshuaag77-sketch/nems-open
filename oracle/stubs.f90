@@ -62,7 +62,7 @@ integer function file_mgr(func, name_in, new)
   close(u)
   if (.not. found) then
     ! Report and debug files NEMS names at run time: send them to out/.
-    call execute_command_line('if not exist out mkdir out')
+    call ensure_out()
     path = 'out/'//trim(key)//'.txt'
     open(newunit=u, file=trim(path), status='replace', action='write')
   else if (new) then
@@ -187,7 +187,7 @@ subroutine dump(name, x, nbytes)
   integer(1) x(*)
   integer(8) nbytes
   integer u
-  call execute_command_line('if not exist out mkdir out')
+  call ensure_out()
   open(newunit=u, file='out/'//name//'.bin', access='stream', form='unformatted', status='replace')
   write(u) x(1:nbytes)
   close(u)
@@ -254,3 +254,15 @@ subroutine callsys(iret, cmd)
   character(*) cmd
   call execute_command_line(trim(cmd), exitstat=iret)
 end subroutine callsys
+
+! out/ holds the dumps and reports; the same command on Windows (cmd) and Linux (sh).
+subroutine ensure_out()
+  implicit none
+  character(64) osname
+  call get_environment_variable('OS', osname)
+  if (index(osname, 'Windows') > 0) then
+    call execute_command_line('if not exist out mkdir out')
+  else
+    call execute_command_line('mkdir -p out')
+  endif
+end subroutine ensure_out
