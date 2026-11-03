@@ -27,10 +27,11 @@ def traneasy(s: dict) -> None:
     STEOBLOCK; the copies are the same every call, so without it they are left as they are."""
     if "mgtcbus" not in s:
         return
-    s["tmgtcbus"][...] = s["mgtcbus"]
-    s["tjftcbus"][...] = s["jftcbus"]
-    s["tdstcpus"][...] = s["datcpus"] - s["dfepdel"]
-    s["trftcbus"][...] = s["rftcbus"]
+    a = lambda k: np.asarray(s[k].a if hasattr(s[k], "a") else s[k], dtype=f32)  # noqa: E731
+    s["tmgtcbus"].a[...] = a("mgtcbus")
+    s["tjftcbus"].a[...] = a("jftcbus")
+    s["tdstcpus"].a[...] = a("datcpus") - a("dfepdel")
+    s["trftcbus"].a[...] = a("rftcbus")
 
 
 def tbenchmark(s: dict, carry: dict, steobm: int = 1) -> None:

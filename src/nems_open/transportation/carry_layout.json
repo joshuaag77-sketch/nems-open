@@ -1,0 +1,280 @@
+{
+"tbenchmark": {
+"mer_steo_regn": {
+"dtype": "float32",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+4
+]
+}
+},
+"tmisc": {
+"ftvmt": {
+"dtype": "float32",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"hyway": {
+"dtype": "float32",
+"lb": [
+1
+],
+"shape": [
+61
+]
+}
+},
+"tmpgnew": {
+"altstat": {
+"dtype": "float32",
+"lb": [
+1,
+1
+],
+"shape": [
+8,
+61
+]
+},
+"predstk": {
+"dtype": "float32",
+"lb": [
+1,
+1
+],
+"shape": [
+8,
+61
+]
+}
+},
+"trail": {
+"adoptlng": {
+"dtype": "int32",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"lng_locom_inccost": {
+"dtype": "float32",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rail_fuel_shr": {
+"dtype": "float32",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+61
+]
+}
+},
+"tranair": {
+"pjftr_us": {
+"dtype": "float32",
+"lb": [
+1
+],
+"shape": [
+61
+]
+}
+},
+"tranfrt": {
+"cpm_r_ice": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+2,
+19
+]
+},
+"ghgbank": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+4,
+2
+]
+},
+"midyr_adj": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+19,
+12,
+2,
+11
+]
+},
+"midyr_choice": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+19,
+12,
+2,
+11
+]
+},
+"slope_choice": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+19,
+12,
+2,
+11
+]
+},
+"start_curve": {
+"dtype": "int32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+19,
+12,
+2,
+11
+]
+},
+"techpenyr_p2": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+83,
+19,
+12
+]
+},
+"temp_stk_vmt_ratio": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+19,
+34,
+12
+]
+},
+"ttonmi": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+16
+]
+},
+"tvmt": {
+"dtype": "float32",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+16
+]
+}
+},
+"tship": {
+"isfdt_b": {
+"dtype": "float32",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"lsfo_upgrade": {
+"dtype": "float32",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"temp_prhtr": {
+"dtype": "float32",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+}
+}
+}

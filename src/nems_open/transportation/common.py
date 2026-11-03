@@ -32,3 +32,21 @@ def fsum(a, axis=None):
     for k in range(a.shape[0]):
         acc = acc + a[k]
     return acc if acc.ndim else f32(acc)
+
+
+def fmax(a, b):
+    """gfortran's MAX of two scalars: a NaN argument gives the other one."""
+    if a != a:
+        return b
+    if b != b:
+        return a
+    return a if a >= b else b
+
+
+def fmin(a, b):
+    """gfortran's MIN of two scalars: a NaN argument gives the other one."""
+    if a != a:
+        return b
+    if b != b:
+        return a
+    return a if a <= b else b

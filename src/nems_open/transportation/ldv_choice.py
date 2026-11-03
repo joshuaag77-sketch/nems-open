@@ -12,7 +12,7 @@ Fortran stores into single-precision arrays.
 
 import numpy as np
 
-from nems_open.transportation.common import MAXLDV, MNUMCR, STOCKYR, f32, fsum
+from nems_open.transportation.common import MAXLDV, MNUMCR, STOCKYR, f32, fmax, fmin, fsum
 
 MAXCLASS = 8
 MAXGROUP = 11
@@ -56,14 +56,20 @@ def talt2(s: dict, carry: dict) -> None:
         if yrs == 2012:
             for k, v in _pred_stock(ldvstk, n).items():
                 predstk[k, n] = v
-    else:
+    if yrs <= 2012 and "sta_rat_base" in carry:
+        carry["sta_rat_base"][...] = s["sta_rat"].a          # STA_RAT_BASE, a saved local
+    if yrs > 2012:
         for k, v in _pred_stock(ldvstk, n).items():
             predstk[k, n] = v
         rat = s["sta_rat"]
         if yrs <= STOCKYR:
-            # STA_RAT_BASE is a saved local holding the input ratios from 2012. STA_RAT(2:)
-            # has since been base + (last year's predicted stock ratio) * STA_RAT(1).
-            base = rat[2:MAXFUEL] - (predstk[2:MAXFUEL, n - 1] / predstk[1, n - 1]) * rat[1]
+            # STA_RAT_BASE is a saved local holding the input ratios from 2012. A run from the
+            # first call carries it; a start from a dump (first iteration) rebuilds it, since
+            # STA_RAT(2:) has since been base + (last year's predicted stock ratio) * STA_RAT(1).
+            if "sta_rat_base" in carry:
+                base = carry["sta_rat_base"][1:MAXFUEL]
+            else:
+                base = rat[2:MAXFUEL] - (predstk[2:MAXFUEL, n - 1] / predstk[1, n - 1]) * rat[1]
             rat[2:MAXFUEL] = base + (predstk[2:MAXFUEL, n] / predstk[1, n]) * rat[1]
         altstat[F, n] = altstat[F, n - 1] + ((predstk[F, n] - predstk[F, n - 1]) / rat[F])
         sales = s["ldv_sales"]
@@ -96,12 +102,14 @@ def talt2(s: dict, carry: dict) -> None:
                 if altsta[1, iregn] > 0.0:
                     fav[ifuel, n, iregn] = altsta[ifuel, iregn] / altsta[1, iregn]
                     if ifuel == 8:
-                        fav[ifuel, n, iregn] = min(fav[ifuel, n, iregn], fav[ifuel, n - 1, iregn] * f32(1.1))
+                        fav[ifuel, n, iregn] = fmin(fav[ifuel, n, iregn], fav[ifuel, n - 1, iregn] * f32(1.1))
                 if yrs > 2012:
-                    fav[ifuel, n, iregn] = max(fav[ifuel, n, iregn], fav[ifuel, n - 1, iregn])
+                    fav[ifuel, n, iregn] = fmax(fav[ifuel, n, iregn], fav[ifuel, n - 1, iregn])
             if yrs > 2012 and ifuel == 5:
-                fav[ifuel, n, iregn] = max(fav[ifuel, n, iregn], s["cngavail"][iregn, n])
-            fav[ifuel, n, iregn] = min(fav[ifuel, n, iregn], fav[1, n, iregn])
+                fav[ifuel, n, iregn] = fmax(fav[ifuel, n, iregn], s["cngavail"][iregn, n])
+            # gfortran's MIN: 1995's EV availability is 0 * NaN (no stock before 1995) and ends
+            # at gasoline's.
+            fav[ifuel, n, iregn] = fmin(fav[ifuel, n, iregn], fav[1, n, iregn])
     s.update(ifuel=MAXFUEL + 1, iregn=MNUMCR - 1)
 
     favl = s["favl"]

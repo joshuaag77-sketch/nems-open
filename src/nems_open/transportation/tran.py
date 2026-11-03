@@ -120,9 +120,22 @@ def freight_carry(y: int) -> dict:
     return c
 
 
+FTYPELABEL = ["Gasoline", "Turbo DI Diesel", "Ethanol Flex", "Electric - 100", "PHEV20 Gas", "PHEV50 Gas",
+              "Electric - 200", "Dsl/Elec Hybrid", "CNG Bifuel", "LPG Bifuel", "CNG Dedicated", "LPG Dedicated",
+              "F.Cell Methanol", "F.Cell Hydrogen", "Electric - 300", "Gas/Elec Hybrid"]
+
+
+def text(arr: FArray, values) -> None:
+    """Fill a CHARACTER array with values, blank-padded to its length."""
+    n = arr.a.dtype.itemsize
+    arr.a[...] = np.array([v.ljust(n)[:n].encode("latin-1") for v in values], dtype=arr.a.dtype).reshape(arr.a.shape)
+
+
 def _setup(s: dict) -> None:
     """TRAN's statements before TMAC (run switches as in the reference case)."""
     yrs = int(s["curcalyr"])
+    if "ftypelabel" in s:
+        text(s["ftypelabel"], FTYPELABEL)
     for k, v in (("roundoff_error", f32(0.002)), ("first_read_year", 1995), ("iy", 1995 - BASEYR + 1),
                  ("ibank", 1), ("traneff", 0), ("tranab32", 1), ("legira", 1), ("ira_stim", f32(1.0)),
                  ("yrs", yrs), ("n", yrs - BASEYR + 1)):
@@ -148,9 +161,10 @@ def _err(mine, eia) -> float:
     return float(r.max(initial=0.0))
 
 
-def tran(s: dict, carry: Carry, check: int | None = None) -> dict:
+def tran(s: dict, carry: Carry, check: int | None = None, after=None) -> dict:
     """One TRAN call. With check=y (a dump year, first iteration), returns
-    {routine: (worst relative error, array)} against the oracle after each routine."""
+    {routine: (worst relative error, array)} against the oracle after each routine.
+    after(tag, s): called after each routine (for tracing)."""
     worst = {}
 
     def compare(tag):
@@ -192,6 +206,8 @@ def tran(s: dict, carry: Carry, check: int | None = None) -> dict:
         for tag, step in steps:
             step()
             compare(tag)
+            if after is not None:
+                after(tag, s)
     return worst
 
 
