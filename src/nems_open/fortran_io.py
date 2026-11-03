@@ -31,10 +31,21 @@ class ListDirectedReader:
             for tok in tokens:
                 if tok.startswith("!") or tok == "/":
                     break
+                count = 1
+                if "*" in tok:  # r*c: the value c, r times
+                    r, _, tok = tok.partition("*")
+                    if r.isdigit() and tok:
+                        count = int(r)
+                    else:
+                        tok = r + "*" + tok
                 try:
-                    values.append(kind(float(tok)))
+                    v = kind(float(tok))
                 except ValueError:
                     return values if partial else None
+                for _ in range(count):
+                    values.append(v)
+                    if len(values) == n:
+                        break
                 if len(values) == n:
                     break
         return values
