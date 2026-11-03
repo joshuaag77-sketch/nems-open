@@ -7,9 +7,9 @@ year. Inside the loop, each supply pass hands it the loop's electricity sales:
 - residential and commercial census sales go in as they are;
 - industrial and transport go in through their end-use detail (QELINOUT,
   TRQ_ELEC), scaled by the loop's sector total over EIA's.
-The year's first pass is EFP's first iteration (the capital accounts roll
-forward); later passes reprice only. After the year converges, one final call
-writes the statements and REVGAP's smoothing, as NEMS's last iteration does.
+Each call is one NEMS iteration with the loop's CURITR and FCRL: the first rolls
+the capital accounts forward, later ones reprice, and the final convergence and
+reporting loop (FCRL = 1) writes the statements and REVGAP's smoothing.
 
 Prices out are EFP's response, not its level: EIA's price times EFP's price on the
 loop's demand over EFP's price on EIA's demand (the oracle's EFP run, every year in
@@ -32,6 +32,12 @@ from nems_open.supply_standin.data import FIRST_YEAR
 f32 = np.float32
 SECTORS = ["rs", "cm", "in", "tr"]       # QEL** / PEL** suffixes
 PRICES = ["MPBLK/pelrs", "MPBLK/pelcm", "MPBLK/pelin", "MPBLK/peltr", "MPBLK/pelas"]
+
+
+def available() -> bool:
+    """The oracle state EFP starts from: the 2021 books snapshot and the EFP dumps."""
+    from nems_open.emm.chain import BOOKS
+    return (BOOKS / "32" / "EMM_EFPR.daf").exists() and oracle_state.available("fp_out", 41, "emm")
 
 
 class EfpPrices:
@@ -70,16 +76,11 @@ class EfpPrices:
                 out[k] = np.where(ref > 0, eia * mine / ref, eia)
         return out
 
-    def price_pass(self, year: int, q: dict, first: bool) -> dict:
-        """EFP on this pass's demand: {MPBLK/pel**: (11,) prices for the year}."""
+    def price_pass(self, year: int, q: dict, itr: int, fcrl: int) -> dict:
+        """EFP on this iteration's demand: {MPBLK/pel**: (11,) prices for the year}. itr is
+        NEMS's CURITR (1 rolls the capital accounts forward); fcrl = 1 on the final loop
+        writes the statements and REVGAP's smoothing."""
         y = year - FIRST_YEAR + 1
         self._sales_in(q, y)
-        self.chain.iteration(y, 1 if first else 2, fcrl=0)
-        return self._prices_out(y)
-
-    def finish_year(self, year: int, q: dict) -> dict:
-        """The year's final pass (statements, REVGAP), on the converged demand."""
-        y = year - FIRST_YEAR + 1
-        self._sales_in(q, y)
-        self.chain.iteration(y, 2, fcrl=1)
+        self.chain.iteration(y, itr, fcrl=fcrl)
         return self._prices_out(y)

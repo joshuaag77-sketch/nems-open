@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 
 from nems_open.demand_adapter import Policy
-from nems_open.run_model import TOL, run
+from nems_open.converge import MAXITR
+from nems_open.run_model import run
 from nems_open.supply_standin.data import US, available, load_case
 
 pytestmark = pytest.mark.skipif(not available(), reason="AEO2026 runs not available")
@@ -40,7 +41,8 @@ def test_no_policy_reproduces_reference(no_policy, base):
         np.testing.assert_allclose(v, base[k], rtol=1e-6, atol=1e-6, err_msg=k)
     for k in ("QBLK/qelrs", "QBLK/qngcm", "QBLK/qmgtr", "QBLK/qelas", "QBLK/qngas", "QBLK/qngel"):
         np.testing.assert_allclose(no_policy.quantities[k], base[k], rtol=1e-6, atol=1e-3, err_msg=k)
-    assert all(p.number == 1 for p in no_policy.passes)
+    # EIA's control: iteration 1 is untested, 2 passes and sets FCRL, 3 (the final loop) passes again
+    assert [(p.number, p.fcrl, p.converged) for p in no_policy.passes if p.year == 2030] ==         [(1, 0, False), (2, 0, True), (3, 1, True)]
 
 
 def test_every_year_converges(no_policy, carbon50):
@@ -49,8 +51,9 @@ def test_every_year_converges(no_policy, carbon50):
         for p in r.passes:
             last[p.year] = p
         assert sorted(last) == list(range(2027, 2051))
-        assert all(p.converged and p.max_price_change < TOL for p in last.values())
-        assert max(p.number for p in r.passes) <= 12
+        assert all(p.converged and p.fcrl == 1 for p in last.values())
+        assert all(r.stable[y] for y in last)
+        assert max(p.number for p in r.passes) <= MAXITR + 1
 
 
 def test_carbon_price_raises_prices(carbon50, base):

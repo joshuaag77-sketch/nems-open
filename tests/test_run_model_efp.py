@@ -14,7 +14,7 @@ import pytest
 from emm_oracle import available
 from nems_open.demand_adapter import Policy
 from nems_open.emm.chain import BOOKS
-from nems_open.run_model import run
+from nems_open.run_model import default_elec_price, run
 from nems_open.supply_standin.data import FIRST_YEAR
 
 pytestmark = [
@@ -40,3 +40,16 @@ def test_efficiency_raises_efp_price():
     std = run(pol, 2027, 2027)
     assert efp.prices["MPBLK/pelas"][10, J] > std.prices["MPBLK/pelas"][10, J]
     assert efp.quantities["QBLK/qelas"][10, J] < std.quantities["QBLK/qelas"][10, J]
+
+
+def test_efp_is_the_default_with_the_dispatch_lp():
+    assert default_elec_price("lp", "cb2026") == "efp"
+    assert default_elec_price("standin", "cb2026") == "standin"
+    assert default_elec_price("lp", "hm2026") == "standin"
+    r = run(Policy(start_year=2027), 2027, 2027, elec="lp")
+    assert "EFP retail prices" in r.passes[0].routines
+    assert r.passes[-1].fcrl == 1
+    std = run(Policy(start_year=2027), 2027, 2027, elec="lp", elec_price="standin")
+    for k in PRICES:   # on EIA's demand EFP's response is about 1, so prices stay near the stand-in's
+        rel = abs(r.prices[k][10, J] / std.prices[k][10, J] - 1)
+        assert rel < 2e-2, (k, rel)
