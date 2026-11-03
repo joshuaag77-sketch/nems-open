@@ -15,6 +15,34 @@
     return;
   }
 
+  // A fractional change as a percent, in plain decimals.
+  const pctText = (x) => (100 * x < 0.01 ? (100 * x).toPrecision(2) : (100 * x).toFixed(2)) + "%";
+
+  function flatView() {
+    document.body.classList.add("flat");
+    const esc = (x) => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const name = { match: "Matches EIA", partial: "Partly ported", stand: "Stand-in, fitted to EIA side cases", fixed: "EIA's own path" };
+    $("hero-text").textContent = `${S.counts.switches.toLocaleString("en-US")} switches go in. Thirteen modules trade prices and quantities through ` +
+      `${S.counts.outputs.toLocaleString("en-US")} shared variables until they agree, every year to 2050. The 3D view needs a larger screen; here are the same facts.`;
+    $("flat").innerHTML = `<h2>Modules</h2>` + S.modules.map((m) => {
+      const g = grade(m);
+      const links = S.edges.filter((e) => e.from === m.key && e.shown && !e.hub).map((e) => S.modules.find((x) => x.key === e.to).name);
+      return `<div class="fm"><b>${esc(m.name)}</b> <span class="fg ${g.grade}">${name[g.grade]}</span>
+        <p>${esc(g.text)}</p>
+        <p class="dim">${m.routines ? `${m.routines.toLocaleString("en-US")} routines, ${m.ported_routines} ported. ` : `${esc(m.language)} model. `}` +
+        `Reads ${m.reads.toLocaleString("en-US")} shared variables, writes ${m.writes.toLocaleString("en-US")}.` +
+        `${links.length ? ` Feeds ${links.map(esc).join(", ")}.` : ""}</p></div>`;
+    }).join("");
+    const showYear = () => {
+      const ps = RUNS.trace.convergence[yearEl.value] || [];
+      $("counter").innerHTML = `<b>${yearEl.value}: ${ps.length} passes to agree.</b> ` + ps.map((p) =>
+        `Pass ${p.itr}: prices moved up to ${pctText(p.dp)}${p.itr === 1 ? " (the first pass is not tested)" : `, quantities ${pctText(p.dq)}`}.`).join(" ");
+    };
+    yearEl.addEventListener("input", showYear); showYear();
+    $("status").textContent = "Recorded runs, not live.";
+    $("note").textContent = `Read from EIA's AEO2026 release on ${S.generated}. Precomputed, not live.`;
+  }
+
   // ---- grades ------------------------------------------------------------------------
   const COLOR = { match: 0x1D9E75, partial: 0xEF9F27, stand: 0x888780, fixed: 0x4a4945,
                   input: 0x7F77DD, output: 0x5DCAA5, hub: 0xFAC775 };
@@ -37,6 +65,109 @@
       text: `${Math.round(share * 100)}% of its Fortran lines ported and checked against EIA's code; the rest runs on stand-ins.` };
     return { grade: "stand", parts, share, text: FID.parts[parts[0]].summary };
   }
+
+  // ---- the year, and the address (#a=high_gas_price&b=reference&y=2035&sw=AB32SW&m=coal) -----
+  const yearEl = $("year"), yearOut = $("year-out");
+  const traceYears = Object.keys(RUNS.trace.convergence).map(Number);
+  yearEl.min = Math.min(...traceYears); yearEl.max = Math.max(...traceYears);
+  yearEl.value = yearEl.max; yearOut.textContent = yearEl.max;
+  yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
+  const asked = new URLSearchParams(location.hash.slice(1));
+  let followKey = null, openMod = null;
+  function writeHash() {
+    const q = new URLSearchParams();
+    if (selA !== "reference") q.set("a", selA);
+    if (selB) q.set("b", selB);
+    q.set("y", yearEl.value);
+    if (followKey) q.set("sw", followKey);
+    if (openMod) q.set("m", openMod);
+    history.replaceState(null, "", "#" + q.toString());
+  }
+
+  // ---- scenario cards and diff-two-runs (data/engine3d/runs.json, scenarios) -------------
+  const SC = RUNS.scenarios, YEARS = RUNS.years;
+  const OUT = FID.sets.fast.outputs;   // the scenarios run on the fast stand-ins
+  const RANK = { match: 0, within: 1, stand: 2 };
+  const worst = (keys) => keys.map((k) => OUT[k]).filter(Boolean).sort((a, b) => RANK[b.grade] - RANK[a.grade])[0];
+  // Each headline and the demo numbers its grade comes from (data/fidelity.json): the bill is
+  // home fuel use times home prices, so it is only as good as the weakest of those.
+  const HEADS = {
+    co2: { label: "US energy CO2", unit: " Mt", d: 0, grade: () => OUT.co2 },
+    bill: { label: "Household energy bill", unit: " $/yr", d: 0, pre: "$", grade: () => worst(["energy.residential", "pel", "ng"]) },
+    gas_price: { label: "Home natural gas price", unit: " $/MMBtu", d: 2, pre: "$", grade: () => OUT.ng },
+  };
+  let selA = RUNS.scenarios[asked.get("a")] ? asked.get("a") : "reference";
+  let selB = RUNS.scenarios[asked.get("b")] && asked.get("b") !== selA ? asked.get("b") : null;
+  let comparing = !!selB;
+  if (traceYears.includes(+asked.get("y"))) { yearEl.value = +asked.get("y"); yearOut.textContent = yearEl.value; }
+  $("compare").setAttribute("aria-pressed", comparing);
+  const year = () => +yearEl.value;
+  const val = (key, m, src = "run") => SC[key][src][m][YEARS.indexOf(year())];
+  const num = (x, d) => Number(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const escA = (x) => String(x).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+  function cards() {
+    $("cards").innerHTML = Object.values(SC).map((s) =>
+      `<button type="button" class="card ${s.key === selA ? "a" : ""} ${s.key === selB ? "b" : ""}" data-k="${s.key}">${s.label}` +
+      `<small>EIA's ${s.case} case inputs, ${s.model}, precomputed</small></button>`).join("");
+    $("cards").querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.k;
+      if (comparing && k !== selA) selB = selB === k ? null : k;
+      else { selA = k; if (selB === k) selB = null; }
+      render(true);
+    }));
+  }
+  let tweenId = 0;
+  function heads(animate) {
+    const id = ++tweenId, t0 = performance.now(), dur = animate ? 900 : 0;
+    const ref = (m) => SC.reference.eia[m][YEARS.indexOf(year())];
+    $("heads").innerHTML = Object.entries(HEADS).map(([m, h]) => {
+      const g = h.grade();
+      return `<div class="head"><span class="k">${h.label}, ${year()}</span>` +
+        (g ? `<span class="pill ${g.grade}" title="${escA(g.summary)}">${g.label_grade}</span>` : "<span></span>") +
+        `<span class="v" data-m="${m}"></span><span class="from">EIA reference ${h.pre || ""}${num(ref(m), h.d)}${h.unit}</span></div>`;
+    }).join("");
+    const step = (now) => {
+      if (id !== tweenId) return;
+      const f = dur ? Math.min(1, (now - t0) / dur) : 1, e = 1 - Math.pow(1 - f, 3);
+      $("heads").querySelectorAll("[data-m]").forEach((el) => {
+        const m = el.dataset.m, h = HEADS[m], from = ref(m), to = val(selA, m);
+        el.textContent = `${h.pre || ""}${num(from + (to - from) * e, h.d)}${h.unit}`;
+      });
+      if (f < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function spark(a, b) {
+    const w = 260, h = 30, all = a.concat(b), lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
+    const path = (s) => s.map((v, i) => `${i ? "L" : "M"}${(i / (s.length - 1)) * w},${h - ((v - lo) / span) * h}`).join("");
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${path(a)}" fill="none" stroke="#1D9E75" stroke-width="1.5"/>` +
+      `<path d="${path(b)}" fill="none" stroke="#FAC775" stroke-width="1.5" stroke-dasharray="4 3"/></svg>`;
+  }
+  function diff() {
+    if (!selB) { $("diff").innerHTML = comparing ? `<span class="k" style="color:var(--dim)">Pick a second scenario.</span>` : ""; return; }
+    const A = SC[selA], B = SC[selB];
+    $("diff").innerHTML = `<span style="color:var(--muted)">${B.label} minus ${A.label}, ${year()}</span>` +
+      Object.entries(HEADS).map(([m, h]) => {
+        const d = val(selB, m) - val(selA, m), p = val(selA, m) ? (100 * d) / val(selA, m) : 0;
+        const cls = Math.abs(p) < 0.05 ? "" : d > 0 ? "up" : "down";
+        return `<div><span class="k">${h.label}</span> <span class="d ${cls}">${d >= 0 ? "+" : "-"}${h.pre || ""}${num(Math.abs(d), h.d)}${h.unit} (${p >= 0 ? "+" : ""}${p.toFixed(1)}%)</span>` +
+          spark(A.run[m].slice(YEARS.indexOf(RUNS.start_year)), B.run[m].slice(YEARS.indexOf(RUNS.start_year))) + `</div>`;
+      }).join("") +
+      `<span class="k" style="color:var(--dim)">Lines: ${A.label} solid, ${B.label} dashed, ${RUNS.start_year}-${YEARS[YEARS.length - 1]}.</span>`;
+  }
+  function render(animate) { cards(); heads(animate); diff(); writeHash(); }
+  $("compare").addEventListener("click", () => {
+    comparing = !comparing; $("compare").setAttribute("aria-pressed", comparing);
+    if (!comparing) selB = null;
+    render(false);
+  });
+  yearEl.addEventListener("input", () => render(false));
+  render(true);
+
+  // ---- phones and browsers without WebGL: the same facts, flat -------------------------------
+  const webgl = (() => { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } })();
+  if (innerWidth < 700 || !webgl) { flatView(); return; }
 
   // ---- scene -------------------------------------------------------------------------
   const canvas = $("c");
@@ -107,8 +238,9 @@
       m.dots.userData = { kind: "routine", items: rs };
       const idx = Object.fromEntries(rs.map((r) => [r.name, r]));
       const calls = [];
-      rs.forEach((r) => r.calls.forEach((c) => idx[c] && idx[c] !== r && calls.push([r.pos, idx[c].pos])));
-      m.inner = segments(calls, m.color, 0.16);
+      // calls drawn only between ported routines: for the rest, the dots are EIA's code, not this model's
+      rs.forEach((r) => r.ported && r.calls.forEach((c) => idx[c] && idx[c].ported && idx[c] !== r && calls.push([r.pos, idx[c].pos])));
+      m.inner = calls.length ? segments(calls, COLOR.match, 0.16) : null;
       m.callCount = calls.length;
     } else {
       // AIMMS, GAMS and Python models: their insides are not parsed, so a closed shell
@@ -189,13 +321,14 @@
   $("legend").innerHTML = ["match", "partial", "stand", "fixed"].map((g) =>
     `<span style="--c:#${COLOR[g].toString(16).padStart(6, "0")}">${GRADE_TEXT[g]}</span>`).join("") +
     `<span style="--c:#7F77DD">Switch</span><span style="--c:#5DCAA5">Shared variable</span>`;
-  $("note").textContent = `Read from EIA's AEO2026 release on ${S.generated}. Edges: ${S.edge_rule}. Precomputed, not live.`;
+  $("note").textContent = `Read from EIA's AEO2026 release on ${S.generated}. Edges: ${S.edge_rule}. Precomputed, not live. Positions carry no meaning: this is code, not a map.`;
   $("status").textContent = `${shown.length} module links shown, thickness = COMMON blocks shared.`;
 
   const labels = MODS.map((m) => {
     const d = document.createElement("div");
     d.className = "lbl";
-    d.innerHTML = `${m.name}`;
+    const sub = { match: "", partial: `${Math.round(m.g.share * 100)}% ported`, stand: "fitted to EIA side cases", fixed: "EIA's path" }[m.g.grade];
+    d.innerHTML = `${m.name}${sub ? `<br><small>${sub}</small>` : ""}`;
     document.body.appendChild(d);
     return d;
   });
@@ -204,6 +337,7 @@
   const hex = (n) => "#" + n.toString(16).padStart(6, "0");
   const panel = $("panel");
   function showModule(m) {
+    openMod = m.key; writeHash();
     const ins = S.edges.filter((e) => e.to === m.key && !e.hub).sort((a, b) => b.weight - a.weight).slice(0, 4);
     const outsE = S.edges.filter((e) => e.from === m.key && !e.hub).sort((a, b) => b.weight - a.weight).slice(0, 4);
     const name = (k) => (byKey[k] ? byKey[k].name : "Integrating module");
@@ -233,7 +367,7 @@
     if (sh && sh.instanceId !== undefined) { follow(sw[sh.instanceId]); return; }
     const hit = ray.intersectObjects(MODS.map((m) => m.hit))[0];
     if (following) clearFollow();
-    if (!hit) { panel.style.display = "none"; return; }
+    if (!hit) { panel.style.display = "none"; openMod = null; writeHash(); return; }
     showModule(byKey[hit.object.userData.key]);
   });
   $("reset").addEventListener("click", home);
@@ -253,9 +387,12 @@
   const pulses = [];
   const pulseGeo = new THREE.SphereGeometry(1, 10, 10);
   function pulse(from, to, color, dur, size = 1.3, dim = false) {
-    const mesh = new THREE.Mesh(pulseGeo, new THREE.MeshBasicMaterial({ color, opacity: dim ? 0.55 : 1, ...additive }));
-    mesh.scale.setScalar(size);
-    scene.add(mesh); pulses.push({ mesh, from: from.clone(), to: to.clone(), t: 0, dur, dim });
+    // a solid pulse for code that really ran; a dashed run of beads for a stand-in or stub
+    (dim ? [0, -0.14, -0.28] : [0]).forEach((t0) => {
+      const mesh = new THREE.Mesh(pulseGeo, new THREE.MeshBasicMaterial({ color, opacity: dim ? 0.55 : 1, ...additive }));
+      mesh.scale.setScalar(dim ? size * 0.5 : size); mesh.visible = false;
+      scene.add(mesh); pulses.push({ mesh, from: from.clone(), to: to.clone(), t: t0, dur, dim });
+    });
   }
   const varName = Object.fromEntries(S.outputs.map((o) => [o.key, o.description]));
   function worstText(w) {
@@ -264,12 +401,9 @@
     const key = `${m[1]}/${m[2]}`, d = varName[key];
     return `${d ? d.toLowerCase() : key}${m[3] ? `, census division ${m[3]}` : ""} <span class="dimk">(${key})</span>`;
   }
-  const pct = (x) => (100 * x < 0.01 ? (100 * x).toPrecision(2) : (100 * x).toFixed(2)) + "%";
   let spin = 0.0006, playing = false, stopFlag = false;
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
-  const yearEl = $("year"), yearOut = $("year-out"), counter = $("counter");
-  yearEl.min = Math.min(...Object.keys(T.convergence).map(Number)); yearEl.max = Math.max(...Object.keys(T.convergence).map(Number));
-  yearEl.value = yearEl.max; yearOut.textContent = yearEl.max;
+  const counter = $("counter");
   let calls = 0, passesDone = 0;
   function hot(keys) { labels.forEach((el, i) => el.classList.toggle("hot", keys.includes(MODS[i].key))); }
 
@@ -293,8 +427,8 @@
       }
       passesDone += 1;
       counter.innerHTML = `<b>${y}, pass ${p.itr} of ${ps.length}</b>${p.fcrl ? " (final reporting loop)" : ""}. ` +
-        `Largest price change <span class="gap">${pct(p.dp)}</span>: ${worstText(p.worst)}. ` +
-        `Quantities moved up to <span class="gap">${pct(p.dq)}</span>. ` +
+        `Largest price change <span class="gap">${pctText(p.dp)}</span>: ${worstText(p.worst)}. ` +
+        (p.itr === 1 ? "" : `Quantities moved up to <span class="gap">${pctText(p.dq)}</span>. `) +
         (p.itr === 1 ? "The first pass is never tested. " : p.converged ? "Under NEMS's tolerance. " : "Not converged yet. ") +
         `<br>${passesDone} passes and ${calls} module calls so far.`;
     }
@@ -311,85 +445,7 @@
     playing = false; controls.autoRotate = true; $("play").textContent = "Replay the reference run"; hot([]); spin = 0.0006;
   }
   $("play").addEventListener("click", play);
-  yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
   yearEl.addEventListener("change", () => { if (!playing) { calls = 0; passesDone = 0; replayYear(+yearEl.value, 1.2); } });
-
-  // ---- scenario cards and diff-two-runs (data/engine3d/runs.json, scenarios) -------------
-  const SC = RUNS.scenarios, YEARS = RUNS.years;
-  const OUT = FID.sets.fast.outputs;   // the scenarios run on the fast stand-ins
-  const RANK = { match: 0, within: 1, stand: 2 };
-  const worst = (keys) => keys.map((k) => OUT[k]).filter(Boolean).sort((a, b) => RANK[b.grade] - RANK[a.grade])[0];
-  // Each headline and the demo numbers its grade comes from (data/fidelity.json): the bill is
-  // home fuel use times home prices, so it is only as good as the weakest of those.
-  const HEADS = {
-    co2: { label: "US energy CO2", unit: " Mt", d: 0, grade: () => OUT.co2 },
-    bill: { label: "Household energy bill", unit: " $/yr", d: 0, pre: "$", grade: () => worst(["energy.residential", "pel", "ng"]) },
-    gas_price: { label: "Home natural gas price", unit: " $/MMBtu", d: 2, pre: "$", grade: () => OUT.ng },
-  };
-  let selA = "reference", selB = null, comparing = false;
-  const year = () => +yearEl.value;
-  const val = (key, m, src = "run") => SC[key][src][m][YEARS.indexOf(year())];
-  const num = (x, d) => Number(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
-  const escA = (x) => String(x).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-
-  function cards() {
-    $("cards").innerHTML = Object.values(SC).map((s) =>
-      `<button type="button" class="card ${s.key === selA ? "a" : ""} ${s.key === selB ? "b" : ""}" data-k="${s.key}">${s.label}` +
-      `<small>EIA's ${s.case} case inputs, ${s.model}, precomputed</small></button>`).join("");
-    $("cards").querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => {
-      const k = b.dataset.k;
-      if (comparing && k !== selA) selB = selB === k ? null : k;
-      else { selA = k; if (selB === k) selB = null; }
-      render(true);
-    }));
-  }
-  let tweenId = 0;
-  function heads(animate) {
-    const id = ++tweenId, t0 = performance.now(), dur = animate ? 900 : 0;
-    const ref = (m) => SC.reference.eia[m][YEARS.indexOf(year())];
-    $("heads").innerHTML = Object.entries(HEADS).map(([m, h]) => {
-      const g = h.grade();
-      return `<div class="head"><span class="k">${h.label}, ${year()}</span>` +
-        (g ? `<span class="pill ${g.grade}" title="${escA(g.summary)}">${g.label_grade}</span>` : "<span></span>") +
-        `<span class="v" data-m="${m}"></span><span class="from">EIA reference ${h.pre || ""}${num(ref(m), h.d)}${h.unit}</span></div>`;
-    }).join("");
-    const step = (now) => {
-      if (id !== tweenId) return;
-      const f = dur ? Math.min(1, (now - t0) / dur) : 1, e = 1 - Math.pow(1 - f, 3);
-      $("heads").querySelectorAll("[data-m]").forEach((el) => {
-        const m = el.dataset.m, h = HEADS[m], from = ref(m), to = val(selA, m);
-        el.textContent = `${h.pre || ""}${num(from + (to - from) * e, h.d)}${h.unit}`;
-      });
-      if (f < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }
-  function spark(a, b) {
-    const w = 260, h = 30, all = a.concat(b), lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
-    const path = (s) => s.map((v, i) => `${i ? "L" : "M"}${(i / (s.length - 1)) * w},${h - ((v - lo) / span) * h}`).join("");
-    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${path(a)}" fill="none" stroke="#1D9E75" stroke-width="1.5"/>` +
-      `<path d="${path(b)}" fill="none" stroke="#FAC775" stroke-width="1.5" stroke-dasharray="4 3"/></svg>`;
-  }
-  function diff() {
-    if (!selB) { $("diff").innerHTML = comparing ? `<span class="k" style="color:var(--dim)">Pick a second scenario.</span>` : ""; return; }
-    const A = SC[selA], B = SC[selB];
-    $("diff").innerHTML = `<span style="color:var(--muted)">${B.label} minus ${A.label}, ${year()}</span>` +
-      Object.entries(HEADS).map(([m, h]) => {
-        const d = val(selB, m) - val(selA, m), p = val(selA, m) ? (100 * d) / val(selA, m) : 0;
-        const cls = Math.abs(p) < 0.05 ? "" : d > 0 ? "up" : "down";
-        return `<div><span class="k">${h.label}</span> <span class="d ${cls}">${d >= 0 ? "+" : "-"}${h.pre || ""}${num(Math.abs(d), h.d)}${h.unit} (${p >= 0 ? "+" : ""}${p.toFixed(1)}%)</span>` +
-          spark(A.run[m].slice(YEARS.indexOf(RUNS.start_year)), B.run[m].slice(YEARS.indexOf(RUNS.start_year))) + `</div>`;
-      }).join("") +
-      `<span class="k" style="color:var(--dim)">Lines: ${A.label} solid, ${B.label} dashed, ${RUNS.start_year}-${YEARS[YEARS.length - 1]}.</span>`;
-  }
-  function render(animate) { cards(); heads(animate); diff(); }
-  $("compare").addEventListener("click", () => {
-    comparing = !comparing; $("compare").setAttribute("aria-pressed", comparing);
-    if (!comparing) selB = null;
-    render(false);
-  });
-  yearEl.addEventListener("input", () => render(false));
-  render(true);
 
   // ---- follow a switch, and hover labels ---------------------------------------------------
   // Click a switch: light the routines that read it by name (RTOVALUE) or, if none does, its
@@ -409,14 +465,14 @@
   }
   let following = null;
   function clearFollow() {
-    following = null;
+    following = null; followKey = null; writeHash();
     meshes.forEach((m) => paint(m, null));
     MODS.forEach((m) => { if (m.inner) m.inner.material.opacity = 0.16; if (m.shell) m.shell.material.opacity = 0.22; });
     shown.forEach((e) => (e.tube.material.opacity = 0.35));
     hot([]);
   }
   function follow(s) {
-    following = s;
+    following = s; followKey = s.key; openMod = null; writeHash();
     const rs = s.routines.map((k) => routineBy[k]).filter(Boolean);
     const startMods = rs.length ? [...new Set(rs.map((r) => r.module))] : byKey[s.module] ? [s.module] : [];
     const writes = new Set(rs.length ? rs.flatMap((r) => r.writes)
@@ -472,6 +528,9 @@
   });
   canvas.addEventListener("pointerleave", () => (tip.style.display = "none"));
 
+  if (asked.get("sw") && sw.find((s) => s.key === asked.get("sw"))) follow(sw.find((s) => s.key === asked.get("sw")));
+  else if (byKey[asked.get("m")]) showModule(byKey[asked.get("m")]);
+
   // ---- loop -----------------------------------------------------------------------------
   function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
   addEventListener("resize", resize); resize();
@@ -481,6 +540,8 @@
     hubMesh.rotation.y += dt * spin; hubMesh.rotation.x += dt * spin * 0.5;
     for (let i = pulses.length - 1; i >= 0; i--) {
       const p = pulses[i]; p.t += dt / p.dur;
+      if (p.t < 0) continue;
+      p.mesh.visible = true;
       if (p.t >= 1) { scene.remove(p.mesh); p.mesh.material.dispose(); pulses.splice(i, 1); continue; }
       p.mesh.position.lerpVectors(p.from, p.to, p.t);
       p.mesh.material.opacity = (p.dim ? 0.55 : 1) * (1 - p.t * 0.6);

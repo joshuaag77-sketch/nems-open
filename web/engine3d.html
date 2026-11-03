@@ -16,7 +16,7 @@
   .cols { position: fixed; top: 50%; width: 100%; pointer-events: none; font-size: 12px; color: var(--dim); letter-spacing: 0.08em; }
   .cols div { position: absolute; transform: translateX(-50%); }
   .lbl { position: fixed; font-size: 12px; color: var(--ink); pointer-events: none; white-space: nowrap; transform: translate(-50%, -150%); text-shadow: 0 0 6px #000; }
-  .lbl small { color: var(--muted); }
+  .lbl { text-align: center; } .lbl small { color: var(--muted); font-size: 10px; }
   .lbl.hot { color: var(--hub); }
   .scen { position: fixed; z-index: 4; right: 28px; top: 24px; width: 300px; max-height: calc(100% - 110px); overflow: auto; background: #11141bcc; border: 0.5px solid var(--line);
           border-radius: 12px; padding: 12px 14px; font-size: 13px; backdrop-filter: blur(4px); }
@@ -36,7 +36,7 @@
   .diff { margin-top: 10px; display: grid; gap: 8px; }
   .diff svg { width: 100%; height: 34px; display: block; }
   .diff .d { font-variant-numeric: tabular-nums; } .diff .up { color: #ef8a70; } .diff .down { color: #5ccf93; }
-  #panel { position: fixed; z-index: 5; right: 28px; top: 24px; width: 300px; max-height: calc(100% - 120px); overflow: auto; background: #11141bdd;
+  #panel { position: fixed; z-index: 5; left: 28px; top: 172px; width: 300px; max-height: calc(100% - 300px); overflow: auto; background: #11141bdd;
            border: 0.5px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 13px; display: none; backdrop-filter: blur(4px); }
   #panel h3 { margin: 0 0 6px; font-size: 15px; font-weight: 500; }
   #panel p { margin: 6px 0; color: var(--muted); line-height: 1.45; }
@@ -57,6 +57,16 @@
          padding: 7px 10px; font-size: 12px; color: var(--muted); pointer-events: none; line-height: 1.4; }
   .tip b { color: var(--ink); font-weight: 500; } .tip i { color: var(--dim); font-style: normal; }
   .note { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); font-size: 11px; color: #5F5E5A; white-space: nowrap; }
+  #flat { display: none; }
+  body.flat { overflow: auto; height: auto; }
+  body.flat #c, body.flat .cols, body.flat .legend, body.flat #play, body.flat #reset, body.flat #panel { display: none; }
+  body.flat .hero, body.flat .scen, body.flat .bar, body.flat .counter, body.flat .status, body.flat .note {
+    position: static; transform: none; width: auto; max-width: none; max-height: none; margin: 12px 16px; white-space: normal; }
+  body.flat #flat { display: block; margin: 12px 16px 24px; }
+  #flat h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
+  .fm { border-top: 0.5px solid var(--line); padding: 10px 0; font-size: 14px; } .fm p { margin: 4px 0; color: var(--muted); font-size: 13px; line-height: 1.45; } .fm .dim { color: var(--dim); }
+  .fg { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .fg.match { color: var(--match); } .fg.partial { color: var(--partial); } .fg.stand { color: var(--stand); } .fg.fixed { color: var(--dim); }
   #err { position: fixed; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
 </style>
 </head>
@@ -84,6 +94,7 @@
 <div class="counter" id="counter" aria-live="polite"></div>
 <div class="legend" id="legend"></div>
 <div class="note" id="note"></div>
+<section id="flat" aria-label="Modules"></section>
 <div id="err"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
