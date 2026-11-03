@@ -11,7 +11,7 @@ import pytest
 from nems_open.fortran_array import FArray
 from nems_open.transportation import tran
 from nems_open.transportation import frt_common
-from nems_open.transportation.readers import air, freight
+from nems_open.transportation.readers import air, freight, freight_stock
 from tran_harness import needs, rel_err
 
 pytestmark = needs("tran_tail")
@@ -79,7 +79,7 @@ FREIGHT_PART = {"f_annvmt": (3,), "f_annvmt_19": (slice(30, 35),),
 READ_TOL = 1e-6
 
 
-def _touched(fn, start):
+def _touched(fn, start, inputs=FREIGHT_INPUTS):
     seen = []
     orig = frt_common.V.key
 
@@ -93,26 +93,49 @@ def _touched(fn, start):
         fn(s)
     finally:
         frt_common.V.key = orig
-    return sorted({k for k in seen if k in start and k.removeprefix("f_") not in FREIGHT_INPUTS})
+    return sorted({k for k in seen if k in start and k.removeprefix("f_") not in inputs})
 
 
-def test_cfread(start):
-    keys = _touched(freight.cfread, start)
-    assert len(keys) > 150
+def _check_touched(fn, start, part, inputs=FREIGHT_INPUTS):
+    keys = _touched(fn, start, inputs)
     s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in start.items()}
     for k in keys:
         if isinstance(s[k], FArray):
             s[k].a[...] = 0
         else:
             s[k] = type(s[k])(0)
-    freight.cfread(s)
+    fn(s)
     bad = {}
     for k in keys:
-        idx = FREIGHT_PART.get(k)
+        idx = part.get(k)
         m, e = s[k], start[k]
         m = m.a[idx] if idx is not None else (m.a if isinstance(m, FArray) else np.asarray(m))
         e = e.a[idx] if idx is not None else (e.a if isinstance(e, FArray) else np.asarray(e))
         err = rel_err(m, e)
         if err > READ_TOL:
             bad[k] = err
+    return keys, bad
+
+
+def test_cfread(start):
+    keys, bad = _check_touched(freight.cfread, start, FREIGHT_PART)
+    assert len(keys) > 150
     assert bad == {}
+
+
+# TRUCK_STOCK fills the commercial light truck stocks from 2012 on; CFREADSTOCK sets
+# fuel_shr_ivmt only for 2012 to the stock base year.
+STOCK_PART = {"f_cltstk": (slice(5, 22),), "f_fuel_shr_ivmt": (slice(22, 35),), "cltstkt": (slice(None), slice(5, 22))}
+# Loop indexes: CFREADSTOCK leaves them where the Fortran loops do, but other routines
+# reset them before 2020.
+STOCK_SKIP = {"f_iregn", "f_icafe19", "f_ifuel", "f_iflt", "f_ivmt", "f_isc4"}
+
+
+# CFREAD's tables that CFREADSTOCK reads.
+STOCK_INPUTS = {"fltshr_stk", "fltshr_sales", "base_mkt_p2", "tffxgrt", "sc19map", "veh_shr"}
+
+
+def test_cfreadstock(start):
+    keys, bad = _check_touched(freight_stock.cfreadstock, start, STOCK_PART, STOCK_INPUTS)
+    assert {"f_trkstk_19r", "f_trkstk", "f_cltstk"} <= set(keys)
+    assert {k: e for k, e in bad.items() if k not in STOCK_SKIP} == {}
