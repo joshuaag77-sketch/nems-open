@@ -42,22 +42,20 @@ def group_ghg(s, igp, n, yrs):
     regs27 = int(s["enforce_my27regs"]) == 1 and yrs >= 2027
     g8887 = f32(8887.0)
     ac = s["ac_oc_credit"][igp, n] * g8887
-    num = f32(0.0)
-    zero_tail = (4, 7, 15) if igp <= CARGRP else (4, 7, 15, 14)
-    for ildv in range(1, MAXLDV + 1):
-        for icl in range(1, MAXCLASS + 1):
-            m = mpg[igp, icl, yrs, ildv]
-            if m == 0.0 or (regs27 and ildv in (4, 7, 15)):
-                continue
-            sal = cafe[igp, icl, yrs, ildv]
-            if ildv in zero_tail:
-                num = num + sal * (-ac)
-            elif ildv in (5, 6):
-                num = num + sal * (ONE - evmt[igp, icl, yrs, ildv]) * (ONE / mpg_s[igp, icl, yrs, ildv] * g8887 - ac)
-            elif igp > CARGRP and yrs == 2024 and icl == 2 and ildv == 16:
-                num = num + sal * (ONE / m * g8887 - ac - s["pu_cred_elig"][igp] * f32(20.0))
-            else:
-                num = num + sal * (ONE / m * g8887 - ac)
+    zero_tail = [4, 7, 15] if igp <= CARGRP else [4, 7, 15, 14]
+    # Every (fuel, class) term at once, as (ILDV, ICL); the sum runs in the loop's order
+    # (ILDV outer, ICL inner) over the terms the loop counts.
+    m, sal = mpg[igp, C, yrs, L].T, cafe[igp, C, yrs, L].T
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        term = sal * (((ONE / m) * g8887) - ac)
+        term[4:6] = (sal[4:6] * (ONE - evmt[igp, C, yrs, 5:6].T)) * (((ONE / mpg_s[igp, C, yrs, 5:6].T) * g8887) - ac)
+        term[[k - 1 for k in zero_tail]] = sal[[k - 1 for k in zero_tail]] * (-ac)
+        if igp > CARGRP and yrs == 2024:
+            term[15, 1] = sal[15, 1] * ((((ONE / m[15, 1]) * g8887) - ac) - s["pu_cred_elig"][igp] * f32(20.0))
+    keep = m != 0.0
+    if regs27:
+        keep[[3, 6, 14]] = False
+    num = fsum(term[keep])
     alt = [4, 7, 15, 14]
     den = fsum(np.array([fsum(cafe[igp, C, yrs, k]) for k in alt], dtype=f32)
                * (np.array([s["epaaltmult"][k, n] for k in alt], dtype=f32) - ONE))
