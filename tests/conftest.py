@@ -10,7 +10,8 @@ use the `full_run` fixture (the chained residential year driver, about 3 minutes
 import pytest
 
 MODULES = {"commercial": "comm", "residential": "resd", "tran": "tran", "industrial": "ind"}
-SLOW_FILES = {"test_commercial_distgen", "test_commercial_technology_choice", "test_residential_chain"}
+SLOW_FILES = {"test_commercial_distgen", "test_commercial_technology_choice", "test_residential_chain",
+              "test_emm_chain", "test_ldsm_driver"}
 
 
 def pytest_collection_modifyitems(config, items):
