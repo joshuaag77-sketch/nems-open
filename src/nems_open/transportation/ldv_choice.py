@@ -113,15 +113,19 @@ def talt2(s: dict, carry: dict) -> None:
         favl[k, R9, yrs] = v
 
 
-def talt2x(s: dict) -> None:
-    n, yrs = int(s["n"]), int(s["yrs"])
+# Plug-in powertrains: EV100, PHEV20, PHEV50, EV200, EV300.
+PLUG_IN = (4, 5, 6, 7, 15)
+
+
+def _talt2x_shares(s: dict, n: int, yrs: int, shift: float = 0.0) -> np.ndarray:
+    """TALT2X's logit: shares [group, class, powertrain, region] (0-based, REAL*4), with
+    `shift` added to every plug-in's utility (0: EIA's model exactly)."""
     avail, pspr, flc, vrng = s["mmavail"], s["pspr"], s["flcost"], s["vrng"]
     br, accl, hfuel, maint, lugg = s["brcost25"], s["accl"], s["hfuel"], s["maint"], s["lugg"]
     favl, x210, co = s["favl"], s["x210"], s["nmlmco"]
-    shr, sales, mfr = s["apshrgrp"], s["ldv_sales"], s["mfr_sales"]
-    G, C, L = slice(1, MAXGROUP), slice(1, MAXCLASS), slice(1, MAXLDV)
-    shr[G, C, L, 1:MNUMCR, n] = 0.0
+    out = np.zeros((MAXGROUP, MAXCLASS, MAXLDV, MNUMCR - 2), dtype=f32)
     exp, log = np.exp, np.log
+    shift = f64(shift)
     for iregn in range(1, MNUMCR - 1):
         for icl in range(1, MAXCLASS + 1):
             for igp in range(1, MAXGROUP + 1):
@@ -141,6 +145,8 @@ def talt2x(s: dict) -> None:
                                  + c[6] * f64(hfuel[igp, ildv, icl, iregn, yrs]) + c[7] * f64(maint[igp, ildv, icl, iregn, yrs])
                                  + c[8] * f64(lugg[igp, ildv, icl, iregn]) + c[9] * exp(c[10] * f64(favl[ildv, iregn, yrs]))
                                  + c[11] * mm_log + f64(x210[igp, icl, ildv, iregn, n]))
+                            if shift != 0.0 and ildv in PLUG_IN:
+                                u = u + shift
                             if u != 0.0:
                                 e = exp(u)
                         esum.append(e)
@@ -162,7 +168,48 @@ def talt2x(s: dict) -> None:
                 for jg, nest in enumerate(L2GROUP):
                     for jt, ildv in enumerate(nest):
                         xgs = f32(xshare[jg][jt] * yshare[jg] / 100.0)
-                        shr[igp, icl, ildv, iregn, n] = xgs / f32(100.0)
+                        out[igp - 1, icl - 1, ildv - 1, iregn - 1] = xgs / f32(100.0)
+    return out
+
+
+def plugin_share(shares: np.ndarray, mfr: np.ndarray) -> float:
+    """National plug-in share of new LDV sales. mfr: sales by [region, group, class] (0-based)."""
+    sales = shares.astype(f64) * np.moveaxis(mfr.astype(f64), 0, 2)[:, :, None, :]
+    tot = sales.sum()
+    return float(sales[:, :, [k - 1 for k in PLUG_IN], :].sum() / tot) if tot > 0 else 0.0
+
+
+def ev_shift(s: dict, n: int, yrs: int, target: float) -> float:
+    """The utility shift on plug-ins that gives `target` national plug-in share of new sales."""
+    mfr = s["mfr_sales"][R9, 1:MAXGROUP, 1:MAXCLASS, n]
+    target = min(max(float(target), 1e-6), 1.0 - 1e-6)
+    lo, hi = -30.0, 30.0
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        if plugin_share(_talt2x_shares(s, n, yrs, mid), mfr) < target:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo < 1e-7:
+            break
+    return 0.5 * (lo + hi)
+
+
+def talt2x(s: dict) -> None:
+    """With s["_ev_share_target"] = {calendar year: share}, the plug-ins' utilities shift so
+    their national share of new LDV sales hits the target that year (the EV lever);
+    everything downstream (CAFE, stocks, VMT, fuel) follows from the shifted choice."""
+    n, yrs = int(s["n"]), int(s["yrs"])
+    shr, sales, mfr = s["apshrgrp"], s["ldv_sales"], s["mfr_sales"]
+    G, C, L = slice(1, MAXGROUP), slice(1, MAXCLASS), slice(1, MAXLDV)
+    shr[G, C, L, 1:MNUMCR, n] = 0.0
+    target = (s.get("_ev_share_target") or {}).get(yrs)
+    shift = ev_shift(s, n, yrs, target) if target is not None else 0.0
+    if target is not None:
+        s.setdefault("_ev_shift", {})[yrs] = shift
+    shares = _talt2x_shares(s, n, yrs, shift)
+    for iregn in range(1, MNUMCR - 1):
+        shr[G, C, L, iregn, n] = shares[:, :, :, iregn - 1]
         sales[G, C, L, iregn, n] = shr[G, C, L, iregn, n] * mfr[iregn, G, C, n][:, :, None]
     s.update(iregn=MNUMCR - 1, icl=MAXCLASS + 1, igp=MAXGROUP + 1, ildv=15, ifuelx=17)
 

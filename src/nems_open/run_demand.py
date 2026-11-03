@@ -198,9 +198,17 @@ class TransportationSector:
     """SUBROUTINE TRAN (src/nems_open/transportation/tran.py).
 
     The oracle's transportation dumps are at the top of a year's first iteration, so a
-    run that starts mid-year does that iteration first."""
+    run that starts mid-year does that iteration first.
+
+    ev_share: {calendar year: plug-in share of new LDV sales}, the EV lever. It shifts the
+    plug-ins' utility in TALT2X (the powertrain choice) until consumers choose that share,
+    from 2025 (TALT2X's first year); CAFE and GHG compliance can still hold the share
+    above it, as in EIA's model, and stocks, VMT and fuel use follow."""
     name = "transportation"
     suffix = "tr"
+
+    def __init__(self, ev_share: dict | None = None):
+        self.ev_share = dict(ev_share or {})
 
     @staticmethod
     def available(year: int) -> bool:
@@ -211,6 +219,8 @@ class TransportationSector:
     def start(self, year: int):
         from nems_open.transportation import tran
         s, carry = tran.start_from_dump(year - BASEYR + 1)
+        if self.ev_share:
+            s["_ev_share_target"] = self.ev_share
         return {"s": s, "carry": carry, "next_itr": 1}
 
     def iteration(self, t, year: int, itr: int, inputs: Inputs) -> None:
@@ -332,7 +342,7 @@ class DemandRunner:
     """
 
     def __init__(self, year: int, inputs: Inputs | None = None,
-                 sectors=("residential", "commercial")):
+                 sectors=("residential", "commercial"), ev_share: dict | None = None):
         self.inputs = inputs or Inputs()
         self.year = year
         self.first_iteration = 2
@@ -341,7 +351,7 @@ class DemandRunner:
             if name in sectors:
                 if SECTORS[name] is None:
                     raise NotImplementedError(f"{name} demand is not ported yet")
-                sector = SECTORS[name]()
+                sector = SECTORS[name](ev_share) if name == "transportation" else SECTORS[name]()
                 self.sectors.append((sector, sector.start(year)))
         self.q = eia_quantities(self.inputs.snapshot)
 
