@@ -1,0 +1,6878 @@
+{
+"aceff": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1
+],
+"shape": [
+3500,
+31,
+9
+]
+},
+"acicost": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1
+],
+"shape": [
+3500,
+31,
+9
+]
+},
+"acshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+32,
+11,
+3
+]
+},
+"ahshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+5,
+11,
+3
+]
+},
+"allnew": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+9
+]
+},
+"alpha1": {
+"dtype": "f4"
+},
+"annualbulbcost": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+4,
+4,
+6
+]
+},
+"apcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"apconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"apconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"apeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+3,
+3,
+9
+]
+},
+"aplcon": {
+"dtype": "f4",
+"lb": [
+31,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"aplconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+3,
+9,
+3
+]
+},
+"aplconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+3,
+9,
+3
+]
+},
+"apleqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+3,
+9,
+3
+]
+},
+"appbinhours": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+6
+]
+},
+"appbulbname": {
+"dtype": "S3",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+4
+]
+},
+"appeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+3,
+9,
+3
+]
+},
+"appid": {
+"dtype": "S3",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"appindex": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"appuec": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+3,
+3
+]
+},
+"baselinebkwh": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"baseload": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+15
+]
+},
+"basewattbins": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+6
+]
+},
+"basewattsbulbs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+4
+]
+},
+"bateff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"bateqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"bateqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"batpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"batuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"beta1": {
+"dtype": "f4"
+},
+"beta1dr": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"beta2": {
+"dtype": "f4"
+},
+"binshares": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+6
+]
+},
+"bmf_shr": {
+"dtype": "f4"
+},
+"bnchfct": {
+"dtype": "f4",
+"lb": [
+31,
+1,
+1
+],
+"shape": [
+31,
+4,
+9
+]
+},
+"bnchfctavg": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+9
+]
+},
+"bulbbinenergy": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+4,
+4,
+6
+]
+},
+"bulbbinlife": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+6
+]
+},
+"bulbbinshares": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+4,
+4,
+6
+]
+},
+"bulbcost": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"bulbcri": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"bulbdiv": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"bulbeesub": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+100,
+9
+]
+},
+"bulbsperhh": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+3
+]
+},
+"bulbsub": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+100,
+9
+]
+},
+"bulbtype": {
+"dtype": "S3",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"bulbwatts": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"cacpr": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+11
+]
+},
+"cacsat": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"cap": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"cddadj": {
+"dtype": "f4",
+"lb": [
+1990,
+1
+],
+"shape": [
+61,
+11
+]
+},
+"cddyear": {
+"dtype": "i4",
+"lb": [
+1990
+],
+"shape": [
+61
+]
+},
+"cfneff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"cfneqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"cfneqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"cfnpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"cfnuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"cfuelcell_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cgcpvres": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cgcwnres": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"cgrescap": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+13
+]
+},
+"cgresgen": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+13,
+2
+]
+},
+"cgresq": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+13
+]
+},
+"ch_shr": {
+"dtype": "f4"
+},
+"ckcon": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+3,
+9
+]
+},
+"ckconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+3,
+9,
+3
+]
+},
+"ckconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+3,
+9,
+3
+]
+},
+"clshbase": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"clsheff": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"clshellwt": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+16,
+3,
+9
+]
+},
+"cofeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"cofeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"cofeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"cofpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"cofuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"cooktot": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+9
+]
+},
+"coolcn": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+2,
+9
+]
+},
+"coolcnin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+2,
+9,
+3
+]
+},
+"coolcnwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+2,
+9,
+3
+]
+},
+"cpv_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cribulb": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"cshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+10,
+3,
+9
+]
+},
+"cshell1": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cshell2": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cshell3": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cswcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"cswconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"cswconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"cumunits": {
+"dtype": "f8",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"cumunits_l": {
+"dtype": "f8",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"curcalyr": {
+"dtype": "i4"
+},
+"curitr": {
+"dtype": "i4"
+},
+"curiyr": {
+"dtype": "i4"
+},
+"cwind_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"cwload": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+2020
+]
+},
+"cwmef": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"deheff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"deheqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"deheqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"dehpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"dehuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"dishnew": {
+"dtype": "f4",
+"lb": [
+2021,
+1,
+1
+],
+"shape": [
+30,
+3,
+9
+]
+},
+"dpceff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"dpceqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"dpceqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"dpcpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"dpcuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"driver": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"driver2": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"drycon": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+2,
+9
+]
+},
+"dryconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+2,
+9,
+3
+]
+},
+"dryconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+2,
+9,
+3
+]
+},
+"dryertot": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+9
+]
+},
+"drysat": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"dswcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"dswconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"dswconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"dwpr": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"eaeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"eaeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"eauec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"ecshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+32,
+11,
+3
+]
+},
+"ecwload": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+9,
+3
+]
+},
+"efanuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+9,
+3
+]
+},
+"eh": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"ehshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+5,
+11,
+3
+]
+},
+"elastic": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+5,
+9
+]
+},
+"eldrypr": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"elecrate_l": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"eligble": {
+"dtype": "f4"
+},
+"eprpspr": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+71
+]
+},
+"eqaddfut": {
+"dtype": "f4",
+"lb": [
+2020,
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+31,
+40,
+3,
+9
+]
+},
+"eqcadd": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcahvuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"eqcauec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"eqceff": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+40
+]
+},
+"eqceqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"eqcese": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"eqcesefut": {
+"dtype": "f4",
+"lb": [
+2020,
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+31,
+40,
+3,
+9
+]
+},
+"eqchviuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqchvuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcnd90": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcniuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcnuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcpn90": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcrep": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcret": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+40
+]
+},
+"eqcriuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcrp90": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcrp90rp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcruec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcsiuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcsr90": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcsuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcsur": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"eqcsw90": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+40,
+1,
+11
+]
+},
+"eqcsw90r": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+40,
+1,
+11
+]
+},
+"eqcuec": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+40,
+3
+]
+},
+"eqr90fut": {
+"dtype": "f4",
+"lb": [
+2020,
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+31,
+40,
+3,
+9
+]
+},
+"eqr90rpfut": {
+"dtype": "f4",
+"lb": [
+2020,
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+31,
+40,
+3,
+9
+]
+},
+"eqrepfut": {
+"dtype": "f4",
+"lb": [
+2020,
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+31,
+40,
+3,
+9
+]
+},
+"estarhistyr": {
+"dtype": "i4"
+},
+"exrcp_enc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_esc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_hak": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_mac": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_mtn": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_nec": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_pac": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_sac": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_wnc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exrcp_wsc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"exsqftadj": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+3,
+9,
+5
+]
+},
+"exsqrfoot": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"fancon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"fanconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"fanconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"faneqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"faneqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"faniuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"fanuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"fclcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"fcrl": {
+"dtype": "i4"
+},
+"fcswcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"fcw_shr": {
+"dtype": "f4"
+},
+"fdrycon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"fdswcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"ffrzcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"fhtrcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"firstyear": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"frefcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"frzcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"frzconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"frzconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"frzsat": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"fstvcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"fwhcon": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+5
+]
+},
+"gasusage": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"h2ocon": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9
+]
+},
+"h2oconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"h2oconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"hcdshr": {
+"dtype": "f4",
+"lb": [
+2,
+1,
+1
+],
+"shape": [
+60,
+11,
+3
+]
+},
+"hcdshrave": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"hddadj": {
+"dtype": "f4",
+"lb": [
+1990,
+1
+],
+"shape": [
+61,
+11
+]
+},
+"hddyear": {
+"dtype": "i4",
+"lb": [
+1990
+],
+"shape": [
+61
+]
+},
+"hdi": {
+"dtype": "f4",
+"lb": [
+2,
+1,
+1
+],
+"shape": [
+60,
+11,
+3
+]
+},
+"hdiave": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"hdq": {
+"dtype": "f4",
+"lb": [
+2,
+1,
+1
+],
+"shape": [
+60,
+11,
+3
+]
+},
+"hdr": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3
+]
+},
+"hdrfy": {
+"dtype": "i4"
+},
+"hdrly": {
+"dtype": "i4"
+},
+"heatingtypepurch": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+3500,
+3,
+9,
+2
+]
+},
+"heatot": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+10,
+3,
+11
+]
+},
+"heatsys": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+30,
+3,
+9
+]
+},
+"hhstockbydiv": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+9
+]
+},
+"hotwatq": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"households_l": {
+"dtype": "f8",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"hrdadj": {
+"dtype": "f4"
+},
+"hrdrate": {
+"dtype": "f4"
+},
+"hseadd": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"hshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+10,
+3,
+9
+]
+},
+"hshell1": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"hshell2": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"hshell3": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"hsysshr": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+10,
+3,
+11
+]
+},
+"htrcon": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9
+]
+},
+"htrconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"htrconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"htseff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"htseqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"htseqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"htshbase": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"htsheff": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"htshelleffwt": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+30,
+5,
+3,
+9
+]
+},
+"htshellwt": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+30,
+5,
+3,
+9
+]
+},
+"htshryr": {
+"dtype": "i4"
+},
+"htspen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"htsuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"hvacpntr": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvbeta1": {
+"dtype": "f4",
+"lb": [
+2021,
+1,
+1,
+1
+],
+"shape": [
+2,
+3,
+5,
+11
+]
+},
+"hvbeta2": {
+"dtype": "f4",
+"lb": [
+2021,
+1,
+1,
+1
+],
+"shape": [
+2,
+3,
+5,
+11
+]
+},
+"hvcleqcl": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvcleqty": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvcoolfactor": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hveqshr": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+30,
+3,
+9
+]
+},
+"hvfyear": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvheatfactor": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvhteqcl": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvhteqty": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvlyear": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvpackg": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hvpgname": {
+"dtype": "S14",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"hwbtu": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"igencapcostyr": {
+"dtype": "i4"
+},
+"ijumpcalyr": {
+"dtype": "i4"
+},
+"income": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1
+],
+"shape": [
+9,
+31,
+30
+]
+},
+"income_l": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"invest": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"jngrs": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"kiteff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"kiteqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"kiteqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"kitpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"kituec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"lag1installs": {
+"dtype": "f8",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"lag2installs": {
+"dtype": "f8",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"lastyear": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"lastyr": {
+"dtype": "i4"
+},
+"learnfact": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+9
+]
+},
+"lfcy": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+3500,
+3,
+11,
+3
+]
+},
+"lifehours": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"lightdiag": {
+"dtype": "i4"
+},
+"lightingapp": {
+"dtype": "S3",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"limit": {
+"dtype": "f4"
+},
+"loadadj": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"lpceff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"lpceqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"lpceqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"lpcpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"lpcuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"lpw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"ltbinshare": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+6
+]
+},
+"ltcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"ltconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"ltconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"lteqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+4,
+3,
+9
+]
+},
+"lteqp": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1
+],
+"shape": [
+4,
+31,
+3,
+9
+]
+},
+"ltinvest": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9,
+2
+]
+},
+"ltlbeta1": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"ltlbeta2": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+100
+]
+},
+"ltlcap": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+4,
+9,
+6
+]
+},
+"ltlcapinvest": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"ltlife": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+6
+]
+},
+"ltlsub": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+4,
+9
+]
+},
+"ltneededbyapp": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9
+]
+},
+"ltnuec": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1
+],
+"shape": [
+4,
+31,
+9,
+3
+]
+},
+"ltnuecly": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1
+],
+"shape": [
+4,
+31,
+9,
+3
+]
+},
+"ltrepbyapp": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9
+]
+},
+"ltrepconsly": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9,
+6
+]
+},
+"ltrepfutly": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9,
+6
+]
+},
+"ltrepstkly": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9,
+6
+]
+},
+"ltstock": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9,
+6
+]
+},
+"ltsubsidy": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+4,
+31,
+4,
+3,
+9,
+2
+]
+},
+"ltuec": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+4,
+9,
+3
+]
+},
+"mc_husmfg": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"mc_husps1": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"mc_husps2a": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"mc_jpgdp": {
+"dtype": "f4",
+"lb": [
+-2
+],
+"shape": [
+64
+]
+},
+"mc_np16a": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"mc_np65a": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"mc_rmmtg30con": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"mc_ypdr": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"mcoeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"mcoeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"mcoeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"mcopen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"mcouec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"melsincomeeffect": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+30
+]
+},
+"moneff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"moneqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"moneqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"monpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"monuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"ncksh": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+5,
+3,
+11
+]
+},
+"nclfl": {
+"dtype": "i4"
+},
+"ncshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+32,
+11,
+3
+]
+},
+"ncswfl": {
+"dtype": "i4"
+},
+"ncwload": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+9,
+3
+]
+},
+"ndryfl": {
+"dtype": "i4"
+},
+"ndswfl": {
+"dtype": "i4"
+},
+"neqtshr": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+3500,
+3,
+11
+]
+},
+"neqtshrc": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+16,
+3,
+11
+]
+},
+"neteff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"neteqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"neteqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"netpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"netuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"newcooluec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+9
+]
+},
+"newdrysat": {
+"dtype": "f4",
+"lb": [
+2021,
+1,
+1,
+1
+],
+"shape": [
+30,
+2,
+3,
+9
+]
+},
+"newheatuec": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+10,
+3,
+9
+]
+},
+"newhses": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"nfanuec": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+9,
+3
+]
+},
+"nfrzfl": {
+"dtype": "i4"
+},
+"ngrcbus": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_enc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_esc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_mac": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_mtn": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_nec": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_pac": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_sac": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_wnc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"ngrcp_wsc": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"nh": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"nh2osh": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+5,
+3,
+11
+]
+},
+"nhshell": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+5,
+11,
+3
+]
+},
+"nhtrfl": {
+"dtype": "i4"
+},
+"nreffl": {
+"dtype": "i4"
+},
+"nshtrfl": {
+"dtype": "i4"
+},
+"nshtshr": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+3,
+11,
+5
+]
+},
+"nstvfl": {
+"dtype": "i4"
+},
+"numappbins": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"numapps": {
+"dtype": "i4"
+},
+"numtypes": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"nwhfl": {
+"dtype": "i4"
+},
+"oeqcrep": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+1,
+11
+]
+},
+"oeqcrp90": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+1,
+11
+]
+},
+"oeqcrp90r": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+1,
+11
+]
+},
+"oldhses": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"otteff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"otteqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"otteqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"ottpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"ottuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"pcrcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"pcrconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"pcrconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"pdsrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pelme": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pelrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"pelrsout": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+61,
+11
+]
+},
+"phneff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"phneqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"phneqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"phnpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"phnuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"pksrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"plgrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"plheff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"plheqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"plheqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"plhpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"plhuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"plpeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"plpeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"plpeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"plppen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"plpuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"pngrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"popdensity_l": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"prices": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1990
+],
+"shape": [
+5,
+11,
+61
+]
+},
+"projectedinstalls": {
+"dtype": "f8",
+"lb": [
+1
+],
+"shape": [
+27326
+]
+},
+"prtdbgr": {
+"dtype": "i4"
+},
+"qbmrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qdsrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qelcm": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qelrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qgers": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qgfrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qgirs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qksrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qlgrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qngrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qprrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qpvrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qsdsrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qselrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qsksrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qslgrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qsngrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qstrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"qtrrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"racsat": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"racunits": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"refcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"refconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"refconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"refsat": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+3,
+11
+]
+},
+"reqtshr": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+3500,
+3,
+11
+]
+},
+"resdiscountrate": {
+"dtype": "f4"
+},
+"rfuelcell_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rlgtdollaryr": {
+"dtype": "i4"
+},
+"rmicrotur_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rpinscost": {
+"dtype": "i4",
+"lb": [
+1,
+1
+],
+"shape": [
+40,
+40
+]
+},
+"rpv_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsapcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+4
+]
+},
+"rsbtype": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rscendiv": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rsckcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+3
+]
+},
+"rscook": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+3
+]
+},
+"rscoolcn": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+2
+]
+},
+"rscoolers": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rscswcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsdry": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+2
+]
+},
+"rsdrycon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+2
+]
+},
+"rsdswcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rseefcl": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rseefdb1": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+3500,
+3,
+9
+]
+},
+"rseeffz": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rseefht": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rseefhw": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+4
+]
+},
+"rseefrf": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rseh": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+3
+]
+},
+"rsfancon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsflcn": {
+"dtype": "f4",
+"lb": [
+31,
+1,
+1
+],
+"shape": [
+31,
+5,
+10
+]
+},
+"rsfrz": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsfrzcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsgascust": {
+"dtype": "f4",
+"lb": [
+1990,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"rsh2ocon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rshldollaryr": {
+"dtype": "i4"
+},
+"rshouses": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"rshseadd": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+3
+]
+},
+"rshtrcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rshtrs": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+8
+]
+},
+"rsltcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsnefcl": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rsnefdb1": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+3500,
+3,
+9
+]
+},
+"rsneffz": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsnefht": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rsnefhw": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+4
+]
+},
+"rsnefrf": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsnh": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+3
+]
+},
+"rspcrcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsref": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rsrefcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rstvrcon": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"rswater": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+5
+]
+},
+"rtalpha": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtbaseff": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+40
+]
+},
+"rtcendiv": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtclcnt": {
+"dtype": "i4"
+},
+"rtclendu": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtcleqcl": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtcleupt": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+13
+]
+},
+"rtclname": {
+"dtype": "S10",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtclpntr": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtclrepl": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtcltypt": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtcostp1": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtcostp2": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtcostp3": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtecbias": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtecbta1": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtecbta2": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtecbta3": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtekdollaryr": {
+"dtype": "i4"
+},
+"rteqcost": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rteqeff": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rteqsub": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rteqsub111d": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rteqsubn": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rteqtype": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rteucnt": {
+"dtype": "i4"
+},
+"rtfcbeta": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtfcbias": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+3,
+9
+]
+},
+"rtffan": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtfuel": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtinityr": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtk": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtlambda": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtlastyr": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtmature": {
+"dtype": "S10",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtmaxlif": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtminlif": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtrecost": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtresub": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtresub111d": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtresubn": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rtswbeta": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtswbias": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rtswfact": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+40
+]
+},
+"rttycnt": {
+"dtype": "i4"
+},
+"rttyendu": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rttyeqcl": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rttyeupt": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+13
+]
+},
+"rttyname": {
+"dtype": "S10",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rttypect": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+13
+]
+},
+"rttypntr": {
+"dtype": "i4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"rwind_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"seceff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"seceqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"seceqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"secpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"secuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"shelcost": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"shellbuilds": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+30,
+5,
+3,
+9
+]
+},
+"shellinvest": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+10,
+5,
+3,
+11
+]
+},
+"shellsubsidy": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+10,
+5,
+3,
+11
+]
+},
+"shellsubsidy111d": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+10,
+5,
+3,
+11
+]
+},
+"shelsub": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"shelsub111d": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+3500
+]
+},
+"sheqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+5,
+3,
+9
+]
+},
+"shlevelh": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1,
+1
+],
+"shape": [
+31,
+10,
+5,
+3,
+9
+]
+},
+"shtcon": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9
+]
+},
+"shtconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"shtconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1,
+1
+],
+"shape": [
+61,
+5,
+9,
+3
+]
+},
+"shteqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+3,
+9,
+5
+]
+},
+"shtshr": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+3,
+11,
+5
+]
+},
+"shtuec": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+11,
+5,
+3
+]
+},
+"slcon": {
+"dtype": "f4",
+"lb": [
+31,
+1
+],
+"shape": [
+32,
+11
+]
+},
+"sleqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+11
+]
+},
+"smf_shr": {
+"dtype": "f4"
+},
+"spaeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"spaeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"spaeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"spapen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"spauec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"spkeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"spkeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"spkeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"spkpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"spkuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"sqftavg": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"sqnew": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"sqrfoot": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"stbeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"stbeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"stbeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"stbpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"stbuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"stkeff": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+40
+]
+},
+"stocksqrfoot": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"swftotal": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+40,
+9
+]
+},
+"switches": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"switchesr": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"switchto": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"switchtor": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+40,
+3,
+11
+]
+},
+"swtotal": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+40,
+9
+]
+},
+"tabeff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"tabeqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"tabeqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"tabpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"tabuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"tcw_shr": {
+"dtype": "f4"
+},
+"techg": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+32,
+9,
+3
+]
+},
+"tenure": {
+"dtype": "f4"
+},
+"tmf_shr": {
+"dtype": "f4"
+},
+"totalhouses": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+3,
+9
+]
+},
+"trills": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"trillsownuse": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"trq_elec": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+10,
+11,
+61
+]
+},
+"tvrcon": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+61,
+9
+]
+},
+"tvrconin": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"tvrconwt": {
+"dtype": "f4",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+9,
+3
+]
+},
+"tvseff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"tvseqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"tvseqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"tvspen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"tvsuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"units": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+},
+"up_shr": {
+"dtype": "f4"
+},
+"upv_mw": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+61
+]
+},
+"vgceff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"vgceqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"vgceqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"vgcpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"vgcuec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"washnew": {
+"dtype": "f4",
+"lb": [
+2021,
+1,
+1
+],
+"shape": [
+30,
+3,
+9
+]
+},
+"watertot": {
+"dtype": "f4",
+"lb": [
+2020,
+1
+],
+"shape": [
+31,
+9
+]
+},
+"watts": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"wattscy": {
+"dtype": "f4",
+"lb": [
+1
+],
+"shape": [
+4
+]
+},
+"wcleff": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"wcleqcn": {
+"dtype": "f4",
+"lb": [
+30,
+1,
+1,
+1
+],
+"shape": [
+32,
+1,
+3,
+9
+]
+},
+"wcleqp": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1
+],
+"shape": [
+31,
+3,
+9
+]
+},
+"wclpen": {
+"dtype": "f4",
+"lb": [
+2020
+],
+"shape": [
+31
+]
+},
+"wcluec": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+3
+]
+},
+"whrfoss": {
+"dtype": "f4",
+"lb": [
+1,
+1
+],
+"shape": [
+11,
+61
+]
+},
+"wteqceffa": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"wteqceffhv": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"wteqceffn": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"wteqceffr": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"wteqcsqfhv": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+32,
+40,
+3,
+11
+]
+},
+"wthrztn": {
+"dtype": "f4",
+"lb": [
+2020,
+1,
+1,
+1
+],
+"shape": [
+31,
+2,
+9,
+3
+]
+},
+"wtleffbyapp": {
+"dtype": "f4",
+"lb": [
+1,
+2020,
+1,
+1
+],
+"shape": [
+4,
+31,
+3,
+9
+]
+},
+"x111drensub": {
+"dtype": "f8",
+"lb": [
+1,
+1,
+1
+],
+"shape": [
+61,
+11,
+4
+]
+}
+}

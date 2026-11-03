@@ -152,3 +152,32 @@ def test_demand_responds_to_price():
     high.run_year()
     assert high.q["qngrs"][10, 40] < 0.98 * base.q["qngrs"][10, 40]
     assert base.totals(2030)["residential"] == pytest.approx(float(base.q["qtsrs"][10, 40]))
+
+
+def test_parallel_gives_the_same_numbers():
+    """Residential in a worker process, commercial here: the same QBLK rows as one process, through 2031."""
+    runs = []
+    for parallel in (False, True):
+        r = DemandRunner(2030, parallel=parallel)
+        try:
+            r.run_to(2031)
+        finally:
+            r.close()
+        runs.append(r.q)
+    for k in runs[0]:
+        assert np.array_equal(runs[0][k], runs[1][k]), k
+
+
+def test_residential_starts_from_files_without_a_dump():
+    """2023 has no residential dump: the runner starts from the input files (2020 on) and its
+    2023 fuel use matches the oracle's."""
+    from nems_open.run_demand import ResidentialSector
+    assert not ResidentialSector.dumped(2023)
+    r = DemandRunner(2023, sectors=("residential",))
+    r.run_year()
+    final = oracle_state.load("final", 61, "resd")
+    j = 2023 - BASEYR
+    for k in SECTOR_QUANTITIES["rs"]:
+        if k in final:
+            mine, eia = r.q[k][:9, j].astype(float), final[k].a[:9, j].astype(float)
+            assert np.abs(mine - eia).max() <= 1e-6 * max(np.abs(eia).max(), 1.0), k

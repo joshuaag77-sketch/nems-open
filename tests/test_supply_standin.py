@@ -142,3 +142,24 @@ def test_more_electricity_demand_raises_gas_and_power_prices(ref):
     assert np.all(r.prices["MPBLK/pngin"][US, YEARS] > base["MPBLK/pngin"][US, YEARS])
     assert np.all(r.prices["MPBLK/pelrs"][US, YEARS] > base["MPBLK/pelrs"][US, YEARS])
     assert np.all(r.co2["el"][US, YEARS] > ref.solve().co2["el"][US, YEARS])
+
+
+def _build(cache):
+    from nems_open.supply_standin import data
+    data.extract("cb2026", cache=cache)
+
+
+def test_concurrent_cache_builds_leave_a_readable_file(tmp_path):
+    """Test workers build the case cache at the same time: the file must never be half written."""
+    import multiprocessing
+
+    import numpy as np
+    from nems_open.supply_standin import data
+
+    if not data.available("cb2026"):
+        pytest.skip("no restart file for cb2026")
+    with multiprocessing.get_context("spawn").Pool(3) as pool:
+        pool.map(_build, [tmp_path] * 3)
+    with np.load(tmp_path / "cb2026.npz") as z:
+        assert len(z.files) > 100
+    assert not list(tmp_path.glob("*.tmp.npz"))

@@ -4,14 +4,17 @@
 (QBLK names, one value per region) for a set of delivered prices (MPBLK names). Behind
 it, each sector is one of:
 
-- EIA's ported module, through the demand runner (`nems_open.run_demand`, branch
-  demand-runner). Residential and commercial are ported. They start from the oracle's
-  state dumps, so they are opt-in: `DemandAdapter(ported=("residential", "commercial"))`.
-  A requested sector whose state is not dumped for the start year falls back to its
+- EIA's ported module, through the demand runner (`nems_open.run_demand`). Residential,
+  commercial and transportation are ported; residential and commercial are run_model's default
+  (`ported=("residential", "commercial")`), transportation is opt-in (about 25 s an iteration);
+  with more than one, all but the last run in worker processes, in parallel. Residential
+  starts from the oracle's dump for the start year, else from the input files; commercial
+  needs a dump; transportation starts from the latest dump at or before the start year and runs
+  forward, or with no dump from EIA's files (TRAN from 1995, about 30 min to 2025); a requested sector with no state for the start year falls back to its
   stub, with a warning. Industrial is a slot that supplies its oracle's fuel use.
 - A stub: EIA's reference fuel use moved by a price elasticity with a lag. Used for
-  industrial and transportation (not ported yet) and, by default, for every sector so
-  the loop runs in seconds. Its elasticities are fitted from EIA's side cases where
+  industrial (not ported yet), transportation unless asked for, and for every sector with ported=(),
+  so the loop runs in seconds. Its elasticities are fitted from EIA's side cases where
   the data allow (see ELASTICITY).
 
 Policy levers (`Policy`) are applied here, after the sector models:
@@ -79,6 +82,7 @@ class Policy:
     ev_share: object = None             # plug-in share of new light-duty sales, 0-1; None = EIA's
     building_efficiency: object = 1.0   # multiplier on residential and commercial fuel use
     start_year: int = 2027
+    commercial: object = None           # commercial.levers.CommercialLevers: real-input levers (needs commercial ported)
 
     def carbon(self) -> np.ndarray:
         return by_year(self.carbon_price, self.start_year, 0.0)
@@ -144,12 +148,14 @@ def usable_ported(ported: tuple[str, ...], start_year: int) -> tuple[str, ...]:
 class PortedSectors:
     """EIA's ported modules through the demand runner (branch demand-runner)."""
 
-    def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, ev_share: dict | None = None):
+    def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, parallel: bool = True,
+                 commercial_levers=None, ev_share: dict | None = None):
         from nems_open.run_demand import EQUIVALENCED, SECTOR_QUANTITIES, DemandRunner, sum_quantities
         self._equivalenced = EQUIVALENCED
         self._names = SECTOR_QUANTITIES
         self._sum = sum_quantities
-        self.runner = DemandRunner(start_year, sectors=sectors, ev_share=ev_share)
+        self.runner = DemandRunner(start_year, sectors=sectors, parallel=parallel and len(sectors) > 1,
+                                   commercial_levers=commercial_levers, ev_share=ev_share)
         self.inputs = self.runner.inputs
         self.base = base
         self.suffixes = [SECTORS[s] for s in sectors]
@@ -177,7 +183,7 @@ class PortedSectors:
         self._set_prices(prices)
         run = self.runner
         y = year - FIRST_YEAR + 1
-        for sector, state in run.sectors:
+        for sector, state in run.sectors:  # a sector in a worker process runs while the next one runs here
             sector.iteration(state, year, run.first_iteration + itr - 1, run.inputs)
         calshr = lambda name: run.inputs.snapshot[f"CALSHR/{name}"]
         out = {}
@@ -194,17 +200,23 @@ class PortedSectors:
         self.runner.year += 1
         self.runner.first_iteration = 1
 
+    def close(self):
+        self.runner.close()
+
 
 class DemandAdapter:
     def __init__(self, base: dict, policy: Policy, start_year: int, ported: tuple[str, ...] = ()):
         self.base = base
         self.policy = policy
         ported = usable_ported(ported, start_year)
+        if policy.commercial is not None and "commercial" not in ported:
+            raise ValueError("commercial levers need the ported commercial module (ported=(..., 'commercial'))")
         ev_by_year = None
         if policy.ev_share is not None and "transportation" in ported:
             target = by_year(policy.ev_share, policy.start_year, np.nan)
             ev_by_year = {FIRST_YEAR + j: float(v) for j, v in enumerate(target) if not np.isnan(v)}
-        self.ported = PortedSectors(start_year, ported, base, ev_by_year) if ported else None
+        self.ported = (PortedSectors(start_year, ported, base, commercial_levers=policy.commercial, ev_share=ev_by_year)
+                       if ported else None)
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}
         self.efficiency = policy.efficiency()
@@ -260,6 +272,11 @@ class DemandAdapter:
             self.ported.end_year()
         for stub in self.stubs.values():
             stub.end_year()
+
+    def close(self) -> None:
+        """Stop the ported sectors' worker processes."""
+        if self.ported:
+            self.ported.close()
 
 
 class EVLever:

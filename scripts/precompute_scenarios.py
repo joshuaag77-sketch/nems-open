@@ -114,7 +114,7 @@ def trace(supply, quantities, pol: Policy, base) -> dict:
 def one(args) -> tuple[str, dict]:
     carbon, ev, bld = args
     pol = policy(carbon, ev, bld)
-    r = run(pol)
+    r = run(pol, ported=())  # the stub demo: every sector on the stub
     base = load_case("cb2026")
     supply = SupplyStandin("cb2026").solve(r.quantities, carbon_price=pol.carbon())
     by_year = {}

@@ -66,3 +66,16 @@ def _check(s, ref):
             bad[k] = err
     assert n > 1000
     assert bad == {}
+
+
+def test_runner_starts_from_files_without_a_dump():
+    """Before the first dump year the runner's TRAN sector starts from the files."""
+    from nems_open.run_demand import TransportationSector
+    sector = TransportationSector()
+    assert TransportationSector.start_year(1997) is None and TransportationSector.available(1997)
+    with np.errstate(all="ignore"):
+        t = sector.start(1997)
+    s = t["s"]
+    assert int(s["curcalyr"]) == 1996 and int(s["curitr"]) == 3 and t["next_itr"] == 1
+    q = sector.quantities(t)
+    assert len(q) > 10 and float(q["qmgtr"].a[10, 1997 - 1990 - 1]) > 0
