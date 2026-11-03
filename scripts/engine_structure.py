@@ -187,8 +187,9 @@ def split_routines(path: Path):
             while stack and not stack[-1]["contains"]:
                 done.append(stack.pop())
             parents = [r["sts"] for r in stack]
+            host = stack[-1]["name"] if stack else None
             stack.append({"name": m.group(2).upper(), "kind": m.group(1).lower(), "first": ln, "last": ln,
-                          "sts": [], "contains": False, "module": module, "parents": parents})
+                          "sts": [], "contains": False, "module": module, "parents": parents, "host": host})
             continue
         if not stack:
             if module and in_spec:
@@ -201,7 +202,8 @@ def split_routines(path: Path):
             top["contains"] = True
             continue
         if re.match(r"^end(\s*(subroutine|function|program)(\s+\w+)?)?$", low, re.I):
-            top["last"] = ln
+            if not top["contains"]:     # a host's span stops at CONTAINS: its internal routines count for themselves
+                top["last"] = ln
             done.append(stack.pop())
             continue
         if not top["contains"]:
@@ -211,7 +213,7 @@ def split_routines(path: Path):
     out = []
     for r in done:
         inherited = [s for p in r["parents"] for s in p]
-        out.append((r["name"], r["kind"], r["first"], r["last"], r["sts"], (r["module"], inherited)))
+        out.append((r["name"], r["kind"], r["first"], r["last"], r["sts"], (r["module"], inherited), r["host"]))
     return sorted(out, key=lambda r: r[2])
 
 
@@ -251,7 +253,7 @@ def scan_fortran(module: str, files: list[str]) -> list[dict]:
     out = []
     split = [(f, split_routines(SRC / f)) for f in files]   # all files first: modules may be USEd across files
     for f, rs in split:
-        for name, kind, first, last, sts, scope in rs:
+        for name, kind, first, last, sts, scope, host in rs:
             incs = routine_includes(sts, scope)
             mem = members_of(incs) if incs else {}
             reads, writes, calls, switches = set(), set(), [], set()
@@ -274,7 +276,7 @@ def scan_fortran(module: str, files: list[str]) -> list[dict]:
                 for w in set(WORD.findall(body)):
                     if w in mem:
                         reads.add(mem[w])
-            out.append({"name": name, "kind": kind, "module": module, "file": f, "lines": last - first + 1,
+            out.append({"name": name, "kind": kind, "module": module, "file": f, "lines": last - first + 1, "host": host,
                         "calls": sorted(set(calls)), "reads": sorted(reads), "writes": sorted(writes),
                         "switches": sorted(switches)})
     return out
@@ -361,6 +363,12 @@ def ported_routines(scope: str, routines: list[dict]) -> dict[str, set]:
                 continue
             done.add(n)
             todo += [c for c in mine[n]["calls"] if c in mine and c not in done]
+        # a host routine (RESD, TRAN) is ported when most of what it contains is
+        kids = defaultdict(list)
+        for r in mine.values():
+            if r["host"]:
+                kids[r["host"]].append(r["name"])
+        done |= {h for h, ks in kids.items() if sum(k in done for k in ks) >= 0.8 * len(ks)}
         out[mod] = done
     from nems_open.run_demand import IndustrialSector
     out["industrial"] = {n for n in IndustrialSector.ported if n in by_module["industrial"]}

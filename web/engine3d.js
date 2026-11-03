@@ -73,7 +73,8 @@
       const s = sizeOf(it, i);
       m4.compose(posOf(it, i), q, V(s, s, s));
       mesh.setMatrixAt(i, m4);
-      mesh.setColorAt(i, c.setHex(colorOf(it, i)));
+      it.hex = colorOf(it, i);
+      mesh.setColorAt(i, c.setHex(it.hex));
     });
     mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     scene.add(mesh); return mesh;
@@ -103,6 +104,7 @@
       rs.forEach((r) => (r.pos = inBall(rand, m.radius).add(m.center)));
       m.dots = dots(rs, (r) => r.pos, (r) => 0.35 + 1.6 * Math.sqrt(r.lines / big),
         (r) => (r.ported ? COLOR.match : m.g.grade === "match" ? COLOR.stand : m.color));
+      m.dots.userData = { kind: "routine", items: rs };
       const idx = Object.fromEntries(rs.map((r) => [r.name, r]));
       const calls = [];
       rs.forEach((r) => r.calls.forEach((c) => idx[c] && idx[c] !== r && calls.push([r.pos, idx[c].pos])));
@@ -147,7 +149,8 @@
     const b = band(s.module), y = 70 - (140 * (b + 0.5)) / order.length;
     s.pos = V(-170 + (randIn() - 0.5) * 34, y + (randIn() - 0.5) * 8, (randIn() - 0.5) * 50);
   });
-  dots(sw, (s) => s.pos, () => 0.55, () => COLOR.input, 0.85);
+  const swMesh = dots(sw, (s) => s.pos, () => 0.55, () => COLOR.input, 0.85);
+  swMesh.userData = { kind: "switch", items: sw };
   // One bundled link per module to its band of switches (and below, of variables it writes),
   // as wide as the count: thousands of single lines would read as one beam.
   function bundle(points, to, color, n, maxN) {
@@ -170,7 +173,8 @@
     const y = 70 - (140 * (b + 0.5)) / (order.length + 1);
     o.pos = V(170 + (randOut() - 0.5) * 40, y + (randOut() - 0.5) * 8, (randOut() - 0.5) * 60);
   });
-  dots(outs, (o) => o.pos, (o) => (o.writers.length ? 0.42 : 0.3), (o) => (o.writers.length ? COLOR.output : 0x2f4a43), 0.8);
+  const outMesh = dots(outs, (o) => o.pos, (o) => (o.writers.length ? 0.42 : 0.3), (o) => (o.writers.length ? COLOR.output : 0x2f4a43), 0.8);
+  outMesh.userData = { kind: "output", items: outs };
   const outBy = {};
   outs.forEach((o) => o.writers.length && (outBy[o.writers[0]] = outBy[o.writers[0]] || []).push(o));
   const maxOut = Math.max(...Object.values(outBy).map((a) => a.length));
@@ -225,7 +229,10 @@
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;  // a drag, not a click
     mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(mouse, camera);
+    const sh = ray.intersectObject(swMesh)[0];
+    if (sh && sh.instanceId !== undefined) { follow(sw[sh.instanceId]); return; }
     const hit = ray.intersectObjects(MODS.map((m) => m.hit))[0];
+    if (following) clearFollow();
     if (!hit) { panel.style.display = "none"; return; }
     showModule(byKey[hit.object.userData.key]);
   });
@@ -384,6 +391,87 @@
   yearEl.addEventListener("input", () => render(false));
   render(true);
 
+  // ---- follow a switch, and hover labels ---------------------------------------------------
+  // Click a switch: light the routines that read it by name (RTOVALUE) or, if none does, its
+  // owning module; the shared variables those write; and the modules that read those.
+  const routineKey = (r) => `${r.module}:${r.name}`;
+  const routineBy = Object.fromEntries(R.routines.map((r) => [routineKey(r), r]));
+  const outByKey = Object.fromEntries(outs.map((o) => [o.key, o]));
+  const meshes = [swMesh, outMesh, ...MODS.filter((m) => m.dots).map((m) => m.dots)];
+  const tmpC = new THREE.Color();
+  function paint(mesh, litOf) {
+    mesh.userData.items.forEach((it, i) => {
+      tmpC.setHex(it.hex);
+      if (litOf && !litOf(it)) tmpC.multiplyScalar(0.12);
+      mesh.setColorAt(i, tmpC);
+    });
+    mesh.instanceColor.needsUpdate = true;
+  }
+  let following = null;
+  function clearFollow() {
+    following = null;
+    meshes.forEach((m) => paint(m, null));
+    MODS.forEach((m) => { if (m.inner) m.inner.material.opacity = 0.16; if (m.shell) m.shell.material.opacity = 0.22; });
+    shown.forEach((e) => (e.tube.material.opacity = 0.35));
+    hot([]);
+  }
+  function follow(s) {
+    following = s;
+    const rs = s.routines.map((k) => routineBy[k]).filter(Boolean);
+    const startMods = rs.length ? [...new Set(rs.map((r) => r.module))] : byKey[s.module] ? [s.module] : [];
+    const writes = new Set(rs.length ? rs.flatMap((r) => r.writes)
+      : outs.filter((o) => startMods.some((k) => o.writers.includes(k))).map((o) => o.key));
+    const readers = new Set([...writes].flatMap((k) => (outByKey[k] ? outByKey[k].readers : [])));
+    startMods.forEach((k) => readers.delete(k));
+    const litRoutines = new Set(rs.length ? rs.map(routineKey) : (routinesBy[startMods[0]] || []).map(routineKey));
+    paint(swMesh, (x) => x === s);
+    paint(outMesh, (o) => writes.has(o.key));
+    MODS.filter((m) => m.dots).forEach((m) => paint(m.dots, (r) => litRoutines.has(routineKey(r)) || readers.has(m.key)));
+    MODS.forEach((m) => {
+      const on = startMods.includes(m.key) || readers.has(m.key);
+      if (m.inner) m.inner.material.opacity = on ? 0.3 : 0.03;
+      if (m.shell) m.shell.material.opacity = on ? 0.5 : 0.06;
+    });
+    shown.forEach((e) => (e.tube.material.opacity = startMods.includes(e.from) && readers.has(e.to) ? 0.8 : 0.05));
+    hot(startMods.concat([...readers]));
+    const name = (k) => (byKey[k] ? byKey[k].name : k === "hub" ? "the integrating module" : k);
+    panel.innerHTML = `<h3>${escA(s.key)} = ${escA(s.value)}</h3><span class="tag" style="color:#7F77DD">Switch</span>
+      <p>${escA(s.description || "")}</p>
+      <p>${rs.length ? `Read by name in ${rs.length} routine${rs.length > 1 ? "s" : ""}: ${[...new Set(rs.map((r) => `${r.name} (${name(r.module)})`))].join(", ")}.`
+        : `Owned by ${name(s.module)}${s.file ? ", which reads the file it names" : ""}; no routine reads it by name, so the whole module is lit.`}</p>
+      <p>${rs.length ? "Those routines write" : "That module writes"} ${writes.size.toLocaleString("en-US")} shared variables,
+        read by ${readers.size ? [...readers].map(name).join(", ") : "no other module"}.</p>
+      <p style="color:var(--dim)">From EIA's code as written: assignments, RTOVALUE reads and transfer lists, not a live run.</p>
+      <button class="ghost small" id="unfollow" type="button">Clear</button>`;
+    panel.style.display = "block";
+    $("unfollow").addEventListener("click", () => { clearFollow(); panel.style.display = "none"; });
+  }
+
+  const tip = document.createElement("div");
+  tip.className = "tip"; tip.setAttribute("role", "tooltip"); document.body.appendChild(tip);
+  function describe(kind, it) {
+    if (kind === "switch") return `<b>${escA(it.key)}</b> = ${escA(it.value)}<br>${escA(it.description || "")}<br><i>Switch, owner: ${byKey[it.module] ? byKey[it.module].name : it.module}. Click to follow.</i>`;
+    if (kind === "output") return `<b>${escA(it.key)}</b> ${it.units ? `(${escA(it.units)})` : ""}<br>${escA(it.description || "")}<br><i>Written by ${it.writers.map((k) => byKey[k].name).join(", ") || "no module here"}; read by ${it.readers.map((k) => byKey[k].name).join(", ") || "none"}.</i>`;
+    return `<b>${it.name}</b> (${byKey[it.module].name}, ${escA(it.file)})<br>${it.lines.toLocaleString("en-US")} lines, calls ${it.calls.length}, writes ${it.writes.length} shared variables<br><i>${it.ported ? "Ported to Python and checked against EIA's code" : "Not ported"}</i>`;
+  }
+  const hov = new THREE.Raycaster(); hov.params.Points = { threshold: 1 };
+  let lastMove = 0;
+  canvas.addEventListener("pointermove", (e) => {
+    if (e.pointerType === "touch" || performance.now() - lastMove < 40) return;
+    lastMove = performance.now();
+    mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    hov.setFromCamera(mouse, camera);
+    const h = hov.intersectObjects(meshes)[0];
+    if (!h || h.instanceId === undefined) { tip.style.display = "none"; canvas.style.cursor = ""; return; }
+    const it = h.object.userData.items[h.instanceId];
+    tip.innerHTML = describe(h.object.userData.kind, it);
+    tip.style.display = "block";
+    tip.style.left = Math.min(innerWidth - 300, e.clientX + 14) + "px";
+    tip.style.top = Math.min(innerHeight - 90, e.clientY + 14) + "px";
+    canvas.style.cursor = h.object.userData.kind === "switch" ? "pointer" : "";
+  });
+  canvas.addEventListener("pointerleave", () => (tip.style.display = "none"));
+
   // ---- loop -----------------------------------------------------------------------------
   function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
   addEventListener("resize", resize); resize();
@@ -408,5 +496,5 @@
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
-  window.NEMS_ENGINE3D = { S, R, RUNS, FID, MODS, byKey, scene, camera, controls, COLOR, segments, dots, ctr, hub, labels, $ };
+  window.NEMS_ENGINE3D = { S, R, RUNS, FID, MODS, byKey, scene, camera, controls, COLOR, follow, clearFollow };
 })();
