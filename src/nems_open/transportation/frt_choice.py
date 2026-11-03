@@ -26,57 +26,61 @@ VM = slice(1, NVMT)
 PBK_YR = 7
 
 
-def truck_pbk(v, carry, inc_cost, vmt, cpm, cpm_base, mr_ice, veh_shr, refuel):
+def truck_pbk(v, carry, k, inc_cost, vmt, cpm, cpm_base, mr_ice, veh_shr, refuel):
+    """TRUCK_PBK for the VMT bins k (0-based, in order), all at once: each bin's payback NPV,
+    purchase share and S-curve are its own; only FUEL_SHR_REGN adds the bins up, in order."""
     iyr, yrs = v.i("iyr"), v.i("yrs")
-    c19, jfuel, iflt, ivmt, iregn = v.i("icafe19"), v.i("jfuel"), v.i("iflt"), v.i("ivmt"), v.i("iregn")
+    c19, jfuel, iflt, iregn = v.i("icafe19"), v.i("jfuel"), v.i("iflt"), v.i("iregn")
     isc4 = v.i("isc4")
+    c, j, f, r, y0 = c19 - 1, jfuel - 1, iflt - 1, iregn - 1, iyr - 1
     veh_cost = inc_cost
     if jfuel == 6 and iflt == 2 and c19 < 16:
         veh_cost = inc_cost - v["bev_infra_cost"][c19, iyr]
     sav = vmt * (cpm_base - cpm)
-    npv, mr = v["npv_choice"], v["mr_cost"]
+    npv, mr = v["npv_choice"].a, v["mr_cost"]
     ins, disc = v["insure_rate"], v["discrtxg_p2"]
-    npv[c19, jfuel, ivmt, 1, iregn, iyr] = (sav - (ins * veh_cost) + (mr_ice[1] - mr[c19, jfuel, 1, iyr]) * vmt - refuel) / (ONE + disc)
+    net = sav - (ins * veh_cost)
+    row = ((net + (mr_ice[1] - mr[c19, jfuel, 1, iyr]) * vmt) - refuel) / (ONE + disc)
+    npv[c, j, k, 0, r, y0] = row
     for y in range(2, PBK_YR + 1):
-        npv[c19, jfuel, ivmt, y, iregn, iyr] = (npv[c19, jfuel, ivmt, y - 1, iregn, iyr]
-                                                + (sav - ins * veh_cost + (mr_ice[y] - mr[c19, jfuel, y, iyr]) * vmt - refuel)
-                                                / powi(ONE + disc, y))
-    tot = fsum(npv[c19, jfuel, ivmt, :, iregn, iyr])
-    if tot != tot:
+        row = row + ((net + (mr_ice[y] - mr[c19, jfuel, y, iyr]) * vmt) - refuel) / powi(ONE + disc, y)
+        npv[c, j, k, y - 1, r, y0] = row
+    tot = fsum(npv[c, j, k, :, r, y0], axis=1)
+    if (tot != tot).any():
         raise ValueError("TDM TRUCK_PBK: STOP 901, NaN NPV")
     life = v["hdv_usefullife"][1, int(v["p219map"][c19])] * f32(2)
-    tax = v["sales_tax_rate"][iregn]
-    buy = [ZERO] * (PBK_YR + 1)
+    cost = inc_cost * (ONE + v["sales_tax_rate"][iregn])
+    vv, pb = v["vmt_veh"].a[k, f, c], v["pback_shr"]
+    agg = np.zeros(k.size, dtype=f32)
     for y in range(1, PBK_YR + 1):
-        if f32(y) * v["vmt_veh"][ivmt, iflt, c19] > life:
-            continue
-        if inc_cost * (ONE + tax) < npv[c19, jfuel, ivmt, y, iregn, iyr]:
-            buy[y] = v["pback_shr"][y, c19] * veh_shr
-    agg = ZERO
-    for y in range(1, PBK_YR + 1):
-        agg = agg + buy[y]
+        buy = (~(f32(y) * vv > life)) & (cost < npv[c, j, k, y - 1, r, y0])
+        agg = agg + np.where(buy, pb[y, c19] * veh_shr, ZERO)
     bf, ef = v["bfshxg"][isc4, jfuel, iflt], v["efshxg"][isc4, jfuel, iflt]
-    start, midyr, slope, adj = carry["start_curve"], carry["midyr_choice"], carry["slope_choice"], carry["midyr_adj"]
-    if agg >= bf and yrs >= v["trgshxg"][c19, jfuel, iflt]:
+    mpath = np.full(k.size, ONE)
+    on = (agg >= bf) & (yrs >= v["trgshxg"][c19, jfuel, iflt])
+    if on.any():
+        kk = k[on]
+        start, midyr, slope, adj = (carry[x].a for x in ("start_curve", "midyr_choice", "slope_choice", "midyr_adj"))
         cy = f32(v["cyafvxg"][isc4, jfuel, iflt])
-        if not start[c19, jfuel, iflt, ivmt]:
-            midyr[c19, jfuel, iflt, ivmt] = f32(yrs) * ONE + (ONE * cy / f32(2.0))
-            start[c19, jfuel, iflt, ivmt] = 1
-            slope[c19, jfuel, iflt, ivmt] = logf(f32(0.01)) / ((ONE * cy) / f32(2.0))
+        new = kk[start[c, j, f, kk] == 0]
+        midyr[c, j, f, new] = f32(yrs) * ONE + (ONE * cy / f32(2.0))
+        start[c, j, f, new] = 1
+        slope[c, j, f, new] = logf(f32(0.01)) / ((ONE * cy) / f32(2.0))
         itry = v.i("itryghg")
         c4 = int(v["p24map"][int(v["p219map"][c19])])
         if itry > 1 and jfuel >= 6 and not v["hdv_passghg"][iyr, c4]:
             if itry <= math.ceil(v["ghgtry"] / 2.0):
                 if jfuel in (11, 7, 8):
-                    adj[c19, jfuel, iflt, ivmt] = f32(itry) * f32(0.5)
+                    adj[c, j, f, kk] = f32(itry) * f32(0.5)
             elif jfuel not in (11, 7, 8):
-                adj[c19, jfuel, iflt, ivmt] = f32(itry) * f32(0.5)
-        mpath = bf + (ef - bf) / (ONE + (expf(slope[c19, jfuel, iflt, ivmt]
-                                                 * (ONE * f32(yrs) - (midyr[c19, jfuel, iflt, ivmt] - adj[c19, jfuel, iflt, ivmt])))))
-    else:
-        mpath = ONE
-    v["fuel_shr_ivmt"][iyr, ivmt, iflt, c19, jfuel, iregn] = agg * mpath
-    v["fuel_shr_regn"][iyr, c19, jfuel, iflt, iregn] = v["fuel_shr_regn"][iyr, c19, jfuel, iflt, iregn] + agg * mpath
+                adj[c, j, f, kk] = f32(itry) * f32(0.5)
+        mpath[on] = bf + (ef - bf) / (ONE + (expf(slope[c, j, f, kk]
+                                                  * (ONE * f32(yrs) - (midyr[c, j, f, kk] - adj[c, j, f, kk])))))
+    x = agg * mpath
+    v["fuel_shr_ivmt"].a[y0, k, f, c, j, r] = x
+    regn = v["fuel_shr_regn"]
+    regn[iyr, c19, jfuel, iflt, iregn] = np.add.accumulate(
+        np.concatenate(([regn[iyr, c19, jfuel, iflt, iregn]], x)).astype(f32), dtype=f32)[-1]
 
 
 def _avg5(a, r, iyr):
@@ -157,12 +161,15 @@ def truck_choice(s: dict, carry: dict) -> None:
                 shr_v[iyr, :, iflt, c19, :, iregn] = 0.0
 
                 def pbk_loop(cost, cpm_k, refuel, mr=mr_ice, base_cpm=base, need_cng=False):
-                    for ivmt in range(1, NVMT + 1):
-                        v["ivmt"] = ivmt
-                        if veh[ivmt, iflt, c19] > 0.0 and (not need_cng or v["pt_tanksize_cng"][ivmt, c19] != 9999.):
-                            ck = cpm_k(ivmt) if callable(cpm_k) else cpm_k
-                            rf = refuel(ivmt) if callable(refuel) else refuel
-                            truck_pbk(v, carry, cost(ivmt), vmt[ivmt, iflt, c19], ck, base_cpm, mr, veh[ivmt, iflt, c19], rf)
+                    vs = veh[VM, iflt, c19]
+                    ok = vs > 0.0
+                    if need_cng:
+                        ok &= v["pt_tanksize_cng"][VM, c19] != 9999.
+                    k = np.nonzero(ok)[0]
+                    if k.size:
+                        b = [int(x) + 1 for x in k]
+                        vec = lambda g: np.array([g(i) for i in b], dtype=f32) if callable(g) else g  # noqa: E731
+                        truck_pbk(v, carry, k, vec(cost), vmt[VM, iflt, c19][k], vec(cpm_k), base_cpm, mr, vs[k], vec(refuel))
                     v["ivmt"] = NVMT + 1
 
                 def clamp(floor_base):
