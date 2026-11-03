@@ -74,6 +74,11 @@ With EIA's settings the stub loop converges every year inside cb2026's limit; EI
 tolerance leaves the answer within 0.01% of a run to full convergence. The old loop
 (0.1% on prices, up to 20 passes) took 5 to 10 passes a year with a policy on.
 
+Default demand (ported residential and commercial), 2027-2050: 125 s with no policy, 116 s
+at $50/t, every year stable in 3 iterations. The old loop took 41 s with no policy (one
+pass a year); EIA's control always runs at least 3 iterations (untested first, then the
+pass that sets FCRL, then the final loop).
+
 With `elec="lp"` on cb2026, retail electricity prices come from the ported EFP by default
 (`default_elec_price`; the stand-in when EFP's oracle state is missing). Each loop
 iteration is one EFP iteration with the loop's CURITR and FCRL, so the final loop writes
