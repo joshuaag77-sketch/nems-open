@@ -40,7 +40,8 @@ SUMCHECK = [
     [64, 65], [66, 67, 68],
 ]
 
-SUMCHECK_IDX = [np.array(row) - 1 for row in SUMCHECK]
+# SUMCHECK rows as 0-based indexes, padded with -1 (a zero slot appended to the shares).
+SUMCHECK_PAD = np.array([[k - 1 for k in row] + [-1] * (max(map(len, SUMCHECK)) - len(row)) for row in SUMCHECK])
 
 RETD = [f32(x) for x in (0.000, 0.048, 0.096, 0.145, 0.193, 0.241, 0.289, 0.337, 0.385, 0.434,
                          0.482, 0.530, 0.578, 0.626, 0.674, 0.722, 0.771, 0.819, 0.869, 0.907,
@@ -441,11 +442,10 @@ def femcalc(s: dict) -> None:
                     tech_max_adjhp = tech_adjhp
 
                 # Label 1100: related-technology shares may not sum past 1.
-                cur = pen.a[igp - 1, icl - 1, :, CURRENT, ildv - 1]
-                for row in SUMCHECK_IDX:
-                    checksum = fsum(cur[row])
-                    if checksum > ONE + rnd:
-                        raise ValueError(f"TDM FEMCALC: STOP 702, related tech shares sum to {checksum}")
+                cur = np.append(pen.a[igp - 1, icl - 1, :, CURRENT, ildv - 1], ZERO)   # last slot: padding
+                sums = np.add.accumulate(cur[SUMCHECK_PAD], axis=1)[:, -1] + ZERO
+                if (sums > ONE + rnd).any():
+                    raise ValueError(f"TDM FEMCALC: STOP 702, related tech shares sum to {sums[np.argmax(sums > ONE + rnd)]}")
                 s["j"] = len(SUMCHECK[-1])
                 s["i"] = len(SUMCHECK) + 1
                 if yrs <= XYR:
