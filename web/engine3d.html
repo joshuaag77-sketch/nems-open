@@ -28,9 +28,13 @@
   .bar { position: fixed; left: 28px; bottom: 24px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   button { background: var(--match); color: #04342C; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
   button.ghost { background: transparent; color: var(--ink); border: 0.5px solid #5F5E5A; }
-  .status { font-size: 13px; color: var(--muted); min-width: 280px; }
+  .status { position: fixed; left: 28px; bottom: 74px; font-size: 12px; color: var(--dim); max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .legend { position: fixed; right: 28px; bottom: 24px; font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
   .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+  .yr { font-size: 13px; color: var(--muted); } .yr output { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #year { width: 160px; accent-color: var(--hub); }
+  .counter { position: fixed; left: 28px; bottom: 98px; font-size: 13px; color: var(--muted); max-width: 640px; line-height: 1.5; }
+  .counter b { color: var(--ink); font-weight: 500; } .counter .dimk { color: var(--dim); } .counter .gap { color: var(--hub); font-variant-numeric: tabular-nums; }
   .note { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); font-size: 11px; color: #5F5E5A; white-space: nowrap; }
   #err { position: fixed; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
 </style>
@@ -44,9 +48,13 @@
 <div class="cols" aria-hidden="true"><div style="left:16%">SWITCHES IN</div><div style="left:50%">ENGINE</div><div style="left:84%">NUMBERS OUT</div></div>
 <div id="panel" role="dialog" aria-live="polite"></div>
 <div class="bar">
+  <button id="play" type="button">Replay the reference run</button>
+  <label class="yr" for="year">Year <output id="year-out">2027</output></label>
+  <input id="year" type="range" min="2027" max="2050" step="1" value="2027" aria-label="Year to replay">
   <button class="ghost" id="reset" type="button">Reset view</button>
-  <div class="status" id="status"></div>
 </div>
+<div class="status" id="status" role="status"></div>
+<div class="counter" id="counter" aria-live="polite"></div>
 <div class="legend" id="legend"></div>
 <div class="note" id="note"></div>
 <div id="err"></div>

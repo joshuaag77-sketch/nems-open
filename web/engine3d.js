@@ -231,13 +231,92 @@
   });
   $("reset").addEventListener("click", home);
 
+  // ---- convergence replay (data/engine3d/runs.json, trace) --------------------------------
+  // Each pass of NEMS's integrating loop: the hub sends prices to the demand modules, gets
+  // quantities back, sends those to supply, gets prices back. Which modules ran, and how far
+  // prices and quantities still moved, come from the recorded run.
+  const T = RUNS.trace;
+  const RAN = {   // run_model's routine names -> engine modules
+    residential: ["residential"], commercial: ["commercial"], "residential (stub)": ["residential"],
+    "commercial (stub)": ["commercial"], "industrial (stub)": ["industrial"], "transportation (stub)": ["transportation"],
+    "supply stand-in": ["electricity", "natural_gas", "coal", "refining", "oil_gas_supply"],
+  };
+  const DEMAND_SIDE = new Set(["residential", "commercial", "industrial", "transportation"]);
+  const ranMods = (routines) => routines.flatMap((r) => (RAN[r] || []).map((k) => ({ key: k, real: !/stub|stand-in/.test(r) })));
+  const pulses = [];
+  const pulseGeo = new THREE.SphereGeometry(1, 10, 10);
+  function pulse(from, to, color, dur, size = 1.3, dim = false) {
+    const mesh = new THREE.Mesh(pulseGeo, new THREE.MeshBasicMaterial({ color, opacity: dim ? 0.55 : 1, ...additive }));
+    mesh.scale.setScalar(size);
+    scene.add(mesh); pulses.push({ mesh, from: from.clone(), to: to.clone(), t: 0, dur, dim });
+  }
+  const varName = Object.fromEntries(S.outputs.map((o) => [o.key, o.description]));
+  function worstText(w) {
+    const m = /^(\w+)\/(\w+)(?:, region (\d+))?/.exec(w || "");
+    if (!m) return w || "";
+    const key = `${m[1]}/${m[2]}`, d = varName[key];
+    return `${d ? d.toLowerCase() : key}${m[3] ? `, census division ${m[3]}` : ""} <span class="dimk">(${key})</span>`;
+  }
+  const pct = (x) => (100 * x < 0.01 ? (100 * x).toPrecision(2) : (100 * x).toFixed(2)) + "%";
+  let spin = 0.0006, playing = false, stopFlag = false;
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const yearEl = $("year"), yearOut = $("year-out"), counter = $("counter");
+  yearEl.min = Math.min(...Object.keys(T.convergence).map(Number)); yearEl.max = Math.max(...Object.keys(T.convergence).map(Number));
+  let calls = 0, passesDone = 0;
+  function hot(keys) { labels.forEach((el, i) => el.classList.toggle("hot", keys.includes(MODS[i].key))); }
+
+  async function replayYear(y, pace) {
+    const ps = T.convergence[String(y)] || [];
+    yearEl.value = y; yearOut.textContent = y;
+    const mods = ranMods(T.routines);
+    for (const p of ps) {
+      if (stopFlag) return;
+      // the hub spins with the largest price change still moving
+      spin = 0.0006 + 0.012 * Math.min(1, Math.log10(1 + p.dp * 1e4) / 3);
+      for (const side of [true, false]) {
+        const these = mods.filter((m) => DEMAND_SIDE.has(m.key) === side);
+        hot(these.map((m) => m.key));
+        these.forEach((m) => { const c = byKey[m.key]; pulse(hub, c.center, COLOR.hub, 320 * pace, m.real ? 1.4 : 1, !m.real); });
+        await sleep(330 * pace);
+        these.forEach((m) => { const c = byKey[m.key]; pulse(c.center, hub, c.color, 320 * pace, m.real ? 1.4 : 1, !m.real); });
+        calls += these.length;
+        await sleep(330 * pace);
+      }
+      passesDone += 1;
+      counter.innerHTML = `<b>${y}, pass ${p.itr} of ${ps.length}</b>${p.fcrl ? " (final reporting loop)" : ""}. ` +
+        `Largest price change <span class="gap">${pct(p.dp)}</span>: ${worstText(p.worst)}. ` +
+        `Quantities moved up to <span class="gap">${pct(p.dq)}</span>. ` +
+        (p.itr === 1 ? "The first pass is never tested. " : p.converged ? "Under NEMS's tolerance. " : "Not converged yet. ") +
+        `<br>${passesDone} passes and ${calls} module calls so far.`;
+    }
+    hot([]);
+    spin = 0.0006;
+  }
+  async function play() {
+    if (playing) { stopFlag = true; return; }
+    playing = true; stopFlag = false; controls.autoRotate = false; calls = 0; passesDone = 0;
+    $("play").textContent = "Stop";
+    $("status").textContent = `Replaying the recorded ${T.label.toLowerCase()} run (${T.model}), not live.`;
+    for (let y = +yearEl.value; y <= +yearEl.max && !stopFlag; y++) await replayYear(y, y === +yearEl.value ? 1.4 : 0.5);
+    playing = false; controls.autoRotate = true; $("play").textContent = "Replay the reference run"; hot([]); spin = 0.0006;
+  }
+  $("play").addEventListener("click", play);
+  yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
+  yearEl.addEventListener("change", () => { if (!playing) { calls = 0; passesDone = 0; replayYear(+yearEl.value, 1.2); } });
+
   // ---- loop -----------------------------------------------------------------------------
   function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
   addEventListener("resize", resize); resize();
   let last = performance.now();
   function tick(now) {
     const dt = now - last; last = now;
-    hubMesh.rotation.y += dt * 0.0006; hubMesh.rotation.x += dt * 0.0003;
+    hubMesh.rotation.y += dt * spin; hubMesh.rotation.x += dt * spin * 0.5;
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      const p = pulses[i]; p.t += dt / p.dur;
+      if (p.t >= 1) { scene.remove(p.mesh); p.mesh.material.dispose(); pulses.splice(i, 1); continue; }
+      p.mesh.position.lerpVectors(p.from, p.to, p.t);
+      p.mesh.material.opacity = (p.dim ? 0.55 : 1) * (1 - p.t * 0.6);
+    }
     controls.update(); renderer.render(scene, camera);
     MODS.forEach((m, i) => {
       const v = m.center.clone().add(V(0, m.radius, 0)).project(camera), el = labels[i];
