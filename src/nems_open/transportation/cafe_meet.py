@@ -11,15 +11,15 @@ numbers; kept as noted in SCOPE.md.
 
 import numpy as np
 
-from nems_open.transportation.cafe import C, CARGRP, CARS, G, GAS, L, LTKGRP, MAXCLASS, MAXGROUP, ONE, R9, TRKS
+from nems_open.transportation.cafe import C, CARGRP, G, GAS, L, LTKGRP, MAXCLASS, MAXGROUP, ONE, R9
 from nems_open.transportation.common import MAXLDV, MNUMCR, f32, fsum
-from nems_open.transportation.mean_funcs import harmonic_mean as hmean
 
 CAFEVEH = [6, 7, 15]          # PHEV50, EV200, EV300: the powertrains added to meet the rules
 CARCLS = [7, 8, 4, 3, 2, 5, 6, 1]
 TRKCLS = [7, 8, 2, 5, 6, 4, 3, 1]
 PAYB = 5
 MAXPASS = 15
+ZERO32 = f32(0.0)
 
 
 def rsort_small(s, a, idx):
@@ -57,24 +57,6 @@ def ghg_parts(s, igp, n, yrs):
     return k, ONE - evmt[igp, C, yrs, 5:6].T, k56, keep
 
 
-def group_ghg(s, igp, n, yrs, parts=None):
-    """One group's achieved GHG rate, as CAFECALC computes it. parts: ghg_parts(s, igp, n, yrs)."""
-    cafe = s["cafesales"]
-    k, omev, k56, keep = parts or ghg_parts(s, igp, n, yrs)
-    # Every (fuel, class) term at once, as (ILDV, ICL); the sum runs in the loop's order
-    # (ILDV outer, ICL inner) over the terms the loop counts.
-    sal = cafe[igp, C, yrs, L].T
-    with np.errstate(invalid="ignore", over="ignore"):
-        term = sal * k
-        term[4:6] = (sal[4:6] * omev) * k56
-    num = fsum(term[keep])
-    alt = [4, 7, 15, 14]
-    den = fsum(np.array([fsum(cafe[igp, C, yrs, k]) for k in alt], dtype=f32)
-               * (np.array([s["epaaltmult"][k, n] for k in alt], dtype=f32) - ONE))
-    s["epaghggrp"][igp, n] = num / (fsum(cafe[igp, C, yrs, L]) + den) - s["ac_co2_offset"][igp, n]
-    s.update(ildv=MAXLDV + 1, icl=MAXCLASS + 1)
-
-
 def _deltas(s, n, yrs):
     """Sales moved per step for each failing group and class (first call of a CAFE test pass)."""
     cafe, mpg, cpass = s["cafesales"], s["femmpg"], s["cafepass"]
@@ -107,6 +89,113 @@ def _deltas(s, n, yrs):
                 delta[jgp, icl] = step * deficit[jgp] / dtot * by[jgp, icl] / by_grp[jgp - 1]
     s["icl"] = MAXCLASS + 1
     s["first_time_cafetest"] = 0
+
+
+def _acc(a):
+    """fsum along the last axis for each row: one float32 accumulator in order, then +0."""
+    return np.add.accumulate(a, axis=-1, dtype=f32)[..., -1] + ZERO32
+
+
+def _hmean_rows(mpgs, weights, inv=None):
+    """harmonic_mean for each row of (steps, n) arrays (inv: 1/MPG minus credits, if given)."""
+    total = _acc(weights)
+    valid = (mpgs != 0.0) & (weights != 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        if inv is None:
+            inv = f32(1.0) / mpgs
+        num = _acc(np.where(valid, weights * inv, f32(0.0)).astype(f32))
+        out = np.where(num == 0.0, f32(0.0), total / num)
+    return np.where(total == 0.0, f32(0.0), out).astype(f32)
+
+
+def _meet_steps(s, igp, n, yrs, epa, ycl, xldv, cv, inv_c, parts, by_cl, tot_cl, by_ldv, tot_ldv):
+    """CAFEGHG_MEET's MAXPASS steps for one class and powertrain, all at once. Each step moves
+    DELTA sales from gasoline to XLDV (undone, and the last step, once gasoline would go to
+    zero); the state after step p depends only on p, so every step's tests are computed as
+    arrays with the loop's sums in its order, and the first step that passes is the one kept.
+    Returns (done, stop_gas) as the loop leaves them."""
+    g0, y0, x0 = igp - 1, ycl - 1, xldv - 1
+    cafe, cmg, mg, newmpg = s["cafesales"], s["cafempggrp"], s["mgghggrp"], s["newmpg"]
+    fpg, epag, cpass = s["fpghggrp"], s["epaghggrp"], s["cafepass"]
+    dl = s["_cafeghg_delta"][igp, ycl]
+    c1, cx = cv[g0, y0, 0], cv[g0, y0, x0]
+    c1s, cxs, stops = [], [], []
+    stop_gas = 0
+    for _ in range(MAXPASS):
+        c1, cx = c1 - dl, cx + dl
+        if c1 <= 0.0:
+            c1, cx, stop_gas = c1 + dl, cx - dl, 1
+        c1s.append(c1), cxs.append(cx), stops.append(stop_gas)
+        if stop_gas:
+            break
+    P = len(c1s)
+    w = np.repeat(cv[g0][None], P, axis=0)                       # (step, class, powertrain)
+    w[:, y0, 0], w[:, y0, x0] = c1s, cxs
+    wf = np.transpose(w, (0, 2, 1)).reshape(P, -1)                 # Fortran order of each (class, powertrain)
+    cmg_p = _hmean_rows(np.broadcast_to(np.transpose(inv_c[0]).reshape(-1), wf.shape), wf,
+                        np.broadcast_to(np.transpose(inv_c[1]).reshape(-1), wf.shape))
+    # GROUP_GHG for each step
+    k, omev, k56, keep = parts
+    wt = np.transpose(w, (0, 2, 1))                                # (step, powertrain, class)
+    with np.errstate(invalid="ignore", over="ignore"):
+        term = wt * k
+        term[:, 4:6] = (wt[:, 4:6] * omev) * k56
+    num = _acc(term[:, keep])
+    alt = [4, 7, 15, 14]
+    cols = np.stack([_acc(w[:, :, a - 1]) for a in alt], axis=1)
+    den = _acc(cols * (np.array([s["epaaltmult"][a, n] for a in alt], dtype=f32) - ONE))
+    total = _acc(wf)
+    epag_p = num / (total + den) - s["ac_co2_offset"][igp, n]
+    # Group sales totals with this group's row redone
+    bycl = np.repeat(by_cl[g0][None], P, axis=0)
+    bycl[:, y0] = _acc(w[:, y0, :])
+    totcl = _acc(bycl)
+    byldv = np.add.accumulate(w, axis=1, dtype=f32)[:, -1, :] + ZERO32
+    totldv = _acc(byldv)
+    life = np.where(np.arange(1, MAXGROUP + 1) <= CARGRP, f32(195264.0), f32(225865.0))
+    fp_, ep = fpg[G, n].copy(), np.repeat(epag[G, n][None], P, axis=0)
+    ep[:, g0] = epag_p
+    tc = np.repeat(tot_cl[None], P, axis=0)
+    tc[:, g0] = totcl
+    mgm = (fp_ - ep) * tc * life                                   # (step, group)
+    cm = np.repeat(cmg[G, n][None], P, axis=0)
+    cm[:, g0] = cmg_p
+    tl = np.repeat(tot_ldv[None], P, axis=0)
+    tl[:, g0] = totldv
+    if yrs > epa:
+        nm1 = _hmean_rows(cm[:, :CARGRP], tl[:, :CARGRP])
+        nm2 = _hmean_rows(cm[:, LTKGRP - 1:], tl[:, LTKGRP - 1:])
+        nm3 = _hmean_rows(cm, tl)
+    else:
+        nm1, nm2, nm3 = (np.full(P, newmpg[i, n]) for i in (1, 2, 3))
+    std, used = s["cafestd"], s["cafe_used"]
+    cafe_ok = ((cmg_p >= used[igp, yrs])
+               | ((nm3 > std[3, n]) & ((nm1 - std[1, n]) > -2.0) & ((nm2 - std[2, n]) > -2.0))
+               | (int(s["enforce_cafe"]) == 0))
+    tot = _acc(mgm)
+    mine = mgm[:, g0]
+    if int(s["enforce_epa"]) == 0:
+        kind = np.where(cafe_ok, 1, 0)
+    else:
+        all_ok = (tot > 0.0) | (tot + s["creds_avail"] > 0.0)
+        own_ok = (mine > 0.0) | (mine + s["creds_avail_grp"][igp] > 0.0)
+        kind = np.where(cafe_ok & all_ok, 2, np.where(cafe_ok & own_ok, 1, 0))
+    hit = np.nonzero(kind)[0]
+    q = int(hit[0]) if hit.size else P - 1
+    # The state the loop leaves: the cells, totals and tests of step q
+    cafe[igp, ycl, yrs, 1], cafe[igp, ycl, yrs, xldv] = c1s[q], cxs[q]
+    by_cl[g0, y0], tot_cl[g0], by_ldv[g0], tot_ldv[g0] = bycl[q, y0], totcl[q], byldv[q], totldv[q]
+    cmg[igp, n], epag[igp, n] = cmg_p[q], epag_p[q]
+    s.update(ildv=MAXLDV + 1, icl=MAXCLASS + 1)
+    mg[G, n] = mgm[q]
+    if yrs > epa:
+        newmpg[1, n], newmpg[2, n], newmpg[3, n] = nm1[q], nm2[q], nm3[q]
+    if hit.size:
+        if kind[q] == 2:
+            cpass[G] = 1
+        else:
+            cpass[igp] = 1
+    return bool(hit.size), stops[q]
 
 
 def cafeghg_meet(s: dict) -> None:
@@ -152,6 +241,8 @@ def cafeghg_meet(s: dict) -> None:
     mpgmult = mpg[igp, C, yrs, L] * s["cafepefmult_expanded"][igp, C, L, n]
     credv = cred[igp, C, L, n]
     parts = ghg_parts(s, igp, n, yrs)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        inv_c = (mpgmult, (f32(1.0) / mpgmult) - credv)          # HARMONIC_MEAN's 1/MPG less credits
     # Group sales totals in both orders the Fortran sums them (powertrain then class, and class
     # then powertrain). A step changes one group's sales, so only that group's are redone.
     by_cl = fsum(cv, axis=2)
@@ -169,43 +260,7 @@ def cafeghg_meet(s: dict) -> None:
         for xldv in order[ycl]:
             if not fsum(avail[igp, xldv, ycl, R9, yrs]) > 0.0:
                 continue
-            stop_gas = 0
-            for _ in range(MAXPASS):
-                if stop_gas == 0:
-                    dl = delta[igp, ycl]
-                    cafe[igp, ycl, yrs, 1] = cafe[igp, ycl, yrs, 1] - dl
-                    cafe[igp, ycl, yrs, xldv] = cafe[igp, ycl, yrs, xldv] + dl
-                    if cafe[igp, ycl, yrs, 1] <= 0.0:
-                        cafe[igp, ycl, yrs, 1] = cafe[igp, ycl, yrs, 1] + dl
-                        cafe[igp, ycl, yrs, xldv] = cafe[igp, ycl, yrs, xldv] - dl
-                        stop_gas = 1
-                    by_cl[g0, ycl - 1] = fsum(cv[g0, ycl - 1])
-                    tot_cl[g0] = fsum(by_cl[g0])
-                    by_ldv[g0] = fsum(cv[g0], axis=0)
-                    tot_ldv[g0] = fsum(by_ldv[g0])
-                cmg[igp, n] = hmean(mpgmult, cv[igp - 1], credv)
-                group_ghg(s, igp, n, yrs, parts)
-                # EIA quirk: lifetime miles are hard-coded here, not LDV_VEHLIFEMI as in CAFECALC.
-                mg[CARS, n] = (fpg[CARS, n] - epag[CARS, n]) * tot_cl[:CARGRP] * f32(195264.0)
-                mg[TRKS, n] = (fpg[TRKS, n] - epag[TRKS, n]) * tot_cl[LTKGRP - 1:] * f32(225865.0)
-                if yrs > epa:
-                    newmpg[1, n] = hmean(cmg[CARS, n], tot_ldv[:CARGRP])
-                    newmpg[2, n] = hmean(cmg[TRKS, n], tot_ldv[LTKGRP - 1:])
-                    newmpg[3, n] = hmean(cmg[G, n], tot_ldv)
-                if (cmg[igp, n] >= used[igp, yrs]
-                        or (newmpg[3, n] > std[3, n] and (newmpg[1, n] - std[1, n]) > -2.0 and (newmpg[2, n] - std[2, n]) > -2.0)
-                        or int(s["enforce_cafe"]) == 0):
-                    tot = fsum(mg[G, n])
-                    if int(s["enforce_epa"]) == 0:
-                        cpass[igp], done = 1, True
-                    elif tot > 0.0 or tot + s["creds_avail"] > 0.0:
-                        cpass[G], done = 1, True
-                    elif mg[igp, n] > 0.0 or mg[igp, n] + s["creds_avail_grp"][igp] > 0.0:
-                        cpass[igp], done = 1, True
-                    if done:
-                        break
-                if stop_gas == 1:
-                    break
+            done, stop_gas = _meet_steps(s, igp, n, yrs, epa, ycl, xldv, cv, inv_c, parts, by_cl, tot_cl, by_ldv, tot_ldv)
             if done or stop_gas == 1:
                 break
 

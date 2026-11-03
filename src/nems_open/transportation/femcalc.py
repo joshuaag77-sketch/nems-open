@@ -123,8 +123,28 @@ def _funcmax_v(oldmksh, oldpmax):
     return np.where(one, ONE, res).astype(f32), np.where(one, 0, ival)
 
 
+def _class_free(s, igp, ivtyp, ildv, numtech, yrs, ap):
+    """The parts of _tech_loop that do not depend on the class: the technologies that count,
+    their fuel economy gain, cost before the weight term, and learning factors. None: no
+    technology counts."""
+    T = slice(1, numtech)
+    fr = s["frstyear"][T, igp]
+    on = ap & (yrs >= fr)
+    if not on.any():
+        return None
+    dwa, dww, dcw = s["del_wgtabs"][T, ivtyp][on], s["del_wgtwgt"][T, ivtyp][on], s["del_costwgt"][T, ivtyp][on]
+    tc0 = s["del_costabs"][T, ivtyp][on] + ((dcw * dwa) * np.copysign(ONE, dwa))
+    ly = np.where(fr[on] < 2011, f32(2011), fr[on].astype(f32))
+    ym = ((f32(yrs) - ly) + ONE).astype(np.int64)
+    learn = s["coeff_learn"]
+    g = np.clip(ym, 1, learn.a.shape[0])
+    l2 = np.where(ym >= 1, ONE + (s["coeff_lrn1"][T, ivtyp][on] * learn.a[g - 1, 0]), ONE)
+    l3 = np.where(ym >= 1, ONE + (s["coeff_lrn2"][T, ivtyp][on] * learn.a[g - 1, 1]), ONE)
+    return np.nonzero(on)[0], s["del_fe"][T, ivtyp][on], tc0, (dcw * dww) * np.copysign(ONE, dww), l2, l3, ym
+
+
 def _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payback, discount, pslope, f1,
-               inc_gr, invgr):
+               inc_gr, invgr, cache):
     """FEMCALC's first technology loop (cost-effectiveness and logit shares), all technologies at
     once. Each technology's values depend only on its own inputs, so the float32 steps are the
     scalar loop's, element by element; the module variables it leaves (ITECH, I, YEARS_MKTD,
@@ -137,13 +157,14 @@ def _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payb
         op[icl, igp, T, ildv, 1] = np.where(ap, op[icl, igp, T, ildv, 2], op[icl, igp, T, ildv, 1])
     elif fem_pass == 1:
         op[icl, igp, T, ildv, 2] = np.where(ap, op[icl, igp, T, ildv, 1], op[icl, igp, T, ildv, 2])
-    fr = s["frstyear"][T, igp]
-    on = ap & (yrs >= fr)
-    if not on.any():
+    key = (igp, ildv)
+    if key not in cache:
+        cache[key] = _class_free(s, igp, ivtyp, ildv, numtech, yrs, ap)
+    pre = cache[key]
+    if pre is None:
         s["itech"] = numtech + 1
         return
-    techs = np.nonzero(on)[0]           # 0-based: technology techs + 1
-    dfe = s["del_fe"][T, ivtyp][on]
+    techs, dfe, tc0, dcw_dww_sign, l2, l3, ym = pre
     fuelsave = s["fuelsave"]
     if cfe > 0.0:
         savings = cfe_inv - (ONE / ((ONE + dfe) * cfe))
@@ -156,16 +177,7 @@ def _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payb
         fuelsave.a[techs] = fs
         s["i"] = payback + 1
     fs = fuelsave.a[techs]
-    dwa, dww, dcw = s["del_wgtabs"][T, ivtyp][on], s["del_wgtwgt"][T, ivtyp][on], s["del_costwgt"][T, ivtyp][on]
-    tc = s["del_costabs"][T, ivtyp][on]
-    tc = tc + ((dcw * dwa) * np.copysign(ONE, dwa))
-    tc = tc + (((dcw * dww) * np.copysign(ONE, dww)) * s["weight"][igp, icl, CURRENT, ildv])
-    ly = np.where(fr[on] < 2011, f32(2011), fr[on].astype(f32))
-    ym = ((f32(yrs) - ly) + ONE).astype(np.int64)
-    learn = s["coeff_learn"]
-    g = np.clip(ym, 1, learn.a.shape[0])
-    l2 = np.where(ym >= 1, ONE + (s["coeff_lrn1"][T, ivtyp][on] * learn.a[g - 1, 0]), ONE)
-    l3 = np.where(ym >= 1, ONE + (s["coeff_lrn2"][T, ivtyp][on] * learn.a[g - 1, 1]), ONE)
+    tc = tc0 + (dcw_dww_sign * s["weight"][igp, icl, CURRENT, ildv])
     tc = np.where(tc > 0.0, ((tc * l2) * l3), tc).astype(f32)
     ge = np.nonzero(tc >= 0.0)[0]
     if ge.size:
@@ -179,7 +191,7 @@ def _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payb
     s["tec_ornl"].a[icl - 1, igp - 1, techs, ildv - 1] = tc
     if cfe != 0.0:
         a = (s["valueperf"][icl, igp] * perf_coeff) * inc_gr
-        vp = (((a * (ONE + dfe)) * invgr) * s["del_hp"][T, ivtyp][on]).astype(f32)
+        vp = (((a * (ONE + dfe)) * invgr) * s["del_hp"][T, ivtyp][techs]).astype(f32)
     else:
         vp = np.zeros(techs.size, dtype=f32)
     s["val_perf"].a[techs] = vp
@@ -281,6 +293,7 @@ def femcalc(s: dict) -> None:
     num_man, num_req, num_syn = int(s["num_man"]), int(s["num_req"]), int(s["num_syn"])
     syn_loss = s.setdefault("_femcalc_synergy_loss", np.zeros(numtech + 1, dtype=f32))
     sup_list = sorted(_sup_notes(s).items())
+    class_free = {}     # _tech_loop's class-free parts by (group, powertrain), for this call
 
     for ildv in range(1, MAXLDV + 1):
         s["ildv"] = ildv
@@ -330,7 +343,7 @@ def femcalc(s: dict) -> None:
                     cfe_inv = ONE / cfe if cfe > 0.0 else ZERO
 
                     _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payback, discount,
-                               pslope, f1, inc_gr, invgr)
+                               pslope, f1, inc_gr, invgr, class_free)
 
                     if num_man == 0:
                         # NOTE_SUPER for the technologies with supersede notes (the only ones it

@@ -266,19 +266,20 @@ def truck_ghgzev(s: dict) -> None:
                     v["ifuel"] = ZEV_MAP[-1]
                 v["ivmt"] = NVMT_ + 1
 
+    # New sales by fuel from the shares, every region, fleet and class at once. Fuel by fuel in
+    # order: each fuel's total includes the fuels already rescaled, as in the Fortran.
     sc19 = v["sc19map"]
-    for iregn in range(1, MNUMCR - 1):
-        for iflt in (1, 2):
-            for c19 in range(1, CAFE19 + 1):
-                v["isc4"] = int(sc19[c19])
-                for ifuel in range(1, FUEL12 + 1):
-                    shr_r[iyr, c19, ifuel, iflt, iregn] = 0.0
-                    t = fsum(stk[iyr, c19, 1, :, iflt, iregn])
-                    if t > 0.0:
-                        shr_r[iyr, c19, ifuel, iflt, iregn] = fsum(shr_v[iyr, :, iflt, c19, ifuel, iregn])
-                    stk[iyr, c19, 1, ifuel, iflt, iregn] = shr_r[iyr, c19, ifuel, iflt, iregn] * fsum(stk[iyr, c19, 1, :, iflt, iregn])
-                    if iregn == MNUMCR - 2:
-                        stk[iyr, c19, 1, ifuel, iflt, MNUMCR] = fsum(stk[iyr, c19, 1, ifuel, iflt, 1:MNUMCR - 2])
+    v["isc4"] = int(sc19[CAFE19])
+    y0, NR = iyr - 1, MNUMCR - 2
+    S = stk.a[y0, :, 0, :, :, :NR]                                   # view: [c19, fuel, flt, regn]
+    sv = np.add.accumulate(shr_v.a[y0, :, :, :, :, :NR], axis=0, dtype=f32)[-1] + ZERO   # [flt, c19, fuel, regn]
+    sv = np.transpose(sv, (1, 2, 0, 3))                              # [c19, fuel, flt, regn]
+    for f in range(FUEL12):
+        tot_f = np.add.accumulate(S, axis=1, dtype=f32)[:, -1] + ZERO   # [c19, flt, regn]
+        sr = np.where(tot_f > 0.0, sv[:, f], ZERO)
+        shr_r.a[y0, :, f, :, :NR] = sr
+        S[:, f] = sr * tot_f
+    stk.a[y0, :, 0, :, :, MNUMCR - 1] = np.add.accumulate(S, axis=3, dtype=f32)[..., -1] + ZERO
     v.s.update({v.key("iregn"): MNUMCR - 1, v.key("iflt"): 3, v.key("icafe19"): CAFE19 + 1, v.key("ifuel"): FUEL12 + 1})
     for c4 in range(1, CAFE4 + 1):
         if not passed[iyr, c4]:
