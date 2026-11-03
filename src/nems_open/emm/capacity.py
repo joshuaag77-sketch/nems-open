@@ -38,6 +38,10 @@ RULE_YEAR = 2032                 # coal without CCS must retire from this year
 RETROFIT_LIMIT_GW = 3.0          # national CCS retrofits per year (UPCQMAX in ecpdaty.xlsx)
 RETROFIT_MIN_MW = 500.0          # smallest unit that can be retrofitted (UPCCSCAP)
 RETROFIT_MAX_HEAT_RATE = 12000.0 # least efficient unit that can be retrofitted (UPCCSHRT)
+# Coal-to-gas conversion (emmcntl.txt %CL_to_NG%, allowed since 2014): fixed O&M x0.67, variable O&M x0.75, heat rate +5%.
+# The conversion cost is an assumption, not EIA data: 100 1987$/kW (about 230 2024$/kW, the range EPA cites).
+CONVERT_FOM_ADJ, CONVERT_VOM_ADJ, CONVERT_HR_PENALTY = 0.67, 0.75, 0.05
+CONVERT_COST_KW = 100.0
 RESERVE_SHORTFALL_COST = 2.0e5  # k$ per GW-year, about 200 1987$/kW-year, for missing the reserve margin
 REAL_DISCOUNT_RATE = 0.065       # assumption: real cost of capital for new plants
 # How fast the industry can build. An assumption, not EIA data: ecpdaty.xlsx sets no annual limit (999.9)
@@ -50,7 +54,7 @@ CCS_CAPACITY_FACTOR = 0.8        # assumed, to value the credit when deciding to
 BLOCK_HOURS = 3
 BLOCKS = 24 // BLOCK_HOURS
 
-TG = ("coal", "coal_ccs", "gas_cc", "gas_cc_new", "gas_ccs", "gas_ct", "gas_ct_new", "steam")
+TG = ("coal", "coal_ccs", "gas_cc", "gas_cc_new", "gas_ccs", "gas_ct", "gas_ct_new", "steam", "gas_conv")
 BASE_OF = {"gas_cc_new": "gas_cc", "gas_ct_new": "gas_ct"}      # inherits fuel, outage and limits
 FIXED = ("nuclear", "hydro", "other", "pumped")
 STATE_GROUPS = TG + FIXED + ("wind", "solar", "battery")
@@ -92,6 +96,7 @@ class YearResult:
     unserved_twh: float = 0.0
     reserve_shortfall_gw: float = 0.0
     credits: dict = field(default_factory=dict)
+    converted: np.ndarray = field(default_factory=lambda: np.zeros(NUM_R))     # GW coal moved to gas
 
 
 def max_retirement_rate(year: int) -> float:
@@ -123,6 +128,7 @@ def initial_capacity(snapshot, year_before: int) -> dict:
     y = year_before - history.FIRST_YEAR
     cap = {g: dispatch._ucap(snapshot, p, y) for g, p in dispatch.CAPACITY_PREFIXES.items()}
     cap["coal"] = np.maximum(cap["coal"] - cap["coal_ccs"], 0.0)
+    cap["gas_conv"] = np.zeros(NUM_R)
     cap["gas_cc_new"] = np.zeros(NUM_R)
     cap["gas_ct_new"] = np.zeros(NUM_R)
     return {g: cap[g] for g in STATE_GROUPS}
@@ -231,6 +237,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         vom[g] = np.full(NUM_R, float(params["vom"][i]))
         oil_share[g] = np.zeros(NUM_R)
         avail[g] = avail[base]
+    heat["gas_conv"] = heat["coal"] * (1.0 + CONVERT_HR_PENALTY)
+    vom["gas_conv"] = vom["coal"] * CONVERT_VOM_ADJ
+    oil_share["gas_conv"] = np.zeros(NUM_R)
+    avail["gas_conv"] = avail["coal"]
     heat["gas_ccs"] = np.full(NUM_R, float(hr_new_all[codes.index("CS")]))
     vom["gas_ccs"] = np.full(NUM_R, float(params["vom"][codes.index("CS")]))
     max_cf = {g: np.full(NUM_R, avail[g][1]) for g in TG}
@@ -290,12 +300,14 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     bw = m.add_variables(lower=0, upper=room, coords=[R], name="build_wind")
     bs = m.add_variables(lower=0, upper=room, coords=[R], name="build_solar")
     bb = m.add_variables(lower=0, upper=room, coords=[R], name="build_battery")
+    convert = m.add_variables(lower=0, upper=xr.DataArray(cap0["coal"] * (year >= START_YEAR), coords=[R]), name="convert")
     m.add_constraints(retrofit.sum() <= RETROFIT_LIMIT_GW, name="retrofit_limit")
     m.add_constraints(bw.sum() <= ANNUAL_BUILD_LIMIT_GW["wind"], name="limit_build_wind")
     m.add_constraints(bs.sum() <= ANNUAL_BUILD_LIMIT_GW["solar"], name="limit_build_solar")
     m.add_constraints(bb.sum() <= ANNUAL_BUILD_LIMIT_GW["battery"], name="limit_build_battery")
     to_ccs = xr.DataArray(np.array([1.0 if g == "coal_ccs" else (-1.0 if g == "coal" else 0.0) for g in TG]), coords=[T])
-    cap_th = cap_const + build - retire + retrofit * to_ccs
+    to_gas = xr.DataArray(np.array([1.0 if g == "gas_conv" else (-1.0 if g == "coal" else 0.0) for g in TG]), coords=[T])
+    cap_th = cap_const + build - retire + retrofit * to_ccs + convert * to_gas
     for g, limit in ANNUAL_BUILD_LIMIT_GW.items():
         if g in TG:
             m.add_constraints(build.sel(group=g).sum() <= limit, name=f"limit_build_{g}")
@@ -305,7 +317,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     region_total = xr.DataArray(sum(cap0[g] for g in STATE_GROUPS), coords=[R])
     econ = retire.sel(group=[g for g in TG if g != "coal"]).sum("group")
     if year < RULE_YEAR:
-        econ = econ + retire.sel(group="coal")
+        econ = econ + retire.sel(group="coal") + convert
     m.add_constraints(econ <= rate * region_total, name="retirement_rate")
     capv = m.add_variables(lower=0, coords=[R, T], name="capacity")
     m.add_constraints(capv - cap_th == 0, name="capacity_def")
@@ -386,6 +398,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     capex = capex + (bb * xr.DataArray(capital["battery"], coords=[R])).sum()
     saved = (retire * xr.DataArray(np.stack([fom_exist.get(g, np.zeros(NUM_R)) for g in TG], axis=1), coords=[R, T])).sum()
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
+    conv_cost = CONVERT_COST_KW * _crf(REAL_DISCOUNT_RATE, 20.0) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
+    retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
     operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
         + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum()
     m.add_objective(operating + capex - saved + retro + shortfall * RESERVE_SHORTFALL_COST)
@@ -399,6 +413,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     bld = sol(build)
     ret = sol(retire)
     rf = sol(retrofit)
+    cv = sol(convert)
     builds = {g: np.zeros(NUM_R) for g in STATE_GROUPS}
     econ = {g: np.zeros(NUM_R) for g in STATE_GROUPS}
     for k, g in enumerate(TG):
@@ -408,9 +423,12 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     cap_out = {g: cap0[g] + builds[g] - econ[g] for g in STATE_GROUPS}
     cap_out["coal"] = cap_out["coal"] - rf
     cap_out["coal_ccs"] = cap_out["coal_ccs"] + rf
+    cap_out["coal"] = cap_out["coal"] - cv
+    cap_out["gas_conv"] = cap_out["gas_conv"] + cv
     for g in cap_out:
         cap_out[g] = np.maximum(cap_out[g], 0.0)
     out.capacity, out.builds, out.economic_retire, out.retrofit = cap_out, builds, econ, rf
+    out.converted = cv
     w = case.weights[None, :, None] * BLOCK_HOURS
     gth = np.asarray(g_th.solution.transpose("region", "group", "day", "block").values)
     out.generation_twh = {g: (gth[:, k] * w).sum(axis=(1, 2)) / 1000.0 for k, g in enumerate(TG)}
