@@ -37,3 +37,8 @@ The 27 skipped tests need the EIA checkout (`nems-upstream/`, about 1 GB, git-ig
 | Power CO2 | -2% | 0% | -5% | -9% |
 
 4 of 28 scored cells miss (5 before; the 2030 and 2040 gas generation misses went with the demand fix). The 2025 gas fuel and renewables misses and the 2040 coal miss are unchanged.
+
+## Addendum, 2026-11-03: 2025 renewables
+The 2025 renewables miss (+11%) is EIA's Short-Term Energy Outlook benchmark, not a capacity or timing error. `emmcntl.txt` sets `USW_OVER` and the benchmark tolerances (`BMCLTOL` and friends), and `steo_benchmark_emm.csv` lists the series held to the Outlook within 2.001%: coal, gas, nuclear, hydro, wind and solar generation. `steovars.csv` has the Outlook values through 2027 (wind 461, 484, 514 TWh; hydro 243, 261, 271; coal 720, 686, 677). The restart's wind and solar capacity with WRENEW's profiles gives 505 and 321 TWh in 2025.
+
+I did not rebuild the benchmark rows (their series mix utility and small-scale generation differently from the restart's arrays). As a stand-in, units in the plant file that were running by 2024 keep their plant-file capacity factor (wind 34.6%, solar about 20%, with WRENEW's hourly shape) through 2026, fading out by 2029; new capacity uses WRENEW's profiles. 2025 renewables: +3% (was +11%); 2030 to 2050 unchanged within 1%. The extra coal and less gas that follow: 2025 coal fuel is +12% (now a flagged miss), gas fuel is -8% (no longer a miss). Dispatch misses: 3 of 28.

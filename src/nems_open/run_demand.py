@@ -8,8 +8,9 @@ overrides) and the modules respond; leave it alone and they reproduce EIA.
 
 How a year runs: each module starts from the oracle's state at the top of that
 year's final NEMS iteration (its input tables and its own history before that
-year; the file readers are not all ported yet), every input array is
-overwritten from `Inputs`, and the module's chain runs once. `DemandRunner`
+year; residential starts from its input files instead where there is no
+dump), every input array is overwritten from `Inputs`, and the module's chain
+runs once. `DemandRunner`
 can then keep going year by year, two iterations a year, carrying each
 module's state the way the Fortran does.
 
@@ -18,10 +19,11 @@ After the modules run, `sum_quantities` does the part of NEMS's SUMQAS
 the nine census divisions, California as a share of the Pacific division, and
 each sector's petroleum, renewable and total rows (QTP, QTR, QTS).
 
-Transportation is not ported yet: its QBLK arrays keep EIA's values. Industrial is
-a slot (`IndustrialSector`): asked for by name, it supplies the industrial oracle's
-fuel use until IND's year loop is ported. To add a sector, write a class like
-`ResidentialSector` (available, start, iteration, quantities) and put it in SECTORS.
+Transportation is ported (`TransportationSector`, about a minute and a half per
+iteration) and runs when asked for. Industrial is a slot (`IndustrialSector`): asked
+for by name, it supplies the industrial oracle's fuel use until IND's year loop is
+ported. To add a sector, write a class like `ResidentialSector` (available, start,
+iteration, quantities) and put it in SECTORS.
 
     python -m nems_open.run_demand 2030
 """
@@ -35,6 +37,7 @@ from nems_open.snapshot import Snapshot
 
 BASEYR = 1990
 MNUMCR = 11
+BASEYR_COMMERCIAL = 2019  # the first year commercial computes
 MSEDYR = 34  # last year of SEDS history (2023)
 
 # Restart-file blocks the demand modules read but do not write: end-use prices
@@ -101,13 +104,27 @@ class ResidentialSector:
 
     @staticmethod
     def available(year: int) -> bool:
+        """Any year from 2021: from the oracle's dump where there is one, else from the files."""
+        return year > 2020
+
+    @staticmethod
+    def dumped(year: int) -> bool:
         """Whether the oracle dumped the state this module starts from in that year."""
         from nems_open import oracle_state
         return oracle_state.available("yb_in", year - BASEYR + 1, "resd")
 
-    def start(self, year: int):
+    def start(self, year: int, inputs: Inputs | None = None):
+        """The state at the top of year's final iteration: the oracle's dump, or with no dump,
+        the input files run from 2020 through year's first iteration (about 2 s a year)."""
         from nems_open.residential import resd
-        return resd.start_from_dump(year - BASEYR + 1)
+        if self.dumped(year):
+            return resd.start_from_dump(year - BASEYR + 1)
+        inputs = inputs or Inputs()
+        s = resd.start_from_files(inputs)
+        for y in range(2021, year + 1):
+            for itr in ((1, 2) if y < year else (1,)):
+                self.iteration(s, y, itr, inputs)
+        return s
 
     def iteration(self, s, year: int, itr: int, inputs: Inputs) -> None:
         from nems_open.residential import resd
@@ -128,14 +145,32 @@ class CommercialSector:
     name = "commercial"
     suffix = "cm"
 
+    def __init__(self, from_files: bool = False, levers=None):
+        self.from_files = from_files
+        self.levers = levers            # commercial.levers.CommercialLevers; implies from_files
+
     @staticmethod
     def available(year: int) -> bool:
-        from nems_open import oracle_state
-        return oracle_state.available("sd_in", year - BASEYR + 1)
+        """Always: with no oracle dump for the year, commercial starts from the input files."""
+        return True
 
-    def start(self, year: int):
+    def start(self, year: int, inputs=None):
+        """The state at the top of `year`. From the oracle's dump when there is one (and no lever or
+        from_files asks otherwise); else from the input files, run forward from 2019 with this runner's
+        inputs, which takes about 4 s a year. A file start has not run `year` yet, so the runner
+        gives it both iterations."""
+        from nems_open import oracle_state
         from nems_open.commercial.comm import Commercial
-        return Commercial.start_from_dump(year - BASEYR + 1)
+        y = year - BASEYR + 1
+        if not (self.from_files or self.levers) and oracle_state.available("sd_in", y):
+            return Commercial.start_from_dump(y)
+        inputs = inputs or Inputs()
+        c = Commercial.start_from_files(inputs, self.levers)
+        for yy in range(BASEYR_COMMERCIAL, year):
+            for itr in (1, 2):
+                self.iteration(c, yy, itr, inputs)
+        c.needs_first_iteration = True
+        return c
 
     def iteration(self, c, year: int, itr: int, inputs: Inputs) -> None:
         inputs.apply(c.s)
@@ -176,7 +211,7 @@ class IndustrialSector:
     def available(cls, year: int) -> bool:
         return cls.oracle_out() is not None
 
-    def start(self, year: int) -> dict:
+    def start(self, year: int, inputs=None) -> dict:
         d = self.oracle_out()
         if d is None:
             raise FileNotFoundError("industrial oracle output not found (oracle/run_ind/out/q*in.bin)")
@@ -193,6 +228,171 @@ class IndustrialSector:
         return rows
 
 
+class InProcess:
+    """A sector run in a worker process, so it can run while the next sector runs here.
+
+    Same calls as the sector (iteration, quantities) on a handle; iteration() only sends
+    the work, quantities() waits for it. The worker holds the sector's state and its own
+    copy of the restart file; each iteration it gets the caller's input overrides."""
+
+    def __init__(self, name: str, year: int, snapshot_path, ev_share: dict | None = None):
+        import multiprocessing as mp
+        ctx = mp.get_context("spawn")
+        self.conn, child = ctx.Pipe()
+        self.proc = ctx.Process(target=_sector_worker, args=(child, name, year, str(snapshot_path), ev_share),
+                                daemon=True)
+        # The worker needs only this package. Hide the caller's script from the spawn, which
+        # would otherwise re-run its top level in the worker (a script with no main guard
+        # would start a second run there).
+        main = sys.modules["__main__"]
+        saved = {k: main.__dict__[k] for k in ("__file__", "__spec__") if k in main.__dict__}
+        main.__dict__.pop("__file__", None)
+        main.__spec__ = None
+        try:
+            self.proc.start()
+        finally:
+            main.__dict__.update(saved)
+        child.close()
+        sector = SECTORS[name]
+        self.name, self.suffix = sector.name, sector.suffix
+
+    def iteration(self, handle, year: int, itr: int, inputs: Inputs) -> None:
+        self.conn.send(("iteration", year, itr, inputs.overrides))
+
+    def quantities(self, handle) -> dict:
+        self.conn.send(("quantities",))
+        ok, value = self.conn.recv()
+        if not ok:
+            raise RuntimeError(f"{self.name} worker failed: {value}")
+        return value
+
+    def close(self) -> None:
+        if self.proc.is_alive():
+            try:
+                self.conn.send(("stop",))
+            except OSError:
+                pass
+            self.proc.join(5)
+            if self.proc.is_alive():
+                self.proc.terminate()
+
+
+def _sector_worker(conn, name: str, year: int, snapshot_path: str, ev_share: dict | None = None) -> None:
+    import traceback
+    error = None
+    try:
+        inputs = Inputs(Snapshot(snapshot_path))
+        sector = SECTORS[name](ev_share) if name == "transportation" else SECTORS[name]()
+        state = sector.start(year)
+    except Exception:
+        error = traceback.format_exc()
+    while True:
+        msg = conn.recv()
+        if msg[0] == "stop":
+            return
+        if error is not None:
+            if msg[0] == "quantities":
+                conn.send((False, error))
+            continue
+        try:
+            if msg[0] == "iteration":
+                _, y, itr, overrides = msg
+                inputs.overrides = overrides
+                sector.iteration(state, y, itr, inputs)
+            else:
+                conn.send((True, sector.quantities(state)))
+        except Exception:
+            error = traceback.format_exc()
+            if msg[0] == "quantities":
+                conn.send((False, error))
+
+
+class TransportationSector:
+    """SUBROUTINE TRAN (src/nems_open/transportation/tran.py).
+
+    The oracle's transportation dumps are at the top of a year's first iteration, so a
+    run that starts mid-year does that iteration first.
+
+    ev_share: {calendar year: plug-in share of new LDV sales}, the EV lever. It shifts the
+    plug-ins' utility in TALT2X (the powertrain choice) until consumers choose that share,
+    from 2025 (TALT2X's first year); CAFE and GHG compliance can still hold the share
+    above it, as in EIA's model, and stocks, VMT and fuel use follow."""
+    name = "transportation"
+    suffix = "tr"
+
+    def __init__(self, ev_share: dict | None = None):
+        self.ev_share = dict(ev_share or {})
+
+    @staticmethod
+    def dumped(year: int) -> bool:
+        """Whether the oracle dumped the state this module starts from in that year."""
+        from nems_open import oracle_state
+        return oracle_state.available("tran_tail_out", year - BASEYR + 1, "tran")
+
+    @classmethod
+    def start_year(cls, year: int):
+        """The latest dumped year at or before year, or None (then TRAN starts from files)."""
+        return next((d for d in range(year, BASEYR, -1) if cls.dumped(d)), None)
+
+    @classmethod
+    def available(cls, year: int) -> bool:
+        return True  # from files when there is no dump
+
+    def start(self, year: int, inputs: Inputs | None = None):
+        """From the dump for year, or from the latest earlier dump run forward on EIA's inputs
+        (about 25 s an iteration). With no dump at or before year, from EIA's files: TRAN's
+        first call in 1995 and three calls a year to year (transportation/initial_state.py,
+        matches the oracle's state; about 30 min to 2025)."""
+        from nems_open.transportation import initial_state, tran
+        d = self.start_year(year)
+        if d is None:
+            s, carry = initial_state.initial_state()
+            if self.ev_share:
+                s["_ev_share_target"] = self.ev_share
+            initial_state.run(year, state=(s, carry))
+            return {"s": s, "carry": carry, "next_itr": 1}
+        s, carry = tran.start_from_dump(d - BASEYR + 1)
+        if self.ev_share:
+            s["_ev_share_target"] = self.ev_share
+        t = {"s": s, "carry": carry, "next_itr": 1}
+        if d < year:
+            inputs = inputs or Inputs()
+            for y in range(d, year):
+                self.iteration(t, y, 2, inputs)  # both iterations from a fresh start
+                t["next_itr"] = 1
+        return t
+
+    def iteration(self, t, year: int, itr: int, inputs: Inputs) -> None:
+        from nems_open.transportation import tran
+        s = t["s"]
+        # A fresh start is at iteration 1 even when the runner asks for iteration 2.
+        for i in range(min(t["next_itr"], itr), itr + 1):
+            s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, i
+            apply_transportation(inputs, s)
+            tran.tran(s, t["carry"])
+        t["next_itr"] = itr + 1
+
+    def quantities(self, t) -> dict:
+        return {k: t["s"][k] for k in SECTOR_QUANTITIES["tr"] if k in t["s"]}
+
+
+# Inputs TRAN writes itself: TRANREP is its own report block (an input only to the
+# buildings modules), and TMPGNEW fills zero E85 prices from gasoline (PETTR) and TMISC
+# the US methanol price (PMETR), so EIA's restart copies of those differ from TRAN's.
+TRAN_WRITES = ("pettr", "pmetr")
+
+
+def apply_transportation(inputs: Inputs, s: dict) -> None:
+    """Inputs.apply for TRAN's state. Routines that include AEUSPRC or ANGTDM see those
+    blocks under a prefix (oracle/hooks_tran.py ALT_INCLUDES); the plain names are EUSPRC
+    and NGTDMOUT, which are not demand inputs, so an AEUSPRC input goes to the prefixed copy."""
+    plain = {k: v for k, v in s.items() if not k.startswith("aeusprc__") and k not in TRAN_WRITES}
+    aeus = {k[len("aeusprc__"):]: v for k, v in s.items() if k.startswith("aeusprc__")}
+    inputs.apply({k: v for k, v in plain.items()
+                  if not inputs.by_var.get(k, "").startswith(("AEUSPRC/", "TRANREP/"))})
+    inputs.apply({k: v for k, v in aeus.items() if inputs.by_var.get(k, "").startswith("AEUSPRC/")})
+
+
 # NEMS calls the demand modules in this order (RESD, COMM, IND, TRAN). None marks
 # a module not ported yet; its QBLK arrays keep EIA's values. Industrial is a slot
 # (see IndustrialSector): it runs only when asked for by name.
@@ -200,7 +400,7 @@ SECTORS = {
     "residential": ResidentialSector,
     "commercial": CommercialSector,
     "industrial": IndustrialSector,
-    "transportation": None,  # source/tran*.f, being ported
+    "transportation": TransportationSector,
 }
 
 # The fuel rows each sector owns in QBLK (QPRxx is in QMORE).
@@ -213,10 +413,14 @@ SECTOR_QUANTITIES = {
            "qksin", "qlgin", "qetin", "qbuin", "qprin", "qisin", "qppin", "qrsin", "qrlin", "qpfin", "qsgin",
            "qpcin", "qasin", "qotin", "qluin", "qsulfurin", "qh2in", "qhoin", "qgein", "qbmin", "qmsin", "qstin",
            "qpvin", "qwiin"),
+    # TINTEG's QBLK rows (QPRTR is in QMORE), and TRAN's natural gas and residual splits.
+    "tr": ("qmgtr", "qmetr", "qettr", "qngtr", "qgftr", "qlgtr", "qprtr", "qeltr", "qh2tr", "qdstr", "qjftr",
+           "qottr", "qrltr", "qrhtr", "qrstr"),
 }
 # SUMQAS shares the Pacific division to California for these rows.
 CALIFORNIA_SHARED = ("qelrs", "qelcm", "qngrs", "qngcm", "qclrs", "qclcm", "qmgcm", "qdsrs", "qdscm", "qksrs",
                      "qkscm", "qlgrs", "qlgcm", "qrscm", "qgers", "qbmrs", "qbmcm", "qstrs", "qstcm", "qpvrs", "qpvcm",
+                     "qeltr", "qngtr", "qmgtr", "qjftr", "qdstr", "qlgtr", "qrstr", "qottr", "qmetr", "qettr",
                      "qelin", "qngin", "qlpin", "qclin", "qmcin", "qmgin", "qdsin", "qksin", "qlgin", "qrsin", "qpfin",
                      "qsgin", "qpcin", "qasin", "qotin", "qhoin", "qgein", "qbmin", "qmsin", "qstin", "qpvin", "qwiin",
                      "qciin")
@@ -248,6 +452,14 @@ def sum_quantities(q: dict, suffix: str, y: int, calshr) -> None:
         q["qtprs"][:, j] = g("qdsrs") + g("qksrs") + g("qlgrs")
         q["qtrrs"][:, j] = g("qbmrs") + g("qstrs") + g("qpvrs") + g("qgers")
         q["qtsrs"][:, j] = g("qelrs") + g("qngrs") + g("qclrs") + g("qtprs") + g("qtrrs")
+    elif suffix == "tr":
+        # SUMQAS rebuilds residual from its two grades after the California shares, so
+        # California's QRSTR ends up QRLTR + QRHTR = 0.
+        q["qrstr"][:, j] = g("qrltr") + g("qrhtr")
+        q["qtptr"][:, j] = g("qmgtr") + g("qjftr") + g("qdstr") + g("qlgtr") + g("qrstr") + g("qottr")
+        q["qtrtr"][:, j] = g("qettr")
+        q["qtstr"][:, j] = (g("qeltr") + g("qngtr") + g("qgptr") + g("qtptr") + g("qmetr") + g("qettr") + g("qh2tr")
+                            + g("qnglq"))
     elif suffix == "cm":
         q["qtpcm"][:, j] = g("qmgcm") + g("qdscm") + g("qkscm") + g("qlgcm") + g("qrscm")
         q["qtrcm"][:, j] = g("qbmcm") + g("qstcm") + g("qpvcm")
@@ -269,25 +481,49 @@ class DemandRunner:
     """
 
     def __init__(self, year: int, inputs: Inputs | None = None,
-                 sectors=("residential", "commercial")):
+                 sectors=("residential", "commercial"), parallel: bool = False,
+                 commercial_from_files: bool = False, commercial_levers=None, ev_share: dict | None = None):
         self.inputs = inputs or Inputs()
         self.year = year
         self.first_iteration = 2
         self.sectors = []
-        for name in SECTORS:
-            if name in sectors:
-                if SECTORS[name] is None:
-                    raise NotImplementedError(f"{name} demand is not ported yet")
-                sector = SECTORS[name]()
-                self.sectors.append((sector, sector.start(year)))
+        names = [name for name in SECTORS if name in sectors]
+        for name in names:
+            if SECTORS[name] is None:
+                raise NotImplementedError(f"{name} demand is not ported yet")
+        # parallel: every sector but the last runs in a worker process (started first, so
+        # it loads while this process starts the last one). Results are the same. A commercial
+        # sector with options (from files, levers) stays in this process: a worker builds its own default.
+        options = commercial_from_files or commercial_levers is not None
+        workers = {name: InProcess(name, year, self.inputs.snapshot.path, ev_share)
+                   for name in names[:-1] if not (name == "commercial" and options)} if parallel else {}
+        for name in names:
+            if name in workers:
+                self.sectors.append((workers[name], None))
+            else:
+                sector = (SECTORS[name](commercial_from_files, commercial_levers) if name == "commercial"
+                          else SECTORS[name](ev_share) if name == "transportation" else SECTORS[name]())
+                self.sectors.append((sector, sector.start(year, self.inputs)))
         self.q = eia_quantities(self.inputs.snapshot)
+
+    def close(self) -> None:
+        """Stop the worker processes (parallel=True)."""
+        for sector, _ in self.sectors:
+            if isinstance(sector, InProcess):
+                sector.close()
 
     def run_year(self) -> int:
         """Run the current year; returns it. Results are in `self.q`."""
         year, y = self.year, self.year - BASEYR + 1
-        for itr in range(self.first_iteration, 3):
+        for itr in range(1, 3):
             for sector, state in self.sectors:
+                # a module started from the files has not run this year at all: it takes iteration 1 too
+                if itr < self.first_iteration and not getattr(state, "needs_first_iteration", False):
+                    continue
                 sector.iteration(state, year, itr, self.inputs)
+        for _, state in self.sectors:
+            if hasattr(state, "needs_first_iteration"):
+                state.needs_first_iteration = False
         calshr = lambda name: self.inputs.snapshot[f"CALSHR/{name}"]
         for sector, state in self.sectors:
             for k, v in sector.quantities(state).items():

@@ -7,16 +7,21 @@ integer function file_mgr(func, name_in, new)
   implicit none
   character(1) func
   character(*) name_in
-  logical new
+  ! One byte: callers pass LOGICAL*1 (tran.f) or default LOGICAL (comm.f). Reading
+  ! four bytes from a LOGICAL*1 picks up whatever follows it in memory.
+  logical(1) new
   character(64) key
   character(512) path
   character(600) line
   integer u, ios, sp
-  logical found
+  logical found, found_open
   integer, save :: units(500) = 0
   character(64), save :: keys(500) = ' '
 
   key = adjustl(name_in)
+  ! NEMS file names are CHARACTER*18 (filemgr.f), so callers with a shorter buffer
+  ! (tran*.f: TRNSTOCKX_HDV_PRE2012 in CHARACTER*18) match on the first 18 characters.
+  key = key(1:18)
   if (func == 'C' .or. func == 'c') then
     do u = 1, 500
       if (keys(u) == key .and. units(u) /= 0) then   ! newunit numbers are negative
@@ -53,22 +58,35 @@ integer function file_mgr(func, name_in, new)
     read(u, '(a)', iostat=ios) line
     if (ios /= 0) exit
     sp = index(line, ' ')
-    if (line(1:sp-1) == trim(key)) then
+    if (line(1:min(sp-1, 18)) == trim(key)) then
       path = adjustl(line(sp+1:))
       found = .true.
       exit
     endif
   enddo
   close(u)
+  if (found .and. new .and. (index(path, '\input') > 0 .or. index(path, '/input/') > 0)) then
+    ! An EIA input file: never write over one (tran*.f opens some inputs with NEW true).
+    found = .false.
+  endif
+  ! Positive unit numbers from 200 up, as NEMS's FILE_MGR assigns them. tranair.f
+  ! closes its debug unit in 2050 and then writes to it again; on a positive unit
+  ! that reopens fort.<unit> (Intel and gfortran alike) instead of stopping.
+  u = 200
+  do
+    inquire(unit=u, opened=found_open)
+    if (.not. found_open) exit
+    u = u + 1
+  enddo
   if (.not. found) then
     ! Report and debug files NEMS names at run time: send them to out/.
     call ensure_out()
     path = 'out/'//trim(key)//'.txt'
-    open(newunit=u, file=trim(path), status='replace', action='write')
+    open(unit=u, file=trim(path), status='replace', action='write')
   else if (new) then
-    open(newunit=u, file=trim(path), status='replace', action='write')
+    open(unit=u, file=trim(path), status='replace', action='write')
   else
-    open(newunit=u, file=trim(path), status='old', action='read')
+    open(unit=u, file=trim(path), status='old', action='read')
   endif
   do sp = 1, 500
     if (units(sp) == 0) then

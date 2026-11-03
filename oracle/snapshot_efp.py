@@ -46,6 +46,10 @@ def lines(p):
 
 def main():
     years = [int(a) for a in sys.argv[1:]]
+    # A previous run's dumps may still be there: wait until the new run has
+    # cleared them, or the first check would fire on last run's files.
+    while (RUN / "out" / "state").exists() and any((RUN / "out" / "state" / "ld_out").glob("*/index.txt")):
+        time.sleep(0.2)
     for y in years:
         idx = RUN / "out" / "state" / "ld_out" / str(y) / "index.txt"
         while lines(idx) < LDSM_ARRAYS:

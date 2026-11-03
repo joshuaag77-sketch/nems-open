@@ -8,8 +8,10 @@ Writes into oracle/run/:
 And into oracle/build/:
   load_restart.f90 Fortran that reads dump/*.bin into the COMMON blocks
 
-Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 resd
-module is comm (default, run/ and build/), resd or emm (run_<module>/ and build_<module>/).
+Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 tran
+module is comm (default, run/ and build/), resd, emm or tran (run_<module>/ and build_<module>/).
+The build folder also gets a copy of the upstream includes in inc/, so the compile
+works wherever the upstream checkout lives (spaces in its path break -I).
 """
 
 import csv
@@ -32,15 +34,27 @@ WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))   # build and run folders 
 # match against EIA is earned.
 MODULES = {
     "comm": dict(
-        source="comm.f", run="run", build="build",
+        source=["comm.f"], run="run", build="build",
         includes=["parametr", "ncntrl", "apq", "macout", "eusprc", "qsblk", "mxpblk", "uefpout",
                   "uecpout", "emission", "emmparm", "steoblock", "cogen", "bldglrn", "commrep",
                   "tranrep", "e111d", "comparm"],
         workbooks=[("input/cdm/ktekx.xlsx", "ktek")],
         skip_blocks=[],
     ),
+    "tran": dict(
+        source=["tran.f", "tranfrt.f", "tranair.f"], run="run_tran", build="build_tran",
+        # Every include in the three files: MODULE T_, F_ and AIRMOD plus the routines.
+        includes=["parametr", "ncntrl", "apq", "aponroad", "qsblk", "macout", "cdsparms", "coalout",
+                  "convfact", "tranrep", "tranmain", "intout", "ngtdmout", "angtdm", "aeusprc",
+                  "eusprc", "ampblk", "lfmmout", "ngtdmrep", "ogsmout", "pmmout", "pmmrpt",
+                  "steoblock"],
+        workbooks=[("input/tdm/trnldvx.xlsx", "trnldv"), ("input/tdm/trnnhtsax.xlsx", "trnnhtsa"),
+                   ("input/tdm/trnairx.xlsx", "trnair")]
+                  + [("input/tdm/trnhdvx.xlsx", s) for s in ("trnhdv", "tech_adopt", "ACT", "Phase_2")],
+        skip_blocks=[],
+    ),
     "resd": dict(
-        source="resd.f", run="run_resd", build="build_resd",
+        source=["resd.f"], run="run_resd", build="build_resd",
         # MODULE R_ at the top of resd.f
         includes=["parametr", "ncntrl", "apq", "resdrep", "rtek", "bldglrn", "emmparm", "emission",
                   "eusprc", "emablk", "macout", "rscon", "rseff", "qsblk", "cogen", "uefpout",
@@ -81,8 +95,8 @@ INCLUDES: list[str] = []
 WORKBOOKS: list = []
 SKIP_BLOCKS: list[str] = []
 
-# Must match build.sh. Run from oracle/build so the relative include path works.
-FFLAGS = ["-ffree-line-length-none", "-fdec", "-I" + os.environ.get("NEMS_UPSTREAM", str(HERE.parent / "nems-upstream")) + "/includes"]
+# Must match build.sh. Run from the build folder, which holds its own copy of the includes.
+FFLAGS = ["-ffree-line-length-none", "-fdec", "-Iinc"]
 
 
 def statements(text: str):
@@ -203,10 +217,10 @@ def auto_includes(sources) -> list[str]:
 
 
 def include_prefixes(sources):
-    """For each include, the include list of the first routine that uses it,
+    """For each include, the include list of the first module or routine that uses it,
     up to and including it. That ordering already compiles, so it is safe."""
     prefixes = {}
-    for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function)?\s*\w*\s*$", source_text(sources)):
+    for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function|module)?\s*\w*\s*$", source_text(sources)):
         seq = [n.lower() for n in re.findall(r"(?im)^\s*include\s*'(\w+)'", routine)]
         for i, n in enumerate(seq):
             prefixes.setdefault(n, seq[: i + 1])
@@ -294,6 +308,7 @@ def main():
         INCLUDES = auto_includes(sources)
     RUN.mkdir(parents=True, exist_ok=True)
     BUILD.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(upstream / "includes", BUILD / "inc", dirs_exist_ok=True)
     inc_dir = upstream / "includes"
     includes = walk_includes(INCLUDES, inc_dir)
     members = common_members(inc_dir, includes)

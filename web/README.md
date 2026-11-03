@@ -36,3 +36,5 @@ Loading: the page loads `data/meta.js` (2 KB gzipped: both sets' grids and EIA's
 and fetches each scenario as it is shown (`data/scenarios/<id>.json`, `data/real/<id>.json`,
 about 3 KB gzipped). Opened from disk, or if a fetch fails, it loads the set's bundle
 (`scenarios.js` or `real.js`) instead. All scripts are deferred.
+
+Fidelity: `python scripts/fidelity.py` builds `data/fidelity.js` and `data/fidelity.json`, a grade for every module and every number on the page, with its evidence: "matches EIA" (a port checked against EIA's Fortran oracle; tolerances read from the tests, routines done read from SCOPE.md), "within X%" (our own model of a piece, measured against cb2026 in the no-policy run) or "stand-in" (fitted; the fit's error on held-out runs). A number takes the grade of the weakest piece behind it. The page shows each grade as a badge (hover for the evidence); `scoreboard.html` lists them all. Rerun it whenever tests, SCOPE.md or the scenario data change.

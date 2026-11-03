@@ -3,7 +3,9 @@
 `projection_year` is one call of RESD for a year after the RECS base year (2021 on),
 minus the 111(d) and price-induced technical change hooks, which are off in AEO2026.
 `run` repeats it year by year with NEMS's two iterations per year, carrying the
-whole state forward the way the Fortran's COMMON and SAVEd locals do.
+whole state forward the way the Fortran's COMMON and SAVEd locals do. A run starts
+either from the oracle's dumps (`start_from_dump`) or from EIA's input files alone
+(`start_from_files`, then `run(s, 2021, 2050)`).
 """
 
 from nems_open import oracle_state
@@ -59,6 +61,15 @@ def start_from_dump(y: int) -> dict:
             for k, v in load(d.name).items():
                 s[k] = own(v)
     resume_from_dump(s)
+    return s
+
+
+def start_from_files(inputs=None) -> dict:
+    """The state after RESD's RECS-year calls (2020, both iterations), with no oracle dumps:
+    the input files, the restart file and zero (initial_state). run(s, 2021, ...) goes on from it."""
+    from nems_open.residential import initial_state as ini
+    s = ini.initial_state(inputs)
+    ini.base_year(s)
     return s
 
 

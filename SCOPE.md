@@ -16,7 +16,7 @@ Rebuild EIA's National Energy Modeling System (NEMS) as open Python that runs wi
 | Module | Where | Size | State | Blocker |
 |---|---|---|---|---|
 | Commercial demand | `source/comm.f` | 13k lines Fortran | To port | None |
-| Residential demand | `source/resd.f` | 17k Fortran | Done and matching 2021-2050 from the oracle's 2021 state; input readers to do | None |
+| Residential demand | `source/resd.f` | 17k Fortran | Done; runs 2020-2050 from EIA's input files and matches the oracle | None |
 | Industrial demand | `source/ind.f` | 20k Fortran | To port | None |
 | Transportation demand | `source/tran*.f` | 18k Fortran | To port | None |
 | Renewable fuels | `source/renew.f` | 35k Fortran | To port | None |
@@ -140,6 +140,125 @@ Consumption quirks kept: district steam uses `SRElas` left over from the loop be
 
 Port notes: the run switches in the reference case are `CostTrendSwitch=1` (capital costs from `KEqCost`), `STRetBehav=1`, `I4SCNT=2` (current local prices, not price expectations). Speed: see "Commercial speed (issue #6)" below.
 
+## Transportation module (started 2026-11-01, branch `transportation`)
+
+### Oracle
+EIA's `tran.f`, `tranfrt.f` and `tranair.f` (18,377 lines) run standalone with gfortran, same method as commercial. Folders `oracle/build_tran/` and `oracle/run_tran/`.
+
+```
+cd oracle
+python -I gen_oracle.py "$NEMS_UPSTREAM" cb2026 tran
+bash build.sh tran
+cd run_tran && ./oracle.exe      # about 2 minutes with state dumps, 5.3 GB of dumps
+```
+`NEMS_UPSTREAM` points at EIA's checkout (default `../nems-upstream`, as before). The build folder gets its own copy of the includes (`inc/`), so the upstream path can contain spaces.
+
+What it took (all generic, commercial unchanged and its 262 tests still pass):
+- `gen_oracle.py` takes a module (`comm`, `tran`); `MODULES` lists each one's sources, includes and workbooks. Same layout as the residential session's version, so the two merge by adding entries.
+- `patch_intel.py`: Intel range lists in array constructors (`[4:8,13:maxldv]`), hex literals in comparisons, `.EQ. .TRUE.`, `NOT()` on a logical, `INTEGER x/.false./`, `INTEGER NAME*2`, and `CAFE4`, a REAL constant (MODULE `F_` has implicit typing) used as a dimension.
+- `stubs.f90` FILE_MGR: reads the `NEW` flag as one byte (tran.f passes `LOGICAL*1`; reading 4 bytes picked up garbage and asked for write access), never writes over a file in `filelist.txt`, matches names on 18 characters like NEMS (`TRNSTOCKX_HDV_PRE2012` arrives cut to 18), hands out positive unit numbers from 200 (tranair.f closes its debug unit in 2050, then writes to it again), and actually closes files on `'C'`.
+- `xlsx_ranges.py` reads only the first two corners of a named range, as EIA's `Parse_RangeStr2` does. `CRCOVID` in trnldvx.xlsx is defined as `$B$3446:$BE$3454:'trnldv'!$BE$3453` and was being dropped.
+- `driver_tran.f90` runs every year 1990-2050 (TRAN returns before 1995) with **3 iterations a year**. Evidence: `TAIRT` adds to `LFDOMAVG` on every call (an EIA bug, kept), and EIA's `TRTRAVLD(3,:)` is exactly 1.5 times the 2-iteration value in every year.
+- `hooks_tran.py` dumps state around each routine's CALL in TRAN. Most state here is Fortran MODULE variables (`T_`, `F_`, `AIRMOD`), so it parses the module declarations and dumps every module or COMMON variable the routine, or anything it calls, names. F_ files are prefixed `f_`, AIRMOD `a_`. Dumps are on the **first** iteration of 2020, 2025, 2030, 2040, 2050: on the final iteration the "before" state already holds the answer. Python: `oracle_state.load(tag, year, run="run_tran")`.
+
+Oracle vs EIA's restart file (`tests/test_tran_oracle.py`, census divisions 1-9):
+- 1995-2025: gasoline, diesel, jet fuel, electricity, other within 3e-7 (float rounding). Natural gas, LPG and ethanol within 0.7% from 2011 on.
+- 2026-2050: gasoline within 0.23%, diesel 0.8%, jet fuel 0.05%, electricity 0.7%, residual 0.2%. Truck natural gas (9%), ethanol (12%) and hydrogen (up to 42% in 2030 on a small base) drift more.
+- Why: NEMS calls TRAN with each iteration's unconverged prices, and several routines work only on the first iteration (`CURITR == 1`: FEM pass reset, CAFE pass, HAV stock weights, freight lag copies). The oracle sees converged prices all three times. Freight truck fuel choice (payback and S-curve adoption) amplifies small differences. Not fixable without the per-iteration price history.
+- Also outside TRAN: the refinery model (LFMM, `refine.f`) overwrites `E85AVAIL` history for 2010-2012 after TRAN runs; QBLK region 10 (California) and 11 (US) totals are filled by NEMS, not TRAN.
+
+### Module map
+Call order inside `TRAN` (tran.f), with code lines. One port test per routine, at the routine's CALL.
+
+| # | Routine | Lines | What it does | Calls |
+|---|---|---|---|---|
+| 0 | `READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA` | 870+170+140+165+340 | First-call input reads (trnldvx.xlsx, VMT, stock, FEM history, NHTSA) | |
+| 1 | `TMAC` | 68 | Fuel tax, income, population by age/sex, licensing rates, licensed drivers | |
+| 2 | `NEWLDV` | 87 | New car and light truck sales by region (car/truck split logit) | |
+| 3 | `TMPGNEW` | 658 | New vehicle fuel economy: technology penetration (FEM), CAFE/GHG compliance, attributes, vehicle choice | `FEMCALC` (1,070), `CAFECALC` (520), `CAFEGHG_MEET` (320), `TATTRIB`, `TALT2`, `TALT2X`, `CGSHARE`, `AFVADJ`, `LIONCOSTCALC` and battery/EV cost routines |
+| 4 | `TREG` | 88 | Regional sales by fuel type | |
+| 5 | `TFLTSTKS` | 112 | Fleet vehicle stocks | |
+| 6 | `FLTHAV` | 323 | Taxi / ride-hail adoption of automated vehicles (only once lidar is available) | `HAVCALC`, `LIDARCOSTCALC` |
+| 7 | `TFLTVMTS` | 20 | Fleet VMT | |
+| 8 | `TSMOD` | 124 | Light-duty stock model (survival, vintages) | |
+| 9 | `TMPGSTK` | 262 | Stock average fuel economy | |
+| 10 | `TCURB` | 35 | Curb weight | |
+| 11 | `TFLTMPGS` | 290 | Fleet fuel economy | |
+| 12 | `TFLTCONS` | 71 | Fleet fuel use | |
+| 13 | `TVMT` | 145 | Household VMT from licensed drivers, income, fuel cost | |
+| 14 | `TRANFRT(0)`, `TRANFRT(1)` | 5,700 (tranfrt.f) | Freight trucks: sales, technology adoption, Phase 2 GHG and ZEV rules, fuel choice, stock, VMT, fuel; commercial light trucks; report call | `TRUCK_NEW`, `TRUCK_CHOICE`, `TRUCK_STOCK`, `TRUCK_VMT`, `TRUCK_FUEL`, `TCOMMCL_TRK`, `CFREAD` |
+| 15 | `TMPGAG` | 39 | Aggregate fuel economy | |
+| 16 | `TRAIL` | 146 | Freight and passenger rail | |
+| 17 | `TSHIP` | 289 (tranfrt.f) | Domestic and international shipping | |
+| 18 | `TRANAIR` | 1,720 (tranair.f) | Air travel demand, aircraft stock and efficiency, jet fuel | `READAIR`, `TAIRT`, `TAIREFF`, `TAREPORT` |
+| 19 | `TMISC` | 440 | Military, buses, recreational boats, lubricants, pipeline | |
+| 20 | `TCONS` | 59 | Light-duty fuel use | |
+| 21 | `TINTEG` | 118 | Fuel use by fuel and region into QBLK | |
+| 22 | `TBENCHMARK` | 473 | Benchmark to SEDS history and STEO | `TRANEASY` |
+| 23 | `TREPORT` | 555 | TRANREP report arrays | |
+| 24 | rest of `TRAN` | 90 | QGFTR / QRHTR / QRLTR splits, average vehicle prices, rail and ship gas | |
+
+Port order: the small light-duty routines first (1, 2, 4, 5, 7-13, 15, 16, 19-21), then `TMPGNEW`, the freight module, air, benchmarking and reports.
+
+### Port progress
+
+| Routine | State | Match vs oracle | Python |
+|---|---|---|---|
+| `TMAC` | Done 2026-11-01 | Every dumped array within 1e-4 (float rounding), 2020, 2025, 2030, 2040, 2050 | `transportation/tmac.py` |
+| `NEWLDV` | Done 2026-11-01 | Same | `transportation/newldv.py` |
+| `TREG`, `TFLTVMTS`, `TCURB`, `TMPGAG` | Done 2026-11-01 | Same | `transportation/small.py` |
+| `TFLTSTKS` | Done 2026-11-01 | Same | `transportation/fleet.py` |
+| `TSMOD` | Done 2026-11-01 | Same | `transportation/stock.py` |
+| `TMPGSTK` | Done 2026-11-01 | Same | `transportation/stock_mpg.py` |
+| `TFLTMPGS` | Done 2026-11-01 | Same | `transportation/fleet_mpg.py` |
+| `TFLTCONS`, `TVMT` | Done 2026-11-01 | Same | `transportation/travel.py` |
+| `TCONS`, `TINTEG` | Done 2026-11-01 | Same | `transportation/totals.py` |
+| `TRAIL`, `TMISC` | Done 2026-11-01 | Same, including their saved local arrays | `transportation/misc_modes.py` |
+| `MEAN_FUNCS` | Done 2026-11-01 | Through its callers | `transportation/mean_funcs.py` |
+| `TMPGNEW` (+ FEMCALC, CAFECALC, CAFEGHG_MEET, TATTRIB, TALT2, TALT2X, battery and EV cost routines) | Done 2026-11-02 | Each stretch between dump points inside TMPGNEW within 1e-4; FEM passes and whole TMPGNEW within 1e-3 (expf last-bit differences grow through the FEM loop) | `transportation/tmpgnew.py`, `femcalc.py`, `ldv_tech.py`, `ldv_attrib.py`, `ldv_choice.py`, `cafe.py`, `cafe_meet.py` |
+| `FLTHAV`, `HAVCALC`, `LIDARCOSTCALC` | Done 2026-11-02 | Within 1e-4 | `transportation/hav.py` |
+| `TRANFRT(0)` (TRUCK_NEW with its GHG retry loop, TRUCK_STOCK, TRUCK_VMT, TCOMMCL_TRK, TRUCK_FUEL) | Done 2026-11-02 | Stretches between dump points within 1e-4; choice, ACT and the whole TRUCK_NEW loop within 1e-3 | `transportation/frt_*.py` |
+| `TFRTRPT`, `TSHIP` | Done 2026-11-02 | Within 1e-4 | `transportation/frt_rpt.py`, `frt_ship.py` |
+| `TRANAIR` (TAIRT, TAIREFF, TAREPORT) | Done 2026-11-02 | Within 1e-3: new aircraft are demand minus stock, so last-bit exp/pow differences grow to about 1e-4 | `transportation/air_*.py` |
+| `TBENCHMARK`, `TRANEASY`, `TREPORT`, end of `TRAN` | Done 2026-11-02 | Within 1e-4 | `transportation/bench.py`, `report.py` |
+| Input readers (`READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA`, `CFREAD`, `CFREADSTOCK`, `READAIR`) | Done 2026-11-03 | Every array each reader fills equals the oracle's 2020 state (within 1e-6 where log/pow differ in the last bit), except parts the module rewrites before 2020, which the tests name | `transportation/readers/` (`first_call(s)` runs them in TRAN's order); `readers/getrng.py` is nemswk1.f's GETRNG* |
+| TRAN starting state from files | Done 2026-11-03 | `initial_state.run(y)` starts from the restart file, DATA values, STEO and the readers, then calls TRAN from 1995, three times a year, as the oracle's driver does. Every array is bit-identical to the oracle at the top of 2020 and within 1e-4 at 2025. At 2030, 2040 and 2050 all but two are within 1e-4: `MGGHGGRP` (worst 8e-4) is (fleet GHG minus standard) times sales, and where a group sits almost on its standard the subtraction turns 9e-7 differences in `FPGHGGRP`/`EPAGHGGRP` into 8e-4; `APSHRGRP` within 2e-4 | `transportation/initial_state.py`, `state_layout.json`, `carry_layout.json`; `tests/test_tran_from_files.py` |
+
+EV lever (2026-11-03): `ev_share` (calendar year to plug-in share of new LDV sales) on `DemandRunner`, `TransportationSector`, and the demand adapter's `Policy` when transportation is ported. TALT2X (`ldv_choice.py`) adds one utility shift to the five plug-in powertrains, found by bisection so the national share of consumer choice hits the target in every TALT2X call; CAFE/GHG compliance, stocks, VMT and fuel use follow from the model. The lever is consumer choice: a target below what the standards force is held up by compliance (2030: a 25% target ends at about 48%, EIA's share). It acts from 2025, TALT2X's first year. Without a target TALT2X is EIA's exactly. `tests/test_tran_ev_lever.py`.
+
+Tests: `tests/test_tran_<routine>.py`, all through `tests/tran_harness.py`. A test feeds the port the state before EIA's routine and compares every dumped array with the state after; it also fails if nothing changed, so it can't pass by doing nothing. Loop indexes are MODULE variables here (`IREGN`, `ILDV`, ...), so ports leave them where the Fortran loops leave them; later routines can read them.
+
+Port conventions: a routine is `name(s)` where `s` is the state dict (lowercase Fortran names, `FArray` with Fortran bounds), updated in place. Saved local arrays that carry last year's values are a second argument, `carry`; the oracle dumps them as `p_<name>` (`PRIVATE` in `hooks_tran.py`). `common.fsum` adds float32 in Fortran's element order (numpy's pairwise sum rounds differently). `misc_modes.powi` does REAL**INTEGER the way gfortran does (square and multiply). `common.expf`, `logf`, `powf` give REAL*4 EXP, LOG and ** as the oracle's libm does (correctly rounded: double precision rounded once); numpy's float32 versions can be an ulp off. That matters over a long run: in TRUCK_TECHADOPT a technology share one ulp above zero instead of exactly zero passes the `techshr > 0` test, which subtracts the whole base share and moved diesel truck MPG by 0.8% in 2023.
+
+Name clash to watch: `ANGTDM` and `NGTDMOUT` are two COMMON blocks with the same variable names (natural gas prices), as are `AEUSPRC` and `EUSPRC`. A routine sees whichever it includes. Dumps carry the ANGTDM and AEUSPRC copies as `angtdm__<name>` and `aeusprc__<name>`. `TMISC`, most of tranfrt.f, and a few tran.f routines include `ANGTDM`.
+
+### EIA quirks kept (transportation)
+- `TAIRT` accumulates `LFDOMAVG(N)` and `LFINTAVG(N)` on every call instead of resetting them, so the reported load factors are 3 times too big (one per NEMS iteration).
+- `TAIREFF` closes the air debug file in 2050, then `TAREPORT` writes to it.
+- `NEWLDV`: the national car share counts every automation level in the numerator and only level 1 in the denominator.
+- `TMPGSTK` and `TFLTMPGS`: the US new-vehicle MPG uses `DEN1 = ...` instead of `DEN1 = DEN1 + ...`, so it is the last region with sales, not a sum. The oldest vintage's MPG uses ELSEIF, so the 25-year-old vintage only counts when the 24-year-old one is empty.
+- `TFLTSTKS`: the national total inside the stock loop uses `IAGE` left at `MAXAGE`, so only the oldest vintage gets one (overwritten right after).
+- `TSMOD`: the low-macro survival tweak has a `CURCALYR == STOCKYR` branch inside a `CURCALYR > STOCKYR+1` test, so it never runs.
+- `TVMT`: `ildv.le.7.or.ildv.ge.15.and.X.and.Y` binds as `ildv <= 7 .or. (ildv >= 15 .and. X .and. Y)`, so powertrains 1-7 are always counted. `TEMP_MPG(ildv)` is a local array sized by the module variable `ILDV` at entry.
+- `TMISC`: the school bus CNG share for this year is updated after it was copied into the fuel shares, so it takes effect a year late. The transit bus Btu-per-mile formula `X*TBSYSEFF*1-(...)*1+(...)` subtracts and adds where it looks like it should multiply.
+- `TBENCHMARK`: `MER_STEO_regn` is a saved local filled in the last SEDS year and read in the MER year.
+- `TMPGNEW`: `temp_cnt` counts car groups for trucks too. `TATTRIB` swaps the DC and L2 charging multipliers after 2023, and its IRA test is `ildv.le.7`. `FLEXSHR` keeps `BETAP(1)` from the last call. `TALT2` keeps `sta_rat_base` from the last call.
+- `CAFEGHG_MEET`: passes a REAL to an INTEGER sort argument; lifetime miles are hard-coded (195264 cars, 225865 trucks).
+- `FLTHAV`: the 4-year fuel price average divides by 3; `taxi_util` is read before it is updated.
+- `TRUCK_TECHADOPT`: `PREFF_P2 = 1.0` resets the whole array inside the technology loop; `MAX_SHARE_S` keeps entries from the previous fuel or class when a supersede note reads them.
+- `TRUCK_INCCOST`: the FCHEV refuelling cost subtracts 2. `TRUCK_CHOICE`: FCHEV uses `h2_refuelopcost` index 1.
+- `TRUCK_GHGMEET`: `MAX_SPEND_SHR` is an INTEGER set to 0.5, so it is 0 and no credits trade across averaging sets; the bank is spent again on every retry.
+- `TRUCK_AGGVARS`: the age-34 commercial light truck line indexes across. `TRUCK_STOCK`: the oldest vintage's survivors use the age-34 survival rate.
+- `TRUCK_FUEL`: the PHEV charging correction uses the class 2b share for every class, and the charging split tests `IFLT`, left at 3, so every non-sleeper truck counts as depot charging.
+- `TAIREFF`: the 48-year-old aircraft vintage takes in last year's 47- and 48-year-olds, so it never empties.
+- `TREPORT`: 100-mile EV fuel use (`TRLDQTEK(4)`) adds fleet use of 200-mile EVs (index 7). `cmpg_2`, `tmpg_2`, `lmpg_2` are never reset.
+- `READAIR`: the stock totals (`STK_SUP_TOT`, `STKPTOT`, `STKCTOT`) assign (region, year, type) arrays to (region, type, year) ones. The shapes do not conform; with variable bounds nothing checks, and gfortran's loops leave three year slots filled and the rest zero (out-of-bounds reads that happen to be zero). Intel may give something else.
+- `CFREAD`: the REQUIRES note loop tests `TECH_SUP` for the second and third technologies instead of `TECH_REQ`; `SURV_ND` is read into fuel 2 and then again into every fuel from 2 on.
+- `READSTOCK`: the fleet owners' oldest vintage uses the survival rate at MAXAGE-1 for both terms (the loop index is left at MAXAGE).
+- Input file quirk: trnldvx.xlsx's `CRCOVID` range definition has a third corner; NEMS (and the oracle) take the first two.
+
+Oracle build note: `patch_intel.py` rewrites Intel's `X .eq. .FALSE.` as `.eqv.`. Until 2026-11-02 it did so without parentheses, and `.eqv.` binds looser than `.and.`, so TRUCK_PBK's "push HEV/PHEV when GHG fails" test ran on the first try. Fixed; the oracle was rebuilt and rerun.
+
 ## Residential port (started 2026-11-01)
 
 ### Residential oracle
@@ -162,8 +281,8 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 
 | Routine | Lines | What it does | Tag | State |
 |---|---|---|---|---|
-| `RTEKREAD` | 607, 437 | Reads RSMESS.xlsx: RSCLASS, RSMEQP, RSSWITCH, RSMSHL (equipment, switching cost, shell menus) | | To do (reader) |
-| `DEGDAYREAD`, `BLDBASEREAD`, `RSUECSHLREAD`, `RSMELSREAD`, `RSMISCREAD`, `RSMLGTREAD`, `RDRET`, `INTEQT`, `RDSQFOOT`, `RDHTREQC`, `RDEFF`, `RDSTEFF`, `RDESTARHOMES`, `RDUECS`, `RCONSFL` | 1044-2443 | Text input readers (degree days, UECs, MELs, misc controls, lighting menu, retirements, new-home heating shares, floor area, RECS stock, efficiencies, ENERGY STAR homes, fuel maps) | | To do (readers) |
+| `RTEKREAD` | 607, 437 | Reads RSMESS.xlsx: RSCLASS, RSMEQP, RSSWITCH, RSMSHL (equipment, switching cost, shell menus) | | Done 2026-11-02, branch resd-inputs (`inputs.py`, `initial_state.py`) |
+| `DEGDAYREAD`, `BLDBASEREAD`, `RSUECSHLREAD`, `RSMELSREAD`, `RSMISCREAD`, `RSMLGTREAD`, `RDRET`, `INTEQT`, `RDSQFOOT`, `RDHTREQC`, `RDEFF`, `RDSTEFF`, `RDESTARHOMES`, `RDUECS`, `RCONSFL` | 1044-2443 | Text input readers (degree days, UECs, MELs, misc controls, lighting menu, retirements, new-home heating shares, floor area, RECS stock, efficiencies, ENERGY STAR homes, fuel maps) | | Done 2026-11-02, branch resd-inputs (`inputs.py`, `initial_state.py`) |
 | `RDPR` | 2086, 61 | Fuel prices to the menu dollar year | pr | Done, bit-exact |
 | `EXCONS` | 2444, 525 | RECS-year consumption by end use | ex | Done, bit-exact (`totals.py`) |
 | `NEWHSE` | 2969, 44 | New homes from housing starts and survival | nh | Done, bit-exact |
@@ -198,7 +317,9 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 - End to end (`src/nems_open/residential/resd.py`, `tests/test_residential_chain.py`): started once from the oracle's 2021 state, Python runs alone to 2050 (two iterations a year, about 140 s). It matches the oracle to 3e-7 on QBLK residential fuel use and within 5e-5 on every RESDREP, RSCON and RSEFF array, final-year reports included, (the largest, heating, from rounding compounding over 30 years). Against EIA's restart file it is within 0.33%, which is the oracle's own gap; 2050 US electricity 6879.7 vs EIA 6882.1 trillion Btu, gas 4096.4 vs 4096.0.
 - Shared EXP, ** and LOG round once from double precision (`common.expf`, `powf`, `logf`). NumPy's float32 versions are an ulp or two off the oracle's libm, and differences of large stock sums magnify that to 1e-5.
 - Carried state the dumps needed (SAVEd locals and PELRSOUT, which is EQUIVALENCEd so the COMMON scan missed it) is listed in `RESD_TARGETS`. `resd.resume_from_dump` fills in the few locals a run started mid-projection cannot get from dumps.
-- Still to do: the input readers (first call of 2020), so a run can start from the input files instead of the oracle's 2021 state. RESDBOUT (debug file only) is skipped.
+- From files (branch resd-inputs, 2026-11-02): `resd.start_from_files()` builds the state with no oracle dumps and runs RESD's 2020 calls; `run(s, 2021, 2050)` goes on from there (about 55 s for 2021-2050). `residential/initial_state.py` declares every array from `state_layout.json` (EIA's declarations, from the dumps' indexes; `scripts/make_resd_state_layout.py`), fills what other modules own from the restart file and the STEO block from `input/steovars.csv`, and `residential/inputs.py` ports the 16 first-call readers (RTEKREAD, RDSQFOOT, DEGDAYREAD, BLDBASEREAD, RSUECSHLREAD, RSMELSREAD, RSMISCREAD, RSMLGTREAD, RDRET, INTEQT, RDHTREQC, RDEFF, RDSTEFF, RDESTARHOMES, RDUECS, RCONSFL). `tests/test_residential_initial_state.py`: every reader array equals its first dump; 2020's BB/NB/RB outputs match; 2021-2050 QBLK residential fuel use matches the oracle to 3e-7.
+- Gotchas: RDISTGEN must not take its ZIP lag state from a zeroed layout (zeros mean "start from the files"); its xSizeMax is zero on the very first call; RSMISCREAD's HDR uses EXM from the restart file (0), not the file's; `rseff01.txt` uses Fortran repeat counts (`30*0.98`), now read by `ListDirectedReader`.
+- Not bit-exact, by design of the earlier port: RSHVAC and RHTRTEC differ from the oracle in the last float32 bit (libm), so cells of EQCREP that are differences of large stock sums drift (up to 2x on near-zero cells from 2026). Fuel use and report arrays stay within 5e-5. RESDBOUT (debug file only) is skipped; it also sets APEQCN for 2020, which nothing reads.
 
 ### Residential quirks kept (do not fix)
 - `RDPR`: wood is priced to distillate in 2020 but to natural gas less carbon tax after.
@@ -385,6 +506,22 @@ EFP quirks kept (selection; each module's docstring and the agents' reports in g
 
 Oracle fixes found while porting: `REAL *4` with a space was not parsed (EFPND arrays dumped as single integers; fixed in hooks.py, effective from the next rebuild); the test check treated NaN as a match (fixed: NaN against NaN and equal infinities match, NaN on one side fails).
 
+Added 2026-11-03 (the region loop and books):
+- `efp/books.py`: EFP's direct-access records (EMM_EFPR, EMM_EFPRC, EMM_EFPRCY, EMM_EFPBLDS, EMM_ECPIDAF) held in memory, with the Fortran record numbers. Records are raw COMMON bytes through CHARACTER views (not byte-swapped; EFPBLDS's explicit numeric lists are big-endian). `efp/elefp.py`: ELGLTR, ELLGTR, EFP, GENERA, TRANSM, DISTRI, ELEFP. ELEFP from the state before it plus the books equals the oracle's state after it for every dumped array, 2021 and 2030.
+- Books snapshots: `oracle/snapshot_efp.py` pauses the running oracle once LDSM's dump of a year is complete, copies EFP's files, resumes it (no rebuild; gfortran is blocked by Smart App Control). One record (region 25, distribution) misses a buffered write; tests and the chain re-apply that one copy.
+- `efp/efd_standin.py`: the EFD stand-in in Python, bit-identical to the oracle's for all 25 regions in all nine dump years.
+
+## EMM chain and EFP prices in run_model (2026-11-03)
+
+`emm/chain.py` runs LDSM, the EFD stand-in and EFP in Python year after year from the oracle's 2021 state, with the UTIL pieces around them: the hydrogen model's hourly electrolyzer load into LDSM's 864 hours (receive_from_hmm_electricity_demand), and EFP's STEO price benchmark (zero the year's adders, run EFP, in STEO years compute the adders from `ESTCU_*` and run EFP again). Year-indexed inputs from EMM parts not ported come from the oracle's 2050 dumps, which hold every year: the distributed capacity adjustments (`*_CAP_ADJ`, renewables) and the nuclear ZEC subsidy (`ELNUCSBDY`, CRPGRP in ECP's data prep).
+- `tests/test_emm_chain.py`: 2021 to 2030 alone, LDSM matches the oracle's 2030 state (nothing over 1e-4); retail prices by sector, census division and EMM region within 0.5% (worst 0.33%, US within 0.01%). To 2050 (opt-in): within 0.75% (worst 0.49%, a regional sector price; census divisions within 0.2%; US within 0.02%). The gap: ECP's yearly build data (BILDIN, including the cost-of-capital fields CAPCOST reads) stays at 2021 in the chain; region 25's snapshot record.
+- About 28 s a year.
+
+`run_model.run(elec_price="efp")` (EMM lane item 3, `emm/retail.py`): the chain on the loop's electricity sales each supply pass (residential and commercial census sales directly; industrial and transport end uses scaled by sector total over EIA's), after a pre-roll from 2021 to the start year on EIA's demand. The year's first pass is EFP's first iteration (capital rolls forward), later passes reprice, and a final pass after convergence writes the statements and REVGAP. Prices out are EFP's response applied to EIA's prices: EIA x EFP(run) / EFP(EIA's demand), the reference being the oracle's EFP run, since EFP on stand-in dispatch costs prices 8 to 19% below EIA.
+- 2028: baseline pelas 15.476 vs EIA 15.475. Building efficiency x0.9 (sales -8%): EFP raises pelas 6.4% (fixed costs over fewer kWh) where the stand-in lowers it 2%; sales fall a further 1.2%.
+- Cost: about 30 s per pass-year, plus the pre-roll (2.5 min to 2027).
+- Not yet: generation costs inside EFP move with the loop (they are EIA's reference dispatch through the stand-in, so a carbon price reaches retail prices only through sales); feeding the dispatch LP's results (elec="lp") into the EFD block is the next step.
+
 ## Supply stand-in (2026-11-02)
 Track two of the plan: a playable full model first, real supply ports after. `src/nems_open/supply_standin/` takes end-use demand (QBLK) and returns MPBLK prices, power-sector fuel use and CO2, from price curves fitted across EIA's 11 AEO2026 runs (their restart files sit in `nems-upstream/output/aeo2026/`; only cb2026 had an npz, but every `restart.rlx` is an npz too). Reproduces any case exactly when used as its baseline; on the demand-side cases (high/low growth, high electricity demand) US prices land within 2-5%. Supply shocks (oil and gas supply, zero-carbon cost) are baselines, not levers. Biggest gap: no power-sector abatement under a carbon price. Details and limits: `docs/supply_standin.md`. Upstream defect found: the `alttrnp` run is a byte copy of `electrnp`.
 
@@ -395,7 +532,7 @@ Track two of the plan: a playable full model first, real supply ports after. `sr
 - Industrial slot (`IndustrialSector`, 2026-11-02): asked for by name, it supplies the industrial oracle's fuel use (`oracle/run_ind/out/q*in.bin`, or the shared cache), fixed and not price-responsive, because the ported routines (CALBSC, CALSTOT, INDTOTAL) sit inside ISEAM's industry loop and the steps that reach QBLK (MODCAL, NATTOTAL, WRQTY, WEXOG) are not ported. The oracle matches EIA's history through 2022 and differs from 2024 (industrial oracle status). The runner's SUMQAS sums for industry (US, California, QTPIN, QTRIN, QTSIN) reproduce EIA's rows exactly. `tests/test_run_demand_industrial.py`.
 - Fallback: `demand_adapter.usable_ported` drops any requested ported sector with no oracle state for the start year (dumps exist for 2025, 2026, 2027, 2030, 2040, 2050), with a warning, and the loop uses its stub.
 - Inputs: every array in the restart blocks AMPBLK, AEUSPRC, MXPBLK, MACOUT, QSBLK, EMABLK, UEFPOUT, UECPOUT, TRANREP that a module's state holds is overwritten from `Inputs` (restart file plus overrides). PELRSOUT and PELCMOUT are EQUIVALENCEd onto the AEUSPRC end-use price arrays, so they are rebuilt from them. Applied to the oracle's state this changes nothing: the oracle ran on exactly these inputs.
-- Start: commercial can now start from the input files (`Commercial.start_from_files`); residential still starts from the oracle's state (`resd.start_from_dump`). Each such module starts from the oracle's state at the top of the year's final iteration (`resd.start_from_dump`, `Commercial.start_from_dump`), with the run year cleared from every array the chain writes. `DemandRunner.run_year()` again carries on to the next year with two iterations.
+- Start: commercial can now start from the input files (`Commercial.start_from_files`); residential can too (`resd.start_from_files`, then `resd.run`). The runner itself still starts each module from the oracle's state. Each such module starts from the oracle's state at the top of the year's final iteration (`resd.start_from_dump`, `Commercial.start_from_dump`), with the run year cleared from every array the chain writes. `DemandRunner.run_year()` again carries on to the next year with two iterations.
 - Commercial year driver: `src/nems_open/commercial/comm.py` (the "COMM driver" row above). It chains floorspace (from MACOUT/mc_commflsp), service demand, CDistGen, technology choice, consumption, benchmarking, and COMReport in 2050. It also ports the small pieces at the top of COMServiceDemand the calculation port left out: the first-iteration roll of last year's shares and efficiencies into the PrevYr arrays, and the reset of solar water heating. CALC111D writes no fuel use and is skipped. Speed: about 5 s per iteration (issue #6).
 - Totals: the part of SUMQAS (source/util_sumqas.f90) that touches these sectors: US = sum of divisions 1-9, California = Pacific times the CALSHR share, then QTP, QTR, QTS for each sector.
 - Results (2025, 2030, 2040, 2050): the runner matches the oracle to 4e-7 on QBLK fuel use for both sectors, and 2026 reached from 2025 matches too. Against EIA it inherits the oracle's own gfortran vs Intel drift:
@@ -431,6 +568,17 @@ One residential iteration went from about 2.5-3 s to about 1 s, every array bit-
 - RDISTGEN runs each division's 30-year cash flow for all niches at once.
 
 Full model (`run_model.run(ported=("residential", "commercial"))`, 2027-2050, 46 passes): 322 s before, 134-154 s after, timed with other sessions loading the machine (CPU 15-76%). Over the 2-minute bar, so the default stays the stubs. About 2.6 s per pass: residential and commercial about 1.2 s each, plus about 3 s of start-up loading the oracle dumps.
+
+Default flipped (branch fast-loop, 2026-11-02): `run_model.run()` now runs residential and commercial through EIA's ports by default (`run_model.PORTED`; `ported=()` for the all-stub loop). Residential runs in a worker process while commercial runs in the main one (`DemandRunner(parallel=True)`, `run_demand.InProcess`), same numbers to the bit. 2027-2050, 46 passes: 41 s parallel, 63 s serial, with the machine at about 25% CPU from other sessions; `tests/test_run_model.py::test_default_runs_ported_modules_in_two_minutes` (NEMS_SLOW=1) holds it under 120 s. Residential also starts from the input files for any year with no dump (`ResidentialSector.start`, about 2 s a year from 2020); commercial still needs a dump on main, else it falls back to its stub with a warning.
+
+## Transportation speed (branch tran-fast, 2026-11-03)
+One TRAN call went from about 16 s to about 5 s (2025, 2030, 2050 from the oracle's dumps, machine 30-40% busy with other sessions). Every array in the state and every saved local is bit-identical to the old code after two calls in 2020, 2025, 2030 and 2050, and all transportation oracle tests pass (the freight file now takes 14 minutes, the EV lever test 93 s instead of 25 minutes).
+- FEMCALC: the cost-effectiveness and logit loop runs over all technologies of a class at once (`femcalc._tech_loop`); supersede notes are indexed by technology and applied in one tight loop; share changes add up by ordered `np.add.accumulate`; SUMCHECK is one padded accumulate.
+- TALT2X's double-precision logit, TATTRIB's attributes and prices, TRUCK_CHOICE (all nine regions together; TRUCK_PBK over regions and VMT bins), TRUCK_TECHADOPT's shares, TRUCK_STOCK's survival: arrays, with Python's NaN-skipping `min`/`max` copied by `np.where` and running sums kept in the Fortran's order.
+- CAFEGHG_MEET computes its sales-free GHG factors once per call and redoes the group sales totals only for the group a step changes.
+- Shared: `fsum` is a sequential `np.add.accumulate` plus +0 (the Fortran accumulator never ends at -0.0); `powi` is memoized; freight's name resolver caches names; `FArray` caches section subscripts. numpy's float64 `exp`/`log` give the same bits on arrays and scalars on this CPU (checked), so vectorizing double-precision code is safe here.
+- Second round (branch tran-fast2): CAFEGHG_MEET runs a class and powertrain's 15 sales steps as arrays and keeps the first step that passes (3.1 s to 0.5 s profiled per call); FEMCALC's class-free technology terms once per group and powertrain; TRUCK_CHOICE's setup means over all years; TRUCK_TECHADOPT's MPG product by accumulate where the cap at 1 never binds (the loop otherwise); TRUCK_GHGZEV's rescale over regions, fleets and classes, fuel by fuel. Still bit-identical in 2020, 2025, 2030, 2050; all TRAN oracle tests pass. Profiled time per call 12.6 s to 9.6 s. Wall time is hard to read: other sessions held the machine at 65-85% load (the three-sector loop took 512 s at 85% load, against 431 s at lower load before this round). What is left is spread over FEMCALC's per-class loop (about 2.7 s profiled), freight's GHG retries (TRUCK_CHOICE, TRUCK_TECHADOPT, about 2 s) and many small routines; no single 3x hot spot remains.
+- Not yet the default: run_model 2027-2050 with residential, commercial and transportation ported takes 431 s (72 passes, about 6 s each, TRAN the slowest worker), against the 120 s bar. FEMCALC, CAFEGHG_MEET and TRUCK_NEW's GHG retries are what is left; the next step is FEMCALC over all classes of a group at once.
 
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
