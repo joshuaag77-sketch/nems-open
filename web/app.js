@@ -116,6 +116,22 @@
     el("k-cum-d").textContent = Math.abs(avoided) < 1 ? "Same as EIA" : fmt((100 * avoided) / total, 1) + "% of EIA's 2027-2050 total";
   }
 
+  // ---- fidelity badges (data/fidelity.js, scripts/fidelity.py) -----------------------
+  const FID = window.NEMS_FIDELITY;
+  const pill = (grade, text, title) => `<span class="fid fid-${grade}" title="${esc(title)}">${esc(text)}</span>`;
+  function outBadge(key) {
+    const o = FID && FID.sets[set] && FID.sets[set].outputs[key];
+    return o ? pill(o.grade, o.label_grade, o.summary) : "";
+  }
+  function modBadge(key) {
+    const m = FID && FID.sets[set] && FID.sets[set].modules[key];
+    return m ? pill(m.grade, m.label, FID.parts[m.part].summary) : "";
+  }
+  function paintBadges() {
+    document.querySelectorAll("[data-out]").forEach((e) => (e.innerHTML = outBadge(e.dataset.out)));
+    el("chart-fid").innerHTML = outBadge(measure.key);
+  }
+
   // ---- chart -----------------------------------------------------------------
   const MEASURES = [
     { key: "co2", label: "CO2", unit: "million metric tons CO2", get: (d) => d.co2 },
@@ -198,10 +214,10 @@
   const SECTOR = { rs: "Homes", cm: "Businesses", in: "Industry", tr: "Transportation", el: "Power plants" };
   function rowsFor(key, s, j) {
     const t = s.trace, r = ref.trace;
-    const row = (label, a, b, d, unit) => ({ label, a, b, d, unit });
+    const row = (label, a, b, d, unit, out) => ({ label, a, b, d, unit, out });
     switch (key) {
       case "co2": return [
-        ...Object.keys(SECTOR).map((k) => row(`${SECTOR[k]} CO2`, t.co2_sector[k][j], r.co2_sector[k][j], 0, " Mt")),
+        ...Object.keys(SECTOR).map((k) => row(`${SECTOR[k]} CO2`, t.co2_sector[k][j], r.co2_sector[k][j], 0, " Mt", `co2.${k}`)),
         row("Gas burned in power plants", t.power_burn.gas[j], r.power_burn.gas[j], 2, " quads"),
         row("Coal burned in power plants", t.power_burn.coal[j], r.power_burn.coal[j], 2, " quads")];
       case "pel": return [
@@ -218,7 +234,7 @@
       case "gal": return [
         row("Gasoline price", s.prices.gasoline[j], ref.prices.gasoline[j], 2, " $/gal"),
         row("Cut by the EV lever", t.ev_cut_bgal[j], 0, 1, " bn gal")];
-      case "use": return Object.keys(s.energy).map((k) => row(k[0].toUpperCase() + k.slice(1), s.energy[k][j], ref.energy[k][j], 2, " quads"));
+      case "use": return Object.keys(s.energy).map((k) => row(k[0].toUpperCase() + k.slice(1), s.energy[k][j], ref.energy[k][j], 2, " quads", `energy.${k}`));
       case "whl": return Object.entries(s.generation_twh || {}).filter(([, v]) => v[j] > 0.05)
         .sort((x, y) => y[1][j] - x[1][j]).map(([g, v]) => row(`${GEN[g] || g} generation`, v[j], null, 0, " TWh"));
     }
@@ -254,13 +270,14 @@
     const name = (k) => `${ENGINE.modules[k].name} (${set === "real" && LIVE[k] ? (k === "electricity" ? "dispatch LP" : "port, ran")
       : ({ stand: "stand-in", partial: "stub", real: "port" })[ENGINE.modules[k].kind]})`;
     const rows = rowsFor(key, s, j).map((r) => {
-      if (r.b === null) return `<tr><td>${r.label}</td><td>${r.a === null ? "n/a" : fmt(r.a, r.d) + r.unit}</td><td>n/a</td><td></td></tr>`;
+      const lab = r.label + (r.out ? " " + outBadge(r.out) : "");
+      if (r.b === null) return `<tr><td>${lab}</td><td>${r.a === null ? "n/a" : fmt(r.a, r.d) + r.unit}</td><td>n/a</td><td></td></tr>`;
       const diff = r.a - r.b, same = Math.abs(diff) < 0.5 * 10 ** -r.d;
-      return `<tr><td>${r.label}</td><td>${fmt(r.a, r.d)}${r.unit}</td><td>${fmt(r.b, r.d)}${r.unit}</td><td class="${same ? "" : diff < 0 ? "down" : "up"}">${same ? "same" : (diff > 0 ? "+" : "-") + fmt(Math.abs(diff), r.d)}</td></tr>`;
+      return `<tr><td>${lab}</td><td>${fmt(r.a, r.d)}${r.unit}</td><td>${fmt(r.b, r.d)}${r.unit}</td><td class="${same ? "" : diff < 0 ? "down" : "up"}">${same ? "same" : (diff > 0 ? "+" : "-") + fmt(Math.abs(diff), r.d)}</td></tr>`;
     }).join("");
     el("trace-body").innerHTML = `
       <div class="trace-head"><div><div class="kpi-label">${measure.label}, ${traceYear}</div>
-        <div class="kpi-value">${a === null ? "n/a" : fmt(a, d)}</div><div class="kpi-delta">${b === null ? "No EIA reference" : "EIA " + fmt(b, d)}</div></div>
+        <div class="kpi-value">${a === null ? "n/a" : fmt(a, d)}</div><div class="kpi-fid">${outBadge(key)}</div><div class="kpi-delta">${b === null ? "No EIA reference" : "EIA " + fmt(b, d)}</div></div>
         <div class="made-by"><div class="kpi-label">Produced by</div>
         <div class="made-btns">${(mod ? [mod] : ["residential", "commercial", "industrial", "transportation"]).map((k) => `<button type="button" class="ghost" data-mod="${k}">${name(k)}</button>`).join("")}</div>
         <div class="fine"><code>${VARIABLE[key]}</code></div></div></div>
@@ -499,13 +516,13 @@
   });
 
   // ---- how this works --------------------------------------------------------------
-  (function statusTable() {
+  function statusTable() {
     const label = { real: "Ported, matches EIA", partial: "Being ported (stub)", stand: "Stand-in" };
     el("status-table").querySelector("tbody").innerHTML = Object.entries(ENGINE.modules).map(([key, m]) =>
-      `<tr><td><button type="button" class="link" data-mod="${key}">${m.name}</button></td><td><i class="dot ${m.kind}"></i>${label[m.kind]}</td><td>${fmt(m.eia_lines)}</td><td>${fmt(m.tests)}</td></tr>`).join("");
+      `<tr><td><button type="button" class="link" data-mod="${key}">${m.name}</button></td><td><i class="dot ${m.kind}"></i>${label[m.kind]}</td><td>${modBadge(key)}</td><td>${fmt(m.eia_lines)}</td><td>${fmt(m.tests)}</td></tr>`).join("");
     el("status-table").querySelectorAll("[data-mod]").forEach((b) => b.addEventListener("click", () => openModule(b.dataset.mod)));
     el("status-note").textContent = `From the repo on ${ENGINE.totals.generated}: ${fmt(ENGINE.totals.tests)} tests in all. EIA lines count every source file the module replaces, AIMMS models included.`;
-  })();
+  }
   el("go-how").addEventListener("click", () => el("how").scrollIntoView({ behavior: "smooth", block: "start" }));
 
   // ---- wiring ------------------------------------------------------------------
@@ -574,6 +591,8 @@
     c = current();
     tagModules();
     kpis(c.s);
+    paintBadges();
+    statusTable();
     drawChart(c.s);
     trace(c.s);
     explain(c);

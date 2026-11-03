@@ -223,3 +223,28 @@ button.link { background: none; border: 0; padding: 0; font: inherit; color: var
 .drv-bar i { display: block; height: 100%; border-radius: 3px; }
 .drv-bar i.cut { background: var(--good); } .drv-bar i.rise { background: var(--bad); }
 .drivers p { margin: 0; font-size: 0.86rem; }
+
+/* fidelity badges: how close a number is to EIA (scripts/fidelity.py) */
+.fid { display: inline-block; font-size: 0.7rem; font-weight: 600; line-height: 1.5; padding: 0 7px; border-radius: 999px;
+  border: 1px solid currentColor; white-space: nowrap; vertical-align: middle; cursor: help; }
+.fid-match { color: var(--real); } .fid-within { color: var(--partial); } .fid-stand { color: var(--stand); }
+.kpi-fid { margin: 0 0 2px; min-height: 1.1em; }
+#chart-fid { margin-left: auto; }
+.trace-t .fid { margin-left: 6px; }
+.board { max-width: 1100px; margin: 0 auto; padding: 0 16px 24px; display: grid; gap: 16px; }
+.board .card { padding: 16px; }
+.grades { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.tbl { overflow-x: auto; }
+.board-t td { vertical-align: top; }
+.board-t td p { margin: 0 0 4px; }
+.board-t .ev { margin: 0; padding-left: 18px; font-size: 0.84rem; color: var(--muted); }
+.board-t .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.board-t details { font-size: 0.82rem; }
+@media (max-width: 640px) {
+  .board-t thead { display: none; }
+  .board-t tr, .board-t td { display: block; }
+  .board-t tr { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .board-t td { border: 0; padding: 2px 0; }
+  .board-t .num { text-align: left; }
+  .board-t td[data-label]::before { content: attr(data-label); color: var(--muted); }
+}

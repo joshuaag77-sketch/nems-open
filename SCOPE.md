@@ -281,8 +281,8 @@ Call order from `RESD` (line 411). Base year 2020: input readers on iteration 1,
 
 | Routine | Lines | What it does | Tag | State |
 |---|---|---|---|---|
-| `RTEKREAD` | 607, 437 | Reads RSMESS.xlsx: RSCLASS, RSMEQP, RSSWITCH, RSMSHL (equipment, switching cost, shell menus) | | To do (reader) |
-| `DEGDAYREAD`, `BLDBASEREAD`, `RSUECSHLREAD`, `RSMELSREAD`, `RSMISCREAD`, `RSMLGTREAD`, `RDRET`, `INTEQT`, `RDSQFOOT`, `RDHTREQC`, `RDEFF`, `RDSTEFF`, `RDESTARHOMES`, `RDUECS`, `RCONSFL` | 1044-2443 | Text input readers (degree days, UECs, MELs, misc controls, lighting menu, retirements, new-home heating shares, floor area, RECS stock, efficiencies, ENERGY STAR homes, fuel maps) | | To do (readers) |
+| `RTEKREAD` | 607, 437 | Reads RSMESS.xlsx: RSCLASS, RSMEQP, RSSWITCH, RSMSHL (equipment, switching cost, shell menus) | | Done 2026-11-02, branch resd-inputs (`inputs.py`, `initial_state.py`) |
+| `DEGDAYREAD`, `BLDBASEREAD`, `RSUECSHLREAD`, `RSMELSREAD`, `RSMISCREAD`, `RSMLGTREAD`, `RDRET`, `INTEQT`, `RDSQFOOT`, `RDHTREQC`, `RDEFF`, `RDSTEFF`, `RDESTARHOMES`, `RDUECS`, `RCONSFL` | 1044-2443 | Text input readers (degree days, UECs, MELs, misc controls, lighting menu, retirements, new-home heating shares, floor area, RECS stock, efficiencies, ENERGY STAR homes, fuel maps) | | Done 2026-11-02, branch resd-inputs (`inputs.py`, `initial_state.py`) |
 | `RDPR` | 2086, 61 | Fuel prices to the menu dollar year | pr | Done, bit-exact |
 | `EXCONS` | 2444, 525 | RECS-year consumption by end use | ex | Done, bit-exact (`totals.py`) |
 | `NEWHSE` | 2969, 44 | New homes from housing starts and survival | nh | Done, bit-exact |
