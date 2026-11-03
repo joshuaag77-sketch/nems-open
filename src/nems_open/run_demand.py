@@ -8,8 +8,9 @@ overrides) and the modules respond; leave it alone and they reproduce EIA.
 
 How a year runs: each module starts from the oracle's state at the top of that
 year's final NEMS iteration (its input tables and its own history before that
-year; the file readers are not all ported yet), every input array is
-overwritten from `Inputs`, and the module's chain runs once. `DemandRunner`
+year; residential starts from its input files instead where there is no
+dump), every input array is overwritten from `Inputs`, and the module's chain
+runs once. `DemandRunner`
 can then keep going year by year, two iterations a year, carrying each
 module's state the way the Fortran does.
 
@@ -102,13 +103,27 @@ class ResidentialSector:
 
     @staticmethod
     def available(year: int) -> bool:
+        """Any year from 2021: from the oracle's dump where there is one, else from the files."""
+        return year > 2020
+
+    @staticmethod
+    def dumped(year: int) -> bool:
         """Whether the oracle dumped the state this module starts from in that year."""
         from nems_open import oracle_state
         return oracle_state.available("yb_in", year - BASEYR + 1, "resd")
 
-    def start(self, year: int, inputs=None):
+    def start(self, year: int, inputs: Inputs | None = None):
+        """The state at the top of year's final iteration: the oracle's dump, or with no dump,
+        the input files run from 2020 through year's first iteration (about 2 s a year)."""
         from nems_open.residential import resd
-        return resd.start_from_dump(year - BASEYR + 1)
+        if self.dumped(year):
+            return resd.start_from_dump(year - BASEYR + 1)
+        inputs = inputs or Inputs()
+        s = resd.start_from_files(inputs)
+        for y in range(2021, year + 1):
+            for itr in ((1, 2) if y < year else (1,)):
+                self.iteration(s, y, itr, inputs)
+        return s
 
     def iteration(self, s, year: int, itr: int, inputs: Inputs) -> None:
         from nems_open.residential import resd
@@ -212,6 +227,84 @@ class IndustrialSector:
         return rows
 
 
+class InProcess:
+    """A sector run in a worker process, so it can run while the next sector runs here.
+
+    Same calls as the sector (iteration, quantities) on a handle; iteration() only sends
+    the work, quantities() waits for it. The worker holds the sector's state and its own
+    copy of the restart file; each iteration it gets the caller's input overrides."""
+
+    def __init__(self, name: str, year: int, snapshot_path):
+        import multiprocessing as mp
+        ctx = mp.get_context("spawn")
+        self.conn, child = ctx.Pipe()
+        self.proc = ctx.Process(target=_sector_worker, args=(child, name, year, str(snapshot_path)), daemon=True)
+        # The worker needs only this package. Hide the caller's script from the spawn, which
+        # would otherwise re-run its top level in the worker (a script with no main guard
+        # would start a second run there).
+        main = sys.modules["__main__"]
+        saved = {k: main.__dict__[k] for k in ("__file__", "__spec__") if k in main.__dict__}
+        main.__dict__.pop("__file__", None)
+        main.__spec__ = None
+        try:
+            self.proc.start()
+        finally:
+            main.__dict__.update(saved)
+        child.close()
+        sector = SECTORS[name]
+        self.name, self.suffix = sector.name, sector.suffix
+
+    def iteration(self, handle, year: int, itr: int, inputs: Inputs) -> None:
+        self.conn.send(("iteration", year, itr, inputs.overrides))
+
+    def quantities(self, handle) -> dict:
+        self.conn.send(("quantities",))
+        ok, value = self.conn.recv()
+        if not ok:
+            raise RuntimeError(f"{self.name} worker failed: {value}")
+        return value
+
+    def close(self) -> None:
+        if self.proc.is_alive():
+            try:
+                self.conn.send(("stop",))
+            except OSError:
+                pass
+            self.proc.join(5)
+            if self.proc.is_alive():
+                self.proc.terminate()
+
+
+def _sector_worker(conn, name: str, year: int, snapshot_path: str) -> None:
+    import traceback
+    error = None
+    try:
+        inputs = Inputs(Snapshot(snapshot_path))
+        sector = SECTORS[name]()
+        state = sector.start(year)
+    except Exception:
+        error = traceback.format_exc()
+    while True:
+        msg = conn.recv()
+        if msg[0] == "stop":
+            return
+        if error is not None:
+            if msg[0] == "quantities":
+                conn.send((False, error))
+            continue
+        try:
+            if msg[0] == "iteration":
+                _, y, itr, overrides = msg
+                inputs.overrides = overrides
+                sector.iteration(state, y, itr, inputs)
+            else:
+                conn.send((True, sector.quantities(state)))
+        except Exception:
+            error = traceback.format_exc()
+            if msg[0] == "quantities":
+                conn.send((False, error))
+
+
 # NEMS calls the demand modules in this order (RESD, COMM, IND, TRAN). None marks
 # a module not ported yet; its QBLK arrays keep EIA's values. Industrial is a slot
 # (see IndustrialSector): it runs only when asked for by name.
@@ -288,19 +381,36 @@ class DemandRunner:
     """
 
     def __init__(self, year: int, inputs: Inputs | None = None,
-                 sectors=("residential", "commercial"), commercial_from_files: bool = False, commercial_levers=None):
+                 sectors=("residential", "commercial"), parallel: bool = False,
+                 commercial_from_files: bool = False, commercial_levers=None):
         self.inputs = inputs or Inputs()
         self.year = year
         self.first_iteration = 2
         self.sectors = []
-        for name in SECTORS:
-            if name in sectors:
-                if SECTORS[name] is None:
-                    raise NotImplementedError(f"{name} demand is not ported yet")
+        names = [name for name in SECTORS if name in sectors]
+        for name in names:
+            if SECTORS[name] is None:
+                raise NotImplementedError(f"{name} demand is not ported yet")
+        # parallel: every sector but the last runs in a worker process (started first, so
+        # it loads while this process starts the last one). Results are the same. A commercial
+        # sector with options (from files, levers) stays in this process: a worker builds its own default.
+        options = commercial_from_files or commercial_levers is not None
+        workers = {name: InProcess(name, year, self.inputs.snapshot.path)
+                   for name in names[:-1] if not (name == "commercial" and options)} if parallel else {}
+        for name in names:
+            if name in workers:
+                self.sectors.append((workers[name], None))
+            else:
                 sector = (SECTORS[name](commercial_from_files, commercial_levers) if name == "commercial"
                           else SECTORS[name]())
                 self.sectors.append((sector, sector.start(year, self.inputs)))
         self.q = eia_quantities(self.inputs.snapshot)
+
+    def close(self) -> None:
+        """Stop the worker processes (parallel=True)."""
+        for sector, _ in self.sectors:
+            if isinstance(sector, InProcess):
+                sector.close()
 
     def run_year(self) -> int:
         """Run the current year; returns it. Results are in `self.q`."""

@@ -65,19 +65,20 @@ def test_runner_uses_the_slot(eia, year):
 
 
 def test_ported_without_state_falls_back_to_stub():
-    """2028 has no oracle dump: asking for ported residential and commercial gives stubs and a warning."""
+    """2028 has no oracle dump: commercial falls back to its stub with a warning; residential
+    starts from the input files instead."""
     from nems_open.demand_adapter import usable_ported
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         got = usable_ported(("residential", "commercial"), 2028)
-    assert got == ()
-    assert any("no oracle state" in str(w.message) for w in caught)
+    assert got == ("residential",)
+    assert any("no oracle state for commercial" in str(w.message) for w in caught)
     assert usable_ported((), 2028) == ()
 
 
 def test_ported_with_state_is_kept():
     from nems_open.demand_adapter import usable_ported
     from nems_open.run_demand import CommercialSector, ResidentialSector
-    if not (ResidentialSector.available(2030) and CommercialSector.available(2030)):
+    if not (ResidentialSector.dumped(2030) and CommercialSector.available(2030)):
         pytest.skip("oracle state not dumped")
     assert usable_ported(("residential", "commercial"), 2030) == ("residential", "commercial")
