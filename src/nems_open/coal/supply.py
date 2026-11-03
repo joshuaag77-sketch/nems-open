@@ -125,3 +125,98 @@ def base_year(c: Curves | None = None, data=None, macro=None) -> dict:
     quan = np.diff(t_quan, axis=1, prepend=0.0)
     return dict(keys=keys, t_quan=t_quan, sc_quan=quan, sc_price=price, sc_price87=price87,
                 sc_1_price87=price87 / v["btu"][:, None])
+
+
+# --- forecast years: the pricing procedure with lagged state seeded from the restart ----------------
+
+class Chain:
+    """CalculationOfCoalPricingEquation for 2025 onward, one year at a time.
+
+    Substitutions for the AIMMS case-file lag state (all logged in docs/coal_lp.md):
+      FY_PROD_CAP      the restart's USO2GRP/XCL_PCAP (TBtu) divided by Btu; the model's own output.
+      QTarget/LAG_PROD the previous year's solved production (this chain's LP), 2024 = BY_PROD.
+      LAG_PRI          the previous year's step price at the curve's production (2024 = BY_MMP92).
+    """
+
+    def __init__(self, data=None, macro=None):
+        self.data = data or inputs.load()
+        self.macro = macro or Macro()
+        self.c = curves(self.data, self.macro)
+        self.keys = self.c.keys
+        v = self.c.v
+        A = lambda n, d=0.0: _arr(self.data, n, self.keys, d)
+        self.A = A
+        self.at = lambda n, yr, d=np.nan: np.array([float(self.data.param(n).get(k + (yr,), d)) for k in self.keys])
+        self.steps = step_sizes()
+        self.j92_87 = self.macro.deflate(1987, 1992)
+        self.state = dict(year=CPS_BASE_YR, tph=v["tph"].copy(), mine_fuel=v["mine_fuel"].copy(),
+                          cap=v["prod_cap"].copy(), prod=v["by_prod"].copy(), lag_pri=v["mmp92"].copy())
+        self.div = np.array([2 if k[0] <= 6 else 5 if k[0] <= 11 else 6 for k in self.keys])
+        self.util = {n: A(n) for n in ("util_min", "util_mid", "util_max")}
+
+    def _pelin(self, y):
+        return np.array([self.macro.price("PELIN", y, region=int(d)) for d in self.div])
+
+    def year(self, y: int, prod_prev: np.ndarray | None = None) -> dict:
+        """Step prices and quantities for year y (> base), given production last year in tons."""
+        st, v, A, mac = self.state, self.c.v, self.A, self.macro
+        assert y == st["year"] + 1
+        if prod_prev is not None:
+            st["prod"] = prod_prev
+        rho, rc, cuh = v["rho"], v["rc"], v["cuh"]
+        cap = np.array(self.macro.s["USO2GRP/XCL_PCAP"][:14, y - 1990], float) / v["btu"]
+        tph = st["tph"] * self.at("tph_growth_rate", y)
+        wage = A("by_wage") * self.at("wage_multiplier", y) * self.j92_87
+        p_eq, p_eq_prev = self.at("p_equip", y), self.at("p_equip", y - 1)
+        ucc = ((mac.series("MC_RLRMCORPPUAA", y) / 100.0) + 0.1 - (p_eq / p_eq_prev - 1.0)) * p_eq
+        d_new, d_old = mac.price("PDSIN", y) * self.j92_87, mac.price("PDSIN", y - 1) * self.j92_87
+        es, ds = A("elec_share"), A("dist_share")
+        mf = st["mine_fuel"] * (self._pelin(y) * es + d_new * ds) / (self._pelin(y - 1) * es + d_old * ds)
+        p_oth = self.at("ppi_steel_explo", y)
+        cap_prev = st["cap"]
+        # last year's production, held between the utilization limits (T_UTIL2 logic)
+        prod3 = st["prod"]
+        t_util2 = prod3 / cap if y >= CPS_BASE_YR + 3 else v["cap_util"]
+        lag_prod = np.where(t_util2 < v["cap_util"], cap * v["cap_util"],
+                            np.where(t_util2 > self.util["util_max"], cap * self.util["util_max"], prod3))
+        lag_pri = np.maximum(st["lag_pri"], 0.01)
+        ulag = (lag_prod / cap_prev) * 100.0
+        ur = (ulag / cuh) ** UTIL_EXP_TOP
+        poper, ucap = A("rcoe_poperoth"), A("rcoe_usercstcap")
+        with np.errstate(all="ignore"):
+            mult = (v["rc"]["cont"] * 0 + self.c.mult / self.c.mult) * 0  # placeholder replaced below
+            bb = np.where(v["tph"] > 0,
+                          np.exp(rc["cont"] * (1 - rho)) * v["tph"] ** (A("tph_sda") * (1 - rho))
+                          * A("by_prod_cap_adj") ** (rc["prodcap"] * (1 - rho)) * A("by_mmp_adj") ** (-rho)
+                          * v["prod_cap"] ** (A("prodcap_sda") * (1 - rho)), 0.0)
+            mult = (bb * tph ** rc["tph"] * wage ** rc["wage"] * ucc ** ucap * mf ** rc["fuel"]
+                    * cap ** rc["prodcap"] * p_oth ** poper * lag_pri ** rho
+                    * tph ** (-rho * rc["tph"]) * wage ** (-rho * rc["wage"]) * ucc ** (-rho * ucap)
+                    * mf ** (-rho * rc["fuel"]) * cap ** (-rho * rc["prodcap"]) * p_oth ** (-rho * poper)
+                    * ulag ** (-rho * (rc["util"] * ur))
+                    * cuh ** ((rc["util"] - ur * rc["util"]) * (-rho)))
+            q_target = prod3
+            t_util = q_target / cap
+            t_qtarg = np.where(v["cap_util"] > 0,
+                               np.where(t_util < self.util["util_min"], cap * self.util["util_min"],
+                                        np.where(t_util <= self.util["util_max"], q_target, cap * self.util["util_max"])), 0.0)
+            t_quan = np.minimum(t_qtarg[:, None] * (1.0 + self.steps[None, :]), cap[:, None] * 0.99)
+            exp = np.where(np.arange(1, len(self.steps) + 1) <= 5, UTIL_EXP_BOT, UTIL_EXP_TOP)[None, :]
+            price = sc_price(mult[:, None], cuh[:, None], v["rc_util"][:, None], t_quan / cap[:, None],
+                             self.c.calk[:, None], exp)
+        adj_add, adj_mul = self.at("adj_mmp_add", y, 0.0), self.at("adj_mmp_mult", y, 1.0)
+        price87 = (price * mac.deflate(1992, 1987) + adj_add[:, None]) * adj_mul[:, None]
+        quan = np.concatenate([t_quan[:, :1], t_quan[:, 1:] * 1.00001 - t_quan[:, :-1]], axis=1)
+        out = dict(year=y, cap=cap, t_quan=t_quan, sc_quan=quan, sc_price=price, sc_price87=price87,
+                   sc_1_price87=price87 / v["btu"][:, None], mult=mult)
+        st.update(year=y, tph=tph, mine_fuel=mf, cap=cap)
+        self._last = out
+        return out
+
+    def settle(self, production_tons: np.ndarray):
+        """Record the solved production for the year just priced; it becomes next year's lag state."""
+        o = self._last
+        self.state["prod"] = production_tons
+        # step price at the curve's output (linear in cumulative quantity)
+        self.state["lag_pri"] = np.array([np.interp(production_tons[i], o["t_quan"][i], o["sc_price"][i])
+                                          for i in range(len(production_tons))])
