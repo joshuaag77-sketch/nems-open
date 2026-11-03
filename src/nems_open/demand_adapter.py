@@ -4,21 +4,24 @@
 (QBLK names, one value per region) for a set of delivered prices (MPBLK names). Behind
 it, each sector is one of:
 
-- EIA's ported module, through the demand runner (`nems_open.run_demand`). Residential and
-  commercial are ported and are run_model's default (`ported=("residential", "commercial")`);
+- EIA's ported module, through the demand runner (`nems_open.run_demand`). Residential,
+  commercial and transportation are ported; residential and commercial are run_model's default
+  (`ported=("residential", "commercial")`), transportation is opt-in (about 25 s an iteration);
   with more than one, all but the last run in worker processes, in parallel. Residential
   starts from the oracle's dump for the start year, else from the input files; commercial
-  needs a dump, and a requested sector with no state for the start year falls back to its
+  needs a dump; transportation starts from the latest dump at or before the start year and runs
+  forward, or with no dump from EIA's files (TRAN from 1995, about 30 min to 2025); a requested sector with no state for the start year falls back to its
   stub, with a warning. Industrial is a slot that supplies its oracle's fuel use.
 - A stub: EIA's reference fuel use moved by a price elasticity with a lag. Used for
-  industrial and transportation (not ported yet), and for every sector with ported=(),
+  industrial (not ported yet), transportation unless asked for, and for every sector with ported=(),
   so the loop runs in seconds. Its elasticities are fitted from EIA's side cases where
   the data allow (see ELASTICITY).
 
 Policy levers (`Policy`) are applied here, after the sector models:
 - building_efficiency multiplies residential and commercial fuel use;
-- ev_share sets the plug-in share of new light-duty sales, which moves gasoline to
-  electricity in transportation as the fleet turns over;
+- ev_share sets the plug-in share of new light-duty sales. With transportation ported,
+  it acts through the vehicle choice inside TRAN (TransportationSector); with the stub,
+  it moves gasoline to electricity as the fleet turns over (EVLever);
 - carbon_price is a supply-side lever (the loop passes it to the supply stand-in).
 """
 
@@ -146,13 +149,13 @@ class PortedSectors:
     """EIA's ported modules through the demand runner (branch demand-runner)."""
 
     def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, parallel: bool = True,
-                 commercial_levers=None):
+                 commercial_levers=None, ev_share: dict | None = None):
         from nems_open.run_demand import EQUIVALENCED, SECTOR_QUANTITIES, DemandRunner, sum_quantities
         self._equivalenced = EQUIVALENCED
         self._names = SECTOR_QUANTITIES
         self._sum = sum_quantities
         self.runner = DemandRunner(start_year, sectors=sectors, parallel=parallel and len(sectors) > 1,
-                                   commercial_levers=commercial_levers)
+                                   commercial_levers=commercial_levers, ev_share=ev_share)
         self.inputs = self.runner.inputs
         self.base = base
         self.suffixes = [SECTORS[s] for s in sectors]
@@ -208,11 +211,17 @@ class DemandAdapter:
         ported = usable_ported(ported, start_year)
         if policy.commercial is not None and "commercial" not in ported:
             raise ValueError("commercial levers need the ported commercial module (ported=(..., 'commercial'))")
-        self.ported = PortedSectors(start_year, ported, base, commercial_levers=policy.commercial) if ported else None
+        ev_by_year = None
+        if policy.ev_share is not None and "transportation" in ported:
+            target = by_year(policy.ev_share, policy.start_year, np.nan)
+            ev_by_year = {FIRST_YEAR + j: float(v) for j, v in enumerate(target) if not np.isnan(v)}
+        self.ported = (PortedSectors(start_year, ported, base, commercial_levers=policy.commercial, ev_share=ev_by_year)
+                       if ported else None)
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}
         self.efficiency = policy.efficiency()
-        self._ev = EVLever(base, policy) if policy.ev_share is not None else None
+        # The stub lever only when transportation is a stub: the port has the real one.
+        self._ev = EVLever(base, policy) if policy.ev_share is not None and "tr" in self.stubs else None
 
     @property
     def routines(self) -> list[str]:

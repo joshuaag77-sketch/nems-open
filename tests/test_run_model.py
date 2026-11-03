@@ -146,3 +146,17 @@ def test_stub_demand_on_eia_prices(base, case):
     tol = lambda k: 0.08 if k.endswith("in") else 0.04
     bad = {k: round(100 * v, 1) for k, v in worst.items() if v > tol(k)}
     assert not bad, bad
+
+
+@pytest.mark.skipif(os.environ.get("NEMS_SLOW") != "1", reason="set NEMS_SLOW=1 to run transportation's port (about 25 s an iteration)")
+def test_three_ported_sectors_one_year(base):
+    """Residential, commercial and transportation through EIA's ports in one year of the loop."""
+    from nems_open.run_demand import TransportationSector
+    from nems_open.run_model import PORTED
+    if not TransportationSector.dumped(2030):
+        pytest.skip("transportation oracle dump for 2030 not present (a start from files takes about 40 min)")
+    r = run(start_year=2030, end_year=2030, ported=PORTED + ("transportation",))
+    assert {"residential", "commercial", "transportation"} <= set(r.passes[0].routines)
+    j = 2030 - 1990
+    for k in ("QBLK/qelrs", "QBLK/qngcm", "QBLK/qmgtr", "QBLK/qjftr"):
+        assert abs(r.quantities[k][US, j] / base[k][US, j] - 1) < 0.005, k

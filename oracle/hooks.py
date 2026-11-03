@@ -134,6 +134,9 @@ DECL_FILES = ["parametr", "comparm", "comvars", "commrep", "qblk", "apq", "ampbl
 # routine's last line), before (dump before that line rather than after it),
 # private, carried.
 RESD_DUMP_YEARS = [31, 32, 33, 36, 37, 38, 41, 51, 61]  # 2020 2021 2022 2025 2026 2027 2030 2040 2050
+# ORACLE_DUMP_YEARS="31,32,36" narrows the dumps (a full residential set is 18 GB).
+if os.environ.get("ORACLE_DUMP_YEARS"):
+    RESD_DUMP_YEARS = [int(y) for y in os.environ["ORACLE_DUMP_YEARS"].split(",")]
 RESD_TARGETS = [
     dict(tag="pr", call=r"IF \(CurCalYr\.GE\.RECSYear\) CALL RDPR\b"),
     dict(tag="nh", call=r"CALL NEWHSE\b"),

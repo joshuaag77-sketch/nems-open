@@ -33,6 +33,8 @@ class FArray:
         return cls(np.zeros(shape, dtype=dtype), [lo for lo, _ in bounds])
 
     def _ix(self, idx):
+        if idx is Ellipsis:  # a[...]: the whole array, as numpy
+            return Ellipsis
         if not isinstance(idx, tuple):
             idx = (idx,)
         return tuple(

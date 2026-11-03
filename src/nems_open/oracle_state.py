@@ -15,7 +15,7 @@ from nems_open.fortran_array import FArray
 from nems_open.paths import REPO_ROOT
 
 # Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
-RUN_DIRS = {"comm": "run", "resd": "run_resd", "emm": "run_emm"}
+RUN_DIRS = {"comm": "run", "resd": "run_resd", "emm": "run_emm", "tran": "run_tran"}
 ORACLE_DIR = Path(os.environ.get("NEMS_ORACLE_DIR", Path.home() / "dev" / "oracle-cache"))
 
 
@@ -28,12 +28,19 @@ def out_dir(module: str = "comm") -> Path:
     return local
 
 
-def state_dir(module: str = "comm") -> Path:
-    return out_dir(module) / "state"
+def _module(module: str, run: str | None) -> str:
+    """run: a run folder name ("run_tran") instead of the module name."""
+    if run is None:
+        return module
+    return next(m for m, r in RUN_DIRS.items() if r == run)
 
 
-def available(tag: str, year: int, module: str = "comm") -> bool:
-    d = state_dir(module) / tag
+def state_dir(module: str = "comm", run: str | None = None) -> Path:
+    return out_dir(_module(module, run)) / "state"
+
+
+def available(tag: str, year: int, module: str = "comm", run: str | None = None) -> bool:
+    d = state_dir(module, run) / tag
     return (d / str(year) / "index.txt").exists() or (d / f"{year}.npz").exists()
 
 
@@ -52,9 +59,9 @@ def _entries(index_text):
             yield parts[0], parts[1], rank, [(int(parts[3 + 2 * k]), int(parts[4 + 2 * k])) for k in range(rank)]
 
 
-def load(tag: str, year: int, module: str = "comm") -> dict:
+def load(tag: str, year: int, module: str = "comm", run: str | None = None) -> dict:
     """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name."""
-    base = state_dir(module) / tag
+    base = state_dir(module, run) / tag
     folder = base / str(year)
     if not (folder / "index.txt").exists() and (base / f"{year}.npz").exists():
         with np.load(base / f"{year}.npz") as z:
