@@ -344,6 +344,102 @@ MODULES = {
     "emm": dict(build="build_emm", run="run_emm", years=EMM_DUMP_YEARS, targets=EMM_TARGETS, module_text=False,
                 sources=["util", "udat", "uldsm", "uefp", "uefd", "uecp", "unugs", "udaf", "ucape", "uread"]),
 }
+# Industrial: routines are external, sharing MODULE I_ through USE, so as for
+# residential the state dump USEs the module. Dumps are the routine-by-routine
+# targets below, taken from the final iteration of these years.
+IND_DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]  # 2019 2020 2021 2025 2026 2027 2030 2040 2050
+# CALBSC runs once per industry and region; the dump holds the last one of the year.
+IND_TARGETS = [
+    dict(tag="bsc", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="stot", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    # Single industry and region cases, since each dump holds only one call: food (7) and bulk
+    # chemicals (9) have CHP and share biomass boiler fuel, wood products (19) burns biomass,
+    # mining (3) is nonmanufacturing (no coal boilers).
+    dict(tag="stot7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="stot9", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="stot19", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="stot3", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="bsc3", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="bsc7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="itot", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="itot1", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="itot7", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="itot8", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.8 .and. indreg.eq.2"),
+    dict(tag="itot12", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.12 .and. indreg.eq.1"),
+    dict(tag="itot16", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.16 .and. indreg.eq.4"),
+    dict(tag="cinit", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="cinit7", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="cinit9", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="cinit19", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="ecog", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="ecog7", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="ecog9", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="ecog19", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="cgen", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="cgen7", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="cgen9", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="cgen19", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="cgen1", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+]
+IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
+# Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
+IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "ibyr2", "lastcalyr", "curitr",
+                   "BSCIBYR", "beff", "PRCX", "PRCXIBYR", "PRCXYR", "MAINFUELS", "BSFUELSHR", "BSSHR", "Boiler_Fuel_List", "HPbeff",
+                   # CALSTOT
+                   "stemcur", "biosteam", "biosteamlag", "prodvx", "prodvxlag", "noncogsteam", "noncogfossteam",
+                   "CogBoilFuel", "FuelFosSteam", "FosFuelSteamSize", "sizeshr", "CALIBIBYR_FOS", "CALIBIBYR_BIO",
+                   "BOILIBYR", "STEMCURIBYR", "COGSTEAMIBYR", "BIOSTEAMIBYR", "ENSQTY", "ENPRQTY", "cogsteamhist",
+                   "maxcogyr", "baseyr", "numflchp", "yr",
+                   "cogthr", "cogelf", "coggrd", "cogcap", "coggen", "genfuel", "rptcap", "rptgen", "cogsteam",
+                   # INDTOTAL
+                   "ENPMQTY", "ENPIQTY", "ENBQTY", "BYPBSCI", "BYPBSCR", "BYPBSCM", "CFELQ", "ELOWN", "ELSALE",
+                   "REFCON", "ELOWNX", "ELSALEX", "XELIN", "XELINSHR", "QTYMAIN", "QTYINTR", "QTYRENW", "indnum",
+                   # COGINIT
+                   "nadds"] + list(f"cogadd%{c}" for c in ("year", "industry", "censusdiv", "fuelind", "gen", "cap", "thr", "elc", "grd")) + [
+                   # EVALCOGEN
+                   "nsys", "nload", "CapCostYearly", "CheatRateYearly", "OverAllEffYearly", "CHeatRate", "CogSizeKW",
+                   "CapFac", "maxRegCHPutil", "RegCHPutil", "QELAS", "CogFuelPrice", "CogElecPrice", "CapCostMultStart",
+                   "CapCostMultEnd", "CapCostMult", "MC_RMTCM10Y", "MC_CPI", "AcceptFrac", "AcceptFrac2",
+                   "CogCapCostKW", "OverAllEff", "ElecGenEff", "ElecSizeMWH", "FuelUse", "PowerSteam", "SteamOutput",
+                   "EBoilEff", "CogSys", "FuelCost", "ExistFuelUse", "ExistFuelCost", "ElecValue", "IncrFuelCost",
+                   "OperProfit", "Investment", "CPayBack", "EconFrac",
+                   # CALGEN
+                   "lookahead", "ijumpyr", "ieyr", "DollarYearCHP", "StandByFrac", "CARBSHR", "CARBSHR_AB", "QGFIN", "QELIN",
+                   "aGFIN", "pGFIN", "aELIN", "SteamSeg_Food", "SteamSeg_Paper", "SteamSeg_Chem", "SteamSeg_Steel",
+                   "SteamSeg_Other", "stemcurlag", "IFSBYP", "IFSLOCBY", "BYPSTMM", "BYPSTMI", "BYPSTMR", "BYPSTM",
+                   "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
+IND_DECL_FILES = ["parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
+                  "ampblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
+MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
+                      includes=[], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
+                      decl_files=IND_DECL_FILES, module_text=True, module_name="I_", decls_only=True)
 CFG = MODULES["comm"]
 
 # Spaces are allowed around the * ("REAL *4" in efpnd).
@@ -425,6 +521,11 @@ def common_names(text):
     return names
 
 
+# Components of the derived-type array COGADD (planned CHP builds); dumped as plain arrays.
+COMPONENT_DECLS = {f"cogadd%{c}": ("integer" if c in ("year", "industry", "censusdiv", "fuelind") else "real", 1)
+                   for c in ("year", "industry", "censusdiv", "fuelind", "gen", "cap", "thr", "elc", "grd")}
+
+
 def dump_call(tag, name, t, rank):
     code = type_code(t, name)
     if code is None:
@@ -434,17 +535,17 @@ def dump_call(tag, name, t, rank):
         # that declares them as text (odump_c in stubs.f90).
         lb = f"lbound({name})" if rank else "0"
         ub = f"ubound({name})" if rank else "0"
-        return (f"      call odump_c('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+        return (f"      call odump_c('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', "
                 f"{rank}, {lb}, {ub})")
     if rank == 0:
-        return f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
-    return (f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+        return f"      call odump('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
+    return (f"      call odump('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', "
             f"{rank}, lbound({name}), ubound({name}))")
 
 
-def module_r_(source_text):
-    """The MODULE R_ block of resd.f: its declarations and its shared arrays."""
-    m = re.search(r"^MODULE R_\s*$(.*?)^END MODULE R_", source_text, re.I | re.M | re.S)
+def module_r_(source_text, name="R_"):
+    """The MODULE R_ block of resd.f (or I_ of ind.f): its declarations and its shared arrays."""
+    m = re.search(r"^\s*MODULE " + name + r"\s*$(.*?)^\s*END MODULE " + name, source_text, re.I | re.M | re.S)
     text = m.group(1)
     names = common_names(text)
     for st in statements(text):
@@ -489,10 +590,12 @@ def write_state_routine(inc_dir, source_text=None):
     for n in CFG["block_files"]:
         names += common_names((inc_dir / n).read_text(encoding="latin-1"))
     if CFG["module_text"]:
-        mtext, mnames = module_r_(source_text)
+        mtext, mnames = module_r_(source_text, CFG.get("module_name", "R_"))
         decls.update(declarations(mtext))
-        names += mnames
+        if not CFG.get("decls_only"):  # ind: only the names listed in extra, not all of I_
+            names += mnames
     names += CFG["extra"]
+    decls.update(COMPONENT_DECLS)
 
     def calls_for(subset):
         cs = [c for c in (dump_call("'//tag//'", n, *decls.get(n.lower(), ("?", 0))) for n in {s.lower(): s for s in subset}.values()) if c]
@@ -500,7 +603,7 @@ def write_state_routine(inc_dir, source_text=None):
 
     calls = calls_for(names)
     extra_routine = ""
-    if CFG["module_text"]:
+    if CFG["module_text"] and "wide_files" in CFG:
         # A full residential dump is about 170 MB. Around a target, dump only the
         # shared arrays its routines mention; the full set is kept for 'final'.
         wide = list(names)
@@ -586,8 +689,9 @@ def instrument(comm_path: Path, upstream: Path):
         first = comm and tag in FIRST_CALL
         first_in = f"{ind}CALL ORACLE_STATE('f{tag}_in')\n" if first else ""
         first_out = f"\n{ind}CALL ORACLE_STATE('f{tag}_out')" if first else ""
-        text = (text[:m.start()] + f"{ind}CALL ORACLE_STATE('{tag}_in')\n{first_in}{ind}{m.group(2)}\n"
-                f"{ind}CALL ORACLE_STATE('{tag}_out'){first_out}" + text[m.end():])
+        guard = f"IF ({tg['when']}) " if tg.get("when") else ""  # dump one industry and region only
+        text = (text[:m.start()] + f"{ind}{guard}CALL ORACLE_STATE('{tag}_in')\n{first_in}{ind}{m.group(2)}\n"
+                f"{ind}{guard}CALL ORACLE_STATE('{tag}_out'){first_out}" + text[m.end():])
         years = ", ".join(map(str, CFG["years"]))
         if not private and not carried:
             continue
