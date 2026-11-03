@@ -483,6 +483,59 @@
   el("go-how").addEventListener("click", () => el("how").scrollIntoView({ behavior: "smooth", block: "start" }));
 
   // ---- wiring ------------------------------------------------------------------
+  // ---- what changed ---------------------------------------------------------------
+  // The CO2 change against the same models with no policy (for the fast set that is EIA's
+  // reference itself), split by sector over 2027-2050, top three with what moved them.
+  const SECTOR_NAME = { rs: "Homes", cm: "Businesses", in: "Industry", tr: "Transportation", el: "Power plants" };
+  function explain(c) {
+    const s = c.s, b = grid().scenarios["c0_evref_b100"] || ref;
+    const j = yi(2050), from = yi(meta.start_year);
+    const cum = (k) => { let t = 0; for (let i = from; i <= j; i++) t += b.trace.co2_sector[k][i] - s.trace.co2_sector[k][i]; return t; };
+    const cuts = Object.keys(SECTOR_NAME).map((k) => [k, cum(k)]);
+    const total = cuts.reduce((a, [, v]) => a + v, 0);
+    const box = el("explain-body");
+    el("explain-base").textContent = set === "real" ? "Against the same real modules run with no policy." : "Against EIA's reference.";
+    if (Math.abs(total) < 1 && cuts.every(([, v]) => Math.abs(v) < 1)) {
+      box.innerHTML = `<p class="story">No policy: this run is the baseline, so nothing changed.</p>`;
+      return;
+    }
+    const t = s.trace, r = b.trace;
+    const more = (x, unit, d = 1) => `${fmt(Math.abs(x), d)}${unit} ${x < 0 ? "less" : "more"}`;
+    const pct = (a, z) => (z ? (100 * (a - z)) / z : 0);
+    const why = {
+      el: () => {
+        const sales = pct(t.totals.elec[j], r.totals.elec[j]);
+        const fuel = [["gas", t.power_burn.gas[j] - r.power_burn.gas[j]], ["coal", t.power_burn.coal[j] - r.power_burn.coal[j]]]
+          .filter(([, d]) => Math.abs(d) >= 0.01).map(([f, d]) => `${more(d, " quads", Math.abs(d) < 0.1 ? 2 : 1)} ${f}`);
+        return (fuel.length ? `In 2050 they burn ${fuel.join(" and ")}. ` : "")
+          + `Electricity sold is ${fmt(Math.abs(sales), 1)}% ${sales < 0 ? "lower" : "higher"}${set === "real" ? " (dispatch LP, existing fleet only)" : " (fitted fuel switching)"}.`;
+      },
+      tr: () => {
+        const cut = t.ev_cut_bgal[j] - (r.ev_cut_bgal ? r.ev_cut_bgal[j] : 0);
+        const all = b.gasoline_bgal[j] - s.gasoline_bgal[j];
+        const parts = [];
+        if (Math.abs(cut) >= 0.05) parts.push(`the EV lever takes ${fmt(cut, 1)} bn gal of gasoline out of 2050`);
+        if (Math.abs(all - cut) >= 0.05) parts.push(`higher prices ${all - cut > 0 ? "cut" : "add"}${parts.length ? " another" : ""} ${fmt(Math.abs(all - cut), 1)} bn gal${parts.length ? "" : " of gasoline in 2050"}`);
+        return parts.length ? parts.join("; ").replace(/^./, (x) => x.toUpperCase()) + "." : "Small changes in fuel prices.";
+      },
+      bld: () => {
+        const parts = [];
+        if (c.bld < 1) parts.push(`building energy set ${Math.round((1 - c.bld) * 100)}% below EIA by 2050`);
+        if (t.adders.gas_home[j] > 0.005) parts.push(`the carbon cost adds $${fmt(t.adders.gas_home[j], 2)}/MMBtu to home gas`);
+        if (c.bld < 1) parts.push("and the electricity saved shows up under power plants, not here");
+        return parts.length ? parts.join(", ").replace(/^./, (x) => x.toUpperCase()) + "." : "Small changes in fuel prices.";
+      },
+      in: () => (c.carbon ? `Industry here responds only to fuel prices (fitted stub): the $${c.carbon}/t carbon cost raises what it pays for gas, oil and coal.` : "Small changes in fuel prices."),
+    };
+    const say = (k) => (k === "el" ? why.el() : k === "tr" ? why.tr() : k === "in" ? why.in() : why.bld());
+    const top = cuts.filter(([, v]) => Math.abs(v) >= 1).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3);
+    const big = Math.max(...top.map(([, v]) => Math.abs(v)));
+    box.innerHTML = `<p class="story">CO2 ${total >= 0 ? "falls" : "rises"} by ${fmt(Math.abs(total) / 1000, 2)} Gt over 2027-2050. The biggest moves:</p><ol class="drivers">` +
+      top.map(([k, v]) => `<li><div class="drv-head"><b>${SECTOR_NAME[k]}</b><span>${v >= 0 ? "-" : "+"}${fmt(Math.abs(v))} Mt${total ? `, ${fmt(Math.abs(100 * v / total), 0)}% of the change` : ""}</span></div>
+        <div class="drv-bar"><i class="${v >= 0 ? "cut" : "rise"}" style="width:${(100 * Math.abs(v) / big).toFixed(1)}%"></i></div>
+        <p>${say(k)}</p></li>`).join("") + `</ol>`;
+  }
+
   function render(animate) {
     const c = current();
     el("carbon-out").textContent = `$${c.carbon} per ton CO2`;
@@ -492,6 +545,7 @@
     kpis(c.s);
     drawChart(c.s);
     trace(c.s);
+    explain(c);
     engine(c.s, animate);
     writeHash();
   }
