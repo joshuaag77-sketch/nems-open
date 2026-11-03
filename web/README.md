@@ -25,3 +25,14 @@ The "trace this number" panel reads the `trace` block each scenario carries.
 Publishing: `.github/workflows/pages.yml` deploys this folder to GitHub Pages, but only
 when started by hand and only after Pages is enabled in the repo settings. Neither is
 on.
+
+Real ported modules: `python scripts/precompute_real.py --workers 3` runs a 16-scenario grid
+with ported residential and commercial and the dispatch LP (about 30 minutes a run; reruns
+skip finished scenarios). It reads the oracle dumps from a clone's `oracle/run*/out`
+(`--oracle-root`, default the main NEMS Open folder). Output: `data/real/*.json` and
+`data/real.js`. The page's set switch stays disabled until all 16 are done.
+
+Loading: the page loads `data/meta.js` (2 KB gzipped: both sets' grids and EIA's reference)
+and fetches each scenario as it is shown (`data/scenarios/<id>.json`, `data/real/<id>.json`,
+about 3 KB gzipped). Opened from disk, or if a fetch fails, it loads the set's bundle
+(`scenarios.js` or `real.js`) instead. All scripts are deferred.

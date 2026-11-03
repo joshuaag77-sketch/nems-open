@@ -26,7 +26,7 @@ integer function file_mgr(func, name_in, new)
   key = adjustl(name_in)
   if (func == 'C' .or. func == 'c') then
     do u = 1, 500
-      if (keys(u) == key .and. units(u) > 0) then
+      if (keys(u) == key .and. units(u) /= 0) then   ! newunit numbers are negative
         close(units(u))
         units(u) = 0
         keys(u) = ' '
@@ -34,6 +34,23 @@ integer function file_mgr(func, name_in, new)
       endif
     enddo
     file_mgr = 0
+    return
+  endif
+
+  ! Keys listed in filemodes.txt (written only for EMM) open the way NEMS's
+  ! filemgr.f opens them: action, access, form and record length from the scedes
+  ! file, unformatted files big-endian, and a key already open keeps its unit.
+  if (mode_open(key, u)) then
+    if (.not. any(keys == key .and. units == u)) then
+      do sp = 1, 500
+        if (units(sp) == 0) then
+          units(sp) = u
+          keys(sp) = key
+          exit
+        endif
+      enddo
+    endif
+    file_mgr = u
     return
   endif
 
@@ -71,6 +88,66 @@ integer function file_mgr(func, name_in, new)
     endif
   enddo
   file_mgr = u
+
+contains
+
+  logical function mode_open(key, unit)
+    character(*) key
+    integer unit
+    character(16) mkey, act, acc, frm, st
+    character(512) mpath
+    character(600) mline
+    integer mu, mios, recl, k, sp1
+    logical ex, isopen
+    logical, save :: have_modes = .true.
+    mode_open = .false.
+    if (.not. have_modes) return
+    inquire(file='filemodes.txt', exist=have_modes)
+    if (.not. have_modes) return
+    open(newunit=mu, file='filemodes.txt', status='old', action='read')
+    do
+      read(mu, '(a)', iostat=mios) mline
+      if (mios /= 0) exit
+      ! KEY ACTION ACCESS FORM RECL PATH (path last: it may hold spaces)
+      read(mline, *, iostat=mios) mkey, act, acc, frm, recl
+      if (mios /= 0 .or. trim(mkey) /= trim(key)) cycle
+      sp1 = 0
+      do k = 1, 5
+        sp1 = sp1 + index(mline(sp1+1:), ' ')
+        do while (mline(sp1+1:sp1+1) == ' ')
+          sp1 = sp1 + 1
+        enddo
+      enddo
+      mpath = adjustl(mline(sp1+1:))
+      mode_open = .true.
+      exit
+    enddo
+    close(mu)
+    if (.not. mode_open) return
+    inquire(file=trim(mpath), opened=isopen, number=unit)
+    if (isopen .and. .not. new) then
+      close(unit)               ! filemgr: an input file already open is reopened
+    else if (isopen) then
+      return
+    endif
+    inquire(file=trim(mpath), exist=ex)
+    st = merge('UNKNOWN', 'NEW    ', ex)
+    if (.not. new) st = 'OLD'
+    if (act == 'READ') st = 'OLD'
+    if (frm == 'UNFORMATTED' .and. acc == 'DIRECT') then
+      open(newunit=unit, file=trim(mpath), access='DIRECT', form='UNFORMATTED', action=trim(act), &
+           status=trim(st), recl=recl, convert='BIG_ENDIAN')
+    else if (frm == 'UNFORMATTED') then
+      open(newunit=unit, file=trim(mpath), access='SEQUENTIAL', form='UNFORMATTED', action=trim(act), &
+           status=trim(st), convert='BIG_ENDIAN')
+    else if (acc == 'DIRECT') then
+      open(newunit=unit, file=trim(mpath), access='DIRECT', form='FORMATTED', action=trim(act), &
+           status=trim(st), recl=recl)
+    else
+      open(newunit=unit, file=trim(mpath), access='SEQUENTIAL', form='FORMATTED', action=trim(act), &
+           status=trim(st))
+    endif
+  end function mode_open
 end function file_mgr
 
 integer function rtovalue(name, default)

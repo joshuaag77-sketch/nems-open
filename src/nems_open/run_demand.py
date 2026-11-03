@@ -18,8 +18,10 @@ After the modules run, `sum_quantities` does the part of NEMS's SUMQAS
 the nine census divisions, California as a share of the Pacific division, and
 each sector's petroleum, renewable and total rows (QTP, QTR, QTS).
 
-Industrial and transportation are not ported yet: their QBLK arrays keep EIA's
-values. To add one, write a class like `ResidentialSector` and put it in SECTORS.
+Transportation is not ported yet: its QBLK arrays keep EIA's values. Industrial is
+a slot (`IndustrialSector`): asked for by name, it supplies the industrial oracle's
+fuel use until IND's year loop is ported. To add a sector, write a class like
+`ResidentialSector` (available, start, iteration, quantities) and put it in SECTORS.
 
     python -m nems_open.run_demand 2030
 """
@@ -97,6 +99,12 @@ class ResidentialSector:
     name = "residential"
     suffix = "rs"
 
+    @staticmethod
+    def available(year: int) -> bool:
+        """Whether the oracle dumped the state this module starts from in that year."""
+        from nems_open import oracle_state
+        return oracle_state.available("yb_in", year - BASEYR + 1, "resd")
+
     def start(self, year: int):
         from nems_open.residential import resd
         return resd.start_from_dump(year - BASEYR + 1)
@@ -120,6 +128,11 @@ class CommercialSector:
     name = "commercial"
     suffix = "cm"
 
+    @staticmethod
+    def available(year: int) -> bool:
+        from nems_open import oracle_state
+        return oracle_state.available("sd_in", year - BASEYR + 1)
+
     def start(self, year: int):
         from nems_open.commercial.comm import Commercial
         return Commercial.start_from_dump(year - BASEYR + 1)
@@ -132,12 +145,61 @@ class CommercialSector:
         return c.qblk()
 
 
+class IndustrialSector:
+    """SUBROUTINE IND (source/ind.f): the slot industrial fills as its port lands.
+
+    Ported so far (branch `industrial`): CALBSC, CALSTOT and INDTOTAL, the boiler and
+    fuel accounting inside ISEAM's loop over 24 industries and 4 Census regions. The
+    steps that carry those results to QBLK (MODCAL, NATTOTAL, WRQTY, and WEXOG's
+    history and STEO benchmarking) are not ported, so the ported routines cannot move
+    QBLK yet. Until they are, the sector's fuel use is the industrial oracle's: EIA's
+    ind.f run on EIA's restart file (oracle/run_ind/out/q*in.bin, every year). It is
+    fixed, so it does not respond to prices, and it differs from EIA's restart file from
+    2024 (SCOPE.md, industrial oracle status). When the year loop is ported, iteration()
+    runs it and quantities() reads its QBLK rows, as for the other sectors.
+    """
+    name = "industrial"
+    suffix = "in"
+    ported = ("CALBSC", "CALSTOT", "INDTOTAL")
+
+    @staticmethod
+    def oracle_out():
+        """The industrial oracle's output folder: the shared cache, else the clone's own."""
+        from nems_open import oracle_state
+        from nems_open.paths import REPO_ROOT
+        for d in (oracle_state.ORACLE_DIR / "ind" / "out", REPO_ROOT / "oracle" / "run_ind" / "out"):
+            if (d / "qelin.bin").exists():
+                return d
+        return None
+
+    @classmethod
+    def available(cls, year: int) -> bool:
+        return cls.oracle_out() is not None
+
+    def start(self, year: int) -> dict:
+        d = self.oracle_out()
+        if d is None:
+            raise FileNotFoundError("industrial oracle output not found (oracle/run_ind/out/q*in.bin)")
+        rows = {}
+        for k in SECTOR_QUANTITIES["in"]:
+            raw = np.fromfile(d / f"{k}.bin", dtype=np.float32)
+            rows[k] = FArray(raw.reshape((MNUMCR, raw.size // MNUMCR), order="F"))
+        return rows
+
+    def iteration(self, rows, year: int, itr: int, inputs: Inputs) -> None:
+        pass  # fixed at the oracle's values until IND's year loop is ported
+
+    def quantities(self, rows) -> dict:
+        return rows
+
+
 # NEMS calls the demand modules in this order (RESD, COMM, IND, TRAN). None marks
-# a module not ported yet; its QBLK arrays keep EIA's values.
+# a module not ported yet; its QBLK arrays keep EIA's values. Industrial is a slot
+# (see IndustrialSector): it runs only when asked for by name.
 SECTORS = {
     "residential": ResidentialSector,
     "commercial": CommercialSector,
-    "industrial": None,      # source/ind.f, being ported
+    "industrial": IndustrialSector,
     "transportation": None,  # source/tran*.f, being ported
 }
 
@@ -147,10 +209,17 @@ SECTOR_QUANTITIES = {
            "qstrs", "qpvrs"),
     "cm": ("qelcm", "qngcm", "qgfcm", "qgicm", "qclcm", "qmgcm", "qdscm", "qkscm", "qlgcm",
            "qprcm", "qrlcm", "qrscm", "qbmcm", "qstcm", "qpvcm"),
+    "in": ("qelin", "qngin", "qgfin", "qgiin", "qngpin", "qlpin", "qclin", "qmcin", "qciin", "qmgin", "qdsin",
+           "qksin", "qlgin", "qetin", "qbuin", "qprin", "qisin", "qppin", "qrsin", "qrlin", "qpfin", "qsgin",
+           "qpcin", "qasin", "qotin", "qluin", "qsulfurin", "qh2in", "qhoin", "qgein", "qbmin", "qmsin", "qstin",
+           "qpvin", "qwiin"),
 }
 # SUMQAS shares the Pacific division to California for these rows.
 CALIFORNIA_SHARED = ("qelrs", "qelcm", "qngrs", "qngcm", "qclrs", "qclcm", "qmgcm", "qdsrs", "qdscm", "qksrs",
-                     "qkscm", "qlgrs", "qlgcm", "qrscm", "qgers", "qbmrs", "qbmcm", "qstrs", "qstcm", "qpvrs", "qpvcm")
+                     "qkscm", "qlgrs", "qlgcm", "qrscm", "qgers", "qbmrs", "qbmcm", "qstrs", "qstcm", "qpvrs", "qpvcm",
+                     "qelin", "qngin", "qlpin", "qclin", "qmcin", "qmgin", "qdsin", "qksin", "qlgin", "qrsin", "qpfin",
+                     "qsgin", "qpcin", "qasin", "qotin", "qhoin", "qgein", "qbmin", "qmsin", "qstin", "qpvin", "qwiin",
+                     "qciin")
 
 
 def eia_quantities(snapshot: Snapshot) -> dict:
@@ -179,10 +248,16 @@ def sum_quantities(q: dict, suffix: str, y: int, calshr) -> None:
         q["qtprs"][:, j] = g("qdsrs") + g("qksrs") + g("qlgrs")
         q["qtrrs"][:, j] = g("qbmrs") + g("qstrs") + g("qpvrs") + g("qgers")
         q["qtsrs"][:, j] = g("qelrs") + g("qngrs") + g("qclrs") + g("qtprs") + g("qtrrs")
-    else:
+    elif suffix == "cm":
         q["qtpcm"][:, j] = g("qmgcm") + g("qdscm") + g("qkscm") + g("qlgcm") + g("qrscm")
         q["qtrcm"][:, j] = g("qbmcm") + g("qstcm") + g("qpvcm")
         q["qtscm"][:, j] = g("qelcm") + g("qngcm") + g("qclcm") + g("qtpcm") + g("qtrcm")
+    elif suffix == "in":
+        q["qtpin"][:, j] = (g("qmgin") + g("qdsin") + g("qksin") + g("qlgin") + g("qrsin")
+                            + g("qpfin") + g("qsgin") + g("qpcin") + g("qasin") + g("qotin"))
+        q["qtrin"][:, j] = g("qhoin") + g("qgein") + g("qbmin") + g("qmsin") + g("qstin") + g("qpvin") + g("qwiin")
+        q["qtsin"][:, j] = (g("qelin") + g("qngin") + g("qlpin") + g("qclin") + g("qmcin") + g("qciin")
+                            + g("qtpin") + g("qtrin"))
 
 
 class DemandRunner:

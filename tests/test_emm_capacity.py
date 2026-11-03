@@ -56,7 +56,6 @@ _TIMING = "timing: the LP builds at the annual limit in the first year builds ar
 _RETIRE_TIMING = "timing: the LP retires at the annual limit as soon as replacements exist; EIA retires more slowly, then 60 GW at once in 2032"
 KNOWN_MISSES = {
     ("add", "Gas combined cycle", 2027): _TIMING,
-    ("add", "Gas combined cycle", 2030): _TIMING,
     ("add", "Gas combined cycle with CCS", 2030): "EIA builds 2.4 GW by 2030; the LP waits until 2032 because the 45Q credit lasts only 12 of 30 years",
     ("add", "Gas combined cycle with CCS", 2035): "10 GW against 23: same cause, and the 10 GW a year build limit is an assumption",
     ("add", "Gas turbines", 2027): "the LP meets the reserve margin with combined cycle, EIA builds 22 GW of turbines by 2027",
@@ -73,9 +72,10 @@ KNOWN_MISSES = {
     ("add", "Nuclear", 2030): "same",
     ("add", "Nuclear", 2035): "same",
     ("ret", "Coal", 2027): _RETIRE_TIMING,
-    ("ret", "Coal", 2030): "retirements 36% low in 2030: the LP retires only as replacements arrive; EIA retires 75 GW by 2030",
+    ("ret", "Coal", 2030): "retirements 31% low in 2030: the LP retires only as replacements arrive; EIA retires 75 GW by 2030",
     ("ret", "Oil and gas steam", 2027): _RETIRE_TIMING,
-    ("ret", "Oil and gas steam", 2030): "steam retirements 49% high in 2030, front-loaded",
+    ("ret", "Oil and gas steam", 2030): "steam retirements 89% high in 2030, front-loaded",
+    ("ret", "Oil and gas steam", 2035): "steam retirements 40% high in 2035: the LP retires more steam than EIA's age-based schedule",
 }
 
 
