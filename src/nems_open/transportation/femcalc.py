@@ -40,6 +40,8 @@ SUMCHECK = [
     [64, 65], [66, 67, 68],
 ]
 
+SUMCHECK_IDX = [np.array(row) - 1 for row in SUMCHECK]
+
 RETD = [f32(x) for x in (0.000, 0.048, 0.096, 0.145, 0.193, 0.241, 0.289, 0.337, 0.385, 0.434,
                          0.482, 0.530, 0.578, 0.626, 0.674, 0.722, 0.771, 0.819, 0.869, 0.907,
                          0.936, 0.957, 0.973, 0.984, 0.992, 0.997, 1.000, 1.000, 1.000, 1.000, 1.000)]
@@ -328,7 +330,18 @@ def femcalc(s: dict) -> None:
                     _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payback, discount,
                                pslope, f1, inc_gr, invgr)
 
-                    for itech in range(1, numtech + 1):
+                    if num_man == 0:
+                        # Only the technologies with supersede notes change anything here.
+                        for itech in sorted(_sup_notes(s)):
+                            if itech > numtech or yrs < frst[itech, igp]:
+                                continue
+                            s["itech"] = itech
+                            note_super(s, actual, mmax)
+                            if int(s["return_stat"]) < 0:
+                                raise ValueError("TDM FEMCALC: logic error in supersedes algorithm, market penetration below zero")
+                        if (yrs >= frst[T, igp]).any():
+                            s["inote"], s["return_stat"] = int(s["num_sup"]) + 1, 0
+                    for itech in range(1, numtech + 1 if num_man > 0 else 1):
                         s["itech"] = itech
                         if yrs < frst[itech, igp]:
                             continue
@@ -388,30 +401,36 @@ def femcalc(s: dict) -> None:
                             s["inote"] = num_syn + 1
                         s["itech"] = numtech + 1
 
+                    # Fuel economy, weight, price and horsepower follow the share changes, added
+                    # technology by technology in order (weight compounds, so it stays a loop).
                     tech_adjhp = ZERO
                     fe_prev = fe[igp, icl, PREV, ildv]
-                    for itech in range(1, numtech + 1):
-                        if not applic[itech, ivtyp, ildv] or yrs < frst[itech, igp]:
-                            continue
-                        dm = pen[igp, icl, itech, CURRENT, ildv] - pen[igp, icl, itech, PREV, ildv]
-                        s["delta_mkt"] = dm
-                        fe[igp, icl, CURRENT, ildv] = fe[igp, icl, CURRENT, ildv] + fe_prev * ((dm * del_fe[itech, ivtyp]) + syn_loss[itech])
-                        if dm != 0.0:
+                    idx = np.nonzero((applic[T, ivtyp, ildv] != 0) & (yrs >= frst[T, igp]))[0]
+                    if idx.size:
+                        dm = pen.a[igp - 1, icl - 1, idx, CURRENT, ildv - 1] - pen.a[igp - 1, icl - 1, idx, PREV, ildv - 1]
+                        s["delta_mkt"] = dm[-1]
+                        terms = fe_prev * ((dm * del_fe[T, ivtyp][idx]) + syn_loss[idx + 1])
+                        fe[igp, icl, CURRENT, ildv] = np.add.accumulate(np.concatenate(([fe[igp, icl, CURRENT, ildv]], terms)).astype(f32))[-1]
+                        nz = dm != 0.0
+                        if nz.any():
+                            d, k = dm[nz], idx[nz]
                             w = wgt[igp, icl, CURRENT, ildv]
-                            wgt[igp, icl, CURRENT, ildv] = w + (dm * (del_wgtabs[itech, ivtyp] + (w * del_wgtwgt[itech, ivtyp])))
-                            price[igp, icl, CURRENT, ildv] = price[igp, icl, CURRENT, ildv] + (dm * techcost[itech])
-                            tech_adjhp = tech_adjhp + (dm * del_hp[itech, ivtyp])
+                            for dd, aa, ww in zip(d, del_wgtabs[T, ivtyp][k], del_wgtwgt[T, ivtyp][k]):
+                                w = w + (dd * (aa + (w * ww)))
+                            wgt[igp, icl, CURRENT, ildv] = w
+                            price[igp, icl, CURRENT, ildv] = np.add.accumulate(
+                                np.concatenate(([price[igp, icl, CURRENT, ildv]], d * techcost.a[k])).astype(f32))[-1]
+                            tech_adjhp = np.add.accumulate(np.concatenate(([ZERO], d * del_hp[T, ivtyp][k])).astype(f32))[-1]
                     s["itech"] = numtech + 1
                     tech_max_adjhp = tech_adjhp
 
                 # Label 1100: related-technology shares may not sum past 1.
-                for i, row in enumerate(SUMCHECK, start=1):
-                    checksum = ZERO
-                    for tid in row:
-                        checksum = checksum + pen[igp, icl, tid, CURRENT, ildv]
-                    s["j"] = len(row)
+                cur = pen.a[igp - 1, icl - 1, :, CURRENT, ildv - 1]
+                for row in SUMCHECK_IDX:
+                    checksum = fsum(cur[row])
                     if checksum > ONE + rnd:
                         raise ValueError(f"TDM FEMCALC: STOP 702, related tech shares sum to {checksum}")
+                s["j"] = len(SUMCHECK[-1])
                 s["i"] = len(SUMCHECK) + 1
                 if yrs <= XYR:
                     continue
