@@ -4,9 +4,22 @@ Ports index with the same subscripts as the Fortran, a[r, b, y], so each line ca
 be checked against the original. `.a` is the raw 0-based NumPy array.
 """
 
+from functools import lru_cache
 from operator import sub
 
 import numpy as np
+
+
+def _convert(idx, lb):
+    """Fortran subscripts to NumPy ones: shift by the lower bounds, sections inclusive."""
+    return tuple(
+        slice(None if i.start is None else i.start - l, None if i.stop is None else i.stop - l + 1)
+        if isinstance(i, slice) else i - l
+        for i, l in zip(idx, lb)
+    )
+
+
+_ix_cached = lru_cache(maxsize=1 << 16)(_convert)
 
 
 class FArray:
@@ -37,11 +50,10 @@ class FArray:
             return Ellipsis
         if not isinstance(idx, tuple):
             idx = (idx,)
-        return tuple(
-            slice(None if i.start is None else i.start - l, None if i.stop is None else i.stop - l + 1)
-            if isinstance(i, slice) else i - l
-            for i, l in zip(idx, self.lb)
-        )
+        try:
+            return _ix_cached(idx, self.lb)
+        except TypeError:  # an unhashable subscript (an index array)
+            return _convert(idx, self.lb)
 
     def __getitem__(self, idx):
         if type(idx) is int:
