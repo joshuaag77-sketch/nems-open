@@ -18,6 +18,24 @@
   .lbl { position: fixed; font-size: 12px; color: var(--ink); pointer-events: none; white-space: nowrap; transform: translate(-50%, -150%); text-shadow: 0 0 6px #000; }
   .lbl small { color: var(--muted); }
   .lbl.hot { color: var(--hub); }
+  .scen { position: fixed; z-index: 4; right: 28px; top: 24px; width: 300px; max-height: calc(100% - 110px); overflow: auto; background: #11141bcc; border: 0.5px solid var(--line);
+          border-radius: 12px; padding: 12px 14px; font-size: 13px; backdrop-filter: blur(4px); }
+  .scen-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--muted); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  button[aria-pressed="true"].ghost { border-color: var(--hub); color: var(--hub); }
+  .cards { display: grid; gap: 6px; }
+  .card { text-align: left; background: transparent; color: var(--ink); border: 0.5px solid #3a3a37; border-radius: 8px; padding: 7px 10px; font-weight: 400; }
+  .card small { display: block; color: var(--dim); font-size: 11px; }
+  .card.a { border-color: var(--match); } .card.b { border-color: var(--hub); border-style: dashed; }
+  .heads { margin-top: 10px; display: grid; gap: 8px; }
+  .head { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: baseline; }
+  .head .k { color: var(--muted); font-size: 12px; } .head .v { font-size: 20px; font-variant-numeric: tabular-nums; grid-column: 1; }
+  .head .from { color: var(--dim); font-size: 11px; grid-column: 1 / -1; }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; cursor: help; }
+  .pill.match { color: var(--match); } .pill.within { color: var(--partial); } .pill.stand { color: var(--stand); }
+  .diff { margin-top: 10px; display: grid; gap: 8px; }
+  .diff svg { width: 100%; height: 34px; display: block; }
+  .diff .d { font-variant-numeric: tabular-nums; } .diff .up { color: #ef8a70; } .diff .down { color: #5ccf93; }
   #panel { position: fixed; z-index: 5; right: 28px; top: 24px; width: 300px; max-height: calc(100% - 120px); overflow: auto; background: #11141bdd;
            border: 0.5px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 13px; display: none; backdrop-filter: blur(4px); }
   #panel h3 { margin: 0 0 6px; font-size: 15px; font-weight: 500; }
@@ -46,6 +64,12 @@
   <p id="hero-text">Loading EIA's structure...</p>
 </div>
 <div class="cols" aria-hidden="true"><div style="left:16%">SWITCHES IN</div><div style="left:50%">ENGINE</div><div style="left:84%">NUMBERS OUT</div></div>
+<section class="scen" id="scen" aria-label="Scenarios">
+  <div class="scen-head"><span>Scenarios</span><button class="ghost small" id="compare" type="button" aria-pressed="false">Compare two</button></div>
+  <div id="cards" class="cards"></div>
+  <div id="heads" class="heads"></div>
+  <div id="diff" class="diff"></div>
+</section>
 <div id="panel" role="dialog" aria-live="polite"></div>
 <div class="bar">
   <button id="play" type="button">Replay the reference run</button>

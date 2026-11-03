@@ -262,12 +262,14 @@
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const yearEl = $("year"), yearOut = $("year-out"), counter = $("counter");
   yearEl.min = Math.min(...Object.keys(T.convergence).map(Number)); yearEl.max = Math.max(...Object.keys(T.convergence).map(Number));
+  yearEl.value = yearEl.max; yearOut.textContent = yearEl.max;
   let calls = 0, passesDone = 0;
   function hot(keys) { labels.forEach((el, i) => el.classList.toggle("hot", keys.includes(MODS[i].key))); }
 
   async function replayYear(y, pace) {
     const ps = T.convergence[String(y)] || [];
     yearEl.value = y; yearOut.textContent = y;
+    yearEl.dispatchEvent(new Event("input"));
     const mods = ranMods(T.routines);
     for (const p of ps) {
       if (stopFlag) return;
@@ -297,12 +299,90 @@
     playing = true; stopFlag = false; controls.autoRotate = false; calls = 0; passesDone = 0;
     $("play").textContent = "Stop";
     $("status").textContent = `Replaying the recorded ${T.label.toLowerCase()} run (${T.model}), not live.`;
-    for (let y = +yearEl.value; y <= +yearEl.max && !stopFlag; y++) await replayYear(y, y === +yearEl.value ? 1.4 : 0.5);
+    const from = +yearEl.value >= +yearEl.max ? +yearEl.min : +yearEl.value;
+    for (let y = from; y <= +yearEl.max && !stopFlag; y++) await replayYear(y, y === from ? 1.4 : 0.5);
     playing = false; controls.autoRotate = true; $("play").textContent = "Replay the reference run"; hot([]); spin = 0.0006;
   }
   $("play").addEventListener("click", play);
   yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
   yearEl.addEventListener("change", () => { if (!playing) { calls = 0; passesDone = 0; replayYear(+yearEl.value, 1.2); } });
+
+  // ---- scenario cards and diff-two-runs (data/engine3d/runs.json, scenarios) -------------
+  const SC = RUNS.scenarios, YEARS = RUNS.years;
+  const OUT = FID.sets.fast.outputs;   // the scenarios run on the fast stand-ins
+  const RANK = { match: 0, within: 1, stand: 2 };
+  const worst = (keys) => keys.map((k) => OUT[k]).filter(Boolean).sort((a, b) => RANK[b.grade] - RANK[a.grade])[0];
+  // Each headline and the demo numbers its grade comes from (data/fidelity.json): the bill is
+  // home fuel use times home prices, so it is only as good as the weakest of those.
+  const HEADS = {
+    co2: { label: "US energy CO2", unit: " Mt", d: 0, grade: () => OUT.co2 },
+    bill: { label: "Household energy bill", unit: " $/yr", d: 0, pre: "$", grade: () => worst(["energy.residential", "pel", "ng"]) },
+    gas_price: { label: "Home natural gas price", unit: " $/MMBtu", d: 2, pre: "$", grade: () => OUT.ng },
+  };
+  let selA = "reference", selB = null, comparing = false;
+  const year = () => +yearEl.value;
+  const val = (key, m, src = "run") => SC[key][src][m][YEARS.indexOf(year())];
+  const num = (x, d) => Number(x).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const escA = (x) => String(x).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+  function cards() {
+    $("cards").innerHTML = Object.values(SC).map((s) =>
+      `<button type="button" class="card ${s.key === selA ? "a" : ""} ${s.key === selB ? "b" : ""}" data-k="${s.key}">${s.label}` +
+      `<small>EIA's ${s.case} case inputs, ${s.model}, precomputed</small></button>`).join("");
+    $("cards").querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.k;
+      if (comparing && k !== selA) selB = selB === k ? null : k;
+      else { selA = k; if (selB === k) selB = null; }
+      render(true);
+    }));
+  }
+  let tweenId = 0;
+  function heads(animate) {
+    const id = ++tweenId, t0 = performance.now(), dur = animate ? 900 : 0;
+    const ref = (m) => SC.reference.eia[m][YEARS.indexOf(year())];
+    $("heads").innerHTML = Object.entries(HEADS).map(([m, h]) => {
+      const g = h.grade();
+      return `<div class="head"><span class="k">${h.label}, ${year()}</span>` +
+        (g ? `<span class="pill ${g.grade}" title="${escA(g.summary)}">${g.label_grade}</span>` : "<span></span>") +
+        `<span class="v" data-m="${m}"></span><span class="from">EIA reference ${h.pre || ""}${num(ref(m), h.d)}${h.unit}</span></div>`;
+    }).join("");
+    const step = (now) => {
+      if (id !== tweenId) return;
+      const f = dur ? Math.min(1, (now - t0) / dur) : 1, e = 1 - Math.pow(1 - f, 3);
+      $("heads").querySelectorAll("[data-m]").forEach((el) => {
+        const m = el.dataset.m, h = HEADS[m], from = ref(m), to = val(selA, m);
+        el.textContent = `${h.pre || ""}${num(from + (to - from) * e, h.d)}${h.unit}`;
+      });
+      if (f < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function spark(a, b) {
+    const w = 260, h = 30, all = a.concat(b), lo = Math.min(...all), hi = Math.max(...all), span = hi - lo || 1;
+    const path = (s) => s.map((v, i) => `${i ? "L" : "M"}${(i / (s.length - 1)) * w},${h - ((v - lo) / span) * h}`).join("");
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${path(a)}" fill="none" stroke="#1D9E75" stroke-width="1.5"/>` +
+      `<path d="${path(b)}" fill="none" stroke="#FAC775" stroke-width="1.5" stroke-dasharray="4 3"/></svg>`;
+  }
+  function diff() {
+    if (!selB) { $("diff").innerHTML = comparing ? `<span class="k" style="color:var(--dim)">Pick a second scenario.</span>` : ""; return; }
+    const A = SC[selA], B = SC[selB];
+    $("diff").innerHTML = `<span style="color:var(--muted)">${B.label} minus ${A.label}, ${year()}</span>` +
+      Object.entries(HEADS).map(([m, h]) => {
+        const d = val(selB, m) - val(selA, m), p = val(selA, m) ? (100 * d) / val(selA, m) : 0;
+        const cls = Math.abs(p) < 0.05 ? "" : d > 0 ? "up" : "down";
+        return `<div><span class="k">${h.label}</span> <span class="d ${cls}">${d >= 0 ? "+" : "-"}${h.pre || ""}${num(Math.abs(d), h.d)}${h.unit} (${p >= 0 ? "+" : ""}${p.toFixed(1)}%)</span>` +
+          spark(A.run[m].slice(YEARS.indexOf(RUNS.start_year)), B.run[m].slice(YEARS.indexOf(RUNS.start_year))) + `</div>`;
+      }).join("") +
+      `<span class="k" style="color:var(--dim)">Lines: ${A.label} solid, ${B.label} dashed, ${RUNS.start_year}-${YEARS[YEARS.length - 1]}.</span>`;
+  }
+  function render(animate) { cards(); heads(animate); diff(); }
+  $("compare").addEventListener("click", () => {
+    comparing = !comparing; $("compare").setAttribute("aria-pressed", comparing);
+    if (!comparing) selB = null;
+    render(false);
+  });
+  yearEl.addEventListener("input", () => render(false));
+  render(true);
 
   // ---- loop -----------------------------------------------------------------------------
   function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
