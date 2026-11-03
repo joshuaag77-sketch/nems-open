@@ -42,6 +42,8 @@ RETROFIT_MAX_HEAT_RATE = 12000.0 # least efficient unit that can be retrofitted 
 # The conversion cost is an assumption, not EIA data: 100 1987$/kW (about 230 2024$/kW, the range EPA cites).
 CONVERT_FOM_ADJ, CONVERT_VOM_ADJ, CONVERT_HR_PENALTY = 0.67, 0.75, 0.05
 CONVERT_COST_KW = 100.0
+RETIREMENT_HURDLE = 0.05         # emmcntl.txt %RET HURDLE RATES%, fossil (UPRETFHU)
+AGE_ADDER_1987 = 5.0 / 1.336922   # $/kW-year for units 30+ years old: UPXTRA (%XTRA OandM%, 1999$) in 1987$
 RESERVE_SHORTFALL_COST = 2.0e5  # k$ per GW-year, about 200 1987$/kW-year, for missing the reserve margin
 REAL_DISCOUNT_RATE = 0.065       # assumption: real cost of capital for new plants
 # How fast the industry can build. An assumption, not EIA data: ecpdaty.xlsx sets no annual limit (999.9)
@@ -108,7 +110,8 @@ def max_retirement_rate(year: int) -> float:
     lines = (INPUT / "emm" / "emmcntl.txt").read_text(encoding="latin-1").splitlines()
     row = next(l for l in lines if l.lstrip().startswith("'MAX RET'")).split()
     first, last, step = float(row[3]), float(row[4]), float(row[5])         # fields: 'MAX', 'RET', UPRETRAT, UPRETRT0, UPRETRTL, UPRETCHG
-    return min(first + step * (year - START_YEAR), last)
+    rate = first + step * (year - START_YEAR)
+    return rate if rate <= last + 1e-9 else float("inf")        # uecp.f 1176: past UPRETRTL the limit is switched off (RETYR = 0)
 
 
 def _crf(rate: float, years: float) -> float:
@@ -252,7 +255,12 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     fom_exist = {}
     for g in RETIRABLE:
         mask = on & np.isin(u.efd_type, dispatch.EXISTING_TYPES[g])
-        fom_exist[g] = _weighted_by_region(tb["T_FOM"], u.summer_mw, mask, 20.0) * 1.0e3        # k$ per GW-year
+        # What ECP charges an existing plant for staying (udat.f RET_FOM): fixed O&M, capital additions and the
+        # age-dependent adder; the retirement hurdle rate (UPRETFHU) then discounts that cost by 5%.
+        age = np.maximum(year - u.online_year, 0)
+        adder = np.where(age >= 30, AGE_ADDER_1987, 0.0)
+        stay = tb["T_FOM"] + tb["T_CAPAD"] + adder
+        fom_exist[g] = _weighted_by_region(stay, u.summer_mw, mask, 20.0) * 1.0e3 * (1.0 - RETIREMENT_HURDLE)       # k$ per GW-year
     coal_mask = on & np.isin(u.efd_type, dispatch.EXISTING_TYPES["coal"])
     elig = coal_mask & (u.summer_mw >= RETROFIT_MIN_MW) & (u.heat_rate <= RETROFIT_MAX_HEAT_RATE) & (tb["T_CCSHR"] > 0) \
         & (tb["T_CCSHR"] < dispatch.CCS_HEAT_RATE_MAX)
@@ -318,7 +326,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     econ = retire.sel(group=[g for g in TG if g != "coal"]).sum("group")
     if year < RULE_YEAR:
         econ = econ + retire.sel(group="coal") + convert
-    m.add_constraints(econ <= rate * region_total, name="retirement_rate")
+    if np.isfinite(rate):
+        m.add_constraints(econ <= rate * region_total, name="retirement_rate")
     capv = m.add_variables(lower=0, coords=[R, T], name="capacity")
     m.add_constraints(capv - cap_th == 0, name="capacity_def")
     if year >= RULE_YEAR:

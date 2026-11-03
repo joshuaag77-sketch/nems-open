@@ -74,3 +74,20 @@ Result (model / EIA GW, regions inside 5%):
 
 ### Next
 Unit-level retirement groups and hurdle for coal and steam; read UPRSK to price turbines; then capacity credits.
+
+## Retirements the way ECP decides them (2026-11-03, branch emm-retire)
+ECP is partly AIMMS in this checkout (`models/ecp/MainProject/ecp.ams`, with Fortran `uecp.f` and `udat.f` building its inputs). What it does for existing plants:
+1. `udat.f` (RET_VAL, lines 7395-7450) ranks every existing plant group by last year's dispatch margin: revenues (`ULREVS`, less the capacity payment) minus variable cost, fixed fuel cost, and SO2, NOx, RPS, Hg and GHG penalties, per kW.
+2. It bins each ECP type into 4 retirement groups by that margin (groups cover 5, 45, 40, 10% of the margin range, `%RET GRPS%`), giving group capacity `EPGCAP` and group cost `EPGFOM` = fixed O&M + capital additions + age adder + the group's margin shortfall against the type average.
+3. In the LP each group is a capacity column bounded by `EPGCAP`; keeping it costs the present value of `EPGFOM` over the planning horizon (year 1 is sunk), less (group number - 1), times (1 - hurdle), hurdle = 5% for fossil. A group retires when the LP finds it cheaper to be without it.
+4. The cap on economic retirements is 3% of a region's capacity in the first year, rising a point a year to 6%, and then switched off (`uecp.f` 1171-1177: past `UPRETRTL` the limit becomes zero, meaning none).
+
+What this branch now mirrors: the cost of staying is fixed O&M + capital additions (`T_CAPAD`, as large as fixed O&M for coal and steam) + the age adder for units 30+ years old, times (1 - 5% hurdle); and the cap disappears after 6%. Result against cb2026 (cells inside 5%): 2027 117/175, 2030 84/175, 2035 65/175 (before: 125, 83, 67). Coal timing is much closer in 2030 and 2031 (80 and 79 GW vs EIA 88 and 78) but now retires too fast in 2027 to 2029 (119 vs 153 in 2027). Steam is worse (45 vs 110 GW in 2030) because the conversions EIA makes are still missing.
+
+### The wall
+Steps 1 and 2 need the margin of each plant group, which comes from EFD's plant-group output arrays of the previous cycle (`ULREVS`, `ULCAPC`, `ULVCST`, `ULFCST`, `ULSO2P`, `ULNOXP`, `ULRPSP`, `ULHGP`, `ULGHG` in `UEFDOUT`). They are not in the restart. Without them the groups, `EPGCAP` and `EPGFOM` cannot be reproduced, and my estimate (one cost for a whole region and type) cannot reproduce which units sit in the cheap-to-lose group.
+
+Export that would settle it: for each year of the reference run, the ECP input arrays `EPGCAP(fuel region, retire group, ECP type, region, year)` and `EPGFOM(retire group, ECP type, region, year)` as passed to AIMMS (Fortran `udat.f` common block, written at the `AIMMS_TransArray_out_ecp` call in `uaimms.f`), or the `ULREVS` family above.
+
+### Capacity credit
+ECP computes intermittent credits in `CAP_CREDIT` (`uecp.f` 40065): a net-load-weighted average over the 864 hours (weight = (net load / peak)^5) of each type's capacity factor, or the variance method (z-score `UPINTZ`) where thermal units dominate, stored in `EPIRCCR`. The inputs are the 864-hour system load (`DUCK_SYSTEM_LOAD`) and hourly renewable capacity factors, which are not in the restart either. The model's own method (top 88 hours of net load) is of the same family. Export that would settle it: `EPIRCCR(type, year)` by region from the same AIMMS transfer, which would let me check my credits directly.
