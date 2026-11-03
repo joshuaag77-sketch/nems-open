@@ -74,6 +74,9 @@ STORAGE = {"battery": (4.0, 0.85), "pumped": (12.0, 0.78)}
 CO2_PER_TBTU = {"coal": 0.0953, "gas": 0.05307, "distillate": 0.07316, "residual": 0.0751}
 
 CCS_HEAT_RATE_MAX = 20000.0  # Btu/kWh; with-capture heat rates above this in the plant file are data outliers
+BASE_YEAR = 2024             # last year of operating history in the plant file
+BENCHMARK_LAST = 2026        # EIA holds the early years to the Short-Term Energy Outlook
+BENCHMARK_FADE = 3           # years over which the stand-in for that benchmark fades out after BENCHMARK_LAST
 UNSERVED_COST = 1000.0       # 1987$/MWh
 HOURS_PER_YEAR = 8760.0
 
@@ -250,6 +253,11 @@ def _fill_prices(a: np.ndarray, y: int) -> np.ndarray:
     return np.where(ok, v, v[ok].mean() if ok.any() else 1.0)
 
 
+def benchmark_weight(year: int) -> float:
+    """1 through BENCHMARK_LAST, then down to 0 over BENCHMARK_FADE years."""
+    return float(np.clip(1.0 - (year - BENCHMARK_LAST) / BENCHMARK_FADE, 0.0, 1.0))
+
+
 def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     """Assemble a year's inputs from the reference run's capacity and fuel prices.
 
@@ -312,8 +320,24 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         outage = [snapshot["UEFDOUT/up_xfor"][efd_index[code], :NUM_R, y].astype(float) for _, _, code in parts]
         cfs = [_wrenew_profile(snapshot, key, y) * (1.0 - o)[:, None, None] for (_, key, _), o in zip(parts, outage)]
         total = np.maximum(sum(caps), 1e-9)
-        profiles[group] = sum(c[:, None, None] * f for c, f in zip(caps, cfs)) / total[:, None, None]
+        new_profile = sum(c[:, None, None] * f for c, f in zip(caps, cfs)) / total[:, None, None]
         cap[group] = sum(caps)
+        # WRENEW's profiles are for new builds. In EIA's run the wind, solar and hydro generation of the first years is
+        # held to the Short-Term Energy Outlook (benchmark constraints within 2%, emmcntl.txt and
+        # steo_benchmark_emm.csv), which sits well below what the new-build profiles give for the old fleet (solar
+        # 20% capacity factor against 27%). Standing in for that, the fleet running at the end of the history (units
+        # online by BASE_YEAR) keeps its plant-file capacity factor, with WRENEW's hourly shape, for BENCHMARK_LAST
+        # years, fading out by BENCHMARK_FADE. Later years, and all new capacity, use WRENEW's level.
+        types = EXISTING_TYPES[group]
+        old_fleet = plants.online(year) & np.isin(u.efd_type, list(types)) & (u.online_year <= BASE_YEAR)
+        file_cap = np.zeros(NUM_R)
+        np.add.at(file_cap, u.region[old_fleet] - 1, u.summer_mw[old_fleet] / 1000.0)
+        file_cf = _weighted_mask(u.capacity_factor, u.summer_mw, old_fleet, u.region, 0.3)
+        day_w = load.day_weights().reshape(36).astype(float)
+        level = (new_profile * day_w[None, :, None]).sum(axis=(1, 2)) / (24.0 * day_w.sum())
+        shape = new_profile / np.maximum(level, 1e-9)[:, None, None]
+        share = benchmark_weight(year) * np.minimum(file_cap / total, 1.0)[:, None, None]
+        profiles[group] = share * file_cf[:, None, None] * shape + (1.0 - share) * new_profile
 
     shapes = load.regional_shapes().reshape(NUM_R, 36, 24)
     w = load.day_weights().reshape(36).astype(float)

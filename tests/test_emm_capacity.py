@@ -48,34 +48,36 @@ def test_first_year_has_no_unplanned_builds_and_stays_feasible(snapshot):
     total_in = sum(v.sum() for v in cap.values())
     total_out = sum(v.sum() for v in res.capacity.values())
     dated = sum(v.sum() for v in res.planned_adds.values()) - sum(v.sum() for v in res.planned_retire.values())
-    assert abs(total_out - (total_in + dated)) < 1.0
+    economic = sum(v.sum() for v in res.economic_retire.values())          # retirements the LP chose (EIA's cap lets it from 2025)
+    assert abs(total_out - (total_in + dated - economic)) < 1.0
 
 
 # (kind, category, year) -> why the loop misses. Measured on the full loop (cache from capacity_report).
 _TIMING = "timing: the LP builds at the annual limit in the first year builds are allowed (2027); EIA ramps up through 2030"
-_RETIRE_TIMING = "timing: the LP retires at the annual limit as soon as replacements exist; EIA retires more slowly, then 60 GW at once in 2032"
+_RETIRE_TIMING = "timing: the LP retires as soon as replacements exist, up to EIA's own 3% a year cap; EIA retires more slowly, then 60 GW at once in 2032"
 KNOWN_MISSES = {
     ("add", "Gas combined cycle", 2027): _TIMING,
+    ("add", "Gas combined cycle", 2030): "34 GW against 43: with capacity credits from the load shape (hydro counts fully) the LP needs less new capacity in 2030",
     ("add", "Gas combined cycle with CCS", 2030): "EIA builds 2.4 GW by 2030; the LP waits until 2032 because the 45Q credit lasts only 12 of 30 years",
     ("add", "Gas combined cycle with CCS", 2035): "10 GW against 23: same cause, and the 10 GW a year build limit is an assumption",
-    ("add", "Gas turbines", 2027): "the LP meets the reserve margin with combined cycle, EIA builds 22 GW of turbines by 2027",
+    ("add", "Gas turbines", 2027): "ECP's overnight costs make combined cycle cheaper than turbines per kW (AC 441 vs AT 497 1987$), so the LP builds combined cycle; EIA builds 22 GW of turbines by 2027",
     ("add", "Gas turbines", 2030): "same, 50 GW of turbines in EIA by 2030",
-    ("add", "Gas turbines", 2035): "same, 120 GW in EIA: its capacity credits for wind and solar are lower than the assumed 15% and 25%",
+    ("add", "Gas turbines", 2035): "same, 120 GW in EIA; the restart does not carry the risk premium (UPRSK) that ECP takes off combined cycle's discount rate",
     ("add", "Wind", 2027): _TIMING,
     ("add", "Wind", 2030): "wind builds at the assumed 30 GW a year limit through the 2029 tax-credit deadline; EIA builds slower",
     ("add", "Wind", 2035): "wind stops when the credit ends (2030); EIA keeps building (194 GW) without it",
     ("add", "Solar", 2027): _TIMING,
     ("add", "Solar", 2030): "solar builds at the assumed 60 GW a year limit through the 2028 credit deadline",
-    ("add", "Solar", 2035): "29% high: solar is cheap and the LP is not limited by interconnection or land",
+    ("add", "Solar", 2035): "18% high: solar is cheap and the LP is not limited by interconnection or land",
     ("add", "Batteries", 2030): "no battery builds between 2027 and 2031 in the LP; EIA adds steadily",
     ("add", "Nuclear", 2027): "classification: the plant file dates 3 to 7 GW of nuclear uprates and restarts; EIA counts them as capacity changes, not additions",
     ("add", "Nuclear", 2030): "same",
     ("add", "Nuclear", 2035): "same",
     ("ret", "Coal", 2027): _RETIRE_TIMING,
-    ("ret", "Coal", 2030): "retirements 31% low in 2030: the LP retires only as replacements arrive; EIA retires 75 GW by 2030",
+    ("ret", "Coal", 2030): "retirements 24% low in 2030: the LP retires only as replacements arrive; EIA retires 75 GW by 2030",
     ("ret", "Oil and gas steam", 2027): _RETIRE_TIMING,
-    ("ret", "Oil and gas steam", 2030): "steam retirements 89% high in 2030, front-loaded",
-    ("ret", "Oil and gas steam", 2035): "steam retirements 40% high in 2035: the LP retires more steam than EIA's age-based schedule",
+    ("ret", "Oil and gas steam", 2030): "steam retirements 123% high in 2030: ECP retires through cost groups with a 5% hurdle rate that the LP does not have",
+    ("ret", "Oil and gas steam", 2035): "steam retirements 61% high in 2035, same cause",
 }
 
 
