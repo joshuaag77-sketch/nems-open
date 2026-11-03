@@ -27,8 +27,8 @@ What the dumps do not hold, and how it is handled (brief, rule 7):
     then carries forward from year to year inside s["_dg"].
   * PELRSOUT comes from s["pelrsout"], Fortran bounds (1:11, 1:61, 1:11); only end
     use 2 (space cooling) is read here.
-  * xSizeMax, a REAL*8 local used before it is set in the niche code, holds 10 from
-    the 2020 call on (static storage); taken as 10.
+  * xSizeMax, a REAL*8 local used before it is set in the niche code: zero on the very first
+    call (2020, before any niche pass), 10 after that (static storage).
   * xPVGenAdded / xWindGenAdded history is used only in a credit ratio that is
     exactly 1.0 for RSGENTK's RPS settings, so unknown history years are zero.
 
@@ -326,7 +326,10 @@ def _state(s: dict, inp: Inputs) -> _State:
     z = s.get("_dg")
     if z is None:
         z = s["_dg"] = _State(inp)
-        if "income_l" in s:  # carried ZIP state as the oracle dumps it ("dg_pre")
+        if int(s["curcalyr"]) == RECSYEAR and int(s["curitr"]) == 1:
+            z.xSizeMax = D(0.0)  # the very first call: zero (-finit-local-zero) until a niche pass sets 10
+        if "income_l" in s and s["income_l"].a.any():  # carried ZIP state as the oracle dumps it ("dg_pre");
+            # zeros mean a state built from the files (initial_state), which starts from the inputs
             for nm, attr in _CARRIED.items():
                 setattr(z, attr, s[nm].a.copy())
     return z
@@ -550,7 +553,10 @@ def rdistgen(s: dict) -> None:
     Est = inp.EstYear
 
     if Y == RECSYEAR and itr == 1:
-        # First call: initialize the output arrays (the file reads are load_inputs)
+        # First call: initialize the output arrays (the file reads are load_inputs; RSGENTK's
+        # capital-cost dollar year lands in COMMON)
+        if "igencapcostyr" in s:
+            s["igencapcostyr"] = type(s["igencapcostyr"])(inp.iGenCapCostYr)
         for d in range(1, ND + 1):
             s["cgcpvres"][d, y1] = 1.0
             s["cgcwnres"][d, y1] = 1.0
