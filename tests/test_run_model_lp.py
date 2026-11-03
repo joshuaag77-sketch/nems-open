@@ -23,7 +23,8 @@ FLOOR = 0.005          # a gap under 0.5% of power-sector fuel is not a miss (co
 
 
 def one_year(year, carbon=0.0):
-    return run_model.run(Policy(carbon, None, 1.0, year), year, year, elec="lp")
+    # dispatch checks: retail prices from the stand-in, so a lone year needs no EFP pre-roll from 2021
+    return run_model.run(Policy(carbon, None, 1.0, year), year, year, elec="lp", elec_price="standin")
 
 
 @pytest.fixture(scope="module")

@@ -74,6 +74,12 @@ With EIA's settings the stub loop converges every year inside cb2026's limit; EI
 tolerance leaves the answer within 0.01% of a run to full convergence. The old loop
 (0.1% on prices, up to 20 passes) took 5 to 10 passes a year with a policy on.
 
+With `elec="lp"` on cb2026, retail electricity prices come from the ported EFP by default
+(`default_elec_price`; the stand-in when EFP's oracle state is missing). Each loop
+iteration is one EFP iteration with the loop's CURITR and FCRL, so the final loop writes
+EFP's statements. `elec_price="standin"` keeps the stand-in's prices (the dispatch tests use
+it, so a lone year needs no EFP pre-roll from 2021).
+
 ## Policy levers
 
 | Lever | Units | Where it acts |

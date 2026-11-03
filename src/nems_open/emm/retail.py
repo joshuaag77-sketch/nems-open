@@ -34,6 +34,12 @@ SECTORS = ["rs", "cm", "in", "tr"]       # QEL** / PEL** suffixes
 PRICES = ["MPBLK/pelrs", "MPBLK/pelcm", "MPBLK/pelin", "MPBLK/peltr", "MPBLK/pelas"]
 
 
+def available() -> bool:
+    """The oracle state EFP starts from: the 2021 books snapshot and the EFP dumps."""
+    from nems_open.emm.chain import BOOKS
+    return (BOOKS / "32" / "EMM_EFPR.daf").exists() and oracle_state.available("fp_out", 41, "emm")
+
+
 class EfpPrices:
     def __init__(self, snap, start_year: int):
         self.chain = Chain(snap, 32)

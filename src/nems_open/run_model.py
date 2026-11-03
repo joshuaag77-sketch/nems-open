@@ -73,6 +73,16 @@ class RunResult:
         return "\n".join(lines)
 
 
+def default_elec_price(elec: str, baseline: str = "cb2026") -> str:
+    """Retail electricity prices when elec_price is not given: EIA's ported EFP with the
+    dispatch LP on cb2026 (where its oracle state exists), else the stand-in."""
+    if elec == "lp" and baseline == "cb2026":
+        from nems_open.emm import retail
+        if retail.available():
+            return "efp"
+    return "standin"
+
+
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
@@ -80,13 +90,13 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
-    (about 10 s an iteration, plus a pre-roll from 2021 to start_year); None picks "efp"
-    with elec="lp" on cb2026, else "standin". maxitr, cycles: NEMS's MAXITR and NRUNS.
+    (about 10 s an iteration, plus a pre-roll from 2021 to start_year); None picks
+    default_elec_price(elec, baseline). maxitr, cycles: NEMS's MAXITR and NRUNS.
     relax=False is IRELAX = 0 (tests only, no relaxation)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
     if elec_price is None:
-        elec_price = "efp" if elec == "lp" and baseline == "cb2026" else "standin"
+        elec_price = default_elec_price(elec, baseline)
     if elec_price not in ("standin", "efp"):
         raise ValueError("elec_price must be 'standin' or 'efp'")
     if elec_price == "efp" and baseline != "cb2026":
