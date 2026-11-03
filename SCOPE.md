@@ -571,6 +571,14 @@ Full model (`run_model.run(ported=("residential", "commercial"))`, 2027-2050, 46
 
 Default flipped (branch fast-loop, 2026-11-02): `run_model.run()` now runs residential and commercial through EIA's ports by default (`run_model.PORTED`; `ported=()` for the all-stub loop). Residential runs in a worker process while commercial runs in the main one (`DemandRunner(parallel=True)`, `run_demand.InProcess`), same numbers to the bit. 2027-2050, 46 passes: 41 s parallel, 63 s serial, with the machine at about 25% CPU from other sessions; `tests/test_run_model.py::test_default_runs_ported_modules_in_two_minutes` (NEMS_SLOW=1) holds it under 120 s. Residential also starts from the input files for any year with no dump (`ResidentialSector.start`, about 2 s a year from 2020); commercial still needs a dump on main, else it falls back to its stub with a warning.
 
+## Transportation speed (branch tran-fast, 2026-11-03)
+One TRAN call went from about 16 s to about 5 s (2025, 2030, 2050 from the oracle's dumps, machine 30-40% busy with other sessions). Every array in the state and every saved local is bit-identical to the old code after two calls in 2020, 2025, 2030 and 2050, and all transportation oracle tests pass (the freight file now takes 14 minutes, the EV lever test 93 s instead of 25 minutes).
+- FEMCALC: the cost-effectiveness and logit loop runs over all technologies of a class at once (`femcalc._tech_loop`); supersede notes are indexed by technology and applied in one tight loop; share changes add up by ordered `np.add.accumulate`; SUMCHECK is one padded accumulate.
+- TALT2X's double-precision logit, TATTRIB's attributes and prices, TRUCK_CHOICE (all nine regions together; TRUCK_PBK over regions and VMT bins), TRUCK_TECHADOPT's shares, TRUCK_STOCK's survival: arrays, with Python's NaN-skipping `min`/`max` copied by `np.where` and running sums kept in the Fortran's order.
+- CAFEGHG_MEET computes its sales-free GHG factors once per call and redoes the group sales totals only for the group a step changes.
+- Shared: `fsum` is a sequential `np.add.accumulate` plus +0 (the Fortran accumulator never ends at -0.0); `powi` is memoized; freight's name resolver caches names; `FArray` caches section subscripts. numpy's float64 `exp`/`log` give the same bits on arrays and scalars on this CPU (checked), so vectorizing double-precision code is safe here.
+- Not yet the default: run_model 2027-2050 with residential, commercial and transportation ported takes 431 s (72 passes, about 6 s each, TRAN the slowest worker), against the 120 s bar. FEMCALC, CAFEGHG_MEET and TRUCK_NEW's GHG retries are what is left; the next step is FEMCALC over all classes of a group at once.
+
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
 2. Run the Python commercial module year by year with those inputs.
