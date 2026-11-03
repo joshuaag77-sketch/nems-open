@@ -434,6 +434,8 @@ One residential iteration went from about 2.5-3 s to about 1 s, every array bit-
 
 Full model (`run_model.run(ported=("residential", "commercial"))`, 2027-2050, 46 passes): 322 s before, 134-154 s after, timed with other sessions loading the machine (CPU 15-76%). Over the 2-minute bar, so the default stays the stubs. About 2.6 s per pass: residential and commercial about 1.2 s each, plus about 3 s of start-up loading the oracle dumps.
 
+Default flipped (branch fast-loop, 2026-11-02): `run_model.run()` now runs residential and commercial through EIA's ports by default (`run_model.PORTED`; `ported=()` for the all-stub loop). Residential runs in a worker process while commercial runs in the main one (`DemandRunner(parallel=True)`, `run_demand.InProcess`), same numbers to the bit. 2027-2050, 46 passes: 41 s parallel, 63 s serial, with the machine at about 25% CPU from other sessions; `tests/test_run_model.py::test_default_runs_ported_modules_in_two_minutes` (NEMS_SLOW=1) holds it under 120 s. Residential also starts from the input files for any year with no dump (`ResidentialSector.start`, about 2 s a year from 2020); commercial still needs a dump on main, else it falls back to its stub with a warning.
+
 ## Test harness (the "done" rule)
 1. Load prices and economic drivers for every year from `cb2026/restart.npz`.
 2. Run the Python commercial module year by year with those inputs.

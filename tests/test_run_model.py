@@ -1,8 +1,8 @@
 """The full loop: demand and supply alternating each year until prices settle.
 
-Default demand is the stub (every sector), so this runs in seconds. The ported modules
-run through the same adapter when the demand runner and oracle dumps are present; that
-check is opt-in (NEMS_SLOW=1) because commercial takes minutes per iteration.
+These tests put every sector on the stub (ported=()), so they run in seconds. The default
+(residential and commercial through EIA's ported modules) is checked in one year below, and
+over 2027-2050 when NEMS_SLOW=1.
 """
 
 import os
@@ -26,12 +26,12 @@ def base():
 
 @pytest.fixture(scope="module")
 def no_policy():
-    return run()
+    return run(ported=())
 
 
 @pytest.fixture(scope="module")
 def carbon50():
-    return run(Policy(carbon_price=50.0))
+    return run(Policy(carbon_price=50.0), ported=())
 
 
 def test_no_policy_reproduces_reference(no_policy, base):
@@ -73,7 +73,7 @@ def test_feedback_pulls_prices_back(carbon50, base):
 
 
 def test_ev_share_moves_gasoline_to_electricity(base):
-    r = run(Policy(ev_share=1.0))
+    r = run(Policy(ev_share=1.0), ported=())
     assert np.all(r.quantities["QBLK/qmgtr"][US, Y] < base["QBLK/qmgtr"][US, Y])
     assert np.all(r.quantities["QBLK/qeltr"][US, Y] > base["QBLK/qeltr"][US, Y])
     j = 2050 - 1990
@@ -83,7 +83,7 @@ def test_ev_share_moves_gasoline_to_electricity(base):
 
 
 def test_building_efficiency(base):
-    r = run(Policy(building_efficiency=0.8))
+    r = run(Policy(building_efficiency=0.8), ported=())
     j = 2040 - 1990
     for k in ("QBLK/qelrs", "QBLK/qngcm"):
         ratio = r.quantities[k][US, j] / base[k][US, j]
@@ -91,17 +91,31 @@ def test_building_efficiency(base):
     assert np.all(r.quantities["QBLK/qngin"][US, Y] > base["QBLK/qngin"][US, Y])  # cheaper gas
 
 
-@pytest.mark.skipif(os.environ.get("NEMS_SLOW") != "1", reason="set NEMS_SLOW=1 to run the ported modules")
 def test_ported_residential_one_year(base):
-    pytest.importorskip("nems_open.run_demand", reason="demand runner not merged into this branch")
-    from nems_open import oracle_state
-    if not oracle_state.available("yb_in", 41, "resd"):
-        pytest.skip("residential oracle dumps not present")
+    """One year with residential through EIA's port (2030: from the oracle's dump if present, else from the files)."""
     r = run(start_year=2030, end_year=2030, ported=("residential",))
     j = 2030 - 1990
     for k in ("MPBLK/pelrs", "MPBLK/pngrs"):
         assert abs(r.prices[k][US, j] / base[k][US, j] - 1) < 0.02, k
     for k in ("QBLK/qelrs", "QBLK/qngrs"):
+        assert abs(r.quantities[k][US, j] / base[k][US, j] - 1) < 0.01, k
+
+
+@pytest.mark.skipif(os.environ.get("NEMS_SLOW") != "1", reason="set NEMS_SLOW=1 to run the default model 2027-2050")
+def test_default_runs_ported_modules_in_two_minutes(base):
+    import time
+    from nems_open.run_model import PORTED
+    from nems_open import oracle_state
+    if not oracle_state.available("sd_in", 38):
+        pytest.skip("commercial oracle dumps not present")
+    t = time.perf_counter()
+    r = run()
+    took = time.perf_counter() - t
+    assert set(PORTED) == {"residential", "commercial"}
+    assert {"residential", "commercial"} <= set(r.passes[0].routines)  # not on the stub
+    assert took < 120, took
+    j = 2050 - 1990
+    for k in ("QBLK/qelrs", "QBLK/qngrs", "QBLK/qelcm", "QBLK/qngcm"):
         assert abs(r.quantities[k][US, j] / base[k][US, j] - 1) < 0.01, k
 
 
