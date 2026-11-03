@@ -152,6 +152,13 @@ def cafeghg_meet(s: dict) -> None:
     mpgmult = mpg[igp, C, yrs, L] * s["cafepefmult_expanded"][igp, C, L, n]
     credv = cred[igp, C, L, n]
     parts = ghg_parts(s, igp, n, yrs)
+    # Group sales totals in both orders the Fortran sums them (powertrain then class, and class
+    # then powertrain). A step changes one group's sales, so only that group's are redone.
+    by_cl = fsum(cv, axis=2)
+    tot_cl = fsum(by_cl, axis=1)
+    by_ldv = fsum(cv, axis=1)
+    tot_ldv = fsum(by_ldv, axis=1)
+    g0 = igp - 1
     done = False
     for xcl in range(1, MAXCLASS + 1):
         if cpass[igp] or done:
@@ -172,16 +179,19 @@ def cafeghg_meet(s: dict) -> None:
                         cafe[igp, ycl, yrs, 1] = cafe[igp, ycl, yrs, 1] + dl
                         cafe[igp, ycl, yrs, xldv] = cafe[igp, ycl, yrs, xldv] - dl
                         stop_gas = 1
+                    by_cl[g0, ycl - 1] = fsum(cv[g0, ycl - 1])
+                    tot_cl[g0] = fsum(by_cl[g0])
+                    by_ldv[g0] = fsum(cv[g0], axis=0)
+                    tot_ldv[g0] = fsum(by_ldv[g0])
                 cmg[igp, n] = hmean(mpgmult, cv[igp - 1], credv)
                 group_ghg(s, igp, n, yrs, parts)
-                cars, trks = cv[:CARGRP], cv[LTKGRP - 1:]
                 # EIA quirk: lifetime miles are hard-coded here, not LDV_VEHLIFEMI as in CAFECALC.
-                mg[CARS, n] = (fpg[CARS, n] - epag[CARS, n]) * fsum(fsum(cars, axis=2), axis=1) * f32(195264.0)
-                mg[TRKS, n] = (fpg[TRKS, n] - epag[TRKS, n]) * fsum(fsum(trks, axis=2), axis=1) * f32(225865.0)
+                mg[CARS, n] = (fpg[CARS, n] - epag[CARS, n]) * tot_cl[:CARGRP] * f32(195264.0)
+                mg[TRKS, n] = (fpg[TRKS, n] - epag[TRKS, n]) * tot_cl[LTKGRP - 1:] * f32(225865.0)
                 if yrs > epa:
-                    newmpg[1, n] = hmean(cmg[CARS, n], fsum(fsum(cars, axis=1), axis=1))
-                    newmpg[2, n] = hmean(cmg[TRKS, n], fsum(fsum(trks, axis=1), axis=1))
-                    newmpg[3, n] = hmean(cmg[G, n], fsum(fsum(cv, axis=1), axis=1))
+                    newmpg[1, n] = hmean(cmg[CARS, n], tot_ldv[:CARGRP])
+                    newmpg[2, n] = hmean(cmg[TRKS, n], tot_ldv[LTKGRP - 1:])
+                    newmpg[3, n] = hmean(cmg[G, n], tot_ldv)
                 if (cmg[igp, n] >= used[igp, yrs]
                         or (newmpg[3, n] > std[3, n] and (newmpg[1, n] - std[1, n]) > -2.0 and (newmpg[2, n] - std[2, n]) > -2.0)
                         or int(s["enforce_cafe"]) == 0):
