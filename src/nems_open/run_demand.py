@@ -370,6 +370,8 @@ class TransportationSector:
             s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, i
             apply_transportation(inputs, s)
             tran.tran(s, t["carry"])
+            if self.ev_share:
+                share_ev_charging(inputs, s)
         t["next_itr"] = itr + 1
 
     def quantities(self, t) -> dict:
@@ -380,6 +382,20 @@ class TransportationSector:
 # buildings modules), and TMPGNEW fills zero E85 prices from gasoline (PETTR) and TMISC
 # the US methanol price (PMETR), so EIA's restart copies of those differ from TRAN's.
 TRAN_WRITES = ("pettr", "pmetr")
+
+
+def share_ev_charging(inputs: Inputs, s: dict) -> None:
+    """Hand this year's TRQ_ELEC from TRAN to the buildings modules. EV charging reaches the
+    grid through them (EIA's QELRS and QELCM add TRQ_ELEC; QELTR is passenger rail only), and
+    they otherwise read EIA's copy, so an EV share target would cut gasoline and add no load.
+    As in NEMS's module order they see it on their next iteration. Only with a target: without
+    one the buildings keep EIA's copy and stay bit-identical to the oracle."""
+    full = inputs.by_var["trq_elec"]
+    trq = inputs.overrides.get(full)
+    if trq is None:
+        trq = inputs.overrides[full] = np.array(inputs.snapshot[full])
+    j = int(s["curiyr"]) - 1
+    trq[:, :, j] = s["trq_elec"].a[:, :, j]
 
 
 def apply_transportation(inputs: Inputs, s: dict) -> None:
