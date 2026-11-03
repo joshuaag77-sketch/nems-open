@@ -72,6 +72,8 @@ DemandRunner(2030, sectors=("commercial",), commercial_levers=CommercialLevers(s
 DemandRunner(2030, sectors=("commercial",), commercial_from_files=True)   # no lever, no dump
 ```
 
+Through the full loop: `Policy(..., commercial=CommercialLevers(...))`, or `python -m nems_open.run_model --shell-code 0.2 --shell-year 2027 --standard 2:3.5:2030:1`.
+
 With no oracle dump for the start year, or with a lever, commercial starts from the files and runs 2019 to the year before at about 4 s a year. Benchmarking holds fuel use to SEDS and STEO through 2026, so a lever shows from 2027.
 
 ## Good first issues

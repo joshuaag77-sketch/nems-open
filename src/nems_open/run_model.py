@@ -168,6 +168,11 @@ def main(argv=None) -> None:
     ap.add_argument("--carbon", type=float, default=0.0, help="2024 $ per metric ton CO2")
     ap.add_argument("--ev", type=float, default=None, help="plug-in share of new light-duty sales, 0-1")
     ap.add_argument("--efficiency", type=float, default=1.0, help="multiplier on building fuel use")
+    ap.add_argument("--shell-code", type=float, default=0.0, metavar="FRACTION",
+                    help="commercial building code: new buildings' heating and cooling shell factors fall by this fraction")
+    ap.add_argument("--shell-year", type=int, default=2027, help="first year of the commercial building code")
+    ap.add_argument("--standard", action="append", default=[], metavar="SERVICE:MIN_EFF:YEAR[:FUEL]",
+                    help="commercial minimum efficiency, e.g. 2:3.5:2030:1 (cooling, electric); repeatable")
     ap.add_argument("--start", type=int, default=2027)
     ap.add_argument("--end", type=int, default=LAST_YEAR)
     ap.add_argument("--baseline", default="cb2026")
@@ -176,7 +181,15 @@ def main(argv=None) -> None:
     ap.add_argument("--elec", choices=("standin", "lp"), default="standin",
                     help="power sector: the stand-in, or the dispatch LP (docs/dispatch.md)")
     a = ap.parse_args(argv)
-    policy = Policy(a.carbon, a.ev, a.efficiency, a.start)
+    levers = None
+    if a.shell_code or a.standard:
+        from nems_open.commercial.levers import CommercialLevers, Standard
+        stds = []
+        for text in a.standard:
+            f = text.split(":")
+            stds.append(Standard(int(f[0]), float(f[1]), int(f[2]), int(f[3]) if len(f) > 3 else None))
+        levers = CommercialLevers(shell_improvement=a.shell_code, shell_start_year=a.shell_year, standards=tuple(stds))
+    policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=levers)
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec)
     print(r.report())
     supply = SupplyStandin(a.baseline)
