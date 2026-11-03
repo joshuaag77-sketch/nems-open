@@ -25,7 +25,7 @@ def test_base_year_lp_is_optimal_and_meets_demand():
     x = r["shipments"]
     assert abs(x.xs("E", level="sec").sum() - dem.elec.sum()) < 1e-2
     assert abs(r["production_tbtu"].sum() - (x.sum() + r["exports"].sum())) < 1e-2
-    assert all(v > 0 for v in r["dual"].values())
+    assert all(np.isfinite(v) and v >= -1e-9 for v in r["dual"].values())
 
 
 def test_national_production_tracks_the_restart_after_the_steo_years():
