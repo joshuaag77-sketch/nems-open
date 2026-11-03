@@ -57,6 +57,10 @@ class Chain:
         for k, v in ld_in.items():          # LDSM's own inputs, as before ELLDSM
             self.s.setdefault(k, v.copy() if isinstance(v, FArray) else v)
         self.books = efp_books.Books.from_dir(BOOKS / str(start))
+        # The snapshot misses region 25 D's last buffered write before EFP: its RC
+        # record 2 to record 1 copy (tests/test_efp_elefp.py, finish_snapshot).
+        bk = self.books
+        bk._write(bk.rc, bk.rc_rec(25, "D", 1), efp_books.RC_RECL, bk._read(bk.rc, bk.rc_rec(25, "D", 2), efp_books.RC_RECL))
         self.base = _region_blocks(start)   # the non-stand-in part of each region's block
         self.external = {}
         for name, tag in EXTERNAL:
@@ -127,7 +131,9 @@ class Chain:
             with np.errstate(all="ignore"):
                 elefp.elefp(s, self.books, self.dispout(y))
 
-    def iteration(self, y, itr, iters=2):
+    def iteration(self, y, itr, iters=2, fcrl=None):
+        """One NEMS iteration of year y. fcrl: the final-pass switch (statements,
+        reports, REVGAP's smoothing); by default 1 on iteration `iters`."""
         s = self.s
         if itr == 1:
             self.start_year(y)
@@ -137,7 +143,8 @@ class Chain:
             self.receive_h2(y)
         s["curiyr"] = s["curiyr"].dtype.type(y)
         s["curitr"] = s["curitr"].dtype.type(itr)
-        fcrl = 1 if itr == iters else 0
+        if fcrl is None:
+            fcrl = 1 if itr == iters else 0
         s["fcrl"] = s["fcrl"].dtype.type(fcrl)
         if "ncrl" in s:
             s["ncrl"] = s["ncrl"].dtype.type(fcrl)

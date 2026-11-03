@@ -8,8 +8,9 @@ moved by more than TOL (relative) in a pass. Then the next year starts.
 
 Supply is the stand-in (docs/supply_standin.md). With elec="lp" the power sector comes from the
 dispatch LP instead (docs/dispatch.md): electricity sales in; fuel use, power CO2 and the wholesale
-marginal cost out, with the carbon price in plant costs. Retail electricity prices stay with the
-stand-in. Demand goes through one adapter (demand_adapter.py): EIA's ported modules where asked
+marginal cost out, with the carbon price in plant costs. Retail electricity prices come from the
+stand-in, or with elec_price="efp" from EIA's ported pricing model (emm/retail.py: LDSM and EFP on
+the loop's electricity sales). Demand goes through one adapter (demand_adapter.py): EIA's ported modules where asked
 for, a stub elsewhere.
 
     python -m nems_open.run_model --carbon 50 --ev 0.8 --efficiency 0.9
@@ -81,11 +82,15 @@ def _max_rel_change(new: dict, old: dict) -> tuple[float, str]:
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
         baseline: str = "cb2026", ported: tuple[str, ...] = (), relax: float = RELAX,
         tol: float = TOL, max_passes: int = MAX_PASSES, verbose: bool = False,
-        elec: str = "standin") -> RunResult:
+        elec: str = "standin", elec_price: str = "standin") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
-    baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP)."""
+    baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
+    elec_price: retail electricity prices from the "standin" or from the ported "efp"
+    (adds about 30 s a year, plus a pre-roll from 2021 to start_year)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
+    if elec_price not in ("standin", "efp"):
+        raise ValueError("elec_price must be 'standin' or 'efp'")
     policy = policy or Policy(start_year=start_year)
     supply = SupplyStandin(baseline)
     base = supply.base
@@ -104,21 +109,35 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         wholesale_us = np.full(61, np.nan)
         generation = {}
         cp87 = supply._cp87(carbon)
+    efp = None
+    if elec_price == "efp":
+        if baseline != "cb2026":
+            raise ValueError("elec_price='efp' starts from the cb2026 oracle state, so the baseline must be cb2026")
+        from nems_open.emm.retail import EfpPrices
+        from nems_open.snapshot import Snapshot
+        efp = EfpPrices(Snapshot(), start_year)
     routines = demand.routines + ["supply stand-in" if lp is None else "supply stand-in + dispatch LP"]
+    if efp is not None:
+        routines.append("EFP retail prices")
 
-    def solve_supply(j: int):
+    def solve_supply(j: int, first: bool = False):
         """The supply side on the loop's current demand and prices."""
         if lp is None:
-            return supply.solve(q, carbon_price=carbon)
-        r = lp.solve(FIRST_YEAR + j, q, prices, float(cp87[j]))
-        return supply.solve(q, carbon_price=carbon, power_fuel=r.power_fuel, co2_el=r.co2_el)
+            s = supply.solve(q, carbon_price=carbon)
+        else:
+            r = lp.solve(FIRST_YEAR + j, q, prices, float(cp87[j]))
+            s = supply.solve(q, carbon_price=carbon, power_fuel=r.power_fuel, co2_el=r.co2_el)
+        if efp is not None:   # retail electricity prices from EFP on this pass's sales
+            for k, v in efp.price_pass(FIRST_YEAR + j, q, first).items():
+                s.prices[k][:, j] = v
+        return s
 
     for year in range(start_year, end_year + 1):
         j = year - FIRST_YEAR
         last_q = None
         # Pass 0: the supply side on the demand we have, taken whole. Exogenous moves
         # (a carbon price, a new baseline year) land at once instead of being relaxed in.
-        s = solve_supply(j)
+        s = solve_supply(j, first=True)
         for k in prices:
             prices[k][:, j] = s.prices[k][:, j]
         for n in range(1, max_passes + 1):
@@ -143,6 +162,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 break
         for k, v in {**s.power_fuel, **s.totals}.items():
             q[k][:, j] = v[:, j]
+        if efp is not None:   # EFP's final pass for the year: statements and REVGAP's smoothing
+            for k, v in efp.finish_year(year, q).items():
+                prices[k][:, j] = v
         if lp is not None:
             last = lp.last[year]
             wholesale[:, j] = last.wholesale
@@ -168,9 +190,11 @@ def main(argv=None) -> None:
     ap.add_argument("--ported", nargs="*", default=[], help="sectors to run through EIA's ported modules")
     ap.add_argument("--elec", choices=("standin", "lp"), default="standin",
                     help="power sector: the stand-in, or the dispatch LP (docs/dispatch.md)")
+    ap.add_argument("--elec-price", choices=("standin", "efp"), default="standin",
+                    help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py)")
     a = ap.parse_args(argv)
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start)
-    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec)
+    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price)
     print(r.report())
     supply = SupplyStandin(a.baseline)
     base, base_co2 = supply.base, supply.solve().co2_total
