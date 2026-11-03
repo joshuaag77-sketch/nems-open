@@ -50,8 +50,11 @@ class FArray:
             p = self._p
             if p is not None:
                 v = p[idx]  # a full set of integer subscripts gives a scalar
-                if type(v) is not np.ndarray and min(idx) >= 0:
-                    return v
+                if type(v) is not np.ndarray:
+                    if min(idx) >= 0:
+                        return v
+                else:  # a section: Fortran's inclusive bounds
+                    return self.a[self._ix(idx)]
             try:  # fast path for integer subscripts; a slice among them raises TypeError
                 return self.a[tuple(map(sub, idx, self.lb))]
             except TypeError:

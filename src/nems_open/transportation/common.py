@@ -26,7 +26,10 @@ def fsum(a, axis=None):
     """
     a = np.asarray(a, dtype=f32)
     if axis is None:
-        a = a.reshape(-1, order="F")
+        if a.ndim != 1:
+            a = a.reshape(-1, order="F")
+        if a.size:
+            return np.add.accumulate(a)[-1] + f32(0.0)
         axis = 0
     if a.shape[axis] == 0:
         acc = np.zeros(a.shape[:axis] + a.shape[axis + 1:], dtype=f32)
