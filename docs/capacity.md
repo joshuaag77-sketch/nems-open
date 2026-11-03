@@ -43,3 +43,34 @@ ECP's overnight costs (`UPOVR`, 1987$/kW) put combined cycle below turbines: AC 
 
 ## Next
 Capacity credits from the load shape (replaces my fixed credits), the wind and solar supply curves, and build lead times by type. Those three would also move the timing misses, since they set how fast the LP is allowed to build.
+
+## Capacity by region and fuel against cb2026 (2026-11-03, branch emm-capacity2)
+`python -m nems_open.emm.capacity_regions cache.pkl` scores each region and fuel group (25 regions x 7 fuels) at 5% with a 0.5 GW floor.
+
+Baseline before this work: 125/175 cells inside in 2027, 83/175 in 2030, 65/175 in 2035.
+
+### Change: coal-to-gas conversion
+EIA's coal capacity does not only retire. Its gas conversion capacity (prefix `ng`) grows 14 to 50 GW between 2027 and 2031, which is why EIA steam capacity rises from 80 to 110 GW while the model's fell to 57. The LP now has a `convert` variable (coal to a new `gas_conv` group, heat rate +5%, variable O&M x0.75, fixed O&M x0.67, from emmcntl.txt `%CL_to_NG%`) at an assumed 100 1987$/kW. It counts against the retirement rate cap before 2032 and is exempt from the coal rule after.
+
+Result (model / EIA GW, regions inside 5%):
+
+| fuel | 2027: national model / EIA GW, regions inside 5% | 2030: national model / EIA GW, regions inside 5% | 2035: national model / EIA GW, regions inside 5% |
+|---|---|---|---|
+| coal | 129 / 153 (-16%), 17/25 | 107 / 88 (+21%), 7/25 | 18 / 16 (+11%), 17/25 |
+| gas_cc | 282 / 269 (+5%), 20/25 | 294 / 308 (-4%), 12/25 | 408 / 429 (-5%), 2/25 |
+| gas_ct | 148 / 165 (-10%), 16/25 | 147 / 191 (-23%), 13/25 | 147 / 260 (-44%), 6/25 |
+| steam | 63 / 80 (-21%), 13/25 | 57 / 110 (-48%), 8/25 | 117 / 101 (+16%), 8/25 |
+| wind | 205 / 175 (+17%), 21/25 | 268 / 212 (+27%), 11/25 | 298 / 344 (-13%), 10/25 |
+| solar | 277 / 223 (+24%), 18/25 | 337 / 258 (+31%), 12/25 | 337 / 305 (+11%), 10/25 |
+| battery | 72 / 78 (-8%), 20/25 | 72 / 88 (-18%), 20/25 | 72 / 100 (-28%), 14/25 |
+| **all cells** | 125/175 inside | 83/175 inside | 67/175 inside |
+
+### Reading it
+- Inside 5% in 2035: 67/175 (was 65). Not close to the target.
+- Conversion did not occur in 2028 to 2030 as it does in EIA; the model converts only at the 2032 rule year, which lifts 2035 steam to +16%. At 100 $/kW conversion is not worth it before the rule in this LP, and EIA's early conversions evidently follow rules the LP does not have (unit-level cost groups).
+- Coal timing is the largest miss: EIA retires about 15 GW a year from 2027 (cap 153 to 78 GW by 2031) before the rule drops the rest; the model retires 16 GW in 2027 and then holds 105 GW until 2032. EIA's rate cap (3% rising to 6% of a region's total capacity) is not binding here; its retirement test is a per-unit hurdle on four cost groups (5/45/40/10% of capacity), which the LP lacks.
+- Turbines remain 44% low in 2035 (147 vs 260 GW): EIA builds both conventional and advanced turbines, and the missing technology risk premium (UPRSK) keeps combined cycle cheaper in the LP.
+- Capacity credit was not changed in this pass.
+
+### Next
+Unit-level retirement groups and hurdle for coal and steam; read UPRSK to price turbines; then capacity credits.
