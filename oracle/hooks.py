@@ -21,8 +21,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-BUILD = HERE / "build"
-RUN = HERE / "run"
+# Build and run folders live under WORK: this folder by default; NEMS_ORACLE_WORK moves them (build_wsl.sh keeps
+# Linux objects and run folders on the Linux file system, away from the Windows ones).
+WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))
+BUILD = WORK / "build"
+RUN = WORK / "run"
 
 # 2019, 2020, 2021, 2025, 2026, 2027, 2030, 2040, 2050
 DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]
@@ -903,9 +906,9 @@ def make_dirs():
 
 
 if __name__ == "__main__":
-    upstream, src = Path(sys.argv[1]).resolve(), Path(sys.argv[2])
+    upstream, src = Path(os.path.abspath(sys.argv[1])), Path(sys.argv[2])
     CFG = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
-    BUILD, RUN = HERE / CFG["build"], HERE / CFG["run"]
+    BUILD, RUN = WORK / CFG["build"], WORK / CFG["run"]
     if CFG is MODULES["emm"]:
         n = write_state_routine_emm(upstream / "includes")
         instrument_emm(src)

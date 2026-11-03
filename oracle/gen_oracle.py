@@ -23,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))   # build and run folders (see hooks.py)
 
 # One entry per ported module. includes: same includes, same order, as the module's
 # entry routine sees them (nested includes such as apq -> qblk are followed).
@@ -74,8 +75,8 @@ MODULES = {
 }
 
 # Set by main() from MODULES.
-RUN = HERE / "run"
-BUILD = HERE / "build"
+RUN = WORK / "run"
+BUILD = WORK / "build"
 INCLUDES: list[str] = []
 WORKBOOKS: list = []
 SKIP_BLOCKS: list[str] = []
@@ -139,7 +140,7 @@ def write_filelist(upstream: Path, scenario: str, file_modes=False):
         key, value = parts[0].strip(), parts[1].strip()
         path = None
         if value.startswith("$NEMS/"):
-            path = (upstream / value[len("$NEMS/"):]).resolve()
+            path = Path(os.path.abspath(upstream / value[len("$NEMS/"):]))   # not resolve(): keep a space-free symlink path
             key = key[:-1] if key.endswith('N') else key
             rows.append(f"{key} {path}")
         elif re.fullmatch(r"-?\d+", value):
@@ -284,15 +285,15 @@ def write_loader(loaded, inc_dir: Path, sources):
 
 def main():
     global RUN, BUILD, INCLUDES, WORKBOOKS, SKIP_BLOCKS
-    upstream, scenario = Path(sys.argv[1]).resolve(), sys.argv[2]
+    upstream, scenario = Path(os.path.abspath(sys.argv[1])), sys.argv[2]   # abspath, not resolve: keep a space-free symlink path
     mod = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
-    RUN, BUILD = HERE / mod["run"], HERE / mod["build"]
+    RUN, BUILD = WORK / mod["run"], WORK / mod["build"]
     sources = [upstream / "source" / s for s in ([mod["source"]] if isinstance(mod["source"], str) else mod["source"])]
     INCLUDES, WORKBOOKS, SKIP_BLOCKS = mod["includes"], mod["workbooks"], mod["skip_blocks"]
     if INCLUDES == "auto":
         INCLUDES = auto_includes(sources)
-    RUN.mkdir(exist_ok=True)
-    BUILD.mkdir(exist_ok=True)
+    RUN.mkdir(parents=True, exist_ok=True)
+    BUILD.mkdir(parents=True, exist_ok=True)
     inc_dir = upstream / "includes"
     includes = walk_includes(INCLUDES, inc_dir)
     members = common_members(inc_dir, includes)
