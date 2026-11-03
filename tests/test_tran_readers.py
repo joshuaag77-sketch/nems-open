@@ -172,15 +172,35 @@ NHTSA = ["epampg", "epatsz", "epalug", "epapri", "epahp", "epawgt", "eparng", "p
 LDV_PART = {"ldv_sales": (Ellipsis, slice(5, 30))}
 
 
+@pytest.fixture(scope="module")
+def after_readldv(start):
+    """The 2020 start with READLDV's tables added (some are in no dump: nothing ported reads them)."""
+    from nems_open.transportation.readers import ldv
+    s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in start.items()}
+    ldv.readldv(s)
+    for k, v in start.items():          # keep the oracle's values where both exist
+        s[k] = v.copy() if isinstance(v, FArray) else v
+    return s
+
+
+def test_readvmt(after_readldv):
+    # TVMT rewrites the US row (region 11) of each year it runs; compare the census divisions
+    # every year and the US row from 2020.
+    regions = (slice(None), slice(None), slice(0, 9), slice(None))
+    us_ahead = (slice(None), slice(30, None), 10, slice(None))
+    for part in (regions, us_ahead):
+        assert _check_names(ldv_tables.readvmt, after_readldv, ["pvmt", "lvmt"],
+                            {"pvmt": part, "lvmt": part}) == {}
+
+
 def _readhist_and_nhtsa(s):
     ldv_tables.readhist(s)
     nhtsa.readnhtsa(s)
 
 
-@pytest.mark.skip(reason="needs READLDV (the choice-model constants)")
-def test_readhist_readnhtsa(start):
-    names = [k for k in HIST + NHTSA if k in start]
-    assert _check_names(_readhist_and_nhtsa, start, names, LDV_PART) == {}
+def test_readhist_readnhtsa(after_readldv):
+    names = [k for k in HIST + NHTSA if k in after_readldv]
+    assert _check_names(_readhist_and_nhtsa, after_readldv, names, LDV_PART) == {}
 
 
 # READHIST alone: its years (through 2023); READNHTSA fills 2024 and the 2019-2024 sales.
@@ -194,3 +214,59 @@ def test_readhist(start):
     for k in ("fe", "weight", "price", "hp", "tanksize", "range", "elecsysinccost"):
         part[k] = Ellipsis
     assert _check_names(ldv_tables.readhist, start, [k for k in HIST if k in start], part) == {}
+
+
+class _Tracking(dict):
+    """A state dict that records the names a reader looks up."""
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.seen = set()
+
+    def __getitem__(self, k):
+        self.seen.add(k)
+        return super().__getitem__(k)
+
+    def get(self, k, d=None):
+        self.seen.add(k)
+        return super().get(k, d)
+
+
+def _check_tracked(fn, start, inputs, part=None):
+    part = part or {}
+    t = _Tracking({k: (v.copy() if isinstance(v, FArray) else v) for k, v in start.items()})
+    fn(t)
+    keys = sorted(k for k in t.seen if k in start and k not in inputs)
+    s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in start.items()}
+    for k in keys:
+        if isinstance(s[k], FArray):
+            s[k].a[...] = 0
+        else:
+            s[k] = type(s[k])(0)
+    fn(s)
+    bad = {}
+    for k in keys:
+        idx = part.get(k, Ellipsis)
+        m, e = s[k], start[k]
+        m = m.a[idx] if isinstance(m, FArray) else np.asarray(m)
+        e = e.a[idx] if isinstance(e, FArray) else np.asarray(e)
+        err = rel_err(m, e)
+        if err > READ_TOL:
+            bad[k] = err
+    return keys, bad
+
+
+LDV_INPUTS = {"mc_jpgdp", "ijumpyr", "grpmap"}
+# Rewritten by the module before 2020: TMPGNEW's technology penetration (MKT_PEN) and
+# TALT2's station ratios (STA_RAT) every year, TCURB's stock weights (STKAVGWGT, and
+# TRWT*_STOCK from 1995), and TRAN's battery production (GLOBAL_BATT_PROD column 1).
+LDV_SKIP = {"mkt_pen", "sta_rat", "stkavgwgt"}
+LDV_PART = {"trwtcar_stock": (slice(0, 5),), "trwttrk_stock": (slice(0, 5),),
+            "global_batt_prod": (slice(None), 1, slice(None))}
+
+
+def test_readldv(start):
+    from nems_open.transportation.readers import ldv
+    keys, bad = _check_tracked(ldv.readldv, start, LDV_INPUTS | LDV_SKIP, LDV_PART)
+    assert len(keys) > 200
+    assert bad == {}

@@ -74,7 +74,9 @@ def named_ranges_shaped(book, sheet: str) -> dict:
         wb, cells = _sheet_cells(z, sheet)
     for dn in wb.iter(f"{{{NS['m']}}}definedName"):
         ref = (dn.text or "").strip()
-        m = re.fullmatch(r"'?([^'!]+)'?!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?", ref)
+        # re.match, as the oracle's flattener does: a few definitions trail a third corner
+        # (trnldvx.xlsx CRCOVID is "trnldv!$B$3446:$BE$3454:'trnldv'!$BE$3453"); the first two count.
+        m = re.match(r"'?([^'!]+)'?!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?", ref)
         if not m or m.group(1).lower() != sheet.lower():
             continue
         c1, r1 = _cell_ref(m.group(2))

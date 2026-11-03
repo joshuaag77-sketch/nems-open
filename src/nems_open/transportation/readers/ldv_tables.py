@@ -103,3 +103,46 @@ def readhist(s: dict, tdm=TDM) -> None:
                         k = 1 if g <= CARGRP else 2
                         inc[c, g, i, il] = (bat[XYR, c, g, il] * li[il, XYR]) + nb[c, XYR, k, il]
     s.update({"igp": MAXGROUP + 1, "icl": MAXCLASS + 1, "ildv": MAXLDV + 1, "i": CURRENT + 1})
+
+
+def readvmt(s: dict, tdm=TDM) -> None:
+    """READVMT: needs READLDV's VMT_SCHED_PARAM."""
+    ncol = VMTYR - 2016 + 1
+    pv, lv = s["pvmt"], s["lvmt"]
+    ys = slice(27, 26 + ncol)
+    for row in _csv_rows(tdm / "trnldv_vmt.csv")[:3600]:
+        v2, r2, f2, a2 = (int(x) for x in row[:4])
+        (pv if v2 == 1 else lv)[a2, ys, r2, f2] = np.array(row[4:4 + ncol], dtype=f32)
+    yv = slice(27, VMTYR - 1989)
+    for il in (3, 8, 9, 10, 11, 12, 13, 14):
+        pv[:, yv, :, il] = pv[:, yv, :, 1]
+    for il in (3, 8, 9, 10, 11, 12, 13, 14):
+        lv[:, yv, :, il] = lv[:, yv, :, 1]
+    iy = 1995 - 1990 + 1
+    for icl in range(iy, 2015 - 1989 + 1):
+        pv[:, icl, :, :] = pv[:, 2016 - 1989, :, :]
+        lv[:, icl, :, :] = lv[:, 2016 - 1989, :, :]
+    prm, ij = s["vmt_sched_param"], int(s["ijumpyr"])
+    b = VMTYR - 1989
+    for icl in range(b, ij + 1):
+        for il in range(1, MAXLDV + 1):
+            if prm[il, 1] == 0.0:
+                pv[:, icl, :, il] = pv[:, b, :, il]
+                lv[:, icl, :, il] = lv[:, b, :, il]
+            elif icl <= prm[il, 2] - 1989:
+                frac = f32(icl + 1989 - VMTYR) / (prm[il, 2] - f32(VMTYR))
+                for a in (pv, lv):
+                    for r in range(1, MNUMCR - 1):
+                        for ia in range(1, MAXAGE + 1):
+                            tgt = a[ia, b, r, 1] * prm[il, 1]
+                            if a[ia, icl, r, il] < a[ia, icl, r, 1] * prm[il, 1]:
+                                a[ia, icl, r, il] = (tgt - a[ia, b, r, il]) * f32(icl + 1989 - VMTYR) / (prm[il, 2] - f32(VMTYR)) + a[ia, b, r, il]
+                            else:
+                                a[ia, icl, r, il] = tgt
+                del frac
+            else:
+                pv[1:MAXAGE, icl, R9, il] = pv[1:MAXAGE, icl - 1, R9, il]
+                lv[1:MAXAGE, icl, R9, il] = lv[1:MAXAGE, icl - 1, R9, il]
+    for a in (pv, lv):
+        a[1:MAXAGE, iy:ij, MNUMCR, 1:MAXLDV] = fsum(a[1:MAXAGE, iy:ij, R9, 1:MAXLDV], axis=2) / f32(9.0)
+    s.update({"icl": ij + 1, "ildv": MAXLDV + 1, "iregn": MNUMCR - 1, "iage": MAXAGE + 1})
