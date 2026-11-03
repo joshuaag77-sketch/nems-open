@@ -124,9 +124,10 @@ class Result:
 
 
 class SupplyStandin:
-    def __init__(self, baseline: str = "cb2026", coefficients: Path = COEFFICIENTS):
+    def __init__(self, baseline: str = "cb2026", coefficients: Path = COEFFICIENTS, base: dict | None = None):
         self.baseline = baseline
-        self.base = load_case(baseline)
+        # base: arrays to use instead of the case's own (a blend of cases, see nems_open.uncertainty)
+        self.base = base if base is not None else load_case(baseline)
         coef = json.loads(Path(coefficients).read_text())
         self.price_coef = {k: v["coef"] for k, v in coef["prices"].items()}
         self.power_mix = coef["power_mix"]
@@ -182,13 +183,15 @@ class SupplyStandin:
         prices = {}
         names = sorted(k for k in base if k.startswith("MPBLK/p"))
         # Gas first: electricity prices respond to the price of gas to power plants.
+        regs = {}   # the regressors depend on the fuel only (the gas price to power plants is settled before electricity)
         for name in sorted(names, key=lambda n: parse_price(n)[0] == "el"):
             fuel, _ = parse_price(name)
             if fuel not in DRIVERS:
                 prices[name] = base[name].copy()
                 continue
-            x = regressors(fuel, totals, base, brent, prices.get("MPBLK/pngel"))
-            prices[name] = self._move(name, x, brent)
+            if fuel not in regs:
+                regs[fuel] = regressors(fuel, totals, base, brent, prices.get("MPBLK/pngel"))
+            prices[name] = self._move(name, regs[fuel], brent)
         return prices
 
     # Power-sector fuel switching ------------------------------------------------
