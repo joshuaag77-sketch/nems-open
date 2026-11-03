@@ -1,7 +1,7 @@
 (function () {
   "use strict";
-  const DATA = window.NEMS_DATA;
-  const meta = DATA.meta;
+  const META = window.NEMS_META;
+  const meta = META.fast;
   const ref = meta.reference;
   const years = meta.years;
   const yi = (y) => years.indexOf(y);
@@ -9,9 +9,11 @@
   // ---- scenario sets -------------------------------------------------------------
   // fast: every sector on the stub, supply on fitted curves (144 runs).
   // real: ported residential and commercial plus the dispatch LP (16 runs, scripts/precompute_real.py).
-  const REAL = window.NEMS_REAL;
-  const SETS = { fast: { carbon: meta.carbon, ev2035: meta.ev2035, buildings2050: meta.buildings2050, scenarios: DATA.scenarios } };
-  if (REAL && REAL.meta.complete) SETS.real = { ...REAL.meta, scenarios: REAL.scenarios };
+  // Scenarios load one at a time (data/<dir>/<id>.json, about 3 KB gzipped) and are kept;
+  // opened from disk, or if a fetch fails, the page loads the whole set's bundle instead.
+  const SETS = { fast: { carbon: meta.carbon, ev2035: meta.ev2035, buildings2050: meta.buildings2050,
+                         scenarios: {}, dir: "scenarios", bundle: "scenarios.js", global: "NEMS_DATA" } };
+  if (META.real && META.real.complete) SETS.real = { ...META.real, scenarios: {}, dir: "real", bundle: "real.js", global: "NEMS_REAL" };
   let set = "fast";
   const grid = () => SETS[set];
   const LIVE = { residential: "Ported module ran in this run", commercial: "Ported module ran in this run",
@@ -29,7 +31,31 @@
     const ev = g.ev2035[+levers.ev.value];
     const bld = g.buildings2050[+levers.bld.value];
     const id = `c${carbon}_ev${ev === null ? "ref" : Math.round(ev * 100)}_b${Math.round(bld * 100)}`;
-    return { carbon, ev, bld, s: g.scenarios[id] };
+    return { carbon, ev, bld, id, s: g.scenarios[id] };
+  }
+  const loadScript = (src) => new Promise((ok, fail) => {
+    const t = document.createElement("script");
+    t.src = src; t.onload = ok; t.onerror = fail;
+    document.head.appendChild(t);
+  });
+  const bundles = {};
+  function fromBundle(name) {
+    const g = SETS[name];
+    bundles[name] = bundles[name] || loadScript("data/" + g.bundle).then(() => Object.assign(g.scenarios, window[g.global].scenarios));
+    return bundles[name];
+  }
+  async function ensure(name, ids) {
+    const g = SETS[name];
+    const need = ids.filter((id) => !g.scenarios[id]);
+    if (!need.length) return;
+    if (location.protocol === "file:") return fromBundle(name);
+    try {
+      await Promise.all(need.map((id) => fetch(`data/${g.dir}/${id}.json`)
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then((d) => (g.scenarios[id] = d))));
+    } catch (e) {
+      await fromBundle(name);
+    }
   }
   const ticks = (id, labels) => (el(id).innerHTML = labels.map((t) => `<span>${t}</span>`).join(""));
   function setupLevers() {
@@ -536,11 +562,16 @@
         <p>${say(k)}</p></li>`).join("") + `</ol>`;
   }
 
-  function render(animate) {
-    const c = current();
+  let renderSeq = 0;
+  async function render(animate) {
+    const seq = ++renderSeq;
+    let c = current();
     el("carbon-out").textContent = `$${c.carbon} per ton CO2`;
     el("ev-out").textContent = evLabel(c.ev);
     el("bld-out").textContent = bldLabel(c.bld);
+    await ensure(set, [c.id, "c0_evref_b100"]);
+    if (seq !== renderSeq) return;  // a newer move of the levers took over
+    c = current();
     tagModules();
     kpis(c.s);
     drawChart(c.s);
