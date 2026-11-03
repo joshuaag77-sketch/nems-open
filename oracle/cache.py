@@ -13,14 +13,17 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))   # where the run folders are (hooks.py)
 CACHE = Path(os.environ.get("NEMS_ORACLE_DIR", Path.home() / "dev" / "oracle-cache"))
 RUN = {"comm": "run", "resd": "run_resd"}
 
 
 def link_out(module: str) -> Path:
     target = CACHE / module / "out"
+    if os.environ.get("NEMS_ORACLE_NO_LINK"):     # build_wsl.sh --local-out: dump locally, copy to the cache after
+        return target
     target.mkdir(parents=True, exist_ok=True)
-    link = HERE / RUN.get(module, f"run_{module}") / "out"
+    link = WORK / RUN.get(module, f"run_{module}") / "out"
     link.parent.mkdir(exist_ok=True)
     if link.is_symlink() or (os.name == "nt" and link.is_junction()):
         return target

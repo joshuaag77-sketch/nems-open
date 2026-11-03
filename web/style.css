@@ -258,3 +258,14 @@ button.link { background: none; border: 0; padding: 0; font: inherit; color: var
 .story #years button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .story .chart-box { height: 300px; }
 .fid-input { color: var(--muted); }
+/* uncertainty bands */
+.pill { font-size: 0.78rem; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+.uncert .lead { margin: 0 0 10px; }
+.unc-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.unc-legend { margin: 4px 0; flex-wrap: wrap; }
+.band-key { display: inline-block; width: 22px; height: 10px; background: var(--accent-soft); border: 1px solid var(--accent); margin-left: 12px; }
+.unc-summary { margin: 10px 0 4px; }
+.uncert .sub-head { margin-top: 18px; }
+.uncert .sub-head h3 { margin: 0; font-size: 0.95rem; }
+.chart-box.short { height: 190px; }
+.unc-table { margin-top: 12px; }
