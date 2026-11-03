@@ -8,6 +8,7 @@ dependencies = ["numpy", "pandas", "xarray", "linopy", "highspy"]
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-xdist"]
+agent = ["anthropic"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
