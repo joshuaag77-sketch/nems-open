@@ -385,6 +385,22 @@ EFP quirks kept (selection; each module's docstring and the agents' reports in g
 
 Oracle fixes found while porting: `REAL *4` with a space was not parsed (EFPND arrays dumped as single integers; fixed in hooks.py, effective from the next rebuild); the test check treated NaN as a match (fixed: NaN against NaN and equal infinities match, NaN on one side fails).
 
+Added 2026-11-03 (the region loop and books):
+- `efp/books.py`: EFP's direct-access records (EMM_EFPR, EMM_EFPRC, EMM_EFPRCY, EMM_EFPBLDS, EMM_ECPIDAF) held in memory, with the Fortran record numbers. Records are raw COMMON bytes through CHARACTER views (not byte-swapped; EFPBLDS's explicit numeric lists are big-endian). `efp/elefp.py`: ELGLTR, ELLGTR, EFP, GENERA, TRANSM, DISTRI, ELEFP. ELEFP from the state before it plus the books equals the oracle's state after it for every dumped array, 2021 and 2030.
+- Books snapshots: `oracle/snapshot_efp.py` pauses the running oracle once LDSM's dump of a year is complete, copies EFP's files, resumes it (no rebuild; gfortran is blocked by Smart App Control). One record (region 25, distribution) misses a buffered write; tests and the chain re-apply that one copy.
+- `efp/efd_standin.py`: the EFD stand-in in Python, bit-identical to the oracle's for all 25 regions in all nine dump years.
+
+## EMM chain and EFP prices in run_model (2026-11-03)
+
+`emm/chain.py` runs LDSM, the EFD stand-in and EFP in Python year after year from the oracle's 2021 state, with the UTIL pieces around them: the hydrogen model's hourly electrolyzer load into LDSM's 864 hours (receive_from_hmm_electricity_demand), and EFP's STEO price benchmark (zero the year's adders, run EFP, in STEO years compute the adders from `ESTCU_*` and run EFP again). Year-indexed inputs from EMM parts not ported come from the oracle's 2050 dumps, which hold every year: the distributed capacity adjustments (`*_CAP_ADJ`, renewables) and the nuclear ZEC subsidy (`ELNUCSBDY`, CRPGRP in ECP's data prep).
+- `tests/test_emm_chain.py`: 2021 to 2030 alone, LDSM matches the oracle's 2030 state (nothing over 1e-4); retail prices by sector, census division and EMM region within 0.5% (worst 0.33%, US within 0.01%). To 2050 (opt-in): census-division prices within 0.2%, US within 0.03%. The gap: ECP's yearly build data (BILDIN, including the cost-of-capital fields CAPCOST reads) stays at 2021 in the chain; region 25's snapshot record.
+- About 28 s a year.
+
+`run_model.run(elec_price="efp")` (EMM lane item 3, `emm/retail.py`): the chain on the loop's electricity sales each supply pass (residential and commercial census sales directly; industrial and transport end uses scaled by sector total over EIA's), after a pre-roll from 2021 to the start year on EIA's demand. The year's first pass is EFP's first iteration (capital rolls forward), later passes reprice, and a final pass after convergence writes the statements and REVGAP. Prices out are EFP's response applied to EIA's prices: EIA x EFP(run) / EFP(EIA's demand), the reference being the oracle's EFP run, since EFP on stand-in dispatch costs prices 8 to 19% below EIA.
+- 2028: baseline pelas 15.476 vs EIA 15.475. Building efficiency x0.9 (sales -8%): EFP raises pelas 6.4% (fixed costs over fewer kWh) where the stand-in lowers it 2%; sales fall a further 1.2%.
+- Cost: about 30 s per pass-year, plus the pre-roll (2.5 min to 2027).
+- Not yet: generation costs inside EFP move with the loop (they are EIA's reference dispatch through the stand-in, so a carbon price reaches retail prices only through sales); feeding the dispatch LP's results (elec="lp") into the EFD block is the next step.
+
 ## Supply stand-in (2026-11-02)
 Track two of the plan: a playable full model first, real supply ports after. `src/nems_open/supply_standin/` takes end-use demand (QBLK) and returns MPBLK prices, power-sector fuel use and CO2, from price curves fitted across EIA's 11 AEO2026 runs (their restart files sit in `nems-upstream/output/aeo2026/`; only cb2026 had an npz, but every `restart.rlx` is an npz too). Reproduces any case exactly when used as its baseline; on the demand-side cases (high/low growth, high electricity demand) US prices land within 2-5%. Supply shocks (oil and gas supply, zero-carbon cost) are baselines, not levers. Biggest gap: no power-sector abatement under a carbon price. Details and limits: `docs/supply_standin.md`. Upstream defect found: the `alttrnp` run is a byte copy of `electrnp`.
 
