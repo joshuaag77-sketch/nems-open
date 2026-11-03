@@ -13,7 +13,7 @@ variables ICL, ILDV and IVTYP (s["icl"], s["ildv"], s["ivtyp"]).
 
 import numpy as np
 
-from nems_open.transportation.common import MAXLDV, MNUMCR, f32, fsum
+from nems_open.transportation.common import f32, fsum, logf, MAXLDV, MNUMCR, powf
 
 BASE, PREV, CURRENT = 0, 1, 2
 GAS = 1
@@ -282,16 +282,16 @@ def lioncostcalc(s: dict) -> None:
         cost, pa, pb, ma, mb = s["li_ion_cost"], s["pack_a"], s["pack_b"], s["mat_a"], s["mat_b"]
         mark = s["mat_markup"][n]
         tot_prev, tot_now = fsum(prod[:, :, n - 1]), fsum(prod[:, :, n])
-        e0 = -(-np.log(f32(1.0)) / np.log(f32(2.0)))
-        e1 = -(-np.log(f32(1.0) - f32(0.165)) / np.log(f32(2.0)))
+        e0 = -(-logf(f32(1.0)) / logf(f32(2.0)))
+        e1 = -(-logf(f32(1.0) - f32(0.165)) / logf(f32(2.0)))
         for ildv in range(1, MAXLDV + 1):
             if (4 <= ildv <= 8) or ildv >= 13:
                 if n == first:
-                    pa[ildv] = (cost[ildv, yrs] - ma[ildv] * mark * tot_prev ** e0) / (tot_prev ** e1)
+                    pa[ildv] = (cost[ildv, yrs] - ma[ildv] * mark * powf(tot_prev, e0)) / powf(tot_prev, e1)
                 elif n == first + 1:
-                    cost[ildv, yrs] = pa[ildv] * tot_now ** e1 + ma[ildv] * mark * tot_now ** e0
+                    cost[ildv, yrs] = pa[ildv] * powf(tot_now, e1) + ma[ildv] * mark * powf(tot_now, e0)
                 else:
                     if n == first + 2:
-                        pa[ildv] = (cost[ildv, yrs - 1] - ma[ildv] * mark * tot_prev ** (-mb[ildv])) / (tot_prev ** (-pb[ildv]))
-                    cost[ildv, yrs] = pa[ildv] * tot_now ** (-pb[ildv]) + ma[ildv] * mark * tot_now ** (-mb[ildv])
+                        pa[ildv] = (cost[ildv, yrs - 1] - ma[ildv] * mark * powf(tot_prev, -mb[ildv])) / powf(tot_prev, -pb[ildv])
+                    cost[ildv, yrs] = pa[ildv] * powf(tot_now, -pb[ildv]) + ma[ildv] * mark * powf(tot_now, -mb[ildv])
         s["ildv"] = MAXLDV + 1

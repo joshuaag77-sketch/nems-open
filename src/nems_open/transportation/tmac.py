@@ -9,7 +9,7 @@ Fortran bounds). The routine updates it in place, as the Fortran updates its
 module and COMMON variables.
 """
 
-from nems_open.transportation.common import AGEGRP, MNUMCR, f32
+from nems_open.transportation.common import AGEGRP, MNUMCR, f32, fsum
 
 
 def tmac(s: dict) -> None:
@@ -57,4 +57,4 @@ def tmac(s: dict) -> None:
     ld = s["licdriver"]
     ld[1:AGEGRP, 1, 1:MNUMCR - 2, n] = np15[1:AGEGRP, 1, 1:MNUMCR - 2, n] * s["licrate_m"][1:AGEGRP, n, 1:MNUMCR - 2]
     ld[1:AGEGRP, 2, 1:MNUMCR - 2, n] = np15[1:AGEGRP, 2, 1:MNUMCR - 2, n] * s["licrate_f"][1:AGEGRP, n, 1:MNUMCR - 2]
-    ld[1:AGEGRP, 1:2, 11, n] = ld[1:AGEGRP, 1:2, 1:MNUMCR - 2, n].sum(axis=2, dtype="f4")
+    ld[1:AGEGRP, 1:2, 11, n] = fsum(ld[1:AGEGRP, 1:2, 1:MNUMCR - 2, n], axis=2)

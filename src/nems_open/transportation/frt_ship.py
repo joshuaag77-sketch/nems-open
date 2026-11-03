@@ -11,7 +11,7 @@ carry: TSHIP's saved isfdt_b, lsfo_upgrade and temp_prhtr (years before n filled
 
 import numpy as np
 
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MNUMCR, powf
 from nems_open.transportation.frt_common import ONE, V
 
 R9 = slice(1, MNUMCR - 2)
@@ -27,7 +27,7 @@ FAF = 28        # iFAFyear, a PARAMETER in tranmain
 
 
 def _logit_fac(fac, k, yrs, slope):
-    return fac[k, 1] + (fac[k, 2] - fac[k, 1]) / (ONE + np.exp(slope * (f32(yrs) - fac[k, 3])))
+    return fac[k, 1] + (fac[k, 2] - fac[k, 1]) / (ONE + expf(slope * (f32(yrs) - fac[k, 3])))
 
 
 def tship(s: dict, carry: dict) -> None:
@@ -92,7 +92,7 @@ def tship(s: dict, carry: dict) -> None:
         to, eff, fc = v["fleetto"], v["effinc"], v["fuelcons"]
         for mv in range(1, VTYPE + 1):
             surv = max(f32(0.), ONE - (f32(yrs - 2012) * to[mv]))
-            meff = np.power(ONE - eff[mv], f32(yrs - 2012) * f32(.5))
+            meff = powf(ONE - eff[mv], f32(yrs - 2012) * f32(.5))
             c = fc[R9, mv]
             eca[1:MNUMCR - 1] = eca[1:MNUMCR - 1] + ((c * surv) + (c * (ONE - surv) * meff)) * g[mv]
 
@@ -129,10 +129,10 @@ def tship(s: dict, carry: dict) -> None:
         for m in range(1, 6):
             if w[m] <= f32(0.05):
                 w[m] = f32(.05)
-            lsum = lsum + ((np.power(w[m], ALPHA) * prof31[m]) * AVEMEFF[m])
+            lsum = lsum + ((powf(w[m], ALPHA) * prof31[m]) * AVEMEFF[m])
         if lsum > 0:
             for m in range(1, 6):
-                prof[m, iregn] = (np.power(w[m], ALPHA) * prof31[m] * AVEMEFF[m]) / lsum
+                prof[m, iregn] = (powf(w[m], ALPHA) * prof31[m] * AVEMEFF[m]) / lsum
         lsum = f32(0.)
         for m in range(1, 6):
             lsum = lsum + prof[m, iregn]

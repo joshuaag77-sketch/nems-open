@@ -17,7 +17,7 @@ import math
 
 import numpy as np
 
-from nems_open.transportation.common import MAXLDV, MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MAXLDV, MNUMCR, powf
 from nems_open.transportation.ldv_tech import evcalc, fccalc, femrange, hevcalc, phevcalc
 from nems_open.transportation.misc_modes import powi
 
@@ -275,9 +275,9 @@ def femcalc(s: dict) -> None:
                         if fem_pass == 1 or (fem_pass == 2 and int(s["pass2"]) == 1):
                             old_pmax[icl, igp, itech, ildv, 2] = funcmax(s, pen[igp, icl, itech, PREV, ildv], old_pmax[icl, igp, itech, ildv, 2])
                         k = f32(-4.0) if cf < 0.0 else f32(-2.0)
-                        mkt_fuel[itech] = ONE / (ONE + np.exp(k * cf))
+                        mkt_fuel[itech] = ONE / (ONE + expf(k * cf))
                         k = f32(-4.0) if cp < 0.0 else f32(-2.0)
-                        mkt_perf[itech] = ONE / (ONE + np.exp(min(k * cp, f32(75.0))))
+                        mkt_perf[itech] = ONE / (ONE + expf(min(k * cp, f32(75.0))))
                         am = old_pmax[icl, igp, itech, ildv, 2] * max(mkt_fuel[itech], mkt_perf[itech])
                         am = max(pen[igp, icl, itech, PREV, ildv], am)
                         actual[itech] = min(am, mmax[itech], ONE)
@@ -417,8 +417,8 @@ def _performance(s, igp, icl, ildv, hp_wgt_base, demand_used, tech_adjhp, tech_m
             and wgt[igp, icl, BASE, ildv] != 0.0 and wgt[igp, icl, CURRENT, ildv] != 0.0
             and perfcap[icl, igp] - hp_wgt_base + demand_used != 0.0):
         k = 1 if ildv == 16 else ildv
-        perf_adjhp = ((inc_gr ** f32(0.9)) * ((price[igp, icl, PREV, k] / price[igp, icl, CURRENT, k]) ** f32(0.9))
-                      * ((fe[igp, icl, CURRENT, k] / fe[igp, icl, PREV, k]) ** f32(0.2)) * (invgr ** f32(0.2))) - ONE
+        perf_adjhp = (powf(inc_gr, f32(0.9)) * powf(price[igp, icl, PREV, k] / price[igp, icl, CURRENT, k], f32(0.9))
+                      * powf(fe[igp, icl, CURRENT, k] / fe[igp, icl, PREV, k], f32(0.2)) * powf(invgr, f32(0.2))) - ONE
         if ildv == 16:
             hp[igp, icl, CURRENT, ildv] = hp[igp, icl, CURRENT, ildv] * vhp[icl, igp, CURRENT, 1]
         else:

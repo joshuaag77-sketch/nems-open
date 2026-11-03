@@ -16,7 +16,7 @@ EIA quirks kept:
 import numpy as np
 
 from nems_open.paths import INPUT
-from nems_open.transportation.common import MNUMCR, f32
+from nems_open.transportation.common import MNUMCR, f32, logf, powf
 from nems_open.transportation.frt_common import AGE, CAFE14, CAFE19, FUEL12, SC4, V
 from nems_open.transportation.readers.getrng import Ranges
 
@@ -226,11 +226,11 @@ def cfread(s: dict, traneff: int = 0, legira: int = 1, tdm=TDM) -> None:
     r("PHEV_CHGSUS_MULT", "phev_chgsus_mult", None, CAFE19, 2)
     x.scalar("PHEV_DOD", "trk_phev_dod")
 
-    ln2 = np.log(f32(2.0))
-    v["cost_fcstack_b"] = -np.log(f32(1.0) - v["cost_fcstack_lr"]) / ln2
-    v["cost_h2tank_b"] = -np.log(f32(1.0) - v["cost_h2tank_lr"]) / ln2
-    v["cost_battpack_b"].a[...] = -np.log(f32(1.0) - v["cost_battpack_lr"].a) / ln2
-    v["cost_battmat_b"].a[...] = -np.log(f32(1.0) - v["cost_battmat_lr"].a) / ln2
+    ln2 = logf(f32(2.0))
+    v["cost_fcstack_b"] = -logf(f32(1.0) - v["cost_fcstack_lr"]) / ln2
+    v["cost_h2tank_b"] = -logf(f32(1.0) - v["cost_h2tank_lr"]) / ln2
+    v["cost_battpack_b"].a[...] = -logf(f32(1.0) - v["cost_battpack_lr"].a) / ln2
+    v["cost_battmat_b"].a[...] = -logf(f32(1.0) - v["cost_battmat_lr"].a) / ln2
     from nems_open.transportation.misc_modes import powi
     tanks, stacks = v["cumulative_h2_tanks"], v["cumulative_fc_stacks"]
     for i in range(34, bs + 1):
@@ -240,8 +240,8 @@ def cfread(s: dict, traneff: int = 0, legira: int = 1, tdm=TDM) -> None:
     li = s["li_ion_cost"]
     for j in range(1, 6):
         v["cost_battkwh_trk"][j, 6:fb] = li[15, 6 + 1989:fb + 1989] * v["trk_battc_hist"][j]
-    v["cost_fckw"][6:bs] = (v["cost_fcstack_a"] * np.power(stacks[bs], -v["cost_fcstack_b"])) / jp[31] * jp[1]
-    v["cost_h2tank"][6:bs] = (v["cost_h2tank_a"] * np.power(tanks[bs], -v["cost_h2tank_b"])) / jp[31] * jp[1]
+    v["cost_fckw"][6:bs] = (v["cost_fcstack_a"] * powf(stacks[bs], -v["cost_fcstack_b"])) / jp[31] * jp[1]
+    v["cost_h2tank"][6:bs] = (v["cost_h2tank_a"] * powf(tanks[bs], -v["cost_h2tank_b"])) / jp[31] * jp[1]
     v["cost_motorkw"][6:bs] = v["cost_emotor_a"] / jp[31] * jp[1]
     for k in ("cost_battpack_a", "cost_battmat_a"):
         v[k].a[...] = v[k].a / jp[31] * jp[1]
@@ -297,7 +297,7 @@ def cfread(s: dict, traneff: int = 0, legira: int = 1, tdm=TDM) -> None:
     ce = v["chrg_eff"]
     ce[iy:2024 - 1989] = ce[2024 - 1989]
     for i in range(2025 - 1989, 2032 - 1989 + 1):
-        ce[i] = ce[2024 - 1989] * np.power(v["chrg_eff_imp"], f32(i - (2024 - 1989)))
+        ce[i] = ce[2024 - 1989] * powi(f32(v["chrg_eff_imp"]), i - (2024 - 1989))
     ce[2033 - 1989:61] = ce[2032 - 1989]
     r("PHEVELECVMT", "phevelecvmt", None, 1, CAFE19)
     v["icafe19"], v["ifuel"] = CAFE19 + 1, FUEL12 + 1

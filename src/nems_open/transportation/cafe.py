@@ -10,7 +10,7 @@ and horsepower.
 
 import numpy as np
 
-from nems_open.transportation.common import MAXLDV, MAXVTYP, MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MAXLDV, MAXVTYP, MNUMCR
 from nems_open.transportation.mean_funcs import harmonic_mean as hmean
 from nems_open.transportation.mean_funcs import weighted_mean as wmean
 
@@ -93,7 +93,7 @@ def cafecalc(s: dict, cafetestcall: int) -> None:
         if yrs < 2012:
             for grp, p in ((CARS, "cf"), (TRKS, "tf")):
                 x = fpr[C, grp, n]
-                e = np.exp((x - k(p + "coefc")) / k(p + "coefd"))
+                e = expf((x - k(p + "coefc")) / k(p + "coefd"))
                 v = ONE / ((ONE / k(p + "coefa")) + (ONE / k(p + "coefb") - ONE / k(p + "coefa")) * (e / (ONE + e)))
                 fpm[C, grp, n] = np.where(x != 0.0, v, fpm[C, grp, n])
         else:

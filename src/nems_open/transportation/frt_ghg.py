@@ -14,7 +14,7 @@ EIA quirks kept:
 
 import numpy as np
 
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MNUMCR
 from nems_open.transportation.frt_common import CAFE14, CAFE19, CAFE4, FUEL12, ONE, V, ZERO
 from nems_open.transportation.frt_common import NVMT as NVMT_
 
@@ -248,7 +248,7 @@ def truck_ghgzev(s: dict) -> None:
                     g[2] = avg[2] - fchev[ivmt, c19, iyr]
                     g[3] = avg[3] - h2ice[ivmt, c19, iyr]
                     g = g / f32(10000)
-                    e = np.exp(g)
+                    e = expf(g)
                     g = e / (e[0] + e[1] + e[2] + e[3])
                     if c19 <= 4:
                         g = np.array([ONE, ZERO, ZERO, ZERO], dtype=f32)

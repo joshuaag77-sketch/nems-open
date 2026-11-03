@@ -36,6 +36,13 @@ def _roll_maxage(fs, mstk, iregn, ivtyp, ifleet, ildv, n):
         mstk[iregn, ivtyp, ifleet, ildv, MAXAGE, n] = num1 / den1
 
 
+def _sum_f(a, axes):
+    """Fortran SUM over several dimensions of a REAL*4 section: one accumulator, the
+    elements in Fortran order (the first of `axes` varies fastest)."""
+    a = np.moveaxis(a, axes, range(a.ndim - len(axes), a.ndim))
+    return fsum(a.reshape(a.shape[:a.ndim - len(axes)] + (-1,), order="F"), axis=a.ndim - len(axes))
+
+
 def tfltmpgs(s: dict) -> None:
     n, yrs = int(s["n"]), int(s["curcalyr"])
     first = int(s["first_read_year"])
@@ -94,8 +101,9 @@ def tfltmpgs(s: dict) -> None:
                     den1 = np.where(ok, den1 + term, den1)
                 else:
                     den2 = np.where(ok, den2 + term, den2)
-        car = fsum(fsum(grp[R9, 1:MAXFLEET, 1:CARGRP, 1:MAXCLASS, 1:MAXLDV], axis=3), axis=2)
-        trk = fsum(fsum(grp[R9, 1:MAXFLEET, LTKGRP:MAXGROUP, 1:MAXCLASS, 1:MAXLDV], axis=3), axis=2)
+        # sum(fltgrpsal(iregn,ifleet,groups,1:maxclass,ildv)) in Fortran element order: group, then class
+        car = _sum_f(grp[R9, 1:MAXFLEET, 1:CARGRP, 1:MAXCLASS, 1:MAXLDV], (2, 3))
+        trk = _sum_f(grp[R9, 1:MAXFLEET, LTKGRP:MAXGROUP, 1:MAXCLASS, 1:MAXLDV], (2, 3))
         with np.errstate(divide="ignore", invalid="ignore"):
             mnew[R9, 1, 1:MAXFLEET, 1:MAXLDV, n] = np.where(den1 != 0.0, car / den1, mnew[R9, 1, 1:MAXFLEET, 1:MAXLDV, n])
             mnew[R9, 2, 1:MAXFLEET, 1:MAXLDV, n] = np.where(den2 != 0.0, trk / den2, mnew[R9, 2, 1:MAXFLEET, 1:MAXLDV, n])
@@ -110,7 +118,8 @@ def tfltmpgs(s: dict) -> None:
             ok = (sal[iregn - 1] != 0.0) & (m != 0.0)
             with np.errstate(divide="ignore", invalid="ignore"):
                 den = np.where(ok, den + sal[iregn - 1] / m, den)
-        tot = fsum(sal, axis=0)
+        # sum(fltechsal(1:mnumcr-2,ivtyp,ifleet,1:maxclass,ildv,:)): region, then class, then automation level
+        tot = _sum_f(tech[R9, 1:MAXVTYP, 1:MAXFLEET, 1:MAXCLASS, 1:MAXLDV, 1:MAXHAV], (0, 3, 5))
         with np.errstate(divide="ignore", invalid="ignore"):
             mnew[MNUMCR, 1:MAXVTYP, 1:MAXFLEET, 1:MAXLDV, n] = np.where(den != 0.0, tot / den, mnew[MNUMCR, 1:MAXVTYP, 1:MAXFLEET, 1:MAXLDV, n])
 

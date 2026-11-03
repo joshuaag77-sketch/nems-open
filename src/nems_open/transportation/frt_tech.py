@@ -14,7 +14,7 @@ inflates savings) is kept.
 
 import numpy as np
 
-from nems_open.transportation.common import f32, fsum
+from nems_open.transportation.common import expf, f32, fsum
 from nems_open.transportation.frt_common import CAFE14, CAFE19, FUEL12, ONE, V, ZERO
 from nems_open.transportation.misc_modes import powi
 
@@ -132,7 +132,7 @@ def truck_techadopt(s: dict, carry: dict) -> None:
                                 mid_adj[it, c14] = tmid[it, c14] * max(f32(0.5), powi(f32(0.95), itry - 1))
                             else:
                                 mid_adj[it, c14] = tmid[it, c14]
-                            p = ONE / (ONE + np.exp(f32(-1.0) * (pen_yr[iyr, it, c19, ifuel] - mid_adj[it, c14]) / tshape[it, c14]))
+                            p = ONE / (ONE + expf(f32(-1.0) * (pen_yr[iyr, it, c19, ifuel] - mid_adj[it, c14]) / tshape[it, c14]))
                             p = min(prev, base[it, c19, ifuel]) + (tmax[it, c14] - base[it, c19, ifuel]) * p
                             shr[iyr, it, c19, ifuel] = max(ZERO, min(tmax[it, c14], preff[it, c19, ifuel] * p))
                         else:

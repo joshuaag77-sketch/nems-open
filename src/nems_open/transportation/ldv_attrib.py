@@ -15,7 +15,7 @@ prices are the angtdm__ / aeusprc__ copies in the state.
 
 import numpy as np
 
-from nems_open.transportation.common import MAXAGE, MAXHAV, MAXLDV, MAXOWNER, MAXVTYP, MNUMCR, STOCKYR, f32, fsum
+from nems_open.transportation.common import f32, fsum, MAXAGE, MAXHAV, MAXLDV, MAXOWNER, MAXVTYP, MNUMCR, powf, STOCKYR
 
 BASE, PREV, CURRENT = 0, 1, 2
 GAS = 1
@@ -126,7 +126,7 @@ def flexshr(s: dict) -> None:
     fuel = {1: pmetr[R9, n], 2: pettr[R9, n], 3: s["angtdm__pgftrpv"][R9, n], 4: s["plgtr"][R9, n]}
     af = s["pctaf"]
     for k in range(1, 5):
-        ratio = (fuel[k] ** gammap) / ((fuel[k] ** gammap) + (pmg[R9, n] ** gammap))
+        ratio = powf(fuel[k], gammap) / (powf(fuel[k], gammap) + powf(pmg[R9, n], gammap))
         ratio = np.where(ratio > 0.50, PCTCEILING[k], ratio)
         v = PCTFLOOR[k] + (betap[k] * ratio)
         af[k, R9, n] = np.where(v > PCTCEILING[k], PCTCEILING[k], v)

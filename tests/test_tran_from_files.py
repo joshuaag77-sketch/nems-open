@@ -2,8 +2,11 @@
 
 initial_state() builds the state before TRAN's first call (restart file, DATA values,
 the first-call readers); TRAN then runs 1995 on, three calls a year, as NEMS calls it.
-At the top of 2020 every array must match the oracle's state there.
+At the top of 2020 every array must match the oracle's state there (bit for bit, in
+practice); with NEMS_SLOW=1 also at the top of 2025, after the GHG and CAFE years.
 """
+
+import os
 
 import numpy as np
 import pytest
@@ -41,7 +44,17 @@ def runs():
 
 
 def test_every_array_matches_the_oracle(runs):
-    s, ref = runs
+    _check(*runs)
+
+
+@pytest.mark.skipif(os.environ.get("NEMS_SLOW") != "1", reason="set NEMS_SLOW=1 to run TRAN to 2025 (about 10 min)")
+def test_every_array_matches_the_oracle_in_2025():
+    with np.errstate(all="ignore"):
+        s, _ = initial_state.run(2025)
+    _check(s, tran.start_from_dump(2025 - 1989)[0])
+
+
+def _check(s, ref):
     bad = {}
     n = 0
     for k, e in ref.items():

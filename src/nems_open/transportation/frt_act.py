@@ -11,7 +11,7 @@ carry: the saved credit and bank arrays (MNUMCR, MNUMYR), year n-1 and before.
 
 import numpy as np
 
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MNUMCR
 from nems_open.transportation.frt_common import CAFE19, FUEL12, NVMT, ONE, V, ZERO
 
 CONV = [1, 2, 3, 4, 5]
@@ -283,8 +283,8 @@ def _force_zevs(v, iyr, n, local):
                     a[1] = avg[1] - fcev[ivmt, c19, iyr]
                     a[2] = avg[2] - fchev[ivmt, c19, iyr]
                     a = a / f32(10000)
-                    tot = (np.exp(a[0]) + np.exp(a[1]) + np.exp(a[2]))
-                    a = np.array([np.exp(a[i]) / tot for i in range(3)], dtype=f32)
+                    tot = (expf(a[0]) + expf(a[1]) + expf(a[2]))
+                    a = np.array([expf(a[i]) / tot for i in range(3)], dtype=f32)
                     if c19 <= 4:
                         a = np.array([ONE, ZERO, ZERO], dtype=f32)
                     comp[c19, iregn, iyr] = comp[c19, iregn, iyr] + fsum(a * np.array(avg, dtype=f32)) * zr

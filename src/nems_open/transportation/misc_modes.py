@@ -11,7 +11,7 @@ in `carry` (the oracle dumps them as p_<name> at the routine's end).
 
 import numpy as np
 
-from nems_open.transportation.common import MAXHAV, MAXLDV, MAXVTYP, MNUMCR, f32, fsum
+from nems_open.transportation.common import f32, fsum, MAXHAV, MAXLDV, MAXVTYP, MNUMCR, powf
 
 MAXFLEET = 4
 SIC = 16
@@ -358,7 +358,7 @@ def tmisc(s: dict, carry: dict) -> None:
     if yrs <= int(s["lubhistyr"]):
         lub[n] = s["lubfdh"][n]
     else:
-        lub[n] = (lub[n - 1] * ((hyway[n] / hyway[n - 1]) ** f32(0.25)))
+        lub[n] = (lub[n - 1] * powf(hyway[n] / hyway[n - 1], f32(0.25)))
     qlu = s["qlutr"]
     qlu[11, n] = 0.0
     for r in range(1, MNUMCR - 1):

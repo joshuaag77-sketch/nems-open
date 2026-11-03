@@ -17,7 +17,7 @@ import math
 
 import numpy as np
 
-from nems_open.transportation.common import MAXAGE, MAXHAV, MAXLDV, MAXVTYP, MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MAXAGE, MAXHAV, MAXLDV, MAXVTYP, MNUMCR, powf
 from nems_open.transportation.misc_modes import powi
 
 MAXCLASS = 8
@@ -56,13 +56,13 @@ def lidarcostcalc(s: dict) -> None:
             cum[il, yrs - 1] = cum[il, yrs - 2] + add
         c = cum[il, yrs - 1]
         if c > thr[MAXPRODPHASE, il]:
-            temp[il, yrs] = ca[MAXPRODPHASE, il] * c ** (-cb[MAXPRODPHASE, il])
+            temp[il, yrs] = ca[MAXPRODPHASE, il] * powf(c, -cb[MAXPRODPHASE, il])
             s["lidar_phase"][il, yrs] = MAXPRODPHASE
         else:
             for iphase in range(1, MAXPRODPHASE):
                 s["iphase"] = iphase
                 if c <= thr[iphase + 1, il]:
-                    temp[il, yrs] = ca[iphase, il] * c ** (-cb[iphase, il])
+                    temp[il, yrs] = ca[iphase, il] * powf(c, -cb[iphase, il])
                     s["lidar_phase"][il, yrs] = iphase
                     break
             else:
@@ -129,7 +129,7 @@ def flthav(s: dict) -> None:
                 first_new = f32(min(hav_first[1:])) + f32(s["hav_newtech_lag"])
                 f_wb = ONE
                 if yrs > first_new:
-                    f_wb = np.exp(-((f32(yrs) - first_new) / s["taxi_newtech_pd"]) ** s["taxi_newtech_r"])
+                    f_wb = expf(-powf((f32(yrs) - first_new) / s["taxi_newtech_pd"], s["taxi_newtech_r"]))
 
                 for iregn in range(1, MNUMCR - 1):
                     s["iregn"] = iregn
@@ -159,7 +159,7 @@ def flthav(s: dict) -> None:
                             npv = npv + (powi(base, -ipv)) * (rev - cost - proj * fuel)
                         util[iregn, ihav] = (f_wb * p["hav_newtech_lim"][ihav] + p["hav_oper_limit"][iregn, ihav]
                                              + rev_coef * npv / f32(1000.0))
-                        sum_exp = sum_exp + np.exp(util[iregn, ihav])
+                        sum_exp = sum_exp + expf(util[iregn, ihav])
                     else:
                         s["ihav"] = MAXHAV + 1
 
@@ -170,7 +170,7 @@ def flthav(s: dict) -> None:
                             logit = False
                     if logit:
                         for ihav in range(1, MAXHAV + 1):
-                            shares[iregn, ivtyp, icl, ildv, yrs, ihav] = np.exp(util[iregn, ihav]) / sum_exp
+                            shares[iregn, ivtyp, icl, ildv, yrs, ihav] = expf(util[iregn, ihav]) / sum_exp
                             if ihav > 1 and yrs < hav_first[ihav - 1]:
                                 shares[iregn, ivtyp, icl, ildv, yrs, ihav] = 0.0
                         shares[iregn, ivtyp, icl, ildv, yrs, 1] = ONE - fsum(shares[iregn, ivtyp, icl, ildv, yrs, 2:MAXHAV])

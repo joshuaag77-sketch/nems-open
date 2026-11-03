@@ -16,7 +16,7 @@ import numpy as np
 
 from nems_open.fortran_array import FArray
 from nems_open.transportation.cafe import CARGRP, LTKGRP, MAXCLASS, MAXGROUP
-from nems_open.transportation.common import AGEGRP, MAXAGE, MAXHAV, MAXLDV, MAXVTYP, MF, MNUMCR, f32
+from nems_open.transportation.common import AGEGRP, MAXAGE, MAXHAV, MAXLDV, MAXVTYP, MF, MNUMCR, f32, logf
 from nems_open.transportation.readers.getrng import Ranges
 from nems_open.transportation.readers.ldv_tables import BASE, GAS, TDM
 
@@ -233,12 +233,12 @@ def readldv(s: dict, traneff: int = 0, book=BOOK) -> None:
         for il, k in ((4, "evsyscst"), (5, "phev20syscst"), (6, "phev50syscst"), (7, "evsyscst"), (15, "evsyscst"),
                       (16, "hevsyscst")):
             nb[C, yr, V, il] = L[k][C, yr - 1989, V] / jp[11] * jp[1]
-    ln2 = np.log(f32(2.0))
+    ln2 = logf(f32(2.0))
     for il in list(range(4, 9)) + list(range(13, MAXLDV + 1)):
         s["pack_a"][il] = L["packa"][il] / jp[31] * jp[1]
         s["mat_a"][il] = L["mata"][il] / jp[31] * jp[1]
-        s["pack_b"][il] = -np.log(f32(1.0) - L["packlr"][il]) / ln2
-        s["mat_b"][il] = -np.log(f32(1.0) - L["matlr"][il]) / ln2
+        s["pack_b"][il] = -logf(f32(1.0) - L["packlr"][il]) / ln2
+        s["mat_b"][il] = -logf(f32(1.0) - L["matlr"][il]) / ln2
     r("STATE_CRED", "state_cred", (slice(1, MNUMCR - 2), slice(2023, LYR), slice(1, 3)), MNUMCR - 2, LYR - 2023 + 1, 3)
     r("IRA_BAT_SHR", "ira_bat_shr", (slice(1, 2), slice(IRAYR, LYR), slice(1, 2)), 2, LYR - IRAYR + 1, 2)
     r("IRA_VEH_SHR", "ira_veh_shr", (slice(1, 2), slice(IRAYR, LYR), slice(1, 2)), 2, LYR - IRAYR + 1, 2)

@@ -13,7 +13,7 @@ import math
 
 import numpy as np
 
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import f32, fsum, MNUMCR, powf
 from nems_open.transportation.frt_common import CAFE19, NVMT, ONE, V, ZERO
 from nems_open.transportation.misc_modes import powi
 
@@ -94,16 +94,16 @@ def truck_inccost(s: dict) -> None:
         tot = fsum(prod[:, :, n])
         pa, pb, ma, mb = v["cost_battpack_a"], v["cost_battpack_b"], v["cost_battmat_a"], v["cost_battmat_b"]
         if iyr == first + 1:
-            pa[1:5] = (batt[1:5, iyr] - ma[1:5] * tot ** (-mb[1:5])) / (tot ** (-pb[1:5]))
-        batt[1:5, iyr] = pa[1:5] * tot ** (-pb[1:5]) + ma[1:5] * tot ** (-mb[1:5])
+            pa[1:5] = (batt[1:5, iyr] - ma[1:5] * powf(tot, -mb[1:5])) / powf(tot, -pb[1:5])
+        batt[1:5, iyr] = pa[1:5] * powf(tot, -pb[1:5]) + ma[1:5] * powf(tot, -mb[1:5])
 
     if yrs <= bsyr:
         return
     jp = v["mc_jpgdp"]
     fckw, h2t = v["cost_fckw"], v["cost_h2tank"]
-    fckw[iyr] = min((v["cost_fcstack_a"] * (v["cumulative_fc_stacks"][iyr - 1] ** (-v["cost_fcstack_b"]))) / jp[31] * jp[1],
+    fckw[iyr] = min((v["cost_fcstack_a"] * powf(v["cumulative_fc_stacks"][iyr - 1], -v["cost_fcstack_b"])) / jp[31] * jp[1],
                     fckw[33] * powi(ONE - v["cost_fcstk_rd"], iyr - 33))
-    h2t[iyr] = min((v["cost_h2tank_a"] * (v["cumulative_h2_tanks"][iyr - 1] ** (-v["cost_h2tank_b"]))) / jp[31] * jp[1],
+    h2t[iyr] = min((v["cost_h2tank_a"] * powf(v["cumulative_h2_tanks"][iyr - 1], -v["cost_h2tank_b"])) / jp[31] * jp[1],
                    h2t[33] * powi(ONE - v["cost_h2tank_rd"], iyr - 33))
 
     vmt, days, mpg, hrate = v["vmt_veh"], v["ann_uptime_days"], v["new_mpg_19"], v["hrate"]
@@ -174,7 +174,7 @@ def truck_inccost(s: dict) -> None:
     pbk = v["pt_battkwh_phev"]
     for c19 in range(1, CAFE19 + 1):
         evmt = daily(c19) * v["phevelecvmt"][c19]
-        pbk[VM, c19] = v["battsize_a_phev"][c19] * (evmt ** v["battsize_b_phev"][c19])
+        pbk[VM, c19] = v["battsize_a_phev"][c19] * powf(evmt, v["battsize_b_phev"][c19])
         pbk[VM, c19] = pbk[VM, c19] * mpg[b, 6, c19] / mpg[iyr, 6, c19]
         xd = (ekw[c19, 7] * motor + batt[2, iyr] * pbk[VM, c19] + (itc[iyr, c19, 7] - itc[b, c19, 7]) + obc
               - v["cost_ice_phev"][c19, 1, iyr])

@@ -16,7 +16,7 @@ import math
 
 import numpy as np
 
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, logf, MNUMCR
 from nems_open.transportation.frt_common import CAFE19, FUEL12, NVMT, ONE, V, ZERO
 from nems_open.transportation.mean_funcs import weighted_mean
 from nems_open.transportation.misc_modes import powi
@@ -62,7 +62,7 @@ def truck_pbk(v, carry, inc_cost, vmt, cpm, cpm_base, mr_ice, veh_shr, refuel):
         if not start[c19, jfuel, iflt, ivmt]:
             midyr[c19, jfuel, iflt, ivmt] = f32(yrs) * ONE + (ONE * cy / f32(2.0))
             start[c19, jfuel, iflt, ivmt] = 1
-            slope[c19, jfuel, iflt, ivmt] = np.log(f32(0.01)) / ((ONE * cy) / f32(2.0))
+            slope[c19, jfuel, iflt, ivmt] = logf(f32(0.01)) / ((ONE * cy) / f32(2.0))
         itry = v.i("itryghg")
         c4 = int(v["p24map"][int(v["p219map"][c19])])
         if itry > 1 and jfuel >= 6 and not v["hdv_passghg"][iyr, c4]:
@@ -71,7 +71,7 @@ def truck_pbk(v, carry, inc_cost, vmt, cpm, cpm_base, mr_ice, veh_shr, refuel):
                     adj[c19, jfuel, iflt, ivmt] = f32(itry) * f32(0.5)
             elif jfuel not in (11, 7, 8):
                 adj[c19, jfuel, iflt, ivmt] = f32(itry) * f32(0.5)
-        mpath = bf + (ef - bf) / (ONE + (np.exp(slope[c19, jfuel, iflt, ivmt]
+        mpath = bf + (ef - bf) / (ONE + (expf(slope[c19, jfuel, iflt, ivmt]
                                                  * (ONE * f32(yrs) - (midyr[c19, jfuel, iflt, ivmt] - adj[c19, jfuel, iflt, ivmt])))))
     else:
         mpath = ONE
@@ -223,13 +223,13 @@ def truck_choice(s: dict, carry: dict) -> None:
                         else:
                             cyx = f32(cy[isc4, jfuel, iflt])
                             midyr = f32(trg[c19, jfuel, iflt]) + (ONE * cyx / f32(2))
-                            slope = np.log(f32(0.01)) / ((ONE * cyx) / f32(2))
+                            slope = logf(f32(0.01)) / ((ONE * cyx) / f32(2))
                             mp = ONE * (bf[isc4, jfuel, iflt] + (ef[isc4, jfuel, iflt] - bf[isc4, jfuel, iflt])
-                                        / (ONE + (np.exp(slope * (ONE * f32(yrs) - midyr)))))
+                                        / (ONE + (expf(slope * (ONE * f32(yrs) - midyr)))))
                             shr_v[iyr, VM, iflt, c19, jfuel, iregn] = mp * veh[VM, iflt, c19]
                     elif jfuel == 1:
                         mp = bf[isc4, 1, iflt] + (ef[isc4, 1, iflt] - bf[isc4, 1, iflt]) * (
-                            ONE - np.exp(v["cstdxg"][isc4, iflt] + v["cstdvxg"][isc4, iflt] * (ONE * f32(yrs))))
+                            ONE - expf(v["cstdxg"][isc4, iflt] + v["cstdvxg"][isc4, iflt] * (ONE * f32(yrs))))
                         rest = fsum(shr_v[iyr, VM, iflt, c19, 3:FUEL12, iregn], axis=1)
                         shr_v[iyr, VM, iflt, c19, 1, iregn] = np.maximum(ZERO, mp * (veh[VM, iflt, c19] - rest))
                 v["jfuel"] = 0

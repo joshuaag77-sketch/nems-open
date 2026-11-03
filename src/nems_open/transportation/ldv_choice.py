@@ -12,7 +12,7 @@ Fortran stores into single-precision arrays.
 
 import numpy as np
 
-from nems_open.transportation.common import MAXLDV, MNUMCR, STOCKYR, f32, fmax, fmin, fsum
+from nems_open.transportation.common import f32, fmax, fmin, fsum, logf, MAXLDV, MNUMCR, STOCKYR
 
 MAXCLASS = 8
 MAXGROUP = 11
@@ -146,7 +146,7 @@ def _talt2x_shares(s: dict, n: int, yrs: int, shift: float = 0.0) -> np.ndarray:
                         if avail[igp, ildv, icl, iregn, yrs] > 0.0:
                             if pspr[igp, ildv, icl, iregn, yrs] < 0.0:
                                 raise ValueError("TDM TALT2X: STOP 450, negative vehicle price")
-                            mm_log = f64(np.log(avail[igp, ildv, icl, iregn, yrs]))   # ALOG, single precision
+                            mm_log = f64(logf(avail[igp, ildv, icl, iregn, yrs]))   # ALOG, single precision
                             vr_inv = f64(f32(1.0) / vrng[igp, ildv, icl, iregn, yrs])
                             u = (c[1] * f64(pspr[igp, ildv, icl, iregn, yrs]) + c[2] * f64(flc[igp, ildv, icl, iregn, yrs])
                                  + c[3] * vr_inv + c[4] * f64(br[igp, ildv, icl, yrs]) + c[5] * f64(accl[igp, ildv, icl, iregn, yrs])

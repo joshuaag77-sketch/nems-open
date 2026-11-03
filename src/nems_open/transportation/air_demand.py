@@ -13,7 +13,7 @@ over that year's iterations.
 import numpy as np
 
 from nems_open.transportation.air_common import DOM, DOMINT, INT, MAXATYP, MAXWREG, ONE, US, A
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MNUMCR, powf
 from nems_open.transportation.misc_modes import powi
 
 W = slice(1, MAXWREG)
@@ -60,8 +60,8 @@ def tairt(s: dict, carry: dict) -> None:
     else:
         cov = a["covid_mult"]
         for di in range(1, DOMINT + 1):
-            pc[W, di, n] = (pc[W, di, n - 1] * np.exp(a["intercept_rpm"][W, di])
-                            * np.power((gdp[W, n] / pop[W, n]) / (gdp[W, n - 1] / pop[W, n - 1]), a["beta1_rpm"][W, di]))
+            pc[W, di, n] = (pc[W, di, n - 1] * expf(a["intercept_rpm"][W, di])
+                            * powf((gdp[W, n] / pop[W, n]) / (gdp[W, n - 1] / pop[W, n - 1]), a["beta1_rpm"][W, di]))
             rpmt[W, di, n] = pc[W, di, n] * pop[W, n]
             m = cov[W, n, di] != 0
             rpmt[W, di, n] = np.where(m, rpmt[W, di, 30] * (ONE - cov[W, n, di]), rpmt[W, di, n])
@@ -70,7 +70,7 @@ def tairt(s: dict, carry: dict) -> None:
                 rpm[W, di, t, n] = rpmt[W, di, n] * shr_rpm[W, n, t, di]
 
     ftm, align = a["ftm"], a["ftm_alignhist"]
-    est = np.exp(a["intercept_ftm"][W, D]) * np.power(gdp[W, n][:, None], a["beta1_ftm"][W, D])
+    est = expf(a["intercept_ftm"][W, D]) * powf(gdp[W, n][:, None], a["beta1_ftm"][W, D])
     if yrs == last_hist:
         align[...] = 0.0
         align[W, D] = est - ftm[W, n, D]

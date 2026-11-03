@@ -7,7 +7,7 @@ fuel 2's VMT and divides age 33's VMT by age 34's MPG and the other way round.
 
 import numpy as np
 
-from nems_open.transportation.common import f32, fsum
+from nems_open.transportation.common import f32, fsum, powf
 from nems_open.transportation.frt_common import CAFE14, CAFE19, FUEL12, ONE, SC4, V
 
 
@@ -63,7 +63,7 @@ def truck_aggvars(s: dict) -> None:
             x = ((fsum(stk[iyr, 1, 1, ifuel, :, 11]) / (mpg19[iyr, ifuel, 1] * d)
                   + fsum(stk[iyr, 2, 1, ifuel, :, 11]) / (mpg19[iyr, ifuel, 2] * d))
                  / fsum(stk[iyr, 1:2, 1, ifuel, :, 11]))
-        clt[iyr, k, 1] = np.power(x, f32(-1.0))
+        clt[iyr, k, 1] = powf(x, f32(-1.0))
     clt[iyr, 1:FUEL12, 2:34] = clt[iyr - 1, 1:FUEL12, 1:33]
     v33, v34 = fsum(vmt19[iyr - 1, 1:2, 33, 2]), fsum(vmt19[iyr - 1, 1:2, 34, 2])
     both = fsum(vmt19[iyr - 1, 1:2, 33:34, 2])

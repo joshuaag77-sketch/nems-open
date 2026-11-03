@@ -16,7 +16,7 @@ the age-48 survival rate, so 48-year-olds never leave the stock entirely.
 import numpy as np
 
 from nems_open.transportation.air_common import DOMINT, MAXACAGE, MAXATYP, MAXWREG, ONE, ZERO, A
-from nems_open.transportation.common import MNUMCR, f32, fsum
+from nems_open.transportation.common import expf, f32, fsum, MNUMCR
 from nems_open.transportation.mean_funcs import harmonic_mean
 
 W = slice(1, MAXWREG)
@@ -350,7 +350,7 @@ def taireff(s: dict) -> None:
 
     qag = a["qagtr"]
     if yrs >= first_fcst:
-        qag[11, n] = qag[11, 24] + f32(220.0) * np.exp(-f32(0.1895) * f32(yrs - 1979))
+        qag[11, n] = qag[11, 24] + f32(220.0) * expf(-f32(0.1895) * f32(yrs - 1979))
     for r in range(1, MNUMCR - 1):
         qjetr[r, n] = qjetr[11, n] * sedjf[r, n]
         qag[r, n] = qag[11, n] * sedjf[r, n]
