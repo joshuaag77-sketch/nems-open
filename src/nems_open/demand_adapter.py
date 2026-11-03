@@ -83,6 +83,7 @@ class Policy:
     building_efficiency: object = 1.0   # multiplier on residential and commercial fuel use
     start_year: int = 2027
     commercial: object = None           # commercial.levers.CommercialLevers: real-input levers (needs commercial ported)
+    added_load: object = None           # datacenter.AddedLoad: electricity added to commercial, flat across the year
 
     def carbon(self) -> np.ndarray:
         return by_year(self.carbon_price, self.start_year, 0.0)
@@ -244,8 +245,24 @@ class DemandAdapter:
             for k in out:
                 if k[-2:] in BUILDINGS and fuel_of(k) not in TOTAL_FUELS:
                     out[k] = out[k] * eff
+        self._add_load(out, j)
         self._totals(out, j, keep_regions)
         return out
+
+    def _add_load(self, q: dict, j: int) -> None:
+        """Data center load on top of commercial electricity (a ported module's US and California
+        rows are not rebuilt by _totals, so they are moved here too)."""
+        add = self.policy.added_load
+        if add is None or j < self.policy.start_year - FIRST_YEAR:
+            return
+        k = "QBLK/qelcm"
+        inc = add.tbtu(j)
+        ref = self.base[k][:, j]
+        v = q[k].copy()
+        v[:9] = v[:9] + inc
+        v[US] = v[US] + inc.sum()
+        v[9] = v[9] + inc[8] * (ref[9] / ref[8] if ref[8] else 0.0)     # California, within the Pacific
+        q[k] = v
 
     def _totals(self, q: dict, j: int, keep_regions=frozenset()) -> None:
         """US row as the sum of divisions; petroleum, renewable and total rows rebuilt from

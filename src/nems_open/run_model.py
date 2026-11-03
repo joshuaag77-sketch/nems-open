@@ -60,6 +60,8 @@ class RunResult:
     wholesale_us: np.ndarray | None = None   # (61,) load-weighted, 1987 $/MWh; NaN where not solved
     generation_twh: dict | None = None       # group -> (61,), US, elec="lp"
     stable: dict[int, bool] = field(default_factory=dict)   # year -> converged twice running (last cycle)
+    unserved_twh: np.ndarray | None = None   # (61,) load the LP's fixed fleet could not meet, elec="lp"
+    curtailed_twh: np.ndarray | None = None  # (61,) flexible load the LP cut, elec="lp"
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -111,10 +113,11 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     co2 = None
     passes, stable = [], {}
     lp = None
-    wholesale = wholesale_us = generation = None
+    wholesale = wholesale_us = generation = unserved = curtailed = None
     if elec == "lp":
         from nems_open.emm.couple import ElectricityLP
-        lp = ElectricityLP(supply)
+        lp = ElectricityLP(supply, added_load=policy.added_load)
+        unserved, curtailed = np.full(61, np.nan), np.full(61, np.nan)
         wholesale = np.full((25, 61), np.nan)
         wholesale_us = np.full(61, np.nan)
         generation = {}
@@ -200,6 +203,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     last = lp.last[year]
                     wholesale[:, j] = last.wholesale
                     wholesale_us[j] = last.wholesale_us
+                    unserved[j], curtailed[j] = last.unserved_twh, last.curtailed_twh
                     for g, v in last.generation_twh.items():
                         generation.setdefault(g, np.full(61, np.nan))[j] = float(v.sum())
                 if co2 is None:
@@ -214,7 +218,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 for k in d:
                     if k in between.relax:
                         d[k][:, years] = before[k] + between.relax[k] * (d[k][:, years] - before[k])
-    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable)
+    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed)
 
 
 def main(argv=None) -> None:
