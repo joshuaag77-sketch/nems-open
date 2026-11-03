@@ -81,3 +81,47 @@ def test_clsteo_history_matches_steovars_exactly():
 def test_dense_helper_shapes(data):
     a, axes = mappings.dense("hclworld")
     assert a.shape == tuple(len(x) for x in axes)
+
+
+# --- step 3: supply curves and rate escalators ---------------------------------------------
+
+def test_base_year_step_six_price_is_the_calibrated_minemouth_price():
+    from nems_open.coal import supply
+    c = supply.curves()
+    b = supply.base_year(c)
+    assert len(c.keys) == 14
+    assert np.allclose(b["sc_price"][:, 5], c.v["mmp92"], atol=1e-8)       # CALK makes this an identity
+    # Curves slope up from step 3. Steps 1 and 2 dip below step 1 on three Western curves: the utilization
+    # term has a minimum at low output in the equation as written (coal.ams 19120), so this is not a port error.
+    assert (np.diff(b["sc_price"][:, 2:], axis=1) >= -1e-9).all()
+    assert (b["sc_quan"] >= 0).all()
+    assert np.allclose(b["t_quan"][:, 5], c.v["prod_cap"] * c.v["cap_util"])
+
+
+def test_base_year_prices_are_plausible_and_steps_follow_the_input():
+    from nems_open.coal import supply
+    b = supply.base_year()
+    assert np.allclose(supply.step_sizes(), [-.54, -.27, -.09, -.03, -.01, 0, .01, .03, .09, .27, .54])
+    per_mmbtu = b["sc_1_price87"][:, 5]
+    assert 0.1 < per_mmbtu.min() and per_mmbtu.max() < 3.0                # 1987 $/MMBtu
+
+
+def test_rcaf_shares_start_at_the_input_weights_and_roll_forward():
+    from nems_open.coal import transport
+    data = inputs.load()
+    r = transport.rcaf()
+    b = transport.RCAF_BASE_YR - 1990
+    assert abs(r["total_a"][b] - sum(float(data.param(f"wt_{n}")[(transport.RCAF_BASE_YR,)]) for n in transport.COMPONENTS)) < 1e-12
+    assert (r["cum"][: b + 1] == 1.0).all()
+    # one year by hand: total_b = total_a ratio + productivity * pass-through
+    i = 2030 - 1990
+    assert abs(r["total_b"][i] - (r["total_a"][i] / r["total_a"][i - 1] + transport.RR_PRODUCTIVITY * r["productivity_pct"][i])) < 1e-12
+    assert abs(r["cum"][i] - r["total_b"][i] * r["cum"][i - 1]) < 1e-12
+
+
+def test_productivity_pass_through_limits():
+    from nems_open.coal import transport
+    falling = 100.0 * 0.9 ** np.arange(10)
+    rising = 100.0 * 1.1 ** np.arange(10)
+    assert transport.productivity_pass_through(falling)[-1] == 0.5
+    assert transport.productivity_pass_through(rising)[-1] == 0.0
