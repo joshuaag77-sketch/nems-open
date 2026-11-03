@@ -221,7 +221,7 @@ Port order: the small light-duty routines first (1, 2, 4, 5, 7-13, 15, 16, 19-21
 | `TFRTRPT`, `TSHIP` | Done 2026-11-02 | Within 1e-4 | `transportation/frt_rpt.py`, `frt_ship.py` |
 | `TRANAIR` (TAIRT, TAIREFF, TAREPORT) | Done 2026-11-02 | Within 1e-3: new aircraft are demand minus stock, so last-bit exp/pow differences grow to about 1e-4 | `transportation/air_*.py` |
 | `TBENCHMARK`, `TRANEASY`, `TREPORT`, end of `TRAN` | Done 2026-11-02 | Within 1e-4 | `transportation/bench.py`, `report.py` |
-| Input readers (`READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA`, `CFREAD`, `READAIR`) | To do. Tests take the oracle's copies of the input tables | | |
+| Input readers (`READLDV`, `READVMT`, `READSTOCK`, `READHIST`, `READNHTSA`, `CFREAD`, `CFREADSTOCK`, `READAIR`) | Done 2026-11-03 | Every array each reader fills equals the oracle's 2020 state (within 1e-6 where log/pow differ in the last bit), except parts the module rewrites before 2020, which the tests name | `transportation/readers/` (`first_call(s)` runs them in TRAN's order); `readers/getrng.py` is nemswk1.f's GETRNG* |
 
 Tests: `tests/test_tran_<routine>.py`, all through `tests/tran_harness.py`. A test feeds the port the state before EIA's routine and compares every dumped array with the state after; it also fails if nothing changed, so it can't pass by doing nothing. Loop indexes are MODULE variables here (`IREGN`, `ILDV`, ...), so ports leave them where the Fortran loops leave them; later routines can read them.
 
@@ -249,6 +249,10 @@ Name clash to watch: `ANGTDM` and `NGTDMOUT` are two COMMON blocks with the same
 - `TRUCK_FUEL`: the PHEV charging correction uses the class 2b share for every class, and the charging split tests `IFLT`, left at 3, so every non-sleeper truck counts as depot charging.
 - `TAIREFF`: the 48-year-old aircraft vintage takes in last year's 47- and 48-year-olds, so it never empties.
 - `TREPORT`: 100-mile EV fuel use (`TRLDQTEK(4)`) adds fleet use of 200-mile EVs (index 7). `cmpg_2`, `tmpg_2`, `lmpg_2` are never reset.
+- `READAIR`: the stock totals (`STK_SUP_TOT`, `STKPTOT`, `STKCTOT`) assign (region, year, type) arrays to (region, type, year) ones. The shapes do not conform; with variable bounds nothing checks, and gfortran's loops leave three year slots filled and the rest zero (out-of-bounds reads that happen to be zero). Intel may give something else.
+- `CFREAD`: the REQUIRES note loop tests `TECH_SUP` for the second and third technologies instead of `TECH_REQ`; `SURV_ND` is read into fuel 2 and then again into every fuel from 2 on.
+- `READSTOCK`: the fleet owners' oldest vintage uses the survival rate at MAXAGE-1 for both terms (the loop index is left at MAXAGE).
+- Input file quirk: trnldvx.xlsx's `CRCOVID` range definition has a third corner; NEMS (and the oracle) take the first two.
 
 Oracle build note: `patch_intel.py` rewrites Intel's `X .eq. .FALSE.` as `.eqv.`. Until 2026-11-02 it did so without parentheses, and `.eqv.` binds looser than `.and.`, so TRUCK_PBK's "push HEV/PHEV when GHG fails" test ran on the first try. Fixed; the oracle was rebuilt and rerun.
 

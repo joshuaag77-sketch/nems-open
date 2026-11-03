@@ -270,3 +270,12 @@ def test_readldv(start):
     keys, bad = _check_tracked(ldv.readldv, start, LDV_INPUTS | LDV_SKIP, LDV_PART)
     assert len(keys) > 200
     assert bad == {}
+
+
+def test_first_call_runs_in_order(start):
+    """All the readers back to back, as TRAN's first call runs them."""
+    from nems_open.transportation import readers
+    s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in start.items()}
+    readers.first_call(s)
+    for k in ("vmt_sched_param", "atvcocar1", "f_techbase_p2", "a_stkpavint"):
+        assert k in s and np.abs(s[k].a).sum() > 0, k
