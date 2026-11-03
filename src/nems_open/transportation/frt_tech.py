@@ -95,6 +95,10 @@ def truck_techadopt(s: dict, carry: dict) -> None:
     mid_adj = v.priv("techmid_adj", lambda: np.zeros((techp2 + 1, CAFE14 + 1), dtype=f32))
     # Start as if the previous call ended on the last class (true unless it was skipped).
     max_s = v.priv("max_share_s", lambda: np.array([ZERO] + [tmax[k, int(p219[CAFE19])] for k in range(1, techp2 + 1)], dtype=f32))
+    notes = {}
+    for inote in range(1, num_sup + 1):
+        notes.setdefault(int(sup[1, inote]), []).append([int(sup[i, inote]) for i in range(2, int(cnt_sup[inote]) + 1)])
+    notes = sorted((it, ns) for it, ns in notes.items() if 1 <= it <= techp2)
     for c19 in range(1, CAFE19 + 1):
         v["icafe19"] = c19
         c14 = int(p219[c19])
@@ -161,20 +165,25 @@ def truck_techadopt(s: dict, carry: dict) -> None:
 
             # MAX_SHARE_S is a saved local: entries for technologies later in the list still
             # hold the previous fuel's or class's values when a supersede note reads them.
-            for it in range(1, techp2 + 1):
-                max_s[it] = tmax[it, c14]
-                if yrs < fyr_p2[it, c14, ifuel]:
+            # Only technologies with notes do anything; MAX_SHARE_S is filled in technology
+            # order up to each one, so later entries keep their old values as in the loop.
+            row = shr.a[iyr - 1, :, c19 - 1, ifuel - 1]          # technology it at it - 1
+            tm, fy = tmax.a[:, c14 - 1], fyr_p2.a[:, c14 - 1, ifuel - 1]
+            done = 0
+            for it, its_notes in notes:
+                max_s[done + 1:it + 1] = tm[done:it]
+                done = it
+                if yrs < fy[it - 1]:
                     continue
-                for inote in range(1, num_sup + 1):
-                    if int(sup[1, inote]) == it:
-                        tot = shr[iyr, it, c19, ifuel]
-                        others = [int(sup[i, inote]) for i in range(2, int(cnt_sup[inote]) + 1)]
-                        mx = max(tmax[it, c14], max(max_s[k] for k in others))
-                        for k in others:
-                            tot = tot + shr[iyr, k, c19, ifuel]
-                            if tot > mx:
-                                shr[iyr, k, c19, ifuel] = max(ZERO, shr[iyr, k, c19, ifuel] - (tot - mx))
-                                tot = mx
+                for others in its_notes:
+                    tot = row[it - 1]
+                    mx = max(tm[it - 1], max(max_s[k] for k in others))
+                    for k in others:
+                        tot = tot + row[k - 1]
+                        if tot > mx:
+                            row[k - 1] = max(ZERO, row[k - 1] - (tot - mx))
+                            tot = mx
+            max_s[done + 1:techp2 + 1] = tm[done:techp2]
             if num_req > 0:
                 req = v["requires_tech"]
                 for it in range(1, techp2 + 1):
@@ -210,12 +219,12 @@ def truck_techadopt(s: dict, carry: dict) -> None:
             if ifuel == 8:
                 shr[iyr, 1:17, c19, ifuel] = shr[iyr, 1:17, c19, 2]
             m = ONE
-            for it in range(1, techp2 + 1):
-                if yrs >= fyr_p2[it, c14, ifuel]:
-                    a = shr[iyr, it, c19, ifuel]
-                    ad = max(a - base[it, c19, ifuel], f32(-1.0) * base[it, c19, ifuel]) if a > 0.0 else ZERO
-                    m = m * (ONE - ((teff[it, c14] + syn[it]) * ad))
-                    m = min(m, ONE)
+            brow, te = base.a[:, c19 - 1, ifuel - 1], teff.a[:, c14 - 1]
+            for i in np.nonzero(yrs >= fy)[0]:
+                a, b = row[i], brow[i]
+                ad = max(a - b, f32(-1.0) * b) if a > 0.0 else ZERO
+                m = m * (ONE - ((te[i] + syn[i + 1]) * ad))
+                m = min(m, ONE)
             mpgeff[ifuel, c19] = m
             v["itechp2"] = techp2 + 1
             cost_inc[iyr, c19, ifuel] = fsum(shr[iyr, T, c19, ifuel] * costyr[1:, c19])
