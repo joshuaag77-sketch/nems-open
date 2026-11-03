@@ -86,13 +86,14 @@ def default_elec_price(elec: str, baseline: str = "cb2026") -> str:
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
-        elec: str = "standin", elec_price: str | None = None) -> RunResult:
+        elec: str = "standin", elec_price: str | None = None, base: dict | None = None) -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
     (about 10 s an iteration, plus a pre-roll from 2021 to start_year); None picks
     default_elec_price(elec, baseline). maxitr, cycles: NEMS's MAXITR and NRUNS.
-    relax=False is IRELAX = 0 (tests only, no relaxation)."""
+    relax=False is IRELAX = 0 (tests only, no relaxation). base: replace the baseline case's arrays
+    (prices, quantities, Brent, macro) with these, e.g. a blend of EIA's cases (nems_open.uncertainty)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
     if elec_price is None:
@@ -102,7 +103,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if elec_price == "efp" and baseline != "cb2026":
         raise ValueError("elec_price='efp' starts from the cb2026 oracle state, so the baseline must be cb2026")
     policy = policy or Policy(start_year=start_year)
-    supply = SupplyStandin(baseline)
+    supply = SupplyStandin(baseline, base=base)
     base = supply.base
     carbon = policy.carbon()
     within, between = Settings.load("conv"), Settings.load("icnv")
