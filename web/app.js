@@ -1,7 +1,7 @@
 (function () {
   "use strict";
-  const DATA = window.NEMS_DATA;
-  const meta = DATA.meta;
+  const META = window.NEMS_META;
+  const meta = META.fast;
   const ref = meta.reference;
   const years = meta.years;
   const yi = (y) => years.indexOf(y);
@@ -9,9 +9,11 @@
   // ---- scenario sets -------------------------------------------------------------
   // fast: every sector on the stub, supply on fitted curves (144 runs).
   // real: ported residential and commercial plus the dispatch LP (16 runs, scripts/precompute_real.py).
-  const REAL = window.NEMS_REAL;
-  const SETS = { fast: { carbon: meta.carbon, ev2035: meta.ev2035, buildings2050: meta.buildings2050, scenarios: DATA.scenarios } };
-  if (REAL && REAL.meta.complete) SETS.real = { ...REAL.meta, scenarios: REAL.scenarios };
+  // Scenarios load one at a time (data/<dir>/<id>.json, about 3 KB gzipped) and are kept;
+  // opened from disk, or if a fetch fails, the page loads the whole set's bundle instead.
+  const SETS = { fast: { carbon: meta.carbon, ev2035: meta.ev2035, buildings2050: meta.buildings2050,
+                         scenarios: {}, dir: "scenarios", bundle: "scenarios.js", global: "NEMS_DATA" } };
+  if (META.real && META.real.complete) SETS.real = { ...META.real, scenarios: {}, dir: "real", bundle: "real.js", global: "NEMS_REAL" };
   let set = "fast";
   const grid = () => SETS[set];
   const LIVE = { residential: "Ported module ran in this run", commercial: "Ported module ran in this run",
@@ -29,7 +31,31 @@
     const ev = g.ev2035[+levers.ev.value];
     const bld = g.buildings2050[+levers.bld.value];
     const id = `c${carbon}_ev${ev === null ? "ref" : Math.round(ev * 100)}_b${Math.round(bld * 100)}`;
-    return { carbon, ev, bld, s: g.scenarios[id] };
+    return { carbon, ev, bld, id, s: g.scenarios[id] };
+  }
+  const loadScript = (src) => new Promise((ok, fail) => {
+    const t = document.createElement("script");
+    t.src = src; t.onload = ok; t.onerror = fail;
+    document.head.appendChild(t);
+  });
+  const bundles = {};
+  function fromBundle(name) {
+    const g = SETS[name];
+    bundles[name] = bundles[name] || loadScript("data/" + g.bundle).then(() => Object.assign(g.scenarios, window[g.global].scenarios));
+    return bundles[name];
+  }
+  async function ensure(name, ids) {
+    const g = SETS[name];
+    const need = ids.filter((id) => !g.scenarios[id]);
+    if (!need.length) return;
+    if (location.protocol === "file:") return fromBundle(name);
+    try {
+      await Promise.all(need.map((id) => fetch(`data/${g.dir}/${id}.json`)
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then((d) => (g.scenarios[id] = d))));
+    } catch (e) {
+      await fromBundle(name);
+    }
   }
   const ticks = (id, labels) => (el(id).innerHTML = labels.map((t) => `<span>${t}</span>`).join(""));
   function setupLevers() {
@@ -483,15 +509,74 @@
   el("go-how").addEventListener("click", () => el("how").scrollIntoView({ behavior: "smooth", block: "start" }));
 
   // ---- wiring ------------------------------------------------------------------
-  function render(animate) {
-    const c = current();
+  // ---- what changed ---------------------------------------------------------------
+  // The CO2 change against the same models with no policy (for the fast set that is EIA's
+  // reference itself), split by sector over 2027-2050, top three with what moved them.
+  const SECTOR_NAME = { rs: "Homes", cm: "Businesses", in: "Industry", tr: "Transportation", el: "Power plants" };
+  function explain(c) {
+    const s = c.s, b = grid().scenarios["c0_evref_b100"] || ref;
+    const j = yi(2050), from = yi(meta.start_year);
+    const cum = (k) => { let t = 0; for (let i = from; i <= j; i++) t += b.trace.co2_sector[k][i] - s.trace.co2_sector[k][i]; return t; };
+    const cuts = Object.keys(SECTOR_NAME).map((k) => [k, cum(k)]);
+    const total = cuts.reduce((a, [, v]) => a + v, 0);
+    const box = el("explain-body");
+    el("explain-base").textContent = set === "real" ? "Against the same real modules run with no policy." : "Against EIA's reference.";
+    if (Math.abs(total) < 1 && cuts.every(([, v]) => Math.abs(v) < 1)) {
+      box.innerHTML = `<p class="story">No policy: this run is the baseline, so nothing changed.</p>`;
+      return;
+    }
+    const t = s.trace, r = b.trace;
+    const more = (x, unit, d = 1) => `${fmt(Math.abs(x), d)}${unit} ${x < 0 ? "less" : "more"}`;
+    const pct = (a, z) => (z ? (100 * (a - z)) / z : 0);
+    const why = {
+      el: () => {
+        const sales = pct(t.totals.elec[j], r.totals.elec[j]);
+        const fuel = [["gas", t.power_burn.gas[j] - r.power_burn.gas[j]], ["coal", t.power_burn.coal[j] - r.power_burn.coal[j]]]
+          .filter(([, d]) => Math.abs(d) >= 0.01).map(([f, d]) => `${more(d, " quads", Math.abs(d) < 0.1 ? 2 : 1)} ${f}`);
+        return (fuel.length ? `In 2050 they burn ${fuel.join(" and ")}. ` : "")
+          + `Electricity sold is ${fmt(Math.abs(sales), 1)}% ${sales < 0 ? "lower" : "higher"}${set === "real" ? " (dispatch LP, existing fleet only)" : " (fitted fuel switching)"}.`;
+      },
+      tr: () => {
+        const cut = t.ev_cut_bgal[j] - (r.ev_cut_bgal ? r.ev_cut_bgal[j] : 0);
+        const all = b.gasoline_bgal[j] - s.gasoline_bgal[j];
+        const parts = [];
+        if (Math.abs(cut) >= 0.05) parts.push(`the EV lever takes ${fmt(cut, 1)} bn gal of gasoline out of 2050`);
+        if (Math.abs(all - cut) >= 0.05) parts.push(`higher prices ${all - cut > 0 ? "cut" : "add"}${parts.length ? " another" : ""} ${fmt(Math.abs(all - cut), 1)} bn gal${parts.length ? "" : " of gasoline in 2050"}`);
+        return parts.length ? parts.join("; ").replace(/^./, (x) => x.toUpperCase()) + "." : "Small changes in fuel prices.";
+      },
+      bld: () => {
+        const parts = [];
+        if (c.bld < 1) parts.push(`building energy set ${Math.round((1 - c.bld) * 100)}% below EIA by 2050`);
+        if (t.adders.gas_home[j] > 0.005) parts.push(`the carbon cost adds $${fmt(t.adders.gas_home[j], 2)}/MMBtu to home gas`);
+        if (c.bld < 1) parts.push("and the electricity saved shows up under power plants, not here");
+        return parts.length ? parts.join(", ").replace(/^./, (x) => x.toUpperCase()) + "." : "Small changes in fuel prices.";
+      },
+      in: () => (c.carbon ? `Industry here responds only to fuel prices (fitted stub): the $${c.carbon}/t carbon cost raises what it pays for gas, oil and coal.` : "Small changes in fuel prices."),
+    };
+    const say = (k) => (k === "el" ? why.el() : k === "tr" ? why.tr() : k === "in" ? why.in() : why.bld());
+    const top = cuts.filter(([, v]) => Math.abs(v) >= 1).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3);
+    const big = Math.max(...top.map(([, v]) => Math.abs(v)));
+    box.innerHTML = `<p class="story">CO2 ${total >= 0 ? "falls" : "rises"} by ${fmt(Math.abs(total) / 1000, 2)} Gt over 2027-2050. The biggest moves:</p><ol class="drivers">` +
+      top.map(([k, v]) => `<li><div class="drv-head"><b>${SECTOR_NAME[k]}</b><span>${v >= 0 ? "-" : "+"}${fmt(Math.abs(v))} Mt${total ? `, ${fmt(Math.abs(100 * v / total), 0)}% of the change` : ""}</span></div>
+        <div class="drv-bar"><i class="${v >= 0 ? "cut" : "rise"}" style="width:${(100 * Math.abs(v) / big).toFixed(1)}%"></i></div>
+        <p>${say(k)}</p></li>`).join("") + `</ol>`;
+  }
+
+  let renderSeq = 0;
+  async function render(animate) {
+    const seq = ++renderSeq;
+    let c = current();
     el("carbon-out").textContent = `$${c.carbon} per ton CO2`;
     el("ev-out").textContent = evLabel(c.ev);
     el("bld-out").textContent = bldLabel(c.bld);
+    await ensure(set, [c.id, "c0_evref_b100"]);
+    if (seq !== renderSeq) return;  // a newer move of the levers took over
+    c = current();
     tagModules();
     kpis(c.s);
     drawChart(c.s);
     trace(c.s);
+    explain(c);
     engine(c.s, animate);
     writeHash();
   }

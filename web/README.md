@@ -31,3 +31,8 @@ with ported residential and commercial and the dispatch LP (about 30 minutes a r
 skip finished scenarios). It reads the oracle dumps from a clone's `oracle/run*/out`
 (`--oracle-root`, default the main NEMS Open folder). Output: `data/real/*.json` and
 `data/real.js`. The page's set switch stays disabled until all 16 are done.
+
+Loading: the page loads `data/meta.js` (2 KB gzipped: both sets' grids and EIA's reference)
+and fetches each scenario as it is shown (`data/scenarios/<id>.json`, `data/real/<id>.json`,
+about 3 KB gzipped). Opened from disk, or if a fetch fails, it loads the set's bundle
+(`scenarios.js` or `real.js`) instead. All scripts are deferred.

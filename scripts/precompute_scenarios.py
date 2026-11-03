@@ -140,6 +140,17 @@ def reference() -> dict:
             "trace": trace(s, base, Policy(), base)}
 
 
+def write_meta_js() -> None:
+    """data/meta.js: the fast set's meta (with EIA's reference) and the real set's meta, all the
+    page needs before its first scenario. Scenarios are fetched one at a time from
+    data/scenarios/ and data/real/; the bundles are the fallback when the page is opened from disk."""
+    meta = {"fast": json.loads((OUT / "meta.json").read_text())}
+    real = OUT / "real_meta.json"
+    if real.exists():
+        meta["real"] = json.loads(real.read_text())
+    (OUT / "meta.js").write_text("window.NEMS_META = " + json.dumps(meta, separators=(",", ":")) + ";\n")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--workers", type=int, default=6)
@@ -158,6 +169,7 @@ def main() -> None:
     bundle = {"meta": meta, "scenarios": scenarios}
     (OUT / "meta.json").write_text(json.dumps(meta, separators=(",", ":")))
     (OUT / "scenarios.js").write_text("window.NEMS_DATA = " + json.dumps(bundle, separators=(",", ":")) + ";\n")
+    write_meta_js()
     print("wrote", OUT)
 
 
