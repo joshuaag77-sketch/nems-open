@@ -48,13 +48,14 @@ def _census_of_region() -> np.ndarray:
 
 
 class ElectricityLP:
-    def __init__(self, supply, hours_per_block: int = 3):
+    def __init__(self, supply, hours_per_block: int = 3, capacity_scale=None):
         if supply.baseline != "cb2026":
             raise ValueError("elec='lp' takes its capacity from the cb2026 reference run, so the baseline must be cb2026")
         self.supply = supply
         self.base = supply.base
         self.snapshot = Snapshot()
         self.hours_per_block = hours_per_block
+        self.capacity_scale = capacity_scale   # year -> {group: multiplier}, from a lever (nems_open.levers)
         self._cases = {}
         self._census = _census_of_region()
         self.last: dict[int, LPResult] = {}
@@ -80,7 +81,9 @@ class ElectricityLP:
         """Dispatch for one year. `q` and `prices` are the loop's QBLK/ and MPBLK/ arrays."""
         j = year - history.FIRST_YEAR
         case0 = self.case(year)
-        case = replace(case0, net_load_twh=demand.net_load_twh(self.snapshot, year, sales=q),
+        scale = self.capacity_scale(year) if self.capacity_scale else {}
+        capacity = {g: v * scale.get(g, 1.0) for g, v in case0.capacity.items()}
+        case = replace(case0, capacity=capacity, net_load_twh=demand.net_load_twh(self.snapshot, year, sales=q),
                        price=self._scaled_prices(case0, prices, j), carbon_price=float(cp87))
         res = dispatch.solve(case)
         if not res.status.startswith("ok"):
