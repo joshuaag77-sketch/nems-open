@@ -73,7 +73,7 @@
   yearEl.value = yearEl.max; yearOut.textContent = yearEl.max;
   yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
   const asked = new URLSearchParams(location.hash.slice(1));
-  let followKey = null, openMod = null;
+  let followKey = null, openMod = null, mapOn = false;
   function writeHash() {
     const q = new URLSearchParams();
     if (selA !== "reference") q.set("a", selA);
@@ -81,6 +81,7 @@
     q.set("y", yearEl.value);
     if (followKey) q.set("sw", followKey);
     if (openMod) q.set("m", openMod);
+    if (mapOn) q.set("map", "1");
     history.replaceState(null, "", "#" + q.toString());
   }
 
@@ -528,6 +529,54 @@
   });
   canvas.addEventListener("pointerleave", () => (tip.style.display = "none"));
 
+  // ---- fidelity map: everything colored by how close it is to EIA --------------------------
+  const GRADE_HEX = { match: COLOR.match, partial: COLOR.stand, stand: COLOR.stand, fixed: COLOR.fixed };
+  const moduleMapHex = (k) => (byKey[k] ? { match: COLOR.match, partial: COLOR.partial, stand: COLOR.stand, fixed: COLOR.fixed }[byKey[k].g.grade] : 0x24262b);
+  const routineHex = (r) => (r.ported ? COLOR.match : GRADE_HEX[byKey[r.module].g.grade] === COLOR.match ? COLOR.stand : GRADE_HEX[byKey[r.module].g.grade]);
+  // Shares of EIA's code, by lines: routines ported and checked; the rest of a module with a
+  // stand-in behind it; modules that only follow EIA's published path.
+  const lineShares = (() => {
+    const out = { match: 0, stand: 0, fixed: 0 };
+    MODS.forEach((m) => {
+      const lines = m.fortran_lines + m.other_lines;
+      out.match += m.ported_lines;
+      out[m.g.grade === "fixed" ? "fixed" : "stand"] += lines - m.ported_lines;
+    });
+    return out;
+  })();
+  function paintBy(mesh, hexOf) {
+    mesh.userData.items.forEach((it, i) => mesh.setColorAt(i, tmpC.setHex(hexOf(it))));
+    mesh.instanceColor.needsUpdate = true;
+  }
+  const bundles = MODS.flatMap((m) => [m.inBundle, m.outBundle]).filter(Boolean);
+  function setMap(on) {
+    mapOn = on;
+    $("map").setAttribute("aria-pressed", on);
+    if (following) clearFollow();
+    if (on) {
+      MODS.filter((m) => m.dots).forEach((m) => paintBy(m.dots, routineHex));
+      paintBy(outMesh, (o) => (o.writers.length ? moduleMapHex(o.writers[0]) : 0x24262b));
+      paintBy(swMesh, (s) => moduleMapHex(s.module));
+    } else {
+      meshes.forEach((m) => paint(m, null));
+    }
+    // additive blending would wash dense clusters to white; here the color is the message
+    meshes.forEach((m) => { m.material.blending = on ? THREE.NormalBlending : THREE.AdditiveBlending; m.material.depthWrite = on; m.material.needsUpdate = true; });
+    MODS.forEach((m) => { if (m.inner) m.inner.material.opacity = on ? 0.05 : 0.16; });
+    shown.forEach((e) => (e.tube.material.opacity = on ? 0.06 : 0.35));
+    bundles.forEach((b) => (b.material.opacity = on ? 0.05 : 0.22));
+    const total = lineShares.match + lineShares.stand + lineShares.fixed;
+    const row = (g, label, hex) => `<i style="width:${(100 * lineShares[g]) / total}%;background:#${hex.toString(16).padStart(6, "0")}"></i>`;
+    const line = (g, label) => `<div><span>${label}</span><span>${fmt(lineShares[g])} lines, ${((100 * lineShares[g]) / total).toFixed(0)}%</span></div>`;
+    $("mapbar").innerHTML = on ? `<div class="bar3">${row("match", "", COLOR.match)}${row("stand", "", COLOR.stand)}${row("fixed", "", COLOR.fixed)}</div>` +
+      line("match", "Ported, checked against EIA's code") + line("stand", "Not ported, stand-in fitted to EIA's runs") + line("fixed", "Not modeled, EIA's own path") +
+      `<a href="scoreboard.html">Every grade and its evidence</a>` : "";
+    $("mapbar").style.display = on ? "block" : "none";
+    writeHash();
+  }
+  $("map").addEventListener("click", () => setMap(!mapOn));
+
+  if (asked.get("map") === "1") setMap(true);
   if (asked.get("sw") && sw.find((s) => s.key === asked.get("sw"))) follow(sw.find((s) => s.key === asked.get("sw")));
   else if (byKey[asked.get("m")]) showModule(byKey[asked.get("m")]);
 

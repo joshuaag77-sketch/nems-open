@@ -47,19 +47,25 @@
   button { background: var(--match); color: #04342C; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
   button.ghost { background: transparent; color: var(--ink); border: 0.5px solid #5F5E5A; }
   .status { position: fixed; left: 28px; bottom: 74px; font-size: 12px; color: var(--dim); max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .legend { position: fixed; right: 28px; bottom: 24px; font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+  .legend { position: fixed; right: 28px; bottom: 24px; font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; max-width: 34%; }
   .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--c); }
   .yr { font-size: 13px; color: var(--muted); } .yr output { color: var(--ink); font-variant-numeric: tabular-nums; }
   #year { width: 160px; accent-color: var(--hub); }
   .counter { position: fixed; left: 28px; bottom: 98px; font-size: 13px; color: var(--muted); max-width: 640px; line-height: 1.5; }
   .counter b { color: var(--ink); font-weight: 500; } .counter .dimk { color: var(--dim); } .counter .gap { color: var(--hub); font-variant-numeric: tabular-nums; }
+  button[aria-pressed="true"].ghost { border-color: var(--hub); color: var(--hub); }
+  .mapbar { position: fixed; z-index: 5; right: 28px; bottom: 66px; width: 300px; display: none; background: #11141bdd; border: 0.5px solid var(--line);
+            border-radius: 12px; padding: 12px 14px; font-size: 12px; color: var(--muted); }
+  .mapbar .bar3 { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 8px; } .mapbar .bar3 i { display: block; }
+  .mapbar div:not(.bar3) { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; } .mapbar span:last-child { color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .mapbar a { display: inline-block; margin-top: 6px; color: var(--output); }
   .tip { position: fixed; z-index: 6; display: none; max-width: 280px; background: #11141bee; border: 0.5px solid var(--line); border-radius: 8px;
          padding: 7px 10px; font-size: 12px; color: var(--muted); pointer-events: none; line-height: 1.4; }
   .tip b { color: var(--ink); font-weight: 500; } .tip i { color: var(--dim); font-style: normal; }
   .note { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); font-size: 11px; color: #5F5E5A; white-space: nowrap; }
   #flat { display: none; }
   body.flat { overflow: auto; height: auto; }
-  body.flat #c, body.flat .cols, body.flat .legend, body.flat #play, body.flat #reset, body.flat #panel { display: none; }
+  body.flat #c, body.flat .cols, body.flat .legend, body.flat #play, body.flat #reset, body.flat #map, body.flat #panel, body.flat .mapbar { display: none; }
   body.flat .hero, body.flat .scen, body.flat .bar, body.flat .counter, body.flat .status, body.flat .note {
     position: static; transform: none; width: auto; max-width: none; max-height: none; margin: 12px 16px; white-space: normal; }
   body.flat #flat { display: block; margin: 12px 16px 24px; }
@@ -88,8 +94,10 @@
   <button id="play" type="button">Replay the reference run</button>
   <label class="yr" for="year">Year <output id="year-out">2027</output></label>
   <input id="year" type="range" min="2027" max="2050" step="1" value="2027" aria-label="Year to replay">
+  <button class="ghost" id="map" type="button" aria-pressed="false">Fidelity map</button>
   <button class="ghost" id="reset" type="button">Reset view</button>
 </div>
+<div class="mapbar" id="mapbar"></div>
 <div class="status" id="status" role="status"></div>
 <div class="counter" id="counter" aria-live="polite"></div>
 <div class="legend" id="legend"></div>
