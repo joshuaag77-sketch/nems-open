@@ -63,12 +63,20 @@ def _sheet_cells(z, sheet_name):
 
 def named_ranges(book, sheet: str) -> dict:
     """{NAME: [values]} for every named range on `sheet`. Names are upper case, cut to 16 characters."""
+    return {k: v for k, (v, _, _) in named_ranges_shaped(book, sheet).items()}
+
+
+def named_ranges_shaped(book, sheet: str) -> dict:
+    """{NAME: (values, rows, columns)}: named_ranges plus each range's height and width,
+    which NEMS's GETRNG* routines use to decide how a range fills an array."""
     out = {}
     with zipfile.ZipFile(book) as z:
         wb, cells = _sheet_cells(z, sheet)
     for dn in wb.iter(f"{{{NS['m']}}}definedName"):
         ref = (dn.text or "").strip()
-        m = re.fullmatch(r"'?([^'!]+)'?!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?", ref)
+        # re.match, as the oracle's flattener does: a few definitions trail a third corner
+        # (trnldvx.xlsx CRCOVID is "trnldv!$B$3446:$BE$3454:'trnldv'!$BE$3453"); the first two count.
+        m = re.match(r"'?([^'!]+)'?!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?", ref)
         if not m or m.group(1).lower() != sheet.lower():
             continue
         c1, r1 = _cell_ref(m.group(2))
@@ -78,5 +86,5 @@ def named_ranges(book, sheet: str) -> dict:
             for c in range(c1, c2 + 1):
                 v = cells.get((c, r), 0.0)
                 vals.append(v.replace("\n", " ")[:254] if isinstance(v, str) else float(np.float32(v)))
-        out[dn.get("name").upper()[:16]] = vals
+        out[dn.get("name").upper()[:16]] = (vals, r2 - r1 + 1, c2 - c1 + 1)
     return out

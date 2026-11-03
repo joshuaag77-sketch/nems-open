@@ -73,6 +73,8 @@ def model_retirements(results, year: int, groups) -> float:
     for r in results:
         if r.year <= year:
             total += sum(float(r.planned_retire[g].sum()) + float(r.economic_retire[g].sum()) for g in groups)
+            if "coal" in groups:
+                total += float(r.converted.sum())        # EIA's coal capacity falls when a unit converts
     return total
 
 

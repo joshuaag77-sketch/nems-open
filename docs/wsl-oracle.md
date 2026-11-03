@@ -54,13 +54,31 @@ identical text and binary files, so `oracle_state.py` reads either.
 - **Executable name and `python`.** `build.sh` reads `PYTHON`, `ORACLE_EXE` and `NEMS_ORACLE_WORK`; its Windows
   defaults are unchanged.
 
-## Checking a Linux build against a Windows one
+## Checked: Linux dumps against the Windows-built ones
 
-The dumps are raw float32 files; a correct Linux build writes the same bytes.
+Measured 2026-11-03 with Ubuntu's gfortran 15.2 (the Windows build used WinLibs GCC 16.2) on the AEO2026
+reference run, `oracle/compare_dumps.py` array by array.
+
+| Module | Year | Result |
+|---|---|---|
+| comm | 2019 (every dump: `fsd_in` to `rp_out`, 20 tags) | 2 or 3 arrays of about 180 to 250 differ in each dump; the rest are byte for byte equal. Worst difference 5.9e-7 relative (9 units in the last place) |
+| resd | 2021 (every dump) | most dumps byte for byte equal; the rest differ by at most 1.4e-7 (2 units in the last place) |
+
+The arrays that differ are the ones computed with `**` (real powers), where MinGW's and glibc's `pow` round
+differently: `ShellCoolFactor` (9 cells, geometric interpolation between years), `xpen` (79 of 13.6 million cells),
+one cell of `CMNewFloorspace`, and a handful of residential arrays. Everything else, including every array read
+from a file or the restart file, is identical. The ports are tested to 1e-6, so these differences are inside the tolerance.
+
+The commercial tests (1,120, including `test_oracle.py`) run against a full nine-year set of Linux dumps: 1,119 pass.
+The one that does not, `test_distgen_year[INVEST-2040]`, misses its 1e-4 tolerance by a hair (1.44e-4). CDistGen
+accumulates investments year over year from `xpen`, one of the arrays whose `pow` rounding differs, so a last-bit
+difference grows over 21 years. It passes on the Windows-built dumps. If you need that test green on Linux, build
+the oracle on Windows or loosen the one tolerance; the port itself is not at fault.
+
+Run the comparison yourself:
 
 ```bash
-python3 oracle/compare_dumps.py <windows cache or folder> <linux cache or folder> [tag ...]
+python3 oracle/compare_dumps.py <windows cache>/comm/out/state <linux cache>/comm/out/state [tag ...]
 ```
 
-prints, per tag and year, how many arrays differ and the largest difference. Differences in the last bit are
-possible where libm differs between MinGW and glibc (`exp`, `log`, `pow`); anything larger is a bug.
+`--bits N` sets how many units in the last place count as a failure (default 1; use 9 for the pow differences above).

@@ -72,7 +72,9 @@ def main():
     lines, n = [], 0
     for dn in wb.iter(f"{{{NS['m']}}}definedName"):
         ref = (dn.text or "").strip()
-        m = re.fullmatch(r"'?([^'!]+)'?!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?", ref)
+        # EIA's Parse_RangeStr2 reads the first two corners and ignores the rest, so a
+        # malformed name like trnldv!$B$3446:$BE$3454:'trnldv'!$BE$3453 (CRCOVID) still loads.
+        m = re.match(r"'?([^'!]+)'?!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?", ref)
         if not m or m.group(1).lower() != sheet.lower():
             continue
         c1, r1 = cell_ref(m.group(2))

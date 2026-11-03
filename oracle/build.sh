@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Build an oracle. Run gen_oracle.py for the same module first.
-# Usage: bash build.sh [comm|resd|emm|...]   (default comm; from any folder)
+# Build an oracle. Run gen_oracle.py for the same module first (it fills build*/inc with
+# the includes, so the compile works wherever the upstream checkout lives: spaces in its
+# path break -I).
+# Usage: bash build.sh [comm|resd|tran|emm]   (default comm; from any folder)
+# NEMS_UPSTREAM points at EIA's checkout; default ../nems-upstream.
 # Windows (WinLibs gfortran) by default. build_wsl.sh sets the variables below for Linux:
 #   NEMS_ORACLE_WORK  where build*/ and run*/ live (default: this folder)
 #   PYTHON            python3 on Ubuntu
@@ -12,9 +15,27 @@ PY="${PYTHON:-python}"
 EXE="${ORACLE_EXE-.exe}"
 LINUX=0; [ "$(uname -s)" = Linux ] && LINUX=1
 MOD="${1:-comm}"
-# NEMS_UPSTREAM overrides the checkout; default is ../nems-upstream. For comm and resd
-# keep the path free of spaces (-I breaks on them); emm copies the includes instead.
 U="$(cd "${NEMS_UPSTREAM:-$ORACLE/../nems-upstream}" && pwd)"
+FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -Iinc"
+
+wk1() {
+  $PY -I "$ORACLE/wk1_subset.py" "$U/source/nemswk1.f" wk1_raw.f
+  $PY -I "$ORACLE/patch_intel.py" wk1_raw.f wk1_subset.f90
+}
+
+if [ "$MOD" = tran ]; then
+  mkdir -p "$WORK/build_tran" "$WORK/run_tran"
+  cd "$WORK/build_tran"
+  for f in tran tranfrt tranair; do $PY -I "$ORACLE/patch_intel.py" "$U/source/$f.f" $f.f90; done
+  $PY -I "$ORACLE/hooks_tran.py" "$U" .
+  wk1
+  # Module order matters: tranfrt.f and tranair.f use MEAN_FUNCS from tran.f.
+  gfortran $FLAGS -c wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$ORACLE/stubs.f90" load_restart.f90 tran.f90 tranfrt.f90 tranair.f90 oracle_state_tran.f90 "$ORACLE/driver_tran.f90"
+  gfortran -o "$WORK/run_tran/oracle$EXE" wk1_subset.o readrng_stub.o stubs.o load_restart.o tran.o tranfrt.o tranair.o oracle_state_tran.o driver_tran.o
+  echo "built $WORK/run_tran/oracle$EXE"
+  exit 0
+fi
+
 if [ "$MOD" = emm ]; then
   # EMM: several files, copied includes (the upstream path may have spaces), and
   # SQLite from the objects NEMS ships in libfsqlite.a.
@@ -58,7 +79,6 @@ if [ "$MOD" = emm ]; then
   echo "built $WORK/run_emm/oracle$EXE"
   exit 0
 fi
-FLAGS="-O0 -g -fbacktrace -ffree-line-length-none -fno-automatic -finit-local-zero -fdec -fallow-argument-mismatch -w -I$U/includes"
 if [ "$MOD" = comm ]; then
   B=build; R=run; SRC=comm; DRIVER=driver
 else

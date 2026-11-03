@@ -11,7 +11,10 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script defer src="data/meta.js"></script>
 <script defer src="data/engine.js"></script>
+<script defer src="data/fidelity.js"></script>
+<script defer src="data/uncertainty.js"></script>
 <script defer src="app.js"></script>
+<script defer src="uncertainty.js"></script>
 </head>
 <body>
 <header class="top">
@@ -21,6 +24,7 @@
   </div>
   <nav class="top-nav" aria-label="Page">
     <button id="go-how" class="ghost" type="button">How this works</button>
+    <a class="ghost" href="scoreboard.html">Scoreboard</a>
     <a class="ghost" href="about.html">About</a>
     <button id="theme" class="ghost" type="button" aria-label="Switch light or dark mode">Dark</button>
   </nav>
@@ -63,18 +67,38 @@
 
   <section class="results" aria-label="Results">
     <div class="kpis">
-      <div class="kpi"><div class="kpi-label">US energy CO2, 2050</div><div class="kpi-value" id="k-co2"></div><div class="kpi-delta" id="k-co2-d"></div></div>
-      <div class="kpi"><div class="kpi-label">Average power price, 2050</div><div class="kpi-value" id="k-pel"></div><div class="kpi-delta" id="k-pel-d"></div></div>
-      <div class="kpi"><div class="kpi-label">Gasoline use, 2050</div><div class="kpi-value" id="k-gas"></div><div class="kpi-delta" id="k-gas-d"></div></div>
-      <div class="kpi"><div class="kpi-label">CO2 avoided, 2027-2050</div><div class="kpi-value" id="k-cum"></div><div class="kpi-delta" id="k-cum-d"></div></div>
+      <div class="kpi"><div class="kpi-label">US energy CO2, 2050</div><div class="kpi-value" id="k-co2"></div><div class="kpi-fid" data-out="co2"></div><div class="kpi-delta" id="k-co2-d"></div></div>
+      <div class="kpi"><div class="kpi-label">Average power price, 2050</div><div class="kpi-value" id="k-pel"></div><div class="kpi-fid" data-out="pel"></div><div class="kpi-delta" id="k-pel-d"></div></div>
+      <div class="kpi"><div class="kpi-label">Gasoline use, 2050</div><div class="kpi-value" id="k-gas"></div><div class="kpi-fid" data-out="gal"></div><div class="kpi-delta" id="k-gas-d"></div></div>
+      <div class="kpi"><div class="kpi-label">CO2 avoided, 2027-2050</div><div class="kpi-value" id="k-cum"></div><div class="kpi-fid" data-out="cum"></div><div class="kpi-delta" id="k-cum-d"></div></div>
     </div>
 
     <div class="card">
       <div class="card-head">
         <div class="tabs" role="tablist" id="tabs"></div>
+        <span id="chart-fid"></span>
         <div class="legend"><span class="sw solid"></span>This run <span class="ref-key"><span class="sw dashed"></span>EIA reference</span></div>
       </div>
       <div class="chart-box"><canvas id="chart" aria-label="Chart of the selected measure, 2025 to 2050"></canvas></div>
+    </div>
+
+    <div class="card uncert" id="uncert">
+      <div class="card-head">
+        <h2>How sure is this?</h2>
+        <span class="pill">Our sampling on stand-ins, not EIA's</span>
+      </div>
+      <p class="fine lead">Each run takes the inputs EIA itself varies in its side cases, picks a point between EIA's low and high end for each, and runs the fast loop. Many runs give a band.</p>
+      <div class="unc-controls">
+        <div class="tabs" id="unc-measures" role="tablist" aria-label="Measure"></div>
+        <div class="tabs" id="unc-levels" role="tablist" aria-label="Carbon price"></div>
+      </div>
+      <div class="legend unc-legend"><span class="sw solid"></span>Median <span class="band-key"></span>10th to 90th percentile <span class="ref-key"><span class="sw dashed"></span>EIA reference</span></div>
+      <div class="chart-box"><canvas id="unc-fan" aria-label="Band of outcomes across the runs, 2027 to 2050"></canvas></div>
+      <p class="unc-summary" id="unc-summary"></p>
+      <div class="card-head sub-head"><h3>What explains the spread</h3><div class="tabs" id="unc-years" role="tablist" aria-label="Year"></div></div>
+      <div class="chart-box short"><canvas id="unc-bars" aria-label="Share of the spread explained by each input"></canvas></div>
+      <table class="rt unc-table"><thead><tr><th>Input</th><th>EIA's side cases</th><th>What the case does in 2050, against the reference</th></tr></thead><tbody id="unc-inputs"></tbody></table>
+      <p class="fine">The ends of every range are EIA's AEO2026 side cases. The shape between them (triangular, most likely at the reference) and adding the effects together are our choices. AEO2026 has no oil price case, so oil price and gas supply are one input. These runs use the fast stand-ins for demand and supply, so the bands show how EIA's own cases spread, not EIA's own uncertainty. Method: docs/uncertainty.md.</p>
     </div>
 
     <div class="card explain">
@@ -130,7 +154,7 @@
         </div>
         <div>
           <h3>Ported and stand-in, today</h3>
-          <table class="rt" id="status-table"><thead><tr><th>Module</th><th>Status</th><th>EIA lines</th><th>Tests</th></tr></thead><tbody></tbody></table>
+          <table class="rt" id="status-table"><thead><tr><th>Module</th><th>Status</th><th>In this set</th><th>EIA lines</th><th>Tests</th></tr></thead><tbody></tbody></table>
           <p class="fine" id="status-note"></p>
           <h3>Read more</h3>
           <ul class="links">

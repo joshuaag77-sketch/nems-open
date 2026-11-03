@@ -21,6 +21,7 @@ import numpy as np
 from nems_open import steo
 from nems_open.scedes import option
 from nems_open.commercial import base_year, first_call, ktek
+from nems_open.commercial import levers as levers_mod
 from nems_open.commercial import inputs as inputs_mod
 from nems_open.commercial.floorspace import FloorspaceInputs
 from nems_open.commercial import technology_choice_inputs as tci
@@ -104,7 +105,7 @@ def tables(ab32sw: int | None = None, epa111d: int | None = None, nrg2007: int |
     return t, k
 
 
-def initial_state(inputs=None) -> dict:
+def initial_state(inputs=None, levers=None) -> dict:
     """The state COMM holds when it is first called (2019, first iteration), from files and the restart file."""
     from nems_open.commercial.comm import FIRST_YEAR, floorspace
     from nems_open.run_demand import Inputs
@@ -112,13 +113,16 @@ def initial_state(inputs=None) -> dict:
     inputs = inputs or Inputs()
     s = zeros()
     t, k = tables()
+    files = first_call.input_tables(inputs.array("MACOUT/mc_revser"))
+    if levers is not None and not levers.is_default():
+        levers_mod.apply(levers, {**t, **files})            # edits the arrays in place (k's too)
     for name, v in t.items():
         put(s, name, v)
     floorspace(s, FIRST_YEAR, inputs.array("MACOUT/mc_commflsp"), first_call=True)     # COMFloorspace runs before COMServiceDemand
     for name, v in base_year.base_year_intensities(k, t["comeui"], s["cmtotalflspc"]).items():
         put(s, name.lower(), v)
     put(s, "techshareofservicebase", k.TechShareofServiceBASE)        # normalized in place above
-    for name, v in first_call.input_tables(inputs.array("MACOUT/mc_revser")).items():
+    for name, v in files.items():
         put(s, name, v)
     inputs.apply(s)
     floorspace_inputs(s)

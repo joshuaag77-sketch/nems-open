@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEMS Open Engine</title>
+<meta name="description" content="Inside EIA's National Energy Modeling System: every module, routine and shared variable, read from EIA's own code.">
+<style>
+  :root { --bg: #07090d; --ink: #e8e6df; --muted: #a9a79f; --dim: #6f6d66; --line: #2c2c2a;
+          --match: #1D9E75; --partial: #EF9F27; --stand: #888780; --fixed: #4a4945; --input: #7F77DD; --output: #5DCAA5; --hub: #FAC775; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hero { position: fixed; left: 28px; top: 24px; max-width: 470px; pointer-events: none; }
+  .hero h1 { font-size: 26px; font-weight: 500; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .hero p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .cols { position: fixed; top: 50%; width: 100%; pointer-events: none; font-size: 12px; color: var(--dim); letter-spacing: 0.08em; }
+  .cols div { position: absolute; transform: translateX(-50%); }
+  .lbl { position: fixed; font-size: 12px; color: var(--ink); pointer-events: none; white-space: nowrap; transform: translate(-50%, -150%); text-shadow: 0 0 6px #000; }
+  .lbl { text-align: center; } .lbl small { color: var(--muted); font-size: 10px; }
+  .lbl.hot { color: var(--hub); }
+  .scen { position: fixed; z-index: 4; right: 28px; top: 24px; width: 300px; max-height: calc(100% - 110px); overflow: auto; background: #11141bcc; border: 0.5px solid var(--line);
+          border-radius: 12px; padding: 12px 14px; font-size: 13px; backdrop-filter: blur(4px); }
+  .scen-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--muted); }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  button[aria-pressed="true"].ghost { border-color: var(--hub); color: var(--hub); }
+  .cards { display: grid; gap: 6px; }
+  .card { text-align: left; background: transparent; color: var(--ink); border: 0.5px solid #3a3a37; border-radius: 8px; padding: 7px 10px; font-weight: 400; }
+  .card small { display: block; color: var(--dim); font-size: 11px; }
+  .card.a { border-color: var(--match); } .card.b { border-color: var(--hub); border-style: dashed; }
+  .heads { margin-top: 10px; display: grid; gap: 8px; }
+  .head { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: baseline; }
+  .head .k { color: var(--muted); font-size: 12px; } .head .v { font-size: 20px; font-variant-numeric: tabular-nums; grid-column: 1; }
+  .head .from { color: var(--dim); font-size: 11px; grid-column: 1 / -1; }
+  .pill { font-size: 10px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; cursor: help; }
+  .pill.match { color: var(--match); } .pill.within { color: var(--partial); } .pill.stand { color: var(--stand); }
+  .diff { margin-top: 10px; display: grid; gap: 8px; }
+  .diff svg { width: 100%; height: 34px; display: block; }
+  .diff .d { font-variant-numeric: tabular-nums; } .diff .up { color: #ef8a70; } .diff .down { color: #5ccf93; }
+  #panel { position: fixed; z-index: 5; left: 28px; top: 172px; width: 300px; max-height: calc(100% - 300px); overflow: auto; background: #11141bdd;
+           border: 0.5px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 13px; display: none; backdrop-filter: blur(4px); }
+  #panel h3 { margin: 0 0 6px; font-size: 15px; font-weight: 500; }
+  #panel p { margin: 6px 0; color: var(--muted); line-height: 1.45; }
+  #panel table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  #panel td { padding: 2px 0; color: var(--muted); } #panel td.n { text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 6px; border: 1px solid currentColor; }
+  .bar { position: fixed; left: 28px; bottom: 24px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button { background: var(--match); color: #04342C; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: 500; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--ink); border: 0.5px solid #5F5E5A; }
+  .status { position: fixed; left: 28px; bottom: 74px; font-size: 12px; color: var(--dim); max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .legend { position: fixed; right: 28px; bottom: 24px; font-size: 12px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; justify-content: flex-end; max-width: 34%; }
+  .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+  .yr { font-size: 13px; color: var(--muted); } .yr output { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #year { width: 160px; accent-color: var(--hub); }
+  .counter { position: fixed; left: 28px; bottom: 98px; font-size: 13px; color: var(--muted); max-width: 640px; line-height: 1.5; }
+  .counter b { color: var(--ink); font-weight: 500; } .counter .dimk { color: var(--dim); } .counter .gap { color: var(--hub); font-variant-numeric: tabular-nums; }
+  button[aria-pressed="true"].ghost { border-color: var(--hub); color: var(--hub); }
+  .mapbar { position: fixed; z-index: 5; right: 28px; bottom: 66px; width: 300px; display: none; background: #11141bdd; border: 0.5px solid var(--line);
+            border-radius: 12px; padding: 12px 14px; font-size: 12px; color: var(--muted); }
+  .mapbar .bar3 { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 8px; } .mapbar .bar3 i { display: block; }
+  .mapbar div:not(.bar3) { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; } .mapbar span:last-child { color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .mapbar a { display: inline-block; margin-top: 6px; color: var(--output); }
+  .tip { position: fixed; z-index: 6; display: none; max-width: 280px; background: #11141bee; border: 0.5px solid var(--line); border-radius: 8px;
+         padding: 7px 10px; font-size: 12px; color: var(--muted); pointer-events: none; line-height: 1.4; }
+  .tip b { color: var(--ink); font-weight: 500; } .tip i { color: var(--dim); font-style: normal; }
+  .note { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); font-size: 11px; color: #5F5E5A; white-space: nowrap; }
+  #flat { display: none; }
+  body.flat { overflow: auto; height: auto; }
+  body.flat #c, body.flat .cols, body.flat .legend, body.flat #play, body.flat #reset, body.flat #map, body.flat #panel, body.flat .mapbar { display: none; }
+  body.flat .hero, body.flat .scen, body.flat .bar, body.flat .counter, body.flat .status, body.flat .note {
+    position: static; transform: none; width: auto; max-width: none; max-height: none; margin: 12px 16px; white-space: normal; }
+  body.flat #flat { display: block; margin: 12px 16px 24px; }
+  #flat h2 { font-size: 16px; font-weight: 500; margin: 0 0 8px; }
+  .fm { border-top: 0.5px solid var(--line); padding: 10px 0; font-size: 14px; } .fm p { margin: 4px 0; color: var(--muted); font-size: 13px; line-height: 1.45; } .fm .dim { color: var(--dim); }
+  .fg { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .fg.match { color: var(--match); } .fg.partial { color: var(--partial); } .fg.stand { color: var(--stand); } .fg.fixed { color: var(--dim); }
+  #err { position: fixed; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Three-dimensional view of NEMS's modules, routines and shared variables"></canvas>
+<div class="hero">
+  <h1>Inside the model behind America's energy outlook</h1>
+  <p id="hero-text">Loading EIA's structure...</p>
+</div>
+<div class="cols" aria-hidden="true"><div style="left:16%">SWITCHES IN</div><div style="left:50%">ENGINE</div><div style="left:84%">NUMBERS OUT</div></div>
+<section class="scen" id="scen" aria-label="Scenarios">
+  <div class="scen-head"><span>Scenarios</span><button class="ghost small" id="compare" type="button" aria-pressed="false">Compare two</button></div>
+  <div id="cards" class="cards"></div>
+  <div id="heads" class="heads"></div>
+  <div id="diff" class="diff"></div>
+</section>
+<div id="panel" role="dialog" aria-live="polite"></div>
+<div class="bar">
+  <button id="play" type="button">Replay the reference run</button>
+  <label class="yr" for="year">Year <output id="year-out">2027</output></label>
+  <input id="year" type="range" min="2027" max="2050" step="1" value="2027" aria-label="Year to replay">
+  <button class="ghost" id="map" type="button" aria-pressed="false">Fidelity map</button>
+  <button class="ghost" id="reset" type="button">Reset view</button>
+</div>
+<div class="mapbar" id="mapbar"></div>
+<div class="status" id="status" role="status"></div>
+<div class="counter" id="counter" aria-live="polite"></div>
+<div class="legend" id="legend"></div>
+<div class="note" id="note"></div>
+<section id="flat" aria-label="Modules"></section>
+<div id="err"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="engine3d.js"></script>
+</body>
+</html>

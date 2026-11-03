@@ -4,10 +4,10 @@ version = "0.0.1"
 description = "Open Python rebuild of EIA's National Energy Modeling System"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["numpy"]
+dependencies = ["numpy", "pandas", "xarray", "linopy", "highspy"]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "pytest-xdist"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
