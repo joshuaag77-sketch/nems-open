@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Center Story</title>
+<meta name="description" content="What four public forecasts of data center load do to America's power system, run through an open rebuild of EIA's energy model.">
+<link rel="stylesheet" href="style.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script defer src="data/datacenter.js"></script>
+<script defer src="data/fidelity.js"></script>
+<script defer src="datacenter.js"></script>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>What if the data center forecasts are right?</h1>
+    <p class="sub">Four public forecasts of data center electricity, run through EIA's ported demand modules and an open dispatch model of EIA's power plant fleet. Precomputed, not live.</p>
+  </div>
+  <nav class="top-nav" aria-label="Page">
+    <a class="ghost" href="index.html">Sandbox</a>
+    <a class="ghost" href="engine3d.html">Engine</a>
+    <a class="ghost" href="scoreboard.html">Scoreboard</a>
+  </nav>
+</header>
+<main class="board story">
+  <div class="steps" role="tablist" aria-label="Story steps" id="steps"></div>
+  <section class="card" id="step" aria-live="polite"></section>
+  <section class="card">
+    <div class="card-head">
+      <div class="tabs" role="tablist" id="metrics" aria-label="Chart measure"></div>
+      <div class="tabs" role="group" id="years" aria-label="Year for the table"></div>
+    </div>
+    <div class="chart-box"><canvas id="chart" aria-label="Chart of the selected measure for all four cases, 2025 to 2050"></canvas></div>
+    <div class="tbl"><table class="rt board-t" id="numbers"></table></div>
+    <p class="fine" id="numbers-note"></p>
+  </section>
+  <section class="card" id="limits"></section>
+  <section class="card" id="sources"></section>
+</main>
+<footer class="foot">
+  <p>Data: U.S. Energy Information Administration, Annual Energy Outlook 2026 and the NEMS AEO2026 release; the forecasts cited above. NEMS Open is an independent project, not affiliated with or endorsed by EIA or the forecast authors. <a href="about.html">About and credits</a>.</p>
+</footer>
+</body>
+</html>

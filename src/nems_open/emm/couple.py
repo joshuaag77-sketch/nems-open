@@ -35,6 +35,8 @@ class LPResult:
     generation_twh: dict           # group -> (25,)
     fuel_tbtu: dict                # fuel -> (25,)
     co2_mt: float
+    unserved_twh: float = 0.0      # load the fleet could not meet
+    curtailed_twh: float = 0.0     # flexible load cut
 
 
 def _census_of_region() -> np.ndarray:
@@ -48,13 +50,14 @@ def _census_of_region() -> np.ndarray:
 
 
 class ElectricityLP:
-    def __init__(self, supply, hours_per_block: int = 3, capacity_scale=None):
+    def __init__(self, supply, hours_per_block: int = 3, capacity_scale=None, added_load=None):
         if supply.baseline != "cb2026":
             raise ValueError("elec='lp' takes its capacity from the cb2026 reference run, so the baseline must be cb2026")
         self.supply = supply
         self.base = supply.base
         self.snapshot = Snapshot()
         self.hours_per_block = hours_per_block
+        self.added_load = added_load          # datacenter.AddedLoad: already in the loop's commercial sales
         self.capacity_scale = capacity_scale   # year -> {group: multiplier}, from a lever (nems_open.levers)
         self._cases = {}
         self._census = _census_of_region()
@@ -81,10 +84,19 @@ class ElectricityLP:
         """Dispatch for one year. `q` and `prices` are the loop's QBLK/ and MPBLK/ arrays."""
         j = year - history.FIRST_YEAR
         case0 = self.case(year)
+        net = demand.net_load_twh(self.snapshot, year, sales=q)
+        extra = {}
+        if self.added_load is not None and self.added_load.twh[j] > 0:
+            # the added load's share of each region's net load (losses included) runs flat
+            q0 = dict(q)
+            q0["QBLK/qelcm"] = q["QBLK/qelcm"].copy()
+            q0["QBLK/qelcm"][:9, j] = q["QBLK/qelcm"][:9, j] - self.added_load.tbtu(j)
+            extra = {"flat_twh": np.maximum(net - demand.net_load_twh(self.snapshot, year, sales=q0), 0.0),
+                     "flex_share": self.added_load.flex_share}
         scale = self.capacity_scale(year) if self.capacity_scale else {}
         capacity = {g: v * scale.get(g, 1.0) for g, v in case0.capacity.items()}
-        case = replace(case0, capacity=capacity, net_load_twh=demand.net_load_twh(self.snapshot, year, sales=q),
-                       price=self._scaled_prices(case0, prices, j), carbon_price=float(cp87))
+        case = replace(case0, capacity=capacity, net_load_twh=net, price=self._scaled_prices(case0, prices, j),
+                       carbon_price=float(cp87), **extra)
         res = dispatch.solve(case)
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: dispatch {res.status}")
@@ -108,7 +120,7 @@ class ElectricityLP:
         wholesale = res.average_price()
         out = LPResult(year, res.status, power, co2_el, wholesale,
                        float((wholesale * case.net_load_twh).sum() / case.net_load_twh.sum()),
-                       res.generation_twh, res.fuel_tbtu, co2_total)
+                       res.generation_twh, res.fuel_tbtu, co2_total, float(res.unserved_twh.sum()), float(res.curtailed_twh.sum()))
         self.last[year] = out
         return out
 

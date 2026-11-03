@@ -83,6 +83,7 @@ class Policy:
     building_efficiency: object = 1.0   # multiplier on residential and commercial fuel use
     start_year: int = 2027
     commercial: object = None           # commercial.levers.CommercialLevers: real-input levers (needs commercial ported)
+    added_load: object = None           # datacenter.AddedLoad: electricity added to commercial, flat across the year
     # The plain levers (nems_open.levers has what each moves and its fidelity grade)
     building_code: float = 0.0          # fraction less heating and cooling need in new buildings
     appliance_standard: float = 0.0     # fraction more efficient than the least efficient equipment on offer
@@ -276,11 +277,27 @@ class DemandAdapter:
             for k in out:
                 if k[-2:] in BUILDINGS and fuel_of(k) not in TOTAL_FUELS:
                     out[k] = out[k] * eff
+        self._add_load(out, j)
         if self.policy.load_growth is not None and np.any(self.policy.load_growth):
             from nems_open.levers import load_added
             out["QBLK/qelcm"] = out["QBLK/qelcm"] + load_added(self.policy, self.base, j)
         self._totals(out, j, keep_regions)
         return out
+
+    def _add_load(self, q: dict, j: int) -> None:
+        """Data center load on top of commercial electricity (a ported module's US and California
+        rows are not rebuilt by _totals, so they are moved here too)."""
+        add = self.policy.added_load
+        if add is None or j < self.policy.start_year - FIRST_YEAR:
+            return
+        k = "QBLK/qelcm"
+        inc = add.tbtu(j)
+        ref = self.base[k][:, j]
+        v = q[k].copy()
+        v[:9] = v[:9] + inc
+        v[US] = v[US] + inc.sum()
+        v[9] = v[9] + inc[8] * (ref[9] / ref[8] if ref[8] else 0.0)     # California, within the Pacific
+        q[k] = v
 
     def _totals(self, q: dict, j: int, keep_regions=frozenset()) -> None:
         """US row as the sum of divisions; petroleum, renewable and total rows rebuilt from
