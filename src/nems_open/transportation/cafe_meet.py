@@ -36,28 +36,38 @@ def rsort_small(s, a, idx):
     s["i"] = q + 1
 
 
-def group_ghg(s, igp, n, yrs):
-    """One group's achieved GHG rate, as CAFECALC computes it."""
-    cafe, mpg, evmt, mpg_s = s["cafesales"], s["femmpg"], s["phev_evmt"], s["phevmpg_s"]
+def ghg_parts(s, igp, n, yrs):
+    """GROUP_GHG's factors that do not depend on sales (fuel economy, credits): (ILDV, ICL)
+    arrays, so each term is sales times a factor, as in the Fortran's expression."""
+    mpg, evmt, mpg_s = s["femmpg"], s["phev_evmt"], s["phevmpg_s"]
     regs27 = int(s["enforce_my27regs"]) == 1 and yrs >= 2027
     g8887 = f32(8887.0)
     ac = s["ac_oc_credit"][igp, n] * g8887
-    num = f32(0.0)
-    zero_tail = (4, 7, 15) if igp <= CARGRP else (4, 7, 15, 14)
-    for ildv in range(1, MAXLDV + 1):
-        for icl in range(1, MAXCLASS + 1):
-            m = mpg[igp, icl, yrs, ildv]
-            if m == 0.0 or (regs27 and ildv in (4, 7, 15)):
-                continue
-            sal = cafe[igp, icl, yrs, ildv]
-            if ildv in zero_tail:
-                num = num + sal * (-ac)
-            elif ildv in (5, 6):
-                num = num + sal * (ONE - evmt[igp, icl, yrs, ildv]) * (ONE / mpg_s[igp, icl, yrs, ildv] * g8887 - ac)
-            elif igp > CARGRP and yrs == 2024 and icl == 2 and ildv == 16:
-                num = num + sal * (ONE / m * g8887 - ac - s["pu_cred_elig"][igp] * f32(20.0))
-            else:
-                num = num + sal * (ONE / m * g8887 - ac)
+    zero_tail = [k - 1 for k in ((4, 7, 15) if igp <= CARGRP else (4, 7, 15, 14))]
+    m = mpg[igp, C, yrs, L].T
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        k = ((ONE / m) * g8887) - ac
+        k[zero_tail] = -ac
+        if igp > CARGRP and yrs == 2024:
+            k[15, 1] = (((ONE / m[15, 1]) * g8887) - ac) - s["pu_cred_elig"][igp] * f32(20.0)
+        k56 = ((ONE / mpg_s[igp, C, yrs, 5:6].T) * g8887) - ac
+    keep = m != 0.0
+    if regs27:
+        keep[[3, 6, 14]] = False
+    return k, ONE - evmt[igp, C, yrs, 5:6].T, k56, keep
+
+
+def group_ghg(s, igp, n, yrs, parts=None):
+    """One group's achieved GHG rate, as CAFECALC computes it. parts: ghg_parts(s, igp, n, yrs)."""
+    cafe = s["cafesales"]
+    k, omev, k56, keep = parts or ghg_parts(s, igp, n, yrs)
+    # Every (fuel, class) term at once, as (ILDV, ICL); the sum runs in the loop's order
+    # (ILDV outer, ICL inner) over the terms the loop counts.
+    sal = cafe[igp, C, yrs, L].T
+    with np.errstate(invalid="ignore", over="ignore"):
+        term = sal * k
+        term[4:6] = (sal[4:6] * omev) * k56
+    num = fsum(term[keep])
     alt = [4, 7, 15, 14]
     den = fsum(np.array([fsum(cafe[igp, C, yrs, k]) for k in alt], dtype=f32)
                * (np.array([s["epaaltmult"][k, n] for k in alt], dtype=f32) - ONE))
@@ -138,6 +148,17 @@ def cafeghg_meet(s: dict) -> None:
     cmg, used, std, newmpg = s["cafempggrp"], s["cafe_used"], s["cafestd"], s["newmpg"]
     mg, fpg, epag = s["mgghggrp"], s["fpghggrp"], s["epaghggrp"]
     avail = s["mmavail"]
+    cv = cafe[G, C, yrs, L]                       # a view: [group, class, powertrain], 0-based
+    mpgmult = mpg[igp, C, yrs, L] * s["cafepefmult_expanded"][igp, C, L, n]
+    credv = cred[igp, C, L, n]
+    parts = ghg_parts(s, igp, n, yrs)
+    # Group sales totals in both orders the Fortran sums them (powertrain then class, and class
+    # then powertrain). A step changes one group's sales, so only that group's are redone.
+    by_cl = fsum(cv, axis=2)
+    tot_cl = fsum(by_cl, axis=1)
+    by_ldv = fsum(cv, axis=1)
+    tot_ldv = fsum(by_ldv, axis=1)
+    g0 = igp - 1
     done = False
     for xcl in range(1, MAXCLASS + 1):
         if cpass[igp] or done:
@@ -158,16 +179,19 @@ def cafeghg_meet(s: dict) -> None:
                         cafe[igp, ycl, yrs, 1] = cafe[igp, ycl, yrs, 1] + dl
                         cafe[igp, ycl, yrs, xldv] = cafe[igp, ycl, yrs, xldv] - dl
                         stop_gas = 1
-                cmg[igp, n] = hmean(mpg[igp, C, yrs, L] * s["cafepefmult_expanded"][igp, C, L, n], cafe[igp, C, yrs, L],
-                                    cred[igp, C, L, n])
-                group_ghg(s, igp, n, yrs)
+                    by_cl[g0, ycl - 1] = fsum(cv[g0, ycl - 1])
+                    tot_cl[g0] = fsum(by_cl[g0])
+                    by_ldv[g0] = fsum(cv[g0], axis=0)
+                    tot_ldv[g0] = fsum(by_ldv[g0])
+                cmg[igp, n] = hmean(mpgmult, cv[igp - 1], credv)
+                group_ghg(s, igp, n, yrs, parts)
                 # EIA quirk: lifetime miles are hard-coded here, not LDV_VEHLIFEMI as in CAFECALC.
-                mg[CARS, n] = (fpg[CARS, n] - epag[CARS, n]) * fsum(fsum(cafe[CARS, C, yrs, L], axis=2), axis=1) * f32(195264.0)
-                mg[TRKS, n] = (fpg[TRKS, n] - epag[TRKS, n]) * fsum(fsum(cafe[TRKS, C, yrs, L], axis=2), axis=1) * f32(225865.0)
+                mg[CARS, n] = (fpg[CARS, n] - epag[CARS, n]) * tot_cl[:CARGRP] * f32(195264.0)
+                mg[TRKS, n] = (fpg[TRKS, n] - epag[TRKS, n]) * tot_cl[LTKGRP - 1:] * f32(225865.0)
                 if yrs > epa:
-                    newmpg[1, n] = hmean(cmg[CARS, n], fsum(fsum(cafe[CARS, C, yrs, L], axis=1), axis=1))
-                    newmpg[2, n] = hmean(cmg[TRKS, n], fsum(fsum(cafe[TRKS, C, yrs, L], axis=1), axis=1))
-                    newmpg[3, n] = hmean(cmg[G, n], fsum(fsum(cafe[G, C, yrs, L], axis=1), axis=1))
+                    newmpg[1, n] = hmean(cmg[CARS, n], tot_ldv[:CARGRP])
+                    newmpg[2, n] = hmean(cmg[TRKS, n], tot_ldv[LTKGRP - 1:])
+                    newmpg[3, n] = hmean(cmg[G, n], tot_ldv)
                 if (cmg[igp, n] >= used[igp, yrs]
                         or (newmpg[3, n] > std[3, n] and (newmpg[1, n] - std[1, n]) > -2.0 and (newmpg[2, n] - std[2, n]) > -2.0)
                         or int(s["enforce_cafe"]) == 0):

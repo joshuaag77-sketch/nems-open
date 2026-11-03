@@ -19,8 +19,22 @@ US = 11
 R9 = slice(1, MNUMCR - 2)
 
 
+_POWI = {}
+
+
 def powi(x, n):
-    """REAL**INTEGER as gfortran computes it (libgcc __powisf2, square and multiply in float32)."""
+    """REAL**INTEGER as gfortran computes it (libgcc __powisf2, square and multiply in float32).
+    Nonzero scalars are memoized (a zero keeps its sign, so it is not)."""
+    if type(x) is np.float32 and x:
+        key = (float(x), n)
+        r = _POWI.get(key)
+        if r is None:
+            r = _POWI[key] = _powi(x, n)
+        return r
+    return _powi(f32(x), n)
+
+
+def _powi(x, n):
     x = f32(x)
     m = abs(int(n))
     r = x if m % 2 else f32(1.0)
