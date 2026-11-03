@@ -15,7 +15,7 @@ from nems_open.fortran_array import FArray
 from nems_open.paths import REPO_ROOT
 
 # Each module's oracle runs in its own folder (see oracle/gen_oracle.py MODULES).
-RUN_DIRS = {"comm": "run", "resd": "run_resd", "tran": "run_tran"}
+RUN_DIRS = {"comm": "run", "resd": "run_resd", "emm": "run_emm", "tran": "run_tran"}
 ORACLE_DIR = Path(os.environ.get("NEMS_ORACLE_DIR", Path.home() / "dev" / "oracle-cache"))
 
 

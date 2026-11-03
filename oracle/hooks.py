@@ -10,11 +10,13 @@ Dumps only happen on the final iteration of the years in DUMP_YEARS.
 Output only: nothing here changes a computed value.
 
 Usage: python -I hooks.py <upstream> <source.f90 to instrument in place> [module]
-module is comm (default) or resd.
+module is comm (default), resd or emm (src is then util.f90; the other EMM
+files must already be patched into the build folder).
 """
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -210,6 +212,122 @@ RESD_WIDE_FILES = ["ncntrl", "qblk", "mpblk", "ampblk", "macout", "eusprc", "qsb
                    "uecpout", "e111d", "steoblock", "emission", "emablk", "bldglrn"]
 RESD_DECL_FILES = ["parametr", "resdrep", "rtek", "rscon", "rseff", "apq"] + RESD_WIDE_FILES
 
+# Electricity (EMM): UTIL is the yearly entry. Targets are dicts as for resd.
+# Each gets its own dump routine, built from the includes of the target routine
+# and everything it calls (EMM has 121 includes; they do not all compile in one
+# routine). The ECP and EFD solves run in AIMMS, which we do not have: EMM_SWAPS
+# rewrite those calls in the oracle's copy of util.f.
+EMM_DUMP_YEARS = [31, 32, 33, 36, 37, 38, 41, 51, 61]  # 2020 2021 2022 2025 2026 2027 2030 2040 2050
+EMM_TARGETS = [
+    # home: the files whose routines count when collecting what a target uses. The
+    # call tree reaches most of EMM through shared helpers; following it everywhere
+    # made each dump 350 MB, mostly EFD dispatch and storage arrays EFP never reads.
+    dict(tag="ld", call=r"CALL ELLDSM\(IDSM\)", routines=["ELLDSM"],   # LDSM: load curves for ECP, EFD, EFP
+         home=["uldsm"], ryears_only=True),  # 2021, 2030, 2050 only (disk)
+    dict(tag="fp", call=r"CALL ELEFP\b", routines=["ELEFP"],           # EFP: prices (first pass; the second
+         home=["uefp", "udaf"], ryears_only=True),                                      # runs only with STEO price benchmarking)
+]
+# LDSM routines, around their calls in uldsm.f (ELLDSM's region loop, then DSMECP1's
+# ECP-horizon loop). Region targets dump as "<name>_rNN" for the regions in
+# EMM_DUMP_REGIONS (all 25 would be 5x the disk for little more coverage). itr=1:
+# the routine only runs on a year's first iteration, so dump there instead of the
+# final one. cond: an extra Fortran test for the dump.
+EMM_DUMP_REGIONS = [1, 13]
+EMM_REGION_YEARS = [32, 41, 61]  # 2021 2030 2050: region dumps filled the disk at 5 regions x 9 years
+EMM_TARGETS += [
+    dict(tag="ca", call=r"CALL DSMCADJ\b", file="uldsm", home=["uldsm"], routines=["DSMCADJ"]),
+    dict(tag="fo", call=r"CALL DSMFOR\(WHOOPS\)", file="uldsm", home=["uldsm"], routines=["DSMFOR"], region=True),
+    dict(tag="dl", call=r"CALL DSMDLT\b", file="uldsm", home=["uldsm"], routines=["DSMDLT"], region=True),
+    dict(tag="hl", call=r"CALL DSMHLM\b", file="uldsm", home=["uldsm"], routines=["DSMHLM"], region=True),
+    dict(tag="ep", call=r"CALL DSMEFP\b", file="uldsm", home=["uldsm"], routines=["DSMEFP"], region=True),
+    dict(tag="to", call=r"CALL DSMTOR\b", file="uldsm", home=["uldsm"], routines=["DSMTOR"], region=True),
+    dict(tag="ef", call=r"CALL DSMEFD\b", file="uldsm", home=["uldsm"], routines=["DSMEFD"], region=True),
+    dict(tag="e1", call=r"CALL DSMECP1\(WHOOPS\)", file="uldsm", home=["uldsm"], routines=["DSMECP1"], region=True,
+         itr=1),
+    dict(tag="lc", call=r"CALL DSMLCP\(1\)", file="uldsm", home=["uldsm"], routines=["DSMLCP"], region=True, itr=1,
+         cond="K1 .EQ. CURIYR"),
+]
+# EFP routines, per EMM region, around their calls in uefp.f. region="NRGN": the
+# region is the routine's argument, not a COMMON variable, so the call passes it.
+# AVRPRC's first half (CWIP, plant in service, depreciation, taxes) runs only on
+# a year's first iteration, so each AVRPRC call has a first-iteration target (*1)
+# and a final-iteration one. Each region's books (EFP's direct-access files) are
+# loaded into COMMON by ELGLTR before these calls, so they are in the dumps.
+_EFP = dict(file="uefp", home=["uefp", "udaf"], region="NRGN")
+# GL and AVRPRC reach most of EFP, so their dumps are about 50 MB a region: keep
+# them to region 1 in 2030 (few=True). The routine-level dumps below stay full.
+_EFP_FEW = dict(_EFP, few=True)
+EMM_TARGETS += [
+    dict(tag="gg", call=r"CALL GL\(NRGN,ICALL\)", nth=0, routines=["GL"], **_EFP_FEW),
+    dict(tag="gt", call=r"CALL GL\(NRGN,ICALL\)", nth=1, routines=["GL"], **_EFP_FEW),
+    dict(tag="gd", call=r"CALL GL\(NRGN,ICALL\)", nth=2, routines=["GL"], **_EFP_FEW),
+    dict(tag="ag", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=0, routines=["AVRPRC"], **_EFP_FEW),
+    dict(tag="ag1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=0, routines=["AVRPRC"], itr=1, **_EFP_FEW),
+    dict(tag="at", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], **_EFP_FEW),
+    dict(tag="at1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=1, routines=["AVRPRC"], itr=1, **_EFP_FEW),
+    dict(tag="ad", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], **_EFP_FEW),
+    dict(tag="ad1", call=r"CALL AVRPRC\(NRGN,ICALL\)", nth=2, routines=["AVRPRC"], itr=1, **_EFP_FEW),
+]
+# Inside AVRPRC, routine by routine, for the generation component only (site_cond
+# is tested where the call is, since ICALL is local). Transmission and
+# distribution are covered by the whole-AVRPRC dumps above.
+_G = dict(site_cond="ICALL .EQ. 'G'", **_EFP)
+EMM_TARGETS += [dict(tag=tag, call=call, routines=[name], itr=itr, **_G) for tag, name, call, itr in [
+    ("x_adcr", "ELADCR", r"CALL ELADCR\b", 1),
+    ("x_cwip", "ELCWIP", r"CALL ELCWIP\(NRGN,ICALL\)", 1),
+    ("x_nd", "ELND", r"CALL ELND\(NRGN,6,ICALL\)", 1),
+    ("x_phin", "ELPHIN", r"CALL ELPHIN\(NRGN\)", 1),
+    ("x_sl", "ELSL", r"CALL ELSL\(NRGN\)", 1),
+    ("x_itc", "ELITC", r"CALL ELITC\b", 1),
+    ("x_bkdp", "ELBKDP", r"CALL ELBKDP\(NRGN,ICALL\)", 1),
+    ("x_txdp", "ELTXDP", r"CALL ELTXDP\(NRGN,ICALL\)", 1),
+    ("x_tsaf", "ELTSAF", r"CALL ELTSAF\b", 1),
+    ("x_xpns", "ELXPNS", r"CALL ELXPNS\(NRGN,ICALL\)", None),
+    ("x_inex", "ELINEX", r"CALL ELINEX\(NRGN\)", None),
+    ("x_revs", "ELREVS", r"CALL ELREVS\(ICALL,NRGN\)", None),
+    ("x_rate", "ELRATE", r"CALL ELRATE\(ICALL,NRGN\)", None),
+    ("x_stmt", "STMTS", r"IF \(EFPFCRL \.EQ\. 1\) CALL STMTS\(NRGN,ICALL\)", None),
+]]
+for _t in EMM_TARGETS:
+    if _t["tag"] == "x_rate":  # ELRATE reaches most of EFP too: about 50 MB a region
+        _t["few"] = True
+# ELGLTR's cost routines, after it has loaded the region's books (generation;
+# CAPCOST once per ownership type), and COMPPRC, which GENERA runs when USW_POL=4
+# (it is in cb2026). Calls on a continuation line are matched as the whole IF.
+EMM_TARGETS += [
+    dict(tag="y_cap1", call=r"CALL CAPCOST\(NRGN,ICALL,N\)", routines=["CAPCOST"], **dict(_EFP, site_cond=
+         "ICALL .EQ. 'G' .AND. N .EQ. 1")),
+    dict(tag="y_cap2", call=r"CALL CAPCOST\(NRGN,ICALL,N\)", routines=["CAPCOST"], **dict(_EFP, site_cond=
+         "ICALL .EQ. 'G' .AND. N .EQ. 2")),
+    dict(tag="y_alf", call=r"IF \(ICALL \.EQ\. 'G'\) CALL ALLFAC\(NRGN\)", routines=["ALLFAC"], **_EFP),
+    dict(tag="y_anb", call=r"IF \(ICALL \.EQ\. 'G' \.and\. curiyr\+uhbsyr \.gt\. efpsyr\) &\s*\n\s*CALL ANEWBLD\(NRGN\)",
+         routines=["ANEWBLD"], itr=1, **_EFP),
+    dict(tag="y_tran", call=r"if \(curiyr\+UHBSYR \.ge\. EFPSYR\) CALL ELTRAN\(NRGN\)", routines=["ELTRAN"], itr=1,
+         **_EFP),
+    dict(tag="y_dist", call=r"if \(CURIYR\+UHBSYR \.ge\. EFPSYR\) CALL ELDIST\(NRGN\)", routines=["ELDIST"], itr=1,
+         **_EFP),
+    dict(tag="cp", call=r"IF \(USW_POL \.eq\. 4\) &\s*\n\s*CALL COMPPRC\(NRGN\)", routines=["COMPPRC"], **_EFP),
+]
+EMM_TARGETS += [
+    dict(tag="se", call=r"CALL ELSET\b", file="uefp", home=["uefp", "udaf"], routines=["ELSET"]),
+    dict(tag="rv", call=r"IF \(EFPFCRL \.eq\. 1\) CALL REVGAP", file="uefp", home=["uefp", "udaf"],
+         routines=["REVGAP"]),
+]
+EMM_SWAPS = [
+    (r"^(\s*)CALL ELECP\s*$", r"\1CONTINUE   ! ORACLE: ECP (AIMMS LP) not run"),
+    (r"^(\s*)CALL ELEFD\(CURIYR\)", r"\1CALL EFD_STANDIN(CURIYR)   ! ORACLE: was CALL ELEFD(CURIYR)"),
+    # These copy EFD results into NEMS's shared arrays. Skipped so those arrays keep
+    # EIA's values from the restart file, which EFP and the stand-in read.
+    (r"^(\s*)CALL EMMCAPO\s*$", r"\1CONTINUE   ! ORACLE: EMMCAPO skipped"),
+    (r"^(\s*)CALL EMMDSPO\s*$", r"\1CONTINUE   ! ORACLE: EMMDSPO skipped"),
+    (r"^(\s*)IF \(FCRL \.EQ\. 1 \.OR\. CURITR \.GT\. MAXITR\)CALL EMMGENO\s*$", r"\1CONTINUE   ! ORACLE: EMMGENO skipped"),
+    (r"^(\s*)CALL EMMBODPV\s*$", r"\1CONTINUE   ! ORACLE: EMMBODPV skipped"),
+    (r"^(\s*)CALL EMMPRCO\s*$", r"\1CONTINUE   ! ORACLE: EMMPRCO skipped"),
+]
+# EFD's per-region output and build blocks live in direct-access files, not in
+# COMMON, so the stand-in dumps them region by region ("<name>_rNN", tag fs_out).
+EMM_REGION_FILES = ["dispout", "bildin"]
+
 MODULES = {
     "comm": dict(build="build", run="run", years=DUMP_YEARS, targets=TARGETS, includes=STATE_INCLUDES,
                  use=None, block_files=STATE_BLOCK_FILES, extra=STATE_EXTRA, decl_files=DECL_FILES,
@@ -218,10 +336,14 @@ MODULES = {
                  includes=[], use="R_", block_files=RESD_STATE_BLOCK_FILES, extra=RESD_STATE_EXTRA,
                  decl_files=RESD_DECL_FILES, module_text=True, wide_files=RESD_WIDE_FILES,
                  outside_files=["tranrep"]),
+    "emm": dict(build="build_emm", run="run_emm", years=EMM_DUMP_YEARS, targets=EMM_TARGETS, module_text=False,
+                sources=["util", "udat", "uldsm", "uefp", "uefd", "uecp", "unugs", "udaf", "ucape", "uread"]),
 }
 CFG = MODULES["comm"]
 
-TYPE_RE = re.compile(r"^(real\*8|double precision|real\*4|real|integer\*1|integer\*2|integer\*4|integer\*8|integer"
+# Spaces are allowed around the * ("REAL *4" in efpnd).
+TYPE_RE = re.compile(r"^(real\s*\*\s*8|double precision|real\s*\*\s*4|real|integer\s*\*\s*1|integer\s*\*\s*2"
+                     r"|integer\s*\*\s*4|integer\s*\*\s*8|integer"
                      r"|logical(?:\*\d+)?|character(?:\s*\*\s*(?:\(\s*[\w*]+\s*\)|\d+))?)(?![\w*])(.*)", re.I)
 
 
@@ -263,7 +385,7 @@ def declarations(text):
             t = m.group(1).lower().replace(" ", "")
             body = m.group(2).split("::", 1)[-1]
             for ent in split_top(body):
-                em = re.match(r"(\w+)\s*(?:\*\s*\d+)?\s*(\((.*)\))?", ent)
+                em = re.match(r"([\w$]+)\s*(?:\*\s*\d+)?\s*(\((.*)\))?", ent)
                 if em:
                     rank = len(split_top(em.group(3))) if em.group(2) else 0
                     prev = out.get(em.group(1).lower(), (t, 0))
@@ -271,7 +393,7 @@ def declarations(text):
         cm = re.match(r"common\s*/\s*\w+\s*/(.*)", st, re.I)
         if cm:
             for ent in split_top(cm.group(1)):
-                em = re.match(r"(\w+)\s*(\((.*)\))?", ent)
+                em = re.match(r"([\w$]+)\s*(\((.*)\))?", ent)
                 if em and em.group(2):
                     t = out.get(em.group(1).lower(), ("?", 0))[0]
                     out[em.group(1).lower()] = (t, len(split_top(em.group(3))))
@@ -294,7 +416,7 @@ def common_names(text):
     for st in statements(text):
         cm = re.match(r"common\s*/\s*\w+\s*/(.*)", st, re.I)
         if cm:
-            names += [re.match(r"\w+", e).group(0) for e in split_top(cm.group(1))]
+            names += [re.match(r"[\w$]+", e).group(0) for e in split_top(cm.group(1))]
     return names
 
 
@@ -323,7 +445,7 @@ def module_r_(source_text):
     for st in statements(text):
         a = re.match(r"real\*\d\s*,\s*allocatable\s*::(.*)", st, re.I)
         if a:
-            names += [re.match(r"\w+", e).group(0) for e in split_top(a.group(1))]
+            names += [re.match(r"[\w$]+", e).group(0) for e in split_top(a.group(1))]
     return text, names
 
 
@@ -435,7 +557,8 @@ def private_dumps(tag, names, src_decls):
 def as_dict(target):
     if isinstance(target, dict):
         name = re.search(r"CALL\s+(\w+)", target["call"], re.I).group(1)
-        return dict(dict(nth=0, end=None, private=[], carried=[], before=False, routines=[name]), **target)
+        return dict(dict(nth=0, end=None, private=[], carried=[], before=False, routines=[name],
+                         file="util", region=False, itr=None, cond=None, site_cond=None), **target)
     tag, call_re, end_re, private, carried = target
     before = bool(end_re) and end_re.startswith("before:")  # commercial targets mark "dump before this line" in the pattern
     if before:
@@ -487,6 +610,281 @@ def instrument(comm_path: Path, upstream: Path):
     comm_path.write_text(text, encoding="latin-1")
 
 
+def emm_bodies(text):
+    """{lowercase name: (body, include list)} for every routine in EMM's files.
+    EMM routines end in a bare END, so a body runs to the next routine's start."""
+    heads = list(re.finditer(r"^[ \t]*(?:(?:REAL|INTEGER|LOGICAL)(?:\*\d)?[ \t]+)?(?:SUBROUTINE|FUNCTION)[ \t]+(\w+)",
+                             text, re.I | re.M))
+    out = {}
+    for i, m in enumerate(heads):
+        body = text[m.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        incs = [n.lower() for n in re.findall(r"(?im)^\s*include\s*'(\w+)'", body)]
+        out.setdefault(m.group(1).lower(), ("\n".join(l.split("!", 1)[0] for l in body.splitlines()), incs))
+    return out
+
+
+def emm_closure(bodies, routines):
+    """Identifiers and includes used by the routines and everything they call."""
+    used, incs, todo, seen = set(), [], [r.lower() for r in routines], set()
+    while todo:
+        r = todo.pop(0)
+        if r in seen or r not in bodies:
+            continue
+        seen.add(r)
+        body, rincs = bodies[r]
+        words = {w.lower() for w in re.findall(r"[A-Za-z_][\w$]*", body)}
+        used |= words
+        incs += [n for n in rincs if n not in incs]
+        todo += sorted(w for w in words if w in bodies and w not in seen)
+    return used, incs
+
+
+def nested_includes(n, inc_dir, seen=None):
+    seen = set() if seen is None else seen
+    for m in re.findall(r"(?im)^\s*include\s*'(\w+)'", (inc_dir / n).read_text(encoding="latin-1")):
+        if m.lower() not in seen:
+            seen.add(m.lower())
+            nested_includes(m.lower(), inc_dir, seen)
+    return seen
+
+
+def include_list_errors(incs):
+    """Include files named in gfortran's errors for a routine with just these
+    includes (about 5 s for EMM's), or [] if it compiles."""
+    test = BUILD / "_inc_test.f90"
+    test.write_text("      subroutine t\n      implicit none\n" + "".join(f"      include '{n}'\n" for n in incs)
+                    + "      end subroutine t\n")
+    r = subprocess.run(["gfortran", "-fsyntax-only", "-ffree-line-length-none", "-fdec", "-Iinc", test.name],
+                       cwd=BUILD, capture_output=True, text=True)
+    test.unlink()
+    if r.returncode == 0:
+        return []
+    return [m.lower() for m in re.findall(r"^(\w+):\d+:\d+:", r.stderr, re.M)] or ["?"]
+
+
+def compiling_includes(incs, inc_dir):
+    """incs minus any include another one already pulls in, then minus whichever
+    include gfortran's errors point at, until the list compiles."""
+    incs = [n for n in incs if (inc_dir / n).exists()]
+    inner = set()
+    for n in incs:
+        inner |= nested_includes(n, inc_dir)
+    incs = [n for n in incs if n not in inner or n == "parametr"]
+    while True:
+        bad = include_list_errors(incs)
+        if not bad:
+            return incs
+        culprit = next((n for n in reversed(incs) if n == bad[0] or bad[0] in nested_includes(n, inc_dir)), incs[-1])
+        if culprit in ("parametr", "ncntrl"):
+            culprit = incs[-1]
+        print(f"  dropping include {culprit} ({bad[0]} does not compile with the others)", flush=True)
+        incs.remove(culprit)
+
+
+def local_commons(bodies, routines):
+    """COMMON blocks declared inside routine bodies rather than in an include
+    (LDSM's hourly load shapes, /REGSYSLD/ and /EUSYSLD/; EFP's /EFPIT/ and others).
+    Returns (declaration lines, member names, {member: (type, rank)}), first
+    declaration of each block wins."""
+    lines, names, decls, seen = [], [], {}, set()
+    for r in routines:
+        if r not in bodies:
+            continue
+        body = bodies[r][0]
+        bdecl = declarations(body)
+        texts = {}
+        for st in statements(body):
+            m = TYPE_RE.match(st)
+            if m and not re.match(r"\s*function", m.group(2), re.I):
+                for ent in split_top(m.group(2).split("::", 1)[-1]):
+                    em = re.match(r"([\w$]+)\s*(?:\*\s*\d+)?\s*(\(.*\))?", ent)
+                    if em:
+                        texts[em.group(1).lower()] = f"{m.group(1)} {ent.strip()}"
+        for st in statements(body):
+            cm = re.match(r"common\s*/\s*([\w$]+)\s*/(.*)", st, re.I)
+            if not cm or cm.group(1).lower() in seen:
+                continue
+            members = [re.match(r"[\w$]+", e).group(0) for e in split_top(cm.group(2))]
+            if not all(v.lower() in texts for v in members):
+                continue  # typed implicitly or in an include: leave it to the include path
+            seen.add(cm.group(1).lower())
+            lines += [f"      {texts[v.lower()]}" for v in members]
+            lines.append(f"      COMMON /{cm.group(1)}/ " + ", ".join(members))
+            names += members
+            decls.update({v.lower(): bdecl[v.lower()] for v in members})
+    return lines, names, decls
+
+
+def emm_dump_routine(name, incs, inc_dir, used, tag_expr, suffix=None, local=None):
+    """A routine that includes `incs` and dumps every COMMON member in them that
+    `used` mentions (all members when used is None), plus the members of `local`,
+    COMMON blocks declared in the routines themselves (see local_commons)."""
+    incs = ["parametr"] + [n for n in incs if n != "parametr"]
+    if "ncntrl" not in incs:
+        incs.insert(1, "ncntrl")
+    incs = compiling_includes(incs, inc_dir)
+    files = list(incs)
+    for n in incs:
+        files += sorted(nested_includes(n, inc_dir) - set(files))
+    decls, names = {}, []
+    for n in files:
+        t = (inc_dir / n).read_text(encoding="latin-1")
+        decls.update(declarations(t))
+        names += [v for v in common_names(t) if used is None or v.lower() in used]
+        # An EQUIVALENCE alias of a COMMON member is shared too (QELINOUT = QELINP
+        # in indout), but no COMMON statement names it.
+        for a, b in re.findall(r"(?im)^\s*equivalence\s*\(\s*([\w$]+)\s*(?:\([^)]*\))?\s*,\s*([\w$]+)", t):
+            names += [v for v in (a, b) if used is not None and v.lower() in used]
+    local_lines = []
+    if local:
+        local_lines, lnames, ldecls = local
+        known = {v.lower() for v in names}
+        clash = [v for v in lnames if v.lower() in known or v.lower() in decls]
+        if clash:  # an include declares the same name: skip the block rather than break the build
+            print(f"  {name}: local COMMON members also in includes, skipped: {clash}")
+            local_lines = []
+        else:
+            names += lnames
+            decls.update(ldecls)
+    calls = []
+    for v in {s.lower(): s for s in names}.values():
+        c = dump_call("@TAG@", v, *decls.get(v.lower(), ("?", 0)))
+        if c:
+            c = c.replace("'@TAG@'", tag_expr)
+            if suffix:
+                c = c.replace(f"'{v.lower()}'", f"'{v.lower()}'//{suffix}", 1)
+            calls.append(c)
+    inc = "\n".join(f"      include '{n}'" for n in incs)
+    arg = "tag, irg" if suffix else "tag"
+    extra = "      integer irg\n      character(4) rsuf\n" if suffix else ""
+    pre = "      write(rsuf, '(a,i2.2)') '_r', irg\n" if suffix else ""
+    loc = "".join(f"{l}\n" for l in local_lines)
+    src = (f"      subroutine {name}({arg})\n      implicit none\n{inc}\n{loc}      character(*) tag\n{extra}{pre}"
+           + "\n".join(calls) + f"\n      end subroutine {name}\n")
+    return src, len(calls), incs
+
+
+def write_state_routine_emm(inc_dir):
+    by_file = {s: emm_bodies((BUILD / f"{s}.f90").read_text(encoding="latin-1")) for s in CFG["sources"]}
+    years = ", ".join(map(str, CFG["years"]))
+    routines, branches, rg_branches, total = [], [], [], 0
+    all_used, all_incs = set(), []
+    regions = ", ".join(map(str, EMM_DUMP_REGIONS))
+    for tg in map(as_dict, CFG["targets"]):
+        bodies = {}
+        for s in tg["home"]:
+            bodies.update(by_file[s])
+        used, incs = emm_closure(bodies, tg["routines"])
+        if tg["file"] == "util":
+            all_used |= used
+            all_incs += [n for n in incs if n not in all_incs]
+        name = f"oracle_state_{tg['tag']}"
+        reached = [r for r in bodies if r in used or r in {x.lower() for x in tg["routines"]}]
+        local = local_commons(bodies, reached)
+        if tg["region"]:
+            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag", suffix="rsuf", local=local)
+        else:
+            src, n, _ = emm_dump_routine(name, incs, inc_dir, used, "tag", local=local)
+        routines.append(src)
+        when = "CURITR .eq. 1" if tg["itr"] == 1 else "FCRL .eq. 1"
+        if tg["cond"]:
+            when += f" .and. ({tg['cond']})"
+        if tg["region"] is True:
+            when += f" .and. any(regions == RNB) .and. any(ryears == CURIYR)"
+            call = f"call {name}(tag, int(RNB))"
+        elif tg["region"] and tg.get("few"):
+            when += f" .and. irg == {EMM_DUMP_REGIONS[0]} .and. CURIYR == {EMM_REGION_YEARS[1]}"
+            call = f"call {name}(tag, irg)"
+        elif tg["region"]:  # passed in by the call: ORACLE_STATE_RG(tag, region)
+            when += f" .and. any(regions == irg) .and. any(ryears == CURIYR)"
+            call = f"call {name}(tag, irg)"
+        else:
+            call = f"call {name}(tag)"
+            if tg.get("ryears_only"):
+                when += " .and. any(ryears == CURIYR)"
+        branch = (f"      if (tag == '{tg['tag']}_in' .or. tag == '{tg['tag']}_out') then\n"
+                  f"        if ({when}) {call}\n        return\n      endif")
+        (rg_branches if isinstance(tg["region"], str) else branches).append(branch)
+        total += n
+    src, n, _ = emm_dump_routine("oracle_state_final", all_incs, inc_dir, all_used, "tag")
+    routines.append(src)
+    # Per-region EFD output and build blocks, called from efd_standin.f90.
+    region_names = set()
+    for f in EMM_REGION_FILES:
+        region_names |= {v.lower() for v in common_names((inc_dir / f).read_text(encoding="latin-1"))}
+    rsrc, rn, _ = emm_dump_routine("oracle_region_dump", ["emmparm", "control"] + EMM_REGION_FILES, inc_dir,
+                                   region_names, "tag", suffix="rsuf")
+    routines.append(rsrc)
+    body = "\n".join(branches)
+    rg_body = "\n".join(rg_branches)
+    (BUILD / "oracle_state.f90").write_text(f"""! Generated by hooks.py. Do not edit.
+      subroutine oracle_state(tag)
+      implicit none
+      include 'parametr'
+      include 'ncntrl'
+      include 'emmparm'
+      include 'dsmdimen'
+      include 'dsmhelm'
+      character(*) tag
+      integer, parameter :: years({len(CFG["years"])}) = (/ {years} /)
+      integer, parameter :: regions({len(EMM_DUMP_REGIONS)}) = (/ {regions} /)
+      integer, parameter :: ryears({len(EMM_REGION_YEARS)}) = (/ {", ".join(map(str, EMM_REGION_YEARS))} /)
+      if (.not. any(years == CURIYR)) return
+{body}
+      if (tag == 'final' .and. FCRL .eq. 1) call oracle_state_final(tag)
+      end subroutine oracle_state
+
+      subroutine oracle_state_rg(tag, irg)
+      implicit none
+      include 'parametr'
+      include 'ncntrl'
+      character(*) tag
+      integer irg
+      integer, parameter :: regions({len(EMM_DUMP_REGIONS)}) = (/ {regions} /)
+      integer, parameter :: ryears({len(EMM_REGION_YEARS)}) = (/ {", ".join(map(str, EMM_REGION_YEARS))} /)
+{rg_body}
+      end subroutine oracle_state_rg
+
+      subroutine oracle_region(irg)
+      implicit none
+      include 'parametr'
+      include 'ncntrl'
+      integer irg
+      integer, parameter :: years({len(CFG["years"])}) = (/ {years} /)
+      if (FCRL .ne. 1 .or. .not. any(years == CURIYR)) return
+      call oracle_region_dump('fs_out', irg)
+      end subroutine oracle_region
+
+{"".join(routines)}""")
+    return total + n + rn
+
+
+def instrument_emm(util_path: Path):
+    """Swap the solves in util.f90, and wrap each target's call in its own file
+    (uldsm.f90 for LDSM routines), all in the build folder."""
+    texts = {"util": util_path.read_text(encoding="latin-1")}
+    for pat, repl in EMM_SWAPS:
+        texts["util"], k = re.subn(pat, repl, texts["util"], count=1, flags=re.I | re.M)
+        assert k == 1, pat
+    for tg in map(as_dict, CFG["targets"]):
+        f = tg["file"]
+        if f not in texts:
+            texts[f] = (BUILD / f"{f}.f90").read_text(encoding="latin-1")
+        text = texts[f]
+        m = list(re.finditer(r"^(\s*)(" + tg["call"] + r")", text, re.I | re.M))[tg["nth"]]
+        ind = m.group(1).lstrip("\n")
+        if isinstance(tg["region"], str):
+            hook = lambda side: ((f"IF ({tg['site_cond']}) " if tg['site_cond'] else "")
+                                 + f"CALL ORACLE_STATE_RG('{tg['tag']}_{side}', INT({tg['region']}))")
+        else:
+            hook = lambda side: f"CALL ORACLE_STATE('{tg['tag']}_{side}')"
+        texts[f] = (text[:m.start()] + f"\n{ind}{hook('in')}\n{ind}{m.group(2)}\n"
+                    f"{ind}{hook('out')}" + text[m.end():])
+    util_path.write_text(texts.pop("util"), encoding="latin-1")
+    for f, text in texts.items():
+        (BUILD / f"{f}.f90").write_text(text, encoding="latin-1")
+
+
 def make_dirs():
     """Create the dump folders and drop old index files (odump appends to them)."""
     sys.path.insert(0, str(HERE))
@@ -500,6 +898,8 @@ def make_dirs():
             dirs += [RUN / "out" / "state" / f"f{tg['tag']}_{side}" / str(FIRST_YEAR) for side in ("in", "out")]
     if CFG is MODULES["comm"]:
         dirs += [RUN / "out" / "state" / f"{tag}_out" / str(FIRST_YEAR) for tag, *_ in PROBES]
+    if CFG is MODULES["emm"]:
+        dirs += [RUN / "out" / "state" / "fs_out" / str(y) for y in CFG["years"]]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
         (d / "index.txt").unlink(missing_ok=True)
@@ -509,7 +909,11 @@ if __name__ == "__main__":
     upstream, src = Path(sys.argv[1]).resolve(), Path(sys.argv[2])
     CFG = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
     BUILD, RUN = HERE / CFG["build"], HERE / CFG["run"]
-    n = write_state_routine(upstream / "includes", src.read_text(encoding="latin-1"))
-    instrument(src, upstream)
+    if CFG is MODULES["emm"]:
+        n = write_state_routine_emm(upstream / "includes")
+        instrument_emm(src)
+    else:
+        n = write_state_routine(upstream / "includes", src.read_text(encoding="latin-1"))
+        instrument(src, upstream)
     make_dirs()
     print(f"hooks: {n} shared arrays per state dump, {len(CFG['targets'])} routine(s) instrumented")
