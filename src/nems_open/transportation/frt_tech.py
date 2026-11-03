@@ -95,6 +95,10 @@ def truck_techadopt(s: dict, carry: dict) -> None:
     mid_adj = v.priv("techmid_adj", lambda: np.zeros((techp2 + 1, CAFE14 + 1), dtype=f32))
     # Start as if the previous call ended on the last class (true unless it was skipped).
     max_s = v.priv("max_share_s", lambda: np.array([ZERO] + [tmax[k, int(p219[CAFE19])] for k in range(1, techp2 + 1)], dtype=f32))
+    notes = {}
+    for inote in range(1, num_sup + 1):
+        notes.setdefault(int(sup[1, inote]), []).append([int(sup[i, inote]) for i in range(2, int(cnt_sup[inote]) + 1)])
+    notes = sorted((it, ns) for it, ns in notes.items() if 1 <= it <= techp2)
     for c19 in range(1, CAFE19 + 1):
         v["icafe19"] = c19
         c14 = int(p219[c19])
@@ -105,61 +109,81 @@ def truck_techadopt(s: dict, carry: dict) -> None:
         for ifuel in range(1, FUEL12 + 1):
             v["ifuel"] = ifuel
             shr[iyr, :, c19, ifuel] = 0.0
-            for it in range(1, techp2 + 1):
-                v["itechp2"] = it
-                trig_tmp[it, c19] = ONE
-                preff.a[...] = 1.0
-                if yrs >= fyr_p2[it, c14, ifuel]:
-                    pb = int(pay[c14]) + min(5, itry - 1)
-                    pay1[it, c19] = pb
-                    if annvmt[iyr, c19, 1, ifuel] > 0:
-                        num = (btu[c14, ifuel] * annvmt[iyr, c19, 1:pb, ifuel] / annvmt[iyr, c19, 1, ifuel] * teff[it, c14])
-                        den = np.float64(ONE + disc) ** np.arange(1, pb + 1, dtype=np.float64)
-                        acc = np.float64(0.0)
-                        for t in num.astype(np.float64) / den:
-                            acc += t
-                        trig_tmp[it, c19] = f32(acc)
-                    trig[it, c19, ifuel] = costyr[it, c19] / trig_tmp[it, c19]
-                    pf = ONE + tvar[it, c14] * ((favg[ifuel, 11] / trig[it, c19, ifuel]) - ONE)
-                    preff[it, c19, ifuel] = min(pf, f32(1.1))
-                    prev = shr[iyr - 1, it, c19, ifuel]
-                    if favg[ifuel, 11] >= trig[it, c19, ifuel] or prev > 0.0:
-                        if favg[ifuel, 11] >= trig[it, c19, ifuel]:
-                            if not once[it, c19, ifuel]:
-                                pen_yr[iyr, it, c19, ifuel] = pen_yr[iyr - 1, it, c19, ifuel] + ONE
-                                once[it, c19, ifuel] = True
-                            if it not in SLOWTECHS:
-                                mid_adj[it, c14] = tmid[it, c14] * max(f32(0.5), powi(f32(0.95), itry - 1))
-                            else:
-                                mid_adj[it, c14] = tmid[it, c14]
-                            p = ONE / (ONE + expf(f32(-1.0) * (pen_yr[iyr, it, c19, ifuel] - mid_adj[it, c14]) / tshape[it, c14]))
-                            p = min(prev, base[it, c19, ifuel]) + (tmax[it, c14] - base[it, c19, ifuel]) * p
-                            shr[iyr, it, c19, ifuel] = max(ZERO, min(tmax[it, c14], preff[it, c19, ifuel] * p))
-                        else:
-                            if pen_yr[iyr - 1, it, c19, ifuel] > 0.0:
-                                pen_yr[iyr, it, c19, ifuel] = pen_yr[iyr - 1, it, c19, ifuel] - ONE
-                            shr[iyr, it, c19, ifuel] = prev * preff[it, c19, ifuel]
-                    x = shr[iyr, it, c19, ifuel]
-                    if x != x:
-                        raise ValueError("TDM TRUCK_TECHADOPT: STOP 903, NaN technology share")
+            # Every technology at once: each one's trigger price, price factor and S-curve share
+            # are its own. PREFF_P2 = 1.0 resets the whole array for every technology, so only
+            # the last technology's factor is left in it.
+            trig_tmp[1:, c19] = ONE
+            preff.a[...] = 1.0
+            idx = np.nonzero(yrs >= fyr_p2[T, c14, ifuel])[0]      # technology idx + 1
+            if idx.size:
+                its = idx + 1
+                pb = int(pay[c14]) + min(5, itry - 1)
+                pay1.a[idx, c19 - 1] = pb
+                a1 = annvmt[iyr, c19, 1, ifuel]
+                if a1 > 0:
+                    num = ((btu[c14, ifuel] * annvmt[iyr, c19, 1:pb, ifuel]) / a1)[None, :] * teff[T, c14][idx][:, None]
+                    den = np.float64(ONE + disc) ** np.arange(1, pb + 1, dtype=np.float64)
+                    acc = np.add.accumulate(num.astype(np.float64) / den, axis=1)[:, -1] + 0.0
+                    trig_tmp[its, c19] = acc.astype(f32)
+                tr = costyr[its, c19] / trig_tmp[its, c19]
+                trig.a[idx, c19 - 1, ifuel - 1] = tr
+                fa = favg[ifuel, 11]
+                pf = ONE + tvar[T, c14][idx] * ((fa / tr) - ONE)
+                pr = np.where(f32(1.1) < pf, f32(1.1), pf)
+                if idx[-1] == techp2 - 1:
+                    preff[techp2, c19, ifuel] = pr[-1]
+                prev = shr[iyr - 1, T, c19, ifuel][idx]
+                bs = base[T, c19, ifuel][idx]
+                py_prev = pen_yr[iyr - 1, T, c19, ifuel][idx]
+                py = pen_yr[iyr, T, c19, ifuel][idx]
+                new = shr[iyr, T, c19, ifuel][idx]
+                up = fa >= tr
+                first = up & ~once[its, c19, ifuel]
+                py = np.where(first, py_prev + ONE, py)
+                once[its[first], c19, ifuel] = True
+                if up.any():
+                    u = its[up]
+                    fac = powi(f32(0.95), itry - 1)
+                    fac = fac if fac > f32(0.5) else f32(0.5)
+                    slow = np.isin(u, list(SLOWTECHS))
+                    mid_adj[u, c14] = np.where(slow, tmid[T, c14][u - 1], tmid[T, c14][u - 1] * fac)
+                    p = ONE / (ONE + expf(f32(-1.0) * (py[up] - mid_adj[u, c14]) / tshape[T, c14][u - 1]))
+                    lo = np.where(bs[up] < prev[up], bs[up], prev[up])
+                    tm = tmax[T, c14][u - 1]
+                    p = lo + (tm - bs[up]) * p
+                    x = pr[up] * p
+                    x = np.where(x < tm, x, tm)
+                    new[up] = np.where(x > ZERO, x, ZERO)
+                down = ~up & (prev > 0.0)
+                py = np.where(down & (py_prev > 0.0), py_prev - ONE, py)
+                new[down] = prev[down] * pr[down]
+                pen_yr.a[iyr - 1, idx, c19 - 1, ifuel - 1] = py
+                shr.a[iyr - 1, idx, c19 - 1, ifuel - 1] = new
+                if np.isnan(new).any():
+                    raise ValueError("TDM TRUCK_TECHADOPT: STOP 903, NaN technology share")
             v["itechp2"] = techp2 + 1
 
             # MAX_SHARE_S is a saved local: entries for technologies later in the list still
             # hold the previous fuel's or class's values when a supersede note reads them.
-            for it in range(1, techp2 + 1):
-                max_s[it] = tmax[it, c14]
-                if yrs < fyr_p2[it, c14, ifuel]:
+            # Only technologies with notes do anything; MAX_SHARE_S is filled in technology
+            # order up to each one, so later entries keep their old values as in the loop.
+            row = shr.a[iyr - 1, :, c19 - 1, ifuel - 1]          # technology it at it - 1
+            tm, fy = tmax.a[:, c14 - 1], fyr_p2.a[:, c14 - 1, ifuel - 1]
+            done = 0
+            for it, its_notes in notes:
+                max_s[done + 1:it + 1] = tm[done:it]
+                done = it
+                if yrs < fy[it - 1]:
                     continue
-                for inote in range(1, num_sup + 1):
-                    if int(sup[1, inote]) == it:
-                        tot = shr[iyr, it, c19, ifuel]
-                        others = [int(sup[i, inote]) for i in range(2, int(cnt_sup[inote]) + 1)]
-                        mx = max(tmax[it, c14], max(max_s[k] for k in others))
-                        for k in others:
-                            tot = tot + shr[iyr, k, c19, ifuel]
-                            if tot > mx:
-                                shr[iyr, k, c19, ifuel] = max(ZERO, shr[iyr, k, c19, ifuel] - (tot - mx))
-                                tot = mx
+                for others in its_notes:
+                    tot = row[it - 1]
+                    mx = max(tm[it - 1], max(max_s[k] for k in others))
+                    for k in others:
+                        tot = tot + row[k - 1]
+                        if tot > mx:
+                            row[k - 1] = max(ZERO, row[k - 1] - (tot - mx))
+                            tot = mx
+            max_s[done + 1:techp2 + 1] = tm[done:techp2]
             if num_req > 0:
                 req = v["requires_tech"]
                 for it in range(1, techp2 + 1):
@@ -195,12 +219,12 @@ def truck_techadopt(s: dict, carry: dict) -> None:
             if ifuel == 8:
                 shr[iyr, 1:17, c19, ifuel] = shr[iyr, 1:17, c19, 2]
             m = ONE
-            for it in range(1, techp2 + 1):
-                if yrs >= fyr_p2[it, c14, ifuel]:
-                    a = shr[iyr, it, c19, ifuel]
-                    ad = max(a - base[it, c19, ifuel], f32(-1.0) * base[it, c19, ifuel]) if a > 0.0 else ZERO
-                    m = m * (ONE - ((teff[it, c14] + syn[it]) * ad))
-                    m = min(m, ONE)
+            brow, te = base.a[:, c19 - 1, ifuel - 1], teff.a[:, c14 - 1]
+            for i in np.nonzero(yrs >= fy)[0]:
+                a, b = row[i], brow[i]
+                ad = max(a - b, f32(-1.0) * b) if a > 0.0 else ZERO
+                m = m * (ONE - ((te[i] + syn[i + 1]) * ad))
+                m = min(m, ONE)
             mpgeff[ifuel, c19] = m
             v["itechp2"] = techp2 + 1
             cost_inc[iyr, c19, ifuel] = fsum(shr[iyr, T, c19, ifuel] * costyr[1:, c19])

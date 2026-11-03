@@ -243,43 +243,41 @@ def tattrib(s: dict) -> None:
         flag = s["classflag"]
         mpg, wgt, hp, rng = s["femmpg"], s["femwgt"], s["femhp"], s["femrng"]
         lug, avg = s["epalug"], s["luggavg"]
-        for igp in range(1, MAXGROUP + 1):
-            ivtyp = int(s["grpmap"][igp])
-            for icl in range(1, MAXCLASS + 1):
-                for ildv in range(1, MAXLDV + 1):
-                    if not flag[igp, icl, ildv]:
-                        continue
-                    if mpg[igp, icl, yrs, ildv] != 0.0:
-                        s["flcost"][igp, ildv, icl, R9, yrs] = fp[ildv, R9, yrs] / mpg[igp, icl, yrs, ildv]
-                    if ildv in (4, 7, 15):
-                        s["hfuel"][igp, ildv, icl, R9, yrs] = ONE
-                    if wgt[igp, icl, yrs, ildv] != 0.0:
-                        s["accl"][igp, ildv, icl, R9, yrs] = hp[igp, icl, yrs, ildv] / wgt[igp, icl, yrs, ildv]
-                    s["maint"][igp, ildv, icl, R9, yrs] = s["maintgrp"][ildv, icl, ivtyp]
-                    if igp >= LTKGRP and icl <= 2:
-                        s["lugg"][igp, ildv, icl, R9] = 0.0
-                    elif lug[igp, icl, epa, ildv] > 0.0 and lug[igp, icl, epa, GAS] > 0.0:
-                        s["lugg"][igp, ildv, icl, R9] = lug[igp, icl, epa, ildv] / lug[igp, icl, epa, GAS]
-                    else:
-                        s["lugg"][igp, ildv, icl, R9] = avg[igp, icl]
-                    s["vrng"][igp, ildv, icl, R9, yrs] = rng[igp, icl, yrs, ildv]
-        s.update(igp=MAXGROUP + 1, icl=MAXCLASS + 1, ildv=MAXLDV + 1, ivtyp=ivtyp)
+        # Every group, powertrain and class at once, as (group, powertrain, class) arrays.
+        tr = lambda a: np.transpose(a, (0, 2, 1))  # noqa: E731  [igp, icl, ildv] -> [igp, ildv, icl]
+        on = tr(flag[G, C, L] != 0)
+        m, w = tr(mpg[G, C, yrs, L]), tr(wgt[G, C, yrs, L])
+        ld = np.arange(1, MAXLDV + 1)[None, :, None]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            fl = s["flcost"][G, L, C, R9, yrs]
+            s["flcost"][G, L, C, R9, yrs] = np.where((on & (m != 0.0))[..., None],
+                                                     fp[L, R9, yrs][None, :, None, :] / m[..., None], fl)
+            hf = s["hfuel"][G, L, C, R9, yrs]
+            s["hfuel"][G, L, C, R9, yrs] = np.where((on & np.isin(ld, (4, 7, 15)))[..., None], ONE, hf)
+            ac = s["accl"][G, L, C, R9, yrs]
+            s["accl"][G, L, C, R9, yrs] = np.where((on & (w != 0.0))[..., None], (tr(hp[G, C, yrs, L]) / w)[..., None], ac)
+        ivt = s["grpmap"].a.astype(int)                               # vehicle type by group
+        mg = np.transpose(s["maintgrp"].a[:, :, ivt - 1], (2, 0, 1))  # [igp, ildv, icl]
+        s["maint"][G, L, C, R9, yrs] = np.where(on[..., None], mg[..., None], s["maint"][G, L, C, R9, yrs])
+        lg, lg_gas = tr(lug[G, C, epa, L]), lug[G, C, epa, GAS][:, None, :]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            lv = np.where((lg > 0.0) & (lg_gas > 0.0), lg / lg_gas, avg[G, C][:, None, :])
+        small_truck = (np.arange(1, MAXGROUP + 1) >= LTKGRP)[:, None, None] & (np.arange(1, MAXCLASS + 1) <= 2)[None, None, :]
+        lv = np.where(small_truck, f32(0.0), lv)
+        s["lugg"][G, L, C, R9] = np.where(on[..., None], lv[..., None], s["lugg"][G, L, C, R9])
+        s["vrng"][G, L, C, R9, yrs] = np.where(on[..., None], tr(rng[G, C, yrs, L])[..., None], s["vrng"][G, L, C, R9, yrs])
+        s.update(igp=MAXGROUP + 1, icl=MAXCLASS + 1, ildv=MAXLDV + 1, ivtyp=int(s["grpmap"][MAXGROUP]))
 
         cred = ira_credit(s)
         pspr, avail, pri, st = s["pspr"], s["mmavail"], s["fempri"], s["state_cred"]
         for ildv in range(1, MAXLDV + 1):
-            for igp in range(1, MAXGROUP + 1):
-                for icl in range(1, MAXCLASS + 1):
-                    p = pri[igp, icl, yrs, ildv]
-                    for iregn in range(1, MNUMCR - 1):
-                        pspr[igp, ildv, icl, iregn, yrs] = 0.0
-                        if avail[igp, ildv, icl, iregn, yrs] > 0.0:
-                            v = p
-                            if ildv in (4, 7, 15, 14):
-                                v = p - cred[ildv, n] - st[iregn, yrs, 1]
-                            if ildv in (5, 6, 14):
-                                v = p - cred[ildv, n] - st[iregn, yrs, 2]
-                            if ildv == 16:
-                                v = p - st[iregn, yrs, 3]
-                            pspr[igp, ildv, icl, iregn, yrs] = v
+            p = pri[G, C, yrs, ildv][:, :, None]                      # [igp, icl, region]
+            v = np.broadcast_to(p, p.shape[:2] + (MNUMCR - 2,))
+            if ildv in (4, 7, 15, 14):
+                v = p - cred[ildv, n] - st[R9, yrs, 1][None, None, :]
+            if ildv in (5, 6, 14):
+                v = p - cred[ildv, n] - st[R9, yrs, 2][None, None, :]
+            if ildv == 16:
+                v = p - st[R9, yrs, 3][None, None, :]
+            pspr[G, ildv, C, R9, yrs] = np.where(avail[G, ildv, C, R9, yrs] > 0.0, v, f32(0.0))
         s.update(ildv=MAXLDV + 1, igp=MAXGROUP + 1, icl=MAXCLASS + 1, iregn=MNUMCR - 1)

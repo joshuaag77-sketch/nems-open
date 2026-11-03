@@ -25,7 +25,9 @@ def commercial(levers=None):
 
 @pytest.fixture(scope="module")
 def baseline():
-    return commercial()
+    # No-op levers: a start from the files like the lever runs (with no levers commercial
+    # starts from the oracle's 2027 dump where a clone has one, which differs slightly).
+    return commercial(CommercialLevers())
 
 
 def test_a_stricter_building_code_cuts_gas_and_electricity(baseline):

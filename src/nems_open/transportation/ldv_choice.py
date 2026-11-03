@@ -127,56 +127,60 @@ PLUG_IN = (4, 5, 6, 7, 15)
 
 def _talt2x_shares(s: dict, n: int, yrs: int, shift: float = 0.0) -> np.ndarray:
     """TALT2X's logit: shares [group, class, powertrain, region] (0-based, REAL*4), with
-    `shift` added to every plug-in's utility (0: EIA's model exactly)."""
-    avail, pspr, flc, vrng = s["mmavail"], s["pspr"], s["flcost"], s["vrng"]
-    br, accl, hfuel, maint, lugg = s["brcost25"], s["accl"], s["hfuel"], s["maint"], s["lugg"]
-    favl, x210, co = s["favl"], s["x210"], s["nmlmco"]
-    out = np.zeros((MAXGROUP, MAXCLASS, MAXLDV, MNUMCR - 2), dtype=f32)
-    exp, log = np.exp, np.log
-    shift = f64(shift)
-    for iregn in range(1, MNUMCR - 1):
-        for icl in range(1, MAXCLASS + 1):
-            for igp in range(1, MAXGROUP + 1):
-                c = [None] + [f64(co[k, icl, igp]) for k in range(1, 13)]
-                xshare, gcost = [], []
-                for nest in L2GROUP:
-                    esum = []
-                    for ildv in nest:
-                        e = f64(0.0)
-                        if avail[igp, ildv, icl, iregn, yrs] > 0.0:
-                            if pspr[igp, ildv, icl, iregn, yrs] < 0.0:
-                                raise ValueError("TDM TALT2X: STOP 450, negative vehicle price")
-                            mm_log = f64(logf(avail[igp, ildv, icl, iregn, yrs]))   # ALOG, single precision
-                            vr_inv = f64(f32(1.0) / vrng[igp, ildv, icl, iregn, yrs])
-                            u = (c[1] * f64(pspr[igp, ildv, icl, iregn, yrs]) + c[2] * f64(flc[igp, ildv, icl, iregn, yrs])
-                                 + c[3] * vr_inv + c[4] * f64(br[igp, ildv, icl, yrs]) + c[5] * f64(accl[igp, ildv, icl, iregn, yrs])
-                                 + c[6] * f64(hfuel[igp, ildv, icl, iregn, yrs]) + c[7] * f64(maint[igp, ildv, icl, iregn, yrs])
-                                 + c[8] * f64(lugg[igp, ildv, icl, iregn]) + c[9] * exp(c[10] * f64(favl[ildv, iregn, yrs]))
-                                 + c[11] * mm_log + f64(x210[igp, icl, ildv, iregn, n]))
-                            if shift != 0.0 and ildv in PLUG_IN:
-                                u = u + shift
-                            if u != 0.0:
-                                e = exp(u)
-                        esum.append(e)
-                    etot = f64(0.0)
-                    for e in esum:
-                        etot = etot + e
-                    if etot != 0.0:
-                        xshare.append([(e / etot) * 100.0 for e in esum])
-                        gcost.append(f64(f32(1.0) / co[1, icl, igp]) * log(etot))
-                    else:
-                        xshare.append([f64(0.0)] * len(nest))
-                        gcost.append(f64(0.0))
-                c12 = f64(co[12, icl, igp])
-                esum = [exp(c12 * g) if c12 * g != 0.0 else f64(0.0) for g in gcost]
-                etot = f64(0.0)
-                for e in esum:
-                    etot = etot + e
-                yshare = [(e / etot) * 100.0 for e in esum] if etot != 0.0 else [f64(0.0)] * 5
-                for jg, nest in enumerate(L2GROUP):
-                    for jt, ildv in enumerate(nest):
-                        xgs = f32(xshare[jg][jt] * yshare[jg] / 100.0)
-                        out[igp - 1, icl - 1, ildv - 1, iregn - 1] = xgs / f32(100.0)
+    `shift` added to every plug-in's utility (0: EIA's model exactly).
+
+    Every group, class and region at once, as (group, class, powertrain, region) arrays:
+    the utility terms are added in the Fortran's order in double precision, and each nest's
+    sum adds its powertrains in order, so every element is the scalar loop's."""
+    G, C, L = slice(1, MAXGROUP), slice(1, MAXCLASS), slice(1, MAXLDV)
+    R = slice(1, MNUMCR - 2)
+    gcl = lambda a: np.transpose(a, (0, 2, 1, 3))  # noqa: E731  [igp, ildv, icl, iregn] -> [igp, icl, ildv, iregn]
+    avail = gcl(s["mmavail"][G, L, C, R, yrs])
+    pspr = gcl(s["pspr"][G, L, C, R, yrs])
+    if ((avail > 0.0) & (pspr < 0.0)).any():
+        raise ValueError("TDM TALT2X: STOP 450, negative vehicle price")
+    co = s["nmlmco"]
+    c = [None] + [f64(np.transpose(co[k, C, G]))[:, :, None, None] for k in range(1, 13)]   # [igp, icl]
+    on = avail > 0.0
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        mm_log = f64(logf(np.where(on, avail, f32(1.0))))
+        vr_inv = f64(f32(1.0) / gcl(s["vrng"][G, L, C, R, yrs]))
+        br = f64(np.transpose(s["brcost25"][G, L, C, yrs], (0, 2, 1)))[:, :, :, None]
+        favl = f64(s["favl"][L, R, yrs])[None, None, :, :]
+        u = (c[1] * f64(pspr) + c[2] * f64(gcl(s["flcost"][G, L, C, R, yrs]))
+             + c[3] * vr_inv + c[4] * br + c[5] * f64(gcl(s["accl"][G, L, C, R, yrs]))
+             + c[6] * f64(gcl(s["hfuel"][G, L, C, R, yrs])) + c[7] * f64(gcl(s["maint"][G, L, C, R, yrs]))
+             + c[8] * f64(gcl(s["lugg"][G, L, C, R])) + c[9] * np.exp(c[10] * favl)
+             + c[11] * mm_log + f64(s["x210"][G, C, L, R, n]))
+        shift = f64(shift)
+        if shift != 0.0:
+            plug = np.zeros(MAXLDV, dtype=bool)
+            plug[[k - 1 for k in PLUG_IN]] = True
+            u = np.where(plug[None, None, :, None], u + shift, u)
+        e = np.where(on & (u != 0.0), np.exp(np.where(on, u, 0.0)), f64(0.0))
+        inv1 = f64(f32(1.0) / np.transpose(co[1, C, G]))[:, :, None]
+        xshare = np.zeros_like(e)
+        gcost = []
+        for nest in L2GROUP:
+            k = [x - 1 for x in nest]
+            etot = np.zeros(e.shape[:2] + e.shape[3:], dtype=f64)
+            for x in k:
+                etot = etot + e[:, :, x, :]
+            ok = etot != 0.0
+            xshare[:, :, k, :] = np.where(ok[:, :, None, :], (e[:, :, k, :] / np.where(ok, etot, 1.0)[:, :, None, :]) * 100.0, 0.0)
+            gcost.append(np.where(ok, inv1 * np.log(np.where(ok, etot, 1.0)), f64(0.0)))
+        c12 = c[12][:, :, :, 0]
+        esum = [np.where(c12 * g != 0.0, np.exp(c12 * g), f64(0.0)) for g in gcost]
+        etot = np.zeros_like(esum[0])
+        for x in esum:
+            etot = etot + x
+        ok = etot != 0.0
+        out = np.zeros((MAXGROUP, MAXCLASS, MAXLDV, MNUMCR - 2), dtype=f32)
+        for jg, nest in enumerate(L2GROUP):
+            yshare = np.where(ok, (esum[jg] / np.where(ok, etot, 1.0)) * 100.0, 0.0)
+            for ildv in nest:
+                xgs = f32(xshare[:, :, ildv - 1, :] * yshare / 100.0)
+                out[:, :, ildv - 1, :] = xgs / f32(100.0)
     return out
 
 

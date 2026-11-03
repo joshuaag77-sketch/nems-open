@@ -24,19 +24,16 @@ def truck_stock(s: dict) -> None:
     bsyr = v.i("bsyr_stk")
     stk, surv, smap, sc19, tff = v["trkstk_19r"], v["surv_rate"], v["survmap"], v["sc19map"], v["tffxgrt"]
     if yrs > bsyr:
-        for iregn in range(1, MNUMCR - 1):
-            for c19 in range(1, CAFE19 + 1):
-                sm = int(smap[c19])
-                for ifuel in range(1, FUEL12 + 1):
-                    for iage in range(2, AGE):
-                        stk[iyr, c19, iage, ifuel, 1:2, iregn] = stk[iyr - 1, c19, iage - 1, ifuel, 1:2, iregn] * surv[iage, iregn, sm, ifuel]
-                    stk[iyr, c19, AGE, ifuel, 1:2, iregn] = (stk[iyr - 1, c19, AGE, ifuel, 1:2, iregn] * f32(0.7)
-                                                             + stk[iyr - 1, c19, AGE - 1, ifuel, 1:2, iregn] * surv[AGE, iregn, sm, ifuel])
-                for ifuel in (1, 2):
-                    for iage in range(2, AGE + 1):
-                        t = tff[iage, int(sc19[c19])]
-                        stk[iyr, c19, iage, ifuel, 1, iregn] = stk[iyr, c19, iage, ifuel, 1, iregn] + (t * stk[iyr, c19, iage, ifuel, 2, iregn])
-                        stk[iyr, c19, iage, ifuel, 2, iregn] = stk[iyr, c19, iage, ifuel, 2, iregn] - (t * stk[iyr, c19, iage, ifuel, 2, iregn])
+        # Every region, class, fuel and age at once (each element is its own product).
+        S, y0, p0 = stk.a, iyr - 1, iyr - 2
+        NR = MNUMCR - 2
+        w = np.transpose(surv.a[:, :NR, smap.a.astype(int) - 1, :], (2, 0, 3, 1))[:, :, :, None, :]   # [c19, age, fuel, 1, regn]
+        S[y0, :, 1:AGE - 1, :, :, :NR] = S[p0, :, 0:AGE - 2, :, :, :NR] * w[:, 1:AGE - 1]
+        S[y0, :, AGE - 1, :, :, :NR] = S[p0, :, AGE - 1, :, :, :NR] * f32(0.7) + S[p0, :, AGE - 2, :, :, :NR] * w[:, AGE - 1]
+        tt = tff.a[1:AGE, sc19.a.astype(int) - 1].T[:, :, None, None]                                  # [c19, age, 1, 1]
+        a2 = S[y0, :, 1:AGE, 0:2, 1, :NR].copy()
+        S[y0, :, 1:AGE, 0:2, 0, :NR] = S[y0, :, 1:AGE, 0:2, 0, :NR] + (tt * a2)
+        S[y0, :, 1:AGE, 0:2, 1, :NR] = a2 - (tt * a2)
         v.s.update({v.key("iregn"): MNUMCR - 1, v.key("icafe19"): CAFE19 + 1, v.key("ifuel"): 3, v.key("iage"): AGE + 1})
     stk[iyr, 1:CAFE19, 1:AGE, 1:FUEL12, 1:2, 11] = fsum(stk[iyr, 1:CAFE19, 1:AGE, 1:FUEL12, 1:2, R9], axis=4)
 
