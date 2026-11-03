@@ -13,7 +13,7 @@ LEAPYR is set by RESD each year; it is rebuilt here from CurCalYr when absent.
 import numpy as np
 
 from nems_open.residential.common import BASEYR, ENDYR, LASTSTEOYR, RECSYEAR, expf, f32, powf, powi
-from nems_open.residential.helpers import eqcost, replace, rselast, svrte
+from nems_open.residential.helpers import eqcost, replace, rselast, stock_average, svrte, vintage_future
 
 COSTTRSW = 0  # PARAMETER in rtek: capital cost is the flat RSMEQP value
 NM = 9  # mNumCR - 2 census divisions
@@ -365,6 +365,14 @@ def reuadd(s: dict, EU: int) -> None:
                 if b == 1:
                     s["eqcrep"][Y, reccl, b, r] = 0.0
 
+    # Survival and housing-decay factors by vintage age (Y - y for y = RECSYEAR+1..Y)
+    ages = np.arange(Y - RECSYEAR - 1, -1, -1)
+    vint = {c: (np.array([svrte(s["rtalpha"][c], t, s["rtk"][c], s["rtlambda"][c]) for t in ages], dtype=np.float32),
+                np.array([f32(svrte(s["rtalpha"][c], t - 1, s["rtk"][c], s["rtlambda"][c])
+                              - svrte(s["rtalpha"][c], t, s["rtk"][c], s["rtlambda"][c])) for t in ages], dtype=np.float32))
+            for c in range(lo, hi + 1)}
+    hpow = {b: np.array([powi(HDR[b], t) for t in ages], dtype=np.float32) for b in range(1, NB + 1)}
+
     for r in range(1, NM + 1):
         for b in range(1, NB + 1):
             for reccl in range(lo, hi + 1):
@@ -386,30 +394,26 @@ def reuadd(s: dict, EU: int) -> None:
                         f32(f32(s["eqcret"][Y, reccl] - s["eqcret"][Y - 1, reccl]) * s["eqcese"][RECSYEAR, reccl, b, r])
                         * powi(HDR[b], Y - RECSYEAR))
 
-                alpha, k, lam = s["rtalpha"][reccl], s["rtk"][reccl], s["rtlambda"][reccl]
-                # Replacements of replacements, by vintage.
+                # Replacements of replacements by vintage, then surviving replacements: running
+                # sums over vintages in year order (float32 term arrays, sequential accumulate).
+                # The first sum runs through Y itself, whose term reads the running total.
                 if Y > RECSYEAR + 1:
-                    for y in range(RECSYEAR + 1, Y + 1):
-                        temp = Y - y
-                        esr = f32(svrte(alpha, temp - 1, k, lam) - svrte(alpha, temp, k, lam))
-                        h = powi(HDR[b], temp)
-                        a1 = f32(f32(s["eqcrp90"][y, reccl, b, r] * esr) * h)
-                        a2 = f32(f32(s["eqcrp90rp"][y, reccl, b, r] * esr) * h)
-                        s["eqcrp90rp"][Y, reccl, b, r] = f32(s["eqcrp90rp"][Y, reccl, b, r] + f32(a1 + a2))
-
-                if Y > RECSYEAR + 1:
-                    for y in range(RECSYEAR + 1, Y):
-                        temp = Y - y
-                        esr = svrte(alpha, temp, k, lam)
-                        h = powi(HDR[b], temp)
-                        a1 = f32(f32(s["eqcrp90"][y, reccl, b, r] * esr) * h)
-                        a2 = f32(f32(s["eqcrp90rp"][y, reccl, b, r] * esr) * h)
-                        s["eqcsr90"][Y, reccl, b, r] = f32(s["eqcsr90"][Y, reccl, b, r] + f32(a1 + a2))
-                        hsr = h
-                        SA = f32(SA + f32(s["eqcadd"][y, reccl, b, r] * hsr))
-                        s["eqcsur"][Y, reccl, b, r] = f32(
-                            s["eqcsur"][Y, reccl, b, r]
-                            + f32(f32(s["eqcadd"][y, reccl, b, r] + s["eqcrep"][y, reccl, b, r]) * f32(hsr * esr)))
+                    sv0, sv1 = vint[reccl]
+                    h = hpow[b]
+                    a = slice(RECSYEAR + 1, Y - 1)
+                    rp90, rp90rp = s["eqcrp90"][a, reccl, b, r], s["eqcrp90rp"][a, reccl, b, r]
+                    run = _running(s["eqcrp90rp"][Y, reccl, b, r],
+                                   (rp90 * sv1[:-1]) * h[:-1] + (rp90rp * sv1[:-1]) * h[:-1])
+                    a1 = f32(f32(s["eqcrp90"][Y, reccl, b, r] * sv1[-1]) * h[-1])
+                    a2 = f32(f32(run * sv1[-1]) * h[-1])
+                    s["eqcrp90rp"][Y, reccl, b, r] = f32(run + f32(a1 + a2))
+                    h0, e0 = h[:-1], sv0[:-1]
+                    s["eqcsr90"][Y, reccl, b, r] = _running(
+                        s["eqcsr90"][Y, reccl, b, r], (rp90 * e0) * h0 + (rp90rp * e0) * h0)
+                    add = s["eqcadd"][RECSYEAR + 1:Y - 1, reccl, b, r]
+                    SA = _running(SA, add * h0)
+                    s["eqcsur"][Y, reccl, b, r] = _running(
+                        s["eqcsur"][Y, reccl, b, r], (add + s["eqcrep"][RECSYEAR + 1:Y - 1, reccl, b, r]) * (h0 * e0))
 
                 # REPLACE spreads single-family replacements across classes; multifamily and
                 # mobile homes replace with like.
@@ -444,18 +448,7 @@ def reuadd(s: dict, EU: int) -> None:
                 + s["switchto"][Y, reccl, b, r])
 
     # Vintages of this year's equipment for later years' average-stock accounting.
-    for b in range(1, NB + 1):
-        for r in range(1, NM + 1):
-            for reccl in range(lo, hi + 1):
-                alpha, k, lam = s["rtalpha"][reccl], s["rtk"][reccl], s["rtlambda"][reccl]
-                for y in range(Y, ENDYR + 1):
-                    temp = y - Y
-                    hsr = powi(HDR[b], temp)
-                    esr = svrte(alpha, temp, k, lam)
-                    s["eqr90fut"][Y, y, reccl, b, r] = f32(f32(s["eqcrp90"][Y, reccl, b, r] * esr) * hsr)
-                    s["eqr90rpfut"][Y, y, reccl, b, r] = f32(f32(s["eqcrp90rp"][Y, reccl, b, r] * esr) * hsr)
-                    s["eqrepfut"][Y, y, reccl, b, r] = f32(f32(s["eqcrep"][Y, reccl, b, r] * esr) * hsr)
-                    s["eqaddfut"][Y, y, reccl, b, r] = f32(f32(s["eqcadd"][Y, reccl, b, r] * esr) * hsr)
+    vintage_future(s, Y, lo, hi)
 
     # Purchases by equipment type, for investment analysis.
     for b in range(1, NB + 1):
@@ -492,6 +485,11 @@ def reuadd(s: dict, EU: int) -> None:
         yy = RECSYEAR if first else Y
         if s[tot][yy, r] > s["rsgascust"][yy, r]:
             s["rsgascust"][yy, r] = s[tot][yy, r]
+
+
+def _running(start, terms):
+    """start + terms[0] + terms[1] + ... in float32, in order (a Fortran running sum)."""
+    return np.add.accumulate(np.concatenate([[np.float32(start)], terms.astype(np.float32)]))[-1]
 
 
 def _wsum(u, cwl, load, q):
@@ -560,19 +558,8 @@ def rwhcon(s: dict) -> None:
                 if Y == RECSYEAR + 1:
                     s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
                 else:
-                    temp = f32(0.0)
-                    for y in range(RECSYEAR + 1, Y):
-                        temp = f32(temp + s["eqr90fut"][y, Y, reccl, b, d] + s["eqaddfut"][y, Y, reccl, b, d]
-                                   + s["eqrepfut"][y, Y, reccl, b, d] + s["eqr90rpfut"][y, Y, reccl, b, d])
-                    if temp <= 0.0:
-                        s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
-                    else:
-                        s["eqcauec"][Y, reccl, b, d] = 0.0
-                        for y in range(RECSYEAR + 1, Y):
-                            s["eqcauec"][Y, reccl, b, d] = f32(s["eqcauec"][Y, reccl, b, d] + f32(
-                                f32(s["eqr90fut"][y, Y, reccl, b, d] * s["eqcruec"][y, reccl, b, d])
-                                + f32(f32(f32(s["eqaddfut"][y, Y, reccl, b, d] + s["eqrepfut"][y, Y, reccl, b, d])
-                                          + s["eqr90rpfut"][y, Y, reccl, b, d]) * s["eqcnuec"][y, reccl, b, d])) / temp)
+                    _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR + 1, "eqcruec", "eqcnuec")
+                    s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d] if avg is None else avg
 
     # Average efficiency of the stock.
     for b in range(1, NB + 1):
@@ -581,19 +568,8 @@ def rwhcon(s: dict) -> None:
                 if Y == RECSYEAR + 1:
                     s["wteqceffa"][RECSYEAR + 1, reccl, b, d] = s["wteqceffn"][RECSYEAR + 1, reccl, b, d]
                 else:
-                    temp = f32(0.0)
-                    for y in range(RECSYEAR + 1, Y):
-                        temp = f32(temp + s["eqr90fut"][y, Y, reccl, b, d] + s["eqaddfut"][y, Y, reccl, b, d]
-                                   + s["eqrepfut"][y, Y, reccl, b, d] + s["eqr90rpfut"][y, Y, reccl, b, d])
-                    if temp > 0.0:
-                        s["wteqceffa"][Y, reccl, b, d] = 0.0
-                        for y in range(RECSYEAR + 1, Y):
-                            s["wteqceffa"][Y, reccl, b, d] = f32(s["wteqceffa"][Y, reccl, b, d] + f32(
-                                f32(s["eqr90fut"][y, Y, reccl, b, d] * s["wteqceffr"][y, reccl, b, d])
-                                + f32(f32(f32(s["eqaddfut"][y, Y, reccl, b, d] + s["eqrepfut"][y, Y, reccl, b, d])
-                                          + s["eqr90rpfut"][y, Y, reccl, b, d]) * s["wteqceffn"][y, reccl, b, d])) / temp)
-                    else:
-                        s["wteqceffa"][Y, reccl, b, d] = s["wteqceffn"][Y, reccl, b, d]
+                    _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR + 1, "wteqceffr", "wteqceffn")
+                    s["wteqceffa"][Y, reccl, b, d] = s["wteqceffn"][Y, reccl, b, d] if avg is None else avg
 
     # Hot water quantity, used by the dishwasher and clothes washer routines.
     for d in range(1, NM + 1):
@@ -730,19 +706,8 @@ def rstovcon(s: dict) -> None:
                     s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
                 else:
                     # Unlike water heating, the vintage sums start at RECSYear (kept).
-                    temp = f32(0.0)
-                    for y in range(RECSYEAR, Y):
-                        temp = f32(temp + s["eqr90fut"][y, Y, reccl, b, d] + s["eqaddfut"][y, Y, reccl, b, d]
-                                   + s["eqrepfut"][y, Y, reccl, b, d] + s["eqr90rpfut"][y, Y, reccl, b, d])
-                    if temp <= 0.0:
-                        s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d]
-                    else:
-                        s["eqcauec"][Y, reccl, b, d] = 0.0
-                        for y in range(RECSYEAR, Y):
-                            s["eqcauec"][Y, reccl, b, d] = f32(s["eqcauec"][Y, reccl, b, d] + f32(
-                                f32(s["eqr90fut"][y, Y, reccl, b, d] * s["eqcruec"][y, reccl, b, d])
-                                + f32(f32(f32(s["eqaddfut"][y, Y, reccl, b, d] + s["eqrepfut"][y, Y, reccl, b, d])
-                                          + s["eqr90rpfut"][y, Y, reccl, b, d]) * s["eqcnuec"][y, reccl, b, d])) / temp)
+                    _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR, "eqcruec", "eqcnuec")
+                    s["eqcauec"][Y, reccl, b, d] = s["eqcnuec"][Y, reccl, b, d] if avg is None else avg
 
     for b in range(1, NB + 1):
         for d in range(1, NM + 1):
@@ -750,19 +715,8 @@ def rstovcon(s: dict) -> None:
                 if Y == RECSYEAR + 1:
                     s["wteqceffa"][RECSYEAR + 1, reccl, b, d] = s["wteqceffn"][RECSYEAR + 1, reccl, b, d]
                 else:
-                    temp = f32(0.0)
-                    for y in range(RECSYEAR, Y):
-                        temp = f32(temp + s["eqr90fut"][y, Y, reccl, b, d] + s["eqaddfut"][y, Y, reccl, b, d]
-                                   + s["eqrepfut"][y, Y, reccl, b, d] + s["eqr90rpfut"][y, Y, reccl, b, d])
-                    if temp > 0.0:
-                        s["wteqceffa"][Y, reccl, b, d] = 0.0
-                        for y in range(RECSYEAR, Y):
-                            s["wteqceffa"][Y, reccl, b, d] = f32(s["wteqceffa"][Y, reccl, b, d] + f32(
-                                f32(s["eqr90fut"][y, Y, reccl, b, d] * s["wteqceffr"][y, reccl, b, d])
-                                + f32(f32(f32(s["eqaddfut"][y, Y, reccl, b, d] + s["eqrepfut"][y, Y, reccl, b, d])
-                                          + s["eqr90rpfut"][y, Y, reccl, b, d]) * s["wteqceffn"][y, reccl, b, d])) / temp)
-                    else:
-                        s["wteqceffa"][Y, reccl, b, d] = s["wteqceffn"][Y, reccl, b, d]
+                    _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR, "wteqceffr", "wteqceffn")
+                    s["wteqceffa"][Y, reccl, b, d] = s["wteqceffn"][Y, reccl, b, d] if avg is None else avg
 
     s["ckcon"].a[Y1 - 1, 0:nfl, 0:NM] = 0.0
     for name in ("ckconwt", "driver", "ckconin"):

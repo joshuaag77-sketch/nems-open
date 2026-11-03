@@ -311,3 +311,29 @@ def consumption(inp: dict, y: int) -> dict:
             out["solarpvcontrib"][y, r] = out["solarpvcontrib"][y, r] + trills[y, r, b, 1]
         out["cmfinalendusecon"][b, y] = tot / f32(1000.0)
     return out
+
+
+def spray_valve_standard(inp: dict, y: int) -> dict:
+    """The national savings from the 2019 pre-rinse spray valve standard (comm.f 8532 to 8575).
+
+    EIA works it out at the top of the first iteration of each year from 2019 on, when NRGBILL is on,
+    and the second iteration reuses it. The shipment savings restart from 1.913 trillion Btu every
+    year, so the standard's savings are that times the growth in food service, health and lodging
+    floorspace since last year (and exactly 1.913 in 2019).
+    """
+    f32 = np.float32
+    surv, new = inp["survfloortotal"], inp["cmnewfloorspace"]
+    prev = cur = f32(0.0)
+    for r in range(1, NUM_DIV + 1):
+        for b in range(4, 7):
+            prev = f32(prev + f32(new[r, b, y - 1] + surv[r, b, y - 1]))
+    for r in range(1, NUM_DIV + 1):
+        for b in range(4, 7):
+            cur = f32(cur + f32(new[r, b, y] + surv[r, b, y]))
+    shipments = f32(1.913)
+    standard = shipments
+    if y > 30:
+        shipments = f32(shipments * f32(cur / prev))
+        standard = f32(f32(0.0) + shipments)
+    return {"foodsvchlthldgflrprev": prev, "foodsvchlthldgfloortot": cur, "prsvshpsavings": shipments,
+            "prsvstdsavings": standard}

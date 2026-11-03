@@ -34,7 +34,13 @@ def _region(d, r):
 
 
 def before_after(tag, y, region=None):
+    """Skips the test if that year, or that region within it, was not dumped (the
+    oracle keeps some dumps to fewer years and regions to save disk)."""
+    if not (available(f"{tag}_in", y) and available(f"{tag}_out", y)):
+        pytest.skip(f"no {tag} dump for {1989 + y}")
     before = _region(oracle_state.load(f"{tag}_in", y, "emm"), region)
+    if region is not None and not before:
+        pytest.skip(f"no {tag} dump for region {region} in {1989 + y}")
     after = _region(oracle_state.load(f"{tag}_out", y, "emm"), region)
     state = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in before.items()}
     return state, after
