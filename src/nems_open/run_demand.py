@@ -36,6 +36,7 @@ from nems_open.snapshot import Snapshot
 
 BASEYR = 1990
 MNUMCR = 11
+BASEYR_COMMERCIAL = 2019  # the first year commercial computes
 MSEDYR = 34  # last year of SEDS history (2023)
 
 # Restart-file blocks the demand modules read but do not write: end-use prices
@@ -143,14 +144,32 @@ class CommercialSector:
     name = "commercial"
     suffix = "cm"
 
+    def __init__(self, from_files: bool = False, levers=None):
+        self.from_files = from_files
+        self.levers = levers            # commercial.levers.CommercialLevers; implies from_files
+
     @staticmethod
     def available(year: int) -> bool:
-        from nems_open import oracle_state
-        return oracle_state.available("sd_in", year - BASEYR + 1)
+        """Always: with no oracle dump for the year, commercial starts from the input files."""
+        return True
 
-    def start(self, year: int):
+    def start(self, year: int, inputs=None):
+        """The state at the top of `year`. From the oracle's dump when there is one (and no lever or
+        from_files asks otherwise); else from the input files, run forward from 2019 with this runner's
+        inputs, which takes about 4 s a year. A file start has not run `year` yet, so the runner
+        gives it both iterations."""
+        from nems_open import oracle_state
         from nems_open.commercial.comm import Commercial
-        return Commercial.start_from_dump(year - BASEYR + 1)
+        y = year - BASEYR + 1
+        if not (self.from_files or self.levers) and oracle_state.available("sd_in", y):
+            return Commercial.start_from_dump(y)
+        inputs = inputs or Inputs()
+        c = Commercial.start_from_files(inputs, self.levers)
+        for yy in range(BASEYR_COMMERCIAL, year):
+            for itr in (1, 2):
+                self.iteration(c, yy, itr, inputs)
+        c.needs_first_iteration = True
+        return c
 
     def iteration(self, c, year: int, itr: int, inputs: Inputs) -> None:
         inputs.apply(c.s)
@@ -191,7 +210,7 @@ class IndustrialSector:
     def available(cls, year: int) -> bool:
         return cls.oracle_out() is not None
 
-    def start(self, year: int) -> dict:
+    def start(self, year: int, inputs=None) -> dict:
         d = self.oracle_out()
         if d is None:
             raise FileNotFoundError("industrial oracle output not found (oracle/run_ind/out/q*in.bin)")
@@ -362,7 +381,8 @@ class DemandRunner:
     """
 
     def __init__(self, year: int, inputs: Inputs | None = None,
-                 sectors=("residential", "commercial"), parallel: bool = False):
+                 sectors=("residential", "commercial"), parallel: bool = False,
+                 commercial_from_files: bool = False, commercial_levers=None):
         self.inputs = inputs or Inputs()
         self.year = year
         self.first_iteration = 2
@@ -372,15 +392,18 @@ class DemandRunner:
             if SECTORS[name] is None:
                 raise NotImplementedError(f"{name} demand is not ported yet")
         # parallel: every sector but the last runs in a worker process (started first, so
-        # it loads while this process starts the last one). Results are the same.
+        # it loads while this process starts the last one). Results are the same. A commercial
+        # sector with options (from files, levers) stays in this process: a worker builds its own default.
+        options = commercial_from_files or commercial_levers is not None
         workers = {name: InProcess(name, year, self.inputs.snapshot.path)
-                   for name in names[:-1]} if parallel else {}
+                   for name in names[:-1] if not (name == "commercial" and options)} if parallel else {}
         for name in names:
             if name in workers:
                 self.sectors.append((workers[name], None))
             else:
-                sector = SECTORS[name]()
-                self.sectors.append((sector, sector.start(year)))
+                sector = (SECTORS[name](commercial_from_files, commercial_levers) if name == "commercial"
+                          else SECTORS[name]())
+                self.sectors.append((sector, sector.start(year, self.inputs)))
         self.q = eia_quantities(self.inputs.snapshot)
 
     def close(self) -> None:
@@ -392,9 +415,15 @@ class DemandRunner:
     def run_year(self) -> int:
         """Run the current year; returns it. Results are in `self.q`."""
         year, y = self.year, self.year - BASEYR + 1
-        for itr in range(self.first_iteration, 3):
+        for itr in range(1, 3):
             for sector, state in self.sectors:
+                # a module started from the files has not run this year at all: it takes iteration 1 too
+                if itr < self.first_iteration and not getattr(state, "needs_first_iteration", False):
+                    continue
                 sector.iteration(state, year, itr, self.inputs)
+        for _, state in self.sectors:
+            if hasattr(state, "needs_first_iteration"):
+                state.needs_first_iteration = False
         calshr = lambda name: self.inputs.snapshot[f"CALSHR/{name}"]
         for sector, state in self.sectors:
             for k, v in sector.quantities(state).items():

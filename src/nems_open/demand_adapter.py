@@ -79,6 +79,7 @@ class Policy:
     ev_share: object = None             # plug-in share of new light-duty sales, 0-1; None = EIA's
     building_efficiency: object = 1.0   # multiplier on residential and commercial fuel use
     start_year: int = 2027
+    commercial: object = None           # commercial.levers.CommercialLevers: real-input levers (needs commercial ported)
 
     def carbon(self) -> np.ndarray:
         return by_year(self.carbon_price, self.start_year, 0.0)
@@ -144,12 +145,14 @@ def usable_ported(ported: tuple[str, ...], start_year: int) -> tuple[str, ...]:
 class PortedSectors:
     """EIA's ported modules through the demand runner (branch demand-runner)."""
 
-    def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, parallel: bool = True):
+    def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, parallel: bool = True,
+                 commercial_levers=None):
         from nems_open.run_demand import EQUIVALENCED, SECTOR_QUANTITIES, DemandRunner, sum_quantities
         self._equivalenced = EQUIVALENCED
         self._names = SECTOR_QUANTITIES
         self._sum = sum_quantities
-        self.runner = DemandRunner(start_year, sectors=sectors, parallel=parallel and len(sectors) > 1)
+        self.runner = DemandRunner(start_year, sectors=sectors, parallel=parallel and len(sectors) > 1,
+                                   commercial_levers=commercial_levers)
         self.inputs = self.runner.inputs
         self.base = base
         self.suffixes = [SECTORS[s] for s in sectors]
@@ -203,7 +206,9 @@ class DemandAdapter:
         self.base = base
         self.policy = policy
         ported = usable_ported(ported, start_year)
-        self.ported = PortedSectors(start_year, ported, base) if ported else None
+        if policy.commercial is not None and "commercial" not in ported:
+            raise ValueError("commercial levers need the ported commercial module (ported=(..., 'commercial'))")
+        self.ported = PortedSectors(start_year, ported, base, commercial_levers=policy.commercial) if ported else None
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}
         self.efficiency = policy.efficiency()
