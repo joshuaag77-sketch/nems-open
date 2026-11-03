@@ -30,20 +30,29 @@ class V:
     def __init__(self, s: dict, angtdm: bool = True):
         self.s = s
         self.angtdm = angtdm
+        self._keys = {}     # name -> state key, once the key is in the state
 
     def key(self, name: str) -> str:
-        name = name.lower()
-        if "f_" + name in self.s:
-            return "f_" + name
-        if self.angtdm and "angtdm__" + name in self.s:
-            return "angtdm__" + name
-        return name
+        k = self._keys.get(name)
+        if k is not None:
+            return k
+        low = name.lower()
+        if "f_" + low in self.s:
+            k = "f_" + low
+        elif self.angtdm and "angtdm__" + low in self.s:
+            k = "angtdm__" + low
+        else:
+            k = low
+        if k in self.s:     # a name not in the state yet may resolve differently later
+            self._keys[name] = k
+        return k
 
     def __getitem__(self, name):
         k = self.key(name)
-        if k not in self.s and k in PARAMS:
+        s = self.s
+        if k not in s and k in PARAMS:
             return PARAMS[k]
-        return self.s[k]
+        return s[k]
 
     def __setitem__(self, name, value):
         self.s[self.key(name)] = value

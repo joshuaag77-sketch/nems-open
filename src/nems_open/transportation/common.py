@@ -20,18 +20,19 @@ STOCKYR = 2024   # last year of census-division stock history
 def fsum(a, axis=None):
     """Fortran SUM on REAL*4: one float32 accumulator, added in index order.
 
-    numpy's float32 sum is pairwise, which rounds differently. gfortran adds
-    element by element, so this does too.
+    numpy's float32 sum is pairwise, which rounds differently. gfortran adds element by
+    element; np.add.accumulate does too. The Fortran accumulator starts at +0, so its
+    sum is never -0.0: adding +0 to the last partial sum gives that.
     """
     a = np.asarray(a, dtype=f32)
     if axis is None:
         a = a.reshape(-1, order="F")
         axis = 0
-    a = np.moveaxis(a, axis, 0)
-    acc = np.zeros(a.shape[1:], dtype=f32)
-    for k in range(a.shape[0]):
-        acc = acc + a[k]
-    return acc if acc.ndim else f32(acc)
+    if a.shape[axis] == 0:
+        acc = np.zeros(a.shape[:axis] + a.shape[axis + 1:], dtype=f32)
+        return acc if acc.ndim else f32(acc)
+    last = np.take(np.add.accumulate(a, axis=axis, dtype=f32), -1, axis=axis) + f32(0.0)
+    return last if last.ndim else f32(last)
 
 
 def _single(r):

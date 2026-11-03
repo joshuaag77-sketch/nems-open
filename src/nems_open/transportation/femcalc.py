@@ -60,35 +60,151 @@ def funcmax(s, oldmksh, oldpmax):
     return max(ZERO, tpmax)
 
 
+_SUP_NOTES = {}
+
+
+def _sup_notes(s):
+    """{itech: [(inote, [superseded techs])]}: the supersede notes by technology (inputs, read once)."""
+    sup, cnt, num = s["supersedes"], s["tech_cnt"], int(s["num_sup"])
+    key = (id(sup), num)
+    hit = _SUP_NOTES.get(key)
+    if hit is None or hit[0] is not sup:
+        notes = {}
+        for inote in range(1, num + 1):
+            notes.setdefault(int(sup[1, inote]), []).append(
+                (inote, [int(sup[i, inote]) for i in range(2, int(cnt[inote]) + 1)]))
+        hit = _SUP_NOTES[key] = (sup, notes)
+    return hit[1]
+
+
 def note_super(s, actual, mmax):
-    """NOTE_SUPER: a technology and those it supersedes share one market ceiling."""
+    """NOTE_SUPER: a technology and those it supersedes share one market ceiling.
+    Only the notes about ITECH do anything, so only those are visited."""
     itech = int(s["itech"])
-    sup, cnt, rnd = s["supersedes"], s["tech_cnt"], s["roundoff_error"]
-    for inote in range(1, int(s["num_sup"]) + 1):
-        s["inote"] = inote
-        if int(sup[1, inote]) == itech:
-            tot = actual[itech]
-            mx = mmax[itech]
-            for i in range(2, int(cnt[inote]) + 1):
-                mx = max(mx, mmax[int(sup[i, inote])])
-            for i in range(2, int(cnt[inote]) + 1):
-                s["i"] = i
-                k = int(sup[i, inote])
-                tot = tot + actual[k]
-                if tot > mx:
-                    actual[k] = actual[k] - (tot - mx)
-                    tot = mx
-                    if actual[k] < ZERO - rnd:
-                        s["tot_mkt"], s["max_share"] = tot, mx
-                        s["return_stat"] = (-100 * inote) - i
-                        return
-                    elif actual[k] < 0.0:
-                        actual[k] = ZERO
-            s["i"] = int(cnt[inote]) + 1
-            s["tot_mkt"], s["max_share"] = tot, mx
+    rnd = s["roundoff_error"]
+    act, mm = actual._p, mmax._p
+    for inote, others in _sup_notes(s).get(itech, ()):
+        tot = act[itech]
+        mx = mm[itech]
+        for k in others:
+            mx = max(mx, mm[k])
+        for i, k in enumerate(others, start=2):
+            tot = tot + act[k]
+            if tot > mx:
+                act[k] = act[k] - (tot - mx)
+                tot = mx
+                if act[k] < ZERO - rnd:
+                    s["inote"], s["i"] = inote, i
+                    s["tot_mkt"], s["max_share"] = tot, mx
+                    s["return_stat"] = (-100 * inote) - i
+                    return
+                elif act[k] < 0.0:
+                    act[k] = ZERO
+        s["i"] = len(others) + 2
+        s["tot_mkt"], s["max_share"] = tot, mx
     s["inote"] = int(s["num_sup"]) + 1
     s["return_stat"] = 0
 
+
+
+def _funcmax_v(oldmksh, oldpmax):
+    """FUNCMAX for a vector of technologies: (ceiling, the I each call leaves, 0 where it sets none)."""
+    one = oldpmax == 1.0
+    tpmax = np.where(ONE < oldpmax, ONE, oldpmax)
+    res = np.where(tpmax > ZERO, tpmax, ZERO)
+    ival = np.full(oldpmax.shape, 31)
+    for i in range(30, 0, -1):          # descending, so the first I that fits wins
+        hit = (oldmksh <= RETD[i - 1]) & (tpmax < RETD[i])
+        res = np.where(hit, RETD[i], res)
+        ival = np.where(hit, i, ival)
+    return np.where(one, ONE, res).astype(f32), np.where(one, 0, ival)
+
+
+def _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payback, discount, pslope, f1,
+               inc_gr, invgr):
+    """FEMCALC's first technology loop (cost-effectiveness and logit shares), all technologies at
+    once. Each technology's values depend only on its own inputs, so the float32 steps are the
+    scalar loop's, element by element; the module variables it leaves (ITECH, I, YEARS_MKTD,
+    LEARN_COST_MULTIPLIER) take the values the last technology leaves."""
+    yrs, curitr, fem_pass = int(s["yrs"]), int(s["curitr"]), int(s["fem_pass"])
+    T = slice(1, numtech)
+    op, pen = s["old_pmax"], s["mkt_pen"]
+    ap = s["tech_applic"][T, ivtyp, ildv] != 0
+    if curitr == 1 and fem_pass == 1:
+        op[icl, igp, T, ildv, 1] = np.where(ap, op[icl, igp, T, ildv, 2], op[icl, igp, T, ildv, 1])
+    elif fem_pass == 1:
+        op[icl, igp, T, ildv, 2] = np.where(ap, op[icl, igp, T, ildv, 1], op[icl, igp, T, ildv, 2])
+    fr = s["frstyear"][T, igp]
+    on = ap & (yrs >= fr)
+    if not on.any():
+        s["itech"] = numtech + 1
+        return
+    techs = np.nonzero(on)[0]           # 0-based: technology techs + 1
+    dfe = s["del_fe"][T, ivtyp][on]
+    fuelsave = s["fuelsave"]
+    if cfe > 0.0:
+        savings = cfe_inv - (ONE / ((ONE + dfe) * cfe))
+        fs = fuelsave.a[techs]
+        price_ex, vmt = s["price_ex"], (s["pvmt"] if igp <= CARGRP else s["lvmt"])
+        for i in range(1, payback + 1):
+            cur_vmt = vmt[i, 2024 - 1989, MNUMCR, 1]
+            price_ex[i] = pslope * (f32(i) + f32(2.0)) + f1
+            fs = fs + ((cur_vmt * savings) * price_ex[i]) * powi(ONE + discount, -i)
+        fuelsave.a[techs] = fs
+        s["i"] = payback + 1
+    fs = fuelsave.a[techs]
+    dwa, dww, dcw = s["del_wgtabs"][T, ivtyp][on], s["del_wgtwgt"][T, ivtyp][on], s["del_costwgt"][T, ivtyp][on]
+    tc = s["del_costabs"][T, ivtyp][on]
+    tc = tc + ((dcw * dwa) * np.copysign(ONE, dwa))
+    tc = tc + (((dcw * dww) * np.copysign(ONE, dww)) * s["weight"][igp, icl, CURRENT, ildv])
+    ly = np.where(fr[on] < 2011, f32(2011), fr[on].astype(f32))
+    ym = ((f32(yrs) - ly) + ONE).astype(np.int64)
+    learn = s["coeff_learn"]
+    g = np.clip(ym, 1, learn.a.shape[0])
+    l2 = np.where(ym >= 1, ONE + (s["coeff_lrn1"][T, ivtyp][on] * learn.a[g - 1, 0]), ONE)
+    l3 = np.where(ym >= 1, ONE + (s["coeff_lrn2"][T, ivtyp][on] * learn.a[g - 1, 1]), ONE)
+    tc = np.where(tc > 0.0, ((tc * l2) * l3), tc).astype(f32)
+    ge = np.nonzero(tc >= 0.0)[0]
+    if ge.size:
+        last = ge[-1]
+        lcm = s["learn_cost_multiplier"]
+        lcm.a[...] = 1.0
+        s["years_mktd"] = int(ym[last])
+        if ym[last] >= 1:
+            lcm[2], lcm[3] = l2[last], l3[last]
+    s["techcost"].a[techs] = tc
+    s["tec_ornl"].a[icl - 1, igp - 1, techs, ildv - 1] = tc
+    if cfe != 0.0:
+        a = (s["valueperf"][icl, igp] * perf_coeff) * inc_gr
+        vp = (((a * (ONE + dfe)) * invgr) * s["del_hp"][T, ivtyp][on]).astype(f32)
+    else:
+        vp = np.zeros(techs.size, dtype=f32)
+    s["val_perf"].a[techs] = vp
+    pos = tc > 0.0
+    m80, p80 = f32(-80.0), f32(80.0)
+    cf = ((fs - tc) + ((s["regcost"][igp] * cfe) * dfe)) / tc
+    cp = np.where(vp != 0.0, (vp - tc) / tc, m80)
+    cf = np.where(pos, np.where(cf > m80, cf, m80), np.where(fs > 0.0, p80, m80)).astype(f32)
+    cp = np.where(pos, np.where(cp > m80, cp, m80), np.where(vp > 0.0, p80, m80)).astype(f32)
+    s["costef_fuel"].a[techs], s["costef_perf"].a[techs] = cf, cp
+    op2 = op.a[icl - 1, igp - 1, techs, ildv - 1, 1]
+    prev = pen.a[igp - 1, icl - 1, techs, PREV, ildv - 1]
+    if fem_pass == 1 or (fem_pass == 2 and int(s["pass2"]) == 1):
+        op2, ival = _funcmax_v(prev, op2)
+        op.a[icl - 1, igp - 1, techs, ildv - 1, 1] = op2
+        if ival[-1]:
+            s["i"] = int(ival[-1])
+    kf = np.where(cf < 0.0, f32(-4.0), f32(-2.0))
+    mf = (ONE / (ONE + expf(kf * cf))).astype(f32)
+    kp = np.where(cp < 0.0, f32(-4.0), f32(-2.0)) * cp
+    mp = (ONE / (ONE + expf(np.where(f32(75.0) < kp, f32(75.0), kp)))).astype(f32)
+    s["mkt_fuel"].a[techs], s["mkt_perf"].a[techs] = mf, mp
+    am = op2 * np.where(mp > mf, mp, mf)
+    am = np.where(am > prev, am, prev)
+    mm = s["mmax"].a[techs]
+    r = np.where(mm < am, mm, am)
+    s["actual_mkt"].a[techs] = np.where(ONE < r, ONE, r)
+    s["itech"] = numtech + 1
 
 def calibnhtsa(s):
     yrs, epa = int(s["yrs"]), int(s["epalyr"])
@@ -151,23 +267,16 @@ def femcalc(s: dict) -> None:
 
     # Read-only inputs, fetched once.
     applic, frst = s["tech_applic"], s["frstyear"]
-    del_fe, del_hp, del_costabs, del_costwgt = s["del_fe"], s["del_hp"], s["del_costabs"], s["del_costwgt"]
+    del_fe, del_hp = s["del_fe"], s["del_hp"]
     del_wgtabs, del_wgtwgt = s["del_wgtabs"], s["del_wgtwgt"]
-    lrn1, lrn2, coeff_learn = s["coeff_lrn1"], s["coeff_lrn2"], s["coeff_learn"]
-    usedcap, perfcap, perffact, valueperf = s["usedcap"], s["perfcap"], s["perffact"], s["valueperf"]
-    old_pmax, tec_ornl = s["old_pmax"], s["tec_ornl"]
+    usedcap, perfcap = s["usedcap"], s["perfcap"]
     inc_gr, invgr, inc90 = s["inc_gr_regn"][11, yrs], s["pmgtr90_invgr"][11, yrs], s["inc90_d_np"]
-    regcost, cafepass, grpmap = s["regcost"], s["cafepass"], s["grpmap"]
-    vmt_idx = 2024 - 1989  # VMTYR
-    pvmt, lvmt = s["pvmt"], s["lvmt"]
+    cafepass, grpmap = s["cafepass"], s["grpmap"]
     mmax, mkt_perf, mkt_fuel = s["mmax"], s["mkt_perf"], s["mkt_fuel"]
     actual, fuelsave, techcost = s["actual_mkt"], s["fuelsave"], s["techcost"]
-    val_perf, cef_fuel, cef_perf = s["val_perf"], s["costef_fuel"], s["costef_perf"]
-    price_ex, lcm = s["price_ex"], s["learn_cost_multiplier"]
     rnd = s["roundoff_error"]
     num_man, num_req, num_syn = int(s["num_man"]), int(s["num_req"]), int(s["num_syn"])
     syn_loss = s.setdefault("_femcalc_synergy_loss", np.zeros(numtech + 1, dtype=f32))
-    learnyear = {}
 
     for ildv in range(1, MAXLDV + 1):
         s["ildv"] = ildv
@@ -216,72 +325,8 @@ def femcalc(s: dict) -> None:
                     cfe = fe[igp, icl, PREV, ildv]
                     cfe_inv = ONE / cfe if cfe > 0.0 else ZERO
 
-                    for itech in range(1, numtech + 1):
-                        s["itech"] = itech
-                        if not applic[itech, ivtyp, ildv]:
-                            continue
-                        if curitr == 1 and fem_pass == 1:
-                            old_pmax[icl, igp, itech, ildv, 1] = old_pmax[icl, igp, itech, ildv, 2]
-                        elif fem_pass == 1:
-                            old_pmax[icl, igp, itech, ildv, 2] = old_pmax[icl, igp, itech, ildv, 1]
-                        if yrs < frst[itech, igp]:
-                            continue
-                        dfe = del_fe[itech, ivtyp]
-                        if cfe > 0.0:
-                            savings = cfe_inv - (ONE / ((ONE + dfe) * cfe))
-                            fs = fuelsave[itech]
-                            for i in range(1, payback + 1):
-                                cur_vmt = ZERO
-                                if igp <= CARGRP:
-                                    cur_vmt = pvmt[i, vmt_idx, MNUMCR, 1]
-                                if igp >= LTKGRP:
-                                    cur_vmt = lvmt[i, vmt_idx, MNUMCR, 1]
-                                price_ex[i] = pslope * (f32(i) + f32(2.0)) + f1
-                                fs = fs + cur_vmt * savings * price_ex[i] * powi(ONE + discount, -i)
-                            fuelsave[itech] = fs
-                            s["i"] = payback + 1
-                        tc = del_costabs[itech, ivtyp]
-                        tc = tc + (del_costwgt[itech, ivtyp] * del_wgtabs[itech, ivtyp] * f32(math.copysign(1.0, del_wgtabs[itech, ivtyp])))
-                        tc = tc + (del_costwgt[itech, ivtyp] * del_wgtwgt[itech, ivtyp]
-                                   * f32(math.copysign(1.0, del_wgtwgt[itech, ivtyp])) * wgt[igp, icl, CURRENT, ildv])
-                        if tc >= 0.0:
-                            lcm[1:4] = 1.0
-                            ly = f32(2011) if frst[itech, igp] < 2011 else f32(frst[itech, igp])
-                            learnyear[itech, igp] = ly
-                            ym = int(f32(yrs) - ly + ONE)
-                            s["years_mktd"] = ym
-                            if ym >= 1:
-                                lcm[2] = ONE + (lrn1[itech, ivtyp] * coeff_learn[ym, 1])
-                                lcm[3] = ONE + (lrn2[itech, ivtyp] * coeff_learn[ym, 2])
-                            if tc > 0.0:
-                                tc = tc * lcm[1] * lcm[2] * lcm[3] * lcm[4]
-                        techcost[itech] = tc
-                        tec_ornl[icl, igp, itech, ildv] = tc
-                        vp = ZERO
-                        if cfe != 0.0:
-                            vp = (valueperf[icl, igp] * perf_coeff * inc_gr * (ONE + dfe) * invgr * del_hp[itech, ivtyp])
-                        val_perf[itech] = vp
-                        if tc > 0.0:
-                            cf = (fuelsave[itech] - tc + regcost[igp] * cfe * dfe) / tc
-                            cp = f32(-80.0)
-                            if vp != 0.0:
-                                cp = (vp - tc) / tc
-                            cf, cp = max(f32(-80.0), cf), max(f32(-80.0), cp)
-                        else:
-                            cf = f32(80.0) if fuelsave[itech] > 0.0 else f32(-80.0)
-                            cp = f32(80.0) if vp > 0.0 else f32(-80.0)
-                        cef_fuel[itech], cef_perf[itech] = cf, cp
-                        mmax[itech] = mkt_max[icl, igp, itech, ildv]
-                        if fem_pass == 1 or (fem_pass == 2 and int(s["pass2"]) == 1):
-                            old_pmax[icl, igp, itech, ildv, 2] = funcmax(s, pen[igp, icl, itech, PREV, ildv], old_pmax[icl, igp, itech, ildv, 2])
-                        k = f32(-4.0) if cf < 0.0 else f32(-2.0)
-                        mkt_fuel[itech] = ONE / (ONE + expf(k * cf))
-                        k = f32(-4.0) if cp < 0.0 else f32(-2.0)
-                        mkt_perf[itech] = ONE / (ONE + expf(min(k * cp, f32(75.0))))
-                        am = old_pmax[icl, igp, itech, ildv, 2] * max(mkt_fuel[itech], mkt_perf[itech])
-                        am = max(pen[igp, icl, itech, PREV, ildv], am)
-                        actual[itech] = min(am, mmax[itech], ONE)
-                    s["itech"] = numtech + 1
+                    _tech_loop(s, igp, icl, ildv, ivtyp, numtech, cfe, cfe_inv, perf_coeff, payback, discount,
+                               pslope, f1, inc_gr, invgr)
 
                     for itech in range(1, numtech + 1):
                         s["itech"] = itech
