@@ -10,8 +10,10 @@ Supply is the stand-in (docs/supply_standin.md). With elec="lp" the power sector
 dispatch LP instead (docs/dispatch.md): electricity sales in; fuel use, power CO2 and the wholesale
 marginal cost out, with the carbon price in plant costs. Retail electricity prices come from the
 stand-in, or with elec_price="efp" from EIA's ported pricing model (emm/retail.py: LDSM and EFP on
-the loop's electricity sales). Demand goes through one adapter (demand_adapter.py): EIA's ported modules where asked
-for, a stub elsewhere.
+the loop's electricity sales). Demand goes through one adapter (demand_adapter.py): by default EIA's ported
+residential and commercial modules (PORTED; residential runs in a worker process alongside
+commercial, about 40-65 s for 2027-2050), a stub elsewhere. ported=() puts every sector on the
+stub, which runs in seconds.
 
     python -m nems_open.run_model --carbon 50 --ev 0.8 --efficiency 0.9
 """
@@ -28,6 +30,7 @@ from nems_open.supply_standin.data import FIRST_YEAR, LAST_YEAR, US
 RELAX = 0.5      # NEMS relaxes prices halfway between passes by default
 TOL = 1e-3       # largest relative price change that counts as converged (0.1%)
 MAX_PASSES = 20
+PORTED = ("residential", "commercial")  # sectors run through EIA's ported modules by default
 
 
 @dataclass
@@ -80,7 +83,7 @@ def _max_rel_change(new: dict, old: dict) -> tuple[float, str]:
 
 
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
-        baseline: str = "cb2026", ported: tuple[str, ...] = (), relax: float = RELAX,
+        baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, relax: float = RELAX,
         tol: float = TOL, max_passes: int = MAX_PASSES, verbose: bool = False,
         elec: str = "standin", elec_price: str = "standin") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
@@ -132,50 +135,53 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 s.prices[k][:, j] = v
         return s
 
-    for year in range(start_year, end_year + 1):
-        j = year - FIRST_YEAR
-        last_q = None
-        # Pass 0: the supply side on the demand we have, taken whole. Exogenous moves
-        # (a carbon price, a new baseline year) land at once instead of being relaxed in.
-        s = solve_supply(j, first=True)
-        for k in prices:
-            prices[k][:, j] = s.prices[k][:, j]
-        for n in range(1, max_passes + 1):
-            col = demand.solve_year(year, prices, n)
-            dq = 0.0
-            if last_q is not None:
-                dq, _ = _max_rel_change(col, last_q)
-            last_q = col
-            for k, v in col.items():
-                q[k][:, j] = v
-            s = solve_supply(j)
-            new = {k: s.prices[k][:, j] for k in prices}
-            old = {k: prices[k][:, j] for k in prices}
-            dp, worst = _max_rel_change(new, old)
-            done = dp < tol
+    try:
+        for year in range(start_year, end_year + 1):
+            j = year - FIRST_YEAR
+            last_q = None
+            # Pass 0: the supply side on the demand we have, taken whole. Exogenous moves
+            # (a carbon price, a new baseline year) land at once instead of being relaxed in.
+            s = solve_supply(j, first=True)
             for k in prices:
-                prices[k][:, j] = new[k] if done else old[k] + relax * (new[k] - old[k])
-            passes.append(Pass(year, n, dp, worst, dq, routines, done))
-            if verbose:
-                print(f"{year} pass {n}: max dP/P {dp:.2e} ({worst}), max dQ/Q {dq:.2e}")
-            if done:
-                break
-        for k, v in {**s.power_fuel, **s.totals}.items():
-            q[k][:, j] = v[:, j]
-        if efp is not None:   # EFP's final pass for the year: statements and REVGAP's smoothing
-            for k, v in efp.finish_year(year, q).items():
-                prices[k][:, j] = v
-        if lp is not None:
-            last = lp.last[year]
-            wholesale[:, j] = last.wholesale
-            wholesale_us[j] = last.wholesale_us
-            for g, v in last.generation_twh.items():
-                generation.setdefault(g, np.full(61, np.nan))[j] = float(v.sum())
-        if co2 is None:
-            co2 = {k: v.copy() for k, v in s.co2.items()}
-        for k, v in s.co2.items():
-            co2[k][:, j] = v[:, j]
-        demand.end_year()
+                prices[k][:, j] = s.prices[k][:, j]
+            for n in range(1, max_passes + 1):
+                col = demand.solve_year(year, prices, n)
+                dq = 0.0
+                if last_q is not None:
+                    dq, _ = _max_rel_change(col, last_q)
+                last_q = col
+                for k, v in col.items():
+                    q[k][:, j] = v
+                s = solve_supply(j)
+                new = {k: s.prices[k][:, j] for k in prices}
+                old = {k: prices[k][:, j] for k in prices}
+                dp, worst = _max_rel_change(new, old)
+                done = dp < tol
+                for k in prices:
+                    prices[k][:, j] = new[k] if done else old[k] + relax * (new[k] - old[k])
+                passes.append(Pass(year, n, dp, worst, dq, routines, done))
+                if verbose:
+                    print(f"{year} pass {n}: max dP/P {dp:.2e} ({worst}), max dQ/Q {dq:.2e}")
+                if done:
+                    break
+            for k, v in {**s.power_fuel, **s.totals}.items():
+                q[k][:, j] = v[:, j]
+            if efp is not None:   # EFP's final pass for the year: statements and REVGAP's smoothing
+                for k, v in efp.finish_year(year, q).items():
+                    prices[k][:, j] = v
+            if lp is not None:
+                last = lp.last[year]
+                wholesale[:, j] = last.wholesale
+                wholesale_us[j] = last.wholesale_us
+                for g, v in last.generation_twh.items():
+                    generation.setdefault(g, np.full(61, np.nan))[j] = float(v.sum())
+            if co2 is None:
+                co2 = {k: v.copy() for k, v in s.co2.items()}
+            for k, v in s.co2.items():
+                co2[k][:, j] = v[:, j]
+            demand.end_year()
+    finally:
+        demand.close()  # stops the ported sectors' worker processes
     return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation)
 
 
@@ -184,16 +190,30 @@ def main(argv=None) -> None:
     ap.add_argument("--carbon", type=float, default=0.0, help="2024 $ per metric ton CO2")
     ap.add_argument("--ev", type=float, default=None, help="plug-in share of new light-duty sales, 0-1")
     ap.add_argument("--efficiency", type=float, default=1.0, help="multiplier on building fuel use")
+    ap.add_argument("--shell-code", type=float, default=0.0, metavar="FRACTION",
+                    help="commercial building code: new buildings' heating and cooling shell factors fall by this fraction")
+    ap.add_argument("--shell-year", type=int, default=2027, help="first year of the commercial building code")
+    ap.add_argument("--standard", action="append", default=[], metavar="SERVICE:MIN_EFF:YEAR[:FUEL]",
+                    help="commercial minimum efficiency, e.g. 2:3.5:2030:1 (cooling, electric); repeatable")
     ap.add_argument("--start", type=int, default=2027)
     ap.add_argument("--end", type=int, default=LAST_YEAR)
     ap.add_argument("--baseline", default="cb2026")
-    ap.add_argument("--ported", nargs="*", default=[], help="sectors to run through EIA's ported modules")
+    ap.add_argument("--ported", nargs="*", default=list(PORTED),
+                    help="sectors to run through EIA's ported modules (none: every sector on the stub)")
     ap.add_argument("--elec", choices=("standin", "lp"), default="standin",
                     help="power sector: the stand-in, or the dispatch LP (docs/dispatch.md)")
     ap.add_argument("--elec-price", choices=("standin", "efp"), default="standin",
                     help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py)")
     a = ap.parse_args(argv)
-    policy = Policy(a.carbon, a.ev, a.efficiency, a.start)
+    levers = None
+    if a.shell_code or a.standard:
+        from nems_open.commercial.levers import CommercialLevers, Standard
+        stds = []
+        for text in a.standard:
+            f = text.split(":")
+            stds.append(Standard(int(f[0]), float(f[1]), int(f[2]), int(f[3]) if len(f) > 3 else None))
+        levers = CommercialLevers(shell_improvement=a.shell_code, shell_start_year=a.shell_year, standards=tuple(stds))
+    policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=levers)
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price)
     print(r.report())
     supply = SupplyStandin(a.baseline)

@@ -23,8 +23,7 @@ KNOWN_MISSES = {
     ("gen_coal", 2040): "coal 47% high: EIA runs 16 GW of CCS-retrofitted coal at 44% capacity factor in 2040 (87% before), the LP runs it at its maximum; "
                         "the restart has no per-unit retrofit years or CO2 transport cost to explain the step (docs/dispatch.md)",
     ("fuel_coal", 2040): "coal fuel 62% high, follows coal generation",
-    ("fuel_gas", 2025): "gas fuel 12% low: EIA burns more gas per kWh than plant-file heat rates give (part-load heat rates)",
-    ("gen_renewable", 2025): "2025 wind and solar 9% and 18% high against EIA with the same capacity and profiles; 2030 onward matches",
+    ("fuel_coal", 2025): "coal fuel 12% high: EIA holds 2025 coal to the Short-Term Energy Outlook and burns it at 10.3 thousand Btu/kWh; plant-file heat rates give 10.7",
 }
 
 

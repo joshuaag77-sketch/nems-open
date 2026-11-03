@@ -231,11 +231,11 @@ class Commercial:
         return cls(s, carry, dg, templates)
 
     @classmethod
-    def start_from_files(cls, inputs=None) -> "Commercial":
+    def start_from_files(cls, inputs=None, levers=None) -> "Commercial":
         """COMM before its first call (2019, first iteration), with no oracle dumps: the input
         files, the restart file and zero (initial_state.initial_state)."""
         from nems_open.commercial.initial_state import initial_state
-        s = initial_state(inputs)
+        s = initial_state(inputs, levers)
         carry = Carry([0, 0, 0], 0, int(s["ifmax"]), KSTEOYR + 1989, CBECS_IDX)
         dg = DgState.empty()
         templates = {}

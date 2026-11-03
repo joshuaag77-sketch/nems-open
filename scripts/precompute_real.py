@@ -91,6 +91,8 @@ def bundle() -> None:
         scen[d["id"]] = d
     meta = {"carbon": CARBON, "ev2035": EV_2035, "buildings2050": BUILDINGS_2050, "ported": list(PORTED),
             "elec": "lp", "complete": len(scen) == len(CARBON) * len(EV_2035) * len(BUILDINGS_2050)}
+    (OUT / "real_meta.json").write_text(json.dumps(meta, separators=(",", ":")))
+    fast.write_meta_js()
     (OUT / "real.js").write_text("window.NEMS_REAL = " + json.dumps({"meta": meta, "scenarios": scen},
                                                                      separators=(",", ":")) + ";\n")
     print(f"real.js: {len(scen)} scenarios")

@@ -15,6 +15,7 @@ It writes one small .npz per case to data/aeo2026/.
 """
 
 import sys
+import os
 from pathlib import Path
 
 import numpy as np
@@ -66,7 +67,16 @@ def extract(case: str, upstream: Path = UPSTREAM, cache: Path = CACHE) -> Path:
     keep = {k: z[k] for k in z.files if k.startswith(BLOCK_PREFIXES) or k in SINGLE}
     cache.mkdir(parents=True, exist_ok=True)
     out = cache / f"{case}.npz"
-    np.savez_compressed(out, **keep)
+    # Several test workers may build the cache at once: write a private file, then swap it in whole,
+    # so a reader never sees a half-written archive.
+    tmp = cache / f"{case}.{os.getpid()}.tmp.npz"
+    np.savez_compressed(tmp, **keep)
+    try:
+        if out.exists():
+            raise PermissionError            # another worker finished first; its file is identical
+        os.replace(tmp, out)
+    except PermissionError:                  # Windows refuses to replace a file another process has open
+        tmp.unlink(missing_ok=True)
     return out
 
 
