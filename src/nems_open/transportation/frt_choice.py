@@ -88,6 +88,16 @@ def truck_pbk(v, carry, k, inc_cost, vmt, cpm, cpm_base, mr_ice, veh_shr, refuel
         np.concatenate((regn[y0, c, j, f, :MNUMCR - 2][:, None], x), axis=1).astype(f32), axis=1, dtype=f32)[:, -1]
 
 
+def _weighted_rows(values, weights, caller_id):
+    """weighted_mean of each row of values (rows, n) with the same weights."""
+    if np.isnan(values).any():
+        raise ValueError(f"ERROR TDM: (WEIGHTED_MEAN {caller_id}): Input VALUES array contains NaN.")
+    total = fsum(weights)
+    if total == 0.0:
+        return np.zeros(values.shape[0], dtype=f32)
+    return (np.add.accumulate(values * weights, axis=1, dtype=f32)[:, -1] + ZERO) / total
+
+
 def _avg5(a, iyr):
     """Five-year averages for regions 1-9."""
     return fsum(a[R9, iyr - 4:iyr], axis=1) / f32(5.0)
@@ -158,24 +168,21 @@ def truck_choice(s: dict, carry: dict) -> None:
                 cpm[iflt, c19, iregn] = c[:, iregn - 1].copy()
             prev = stk[iyr - 1, c19, 1, 1:FUEL12, iflt, R9]          # (fuel, region)
             mr_ice = np.zeros((PBK_YR + 1, NR), dtype=f32)
+            m3 = np.stack([mrc[c19, kf, 1:PBK_YR, iyr] for kf in (1, 2, 11)], axis=1)   # [year, fuel 1/2/11]
             base = np.zeros(NR, dtype=f32)
             for iregn in regions:
                 p_ = prev[:, iregn - 1]
                 ice3 = np.array([p_[0], p_[1], p_[10]], dtype=f32)
                 if fsum(ice3) == 0.0:
                     cpm_ice[iyr, iregn, iflt, c19] = cpm_ice[iyr - 1, iregn, iflt, c19]
-                    for y in range(1, PBK_YR + 1):
-                        mr_ice[y, iregn - 1] = (mrc[c19, 1, y, iyr] + mrc[c19, 2, y, iyr] + mrc[c19, 11, y, iyr]) / f32(3)
+                    mr_ice[1:, iregn - 1] = (m3[:, 0] + m3[:, 1] + m3[:, 2]) / f32(3)
                 elif c19 <= 7:
                     cpm_ice[iyr, iregn, iflt, c19] = weighted_mean(np.array([c[1, iregn - 1], c[2, iregn - 1], c[11, iregn - 1]],
                                                                             dtype=f32), ice3, "CPM_R_ICE")
-                    for y in range(1, PBK_YR + 1):
-                        mr_ice[y, iregn - 1] = weighted_mean(np.array([mrc[c19, kf, y, iyr] for kf in (1, 2, 11)], dtype=f32),
-                                                             ice3, "MR_ICE")
+                    mr_ice[1:, iregn - 1] = _weighted_rows(m3, ice3, "MR_ICE")
                 else:
                     cpm_ice[iyr, iregn, iflt, c19] = c[1, iregn - 1]
-                    for y in range(1, PBK_YR + 1):
-                        mr_ice[y, iregn - 1] = mrc[c19, 1, y, iyr]
+                    mr_ice[1:, iregn - 1] = m3[:, 0]
                 base[iregn - 1] = cpm_ice[iyr, iregn, iflt, c19]
             shr_v[iyr, :, iflt, c19, :, R9] = 0.0
             vs = veh[VM, iflt, c19]
@@ -241,13 +248,11 @@ def truck_choice(s: dict, carry: dict) -> None:
                             two = np.array([p_[0], p_[1]], dtype=f32)
                             if fsum(two) == 0.0:
                                 hev_cpm[iregn - 1] = (c[1, iregn - 1] + c[2, iregn - 1]) / f32(2)
-                                for y in range(1, PBK_YR + 1):
-                                    mr_hev[y, iregn - 1] = (mrc[c19, 1, y, iyr] + mrc[c19, 2, y, iyr]) / f32(2)
+                                mr_hev[1:, iregn - 1] = (m3[:, 0] + m3[:, 1]) / f32(2)
                             else:
                                 hev_cpm[iregn - 1] = weighted_mean(np.array([c[1, iregn - 1], c[2, iregn - 1]], dtype=f32), two,
                                                                    "CPM_ICE_HEV")
-                                for y in range(1, PBK_YR + 1):
-                                    mr_hev[y, iregn - 1] = (mrc[c19, 1, y, iyr] * p_[0] + mrc[c19, 2, y, iyr] * p_[1]) / fsum(two)
+                                mr_hev[1:, iregn - 1] = (m3[:, 0] * p_[0] + m3[:, 1] * p_[1]) / fsum(two)
                         pbk_loop(lambda kv: v["inc_cost_hev"][kv, c19, n], c[11], ZERO, mr=mr_hev, base_cpm=hev_cpm)
                         clamp(False)
                     elif jfuel == 12:

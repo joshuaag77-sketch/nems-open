@@ -218,13 +218,21 @@ def truck_techadopt(s: dict, carry: dict) -> None:
                 shr[iyr, 1:17, c19, ifuel] = shr[iyr, 1:17, c19, 1]
             if ifuel == 8:
                 shr[iyr, 1:17, c19, ifuel] = shr[iyr, 1:17, c19, 2]
-            m = ONE
+            # MPGEFF: a running product, capped at 1 after each factor. Where the cap never binds
+            # the product is a sequential multiply.accumulate; otherwise the loop as written.
             brow, te = base.a[:, c19 - 1, ifuel - 1], teff.a[:, c14 - 1]
-            for i in np.nonzero(yrs >= fy)[0]:
-                a, b = row[i], brow[i]
-                ad = max(a - b, f32(-1.0) * b) if a > 0.0 else ZERO
-                m = m * (ONE - ((te[i] + syn[i + 1]) * ad))
-                m = min(m, ONE)
+            idx = np.nonzero(yrs >= fy)[0]
+            a, b = row[idx], brow[idx]
+            d = a - b
+            ad = np.where(a > 0.0, np.where(f32(-1.0) * b > d, f32(-1.0) * b, d), ZERO)
+            fac = ONE - ((te[idx] + syn[idx + 1]) * ad)
+            prod = np.multiply.accumulate(np.concatenate(([ONE], fac)).astype(f32), dtype=f32)
+            if (prod > ONE).any():
+                m = ONE
+                for x in fac:
+                    m = min(m * x, ONE)
+            else:
+                m = prod[-1]
             mpgeff[ifuel, c19] = m
             v["itechp2"] = techp2 + 1
             cost_inc[iyr, c19, ifuel] = fsum(shr[iyr, T, c19, ifuel] * costyr[1:, c19])
