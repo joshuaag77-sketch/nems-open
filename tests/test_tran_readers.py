@@ -11,7 +11,7 @@ import pytest
 from nems_open.fortran_array import FArray
 from nems_open.transportation import tran
 from nems_open.transportation import frt_common
-from nems_open.transportation.readers import air, freight, freight_stock
+from nems_open.transportation.readers import air, freight, freight_stock, ldv_tables, nhtsa
 from tran_harness import needs, rel_err
 
 pytestmark = needs("tran_tail")
@@ -139,3 +139,58 @@ def test_cfreadstock(start):
     keys, bad = _check_touched(freight_stock.cfreadstock, start, STOCK_PART, STOCK_INPUTS)
     assert {"f_trkstk_19r", "f_trkstk", "f_cltstk"} <= set(keys)
     assert {k: e for k, e in bad.items() if k not in STOCK_SKIP} == {}
+
+
+def _check_names(fn, start, names, part=None):
+    part = part or {}
+    s = {k: (v.copy() if isinstance(v, FArray) else v) for k, v in start.items()}
+    for k in names:
+        s[k].a[...] = 0
+    fn(s)
+    bad = {}
+    for k in names:
+        idx = part.get(k, ...)
+        err = rel_err(s[k].a[idx], start[k].a[idx])
+        if err > READ_TOL:
+            bad[k] = err
+    return bad
+
+
+def test_readstock(start):
+    assert _check_names(ldv_tables.readstock, start, ["ldv_stock", "flt_stock"]) == {}
+
+
+HIST = ["fempri", "femmpg", "mpgadj", "mpgcomp", "femhp", "femtsz", "femrng", "femwgt", "batpacksize",
+        "fprt", "phev_evmt", "cafesales", "fe", "weight", "price", "hp", "tanksize", "range", "ldv_sales",
+        "elecsysinccost"]
+
+
+NHTSA = ["epampg", "epatsz", "epalug", "epapri", "epahp", "epawgt", "eparng", "phevmpg_s", "phevmpg_d", "nameplate",
+         "x210", "evmpg_adj", "luggavg", "fprint", "own_sales", "ownsalesshr", "ownsaletemp", "ev_range"]
+# TSMOD writes the regional sales from 2020, and later years of X210 come from the readers'
+# EPA year on: compare the readers' years.
+LDV_PART = {"ldv_sales": (Ellipsis, slice(5, 30))}
+
+
+def _readhist_and_nhtsa(s):
+    ldv_tables.readhist(s)
+    nhtsa.readnhtsa(s)
+
+
+@pytest.mark.skip(reason="needs READLDV (the choice-model constants)")
+def test_readhist_readnhtsa(start):
+    names = [k for k in HIST + NHTSA if k in start]
+    assert _check_names(_readhist_and_nhtsa, start, names, LDV_PART) == {}
+
+
+# READHIST alone: its years (through 2023); READNHTSA fills 2024 and the 2019-2024 sales.
+HIST_YEARS = (slice(None), slice(None), slice(0, 34), slice(None))
+
+
+def test_readhist(start):
+    part = {k: HIST_YEARS for k in HIST}
+    part["batpacksize"] = (slice(0, 34),)
+    part["ldv_sales"] = (Ellipsis, slice(5, 29))
+    for k in ("fe", "weight", "price", "hp", "tanksize", "range", "elecsysinccost"):
+        part[k] = Ellipsis
+    assert _check_names(ldv_tables.readhist, start, [k for k in HIST if k in start], part) == {}
