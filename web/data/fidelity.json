@@ -396,12 +396,12 @@
   "own:dispatch": {
    "name": "Electricity dispatch LP",
    "grade": "within",
-   "label": "within 7.8%",
-   "pct": 7.8,
-   "summary": "Our own model of this piece, not a port. In the demo's reference run its power-sector CO2 is within 7.8% of EIA's AEO2026 reference, 2027-2050.",
+   "label": "within 12.8%",
+   "pct": 12.8,
+   "summary": "Our own model of this piece, not a port. In the demo's reference run its power-sector CO2 is within 12.8% of EIA's AEO2026 reference, 2027-2050.",
    "evidence": {
     "measured_against": "cb2026",
-    "worst_gap_pct": 7.8,
+    "worst_gap_pct": 12.8,
     "tests": 84,
     "test_files": [
      "test_emm_capacity.py",
@@ -542,6 +542,17 @@
      "grade": "stand",
      "label_grade": "stand-in",
      "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.00%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    },
+    "bill": {
+     "label": "Household energy bill",
+     "modules": {
+      "residential": "stand:demand_stub",
+      "electricity:price": "stand:electricity",
+      "natural_gas": "stand:natural_gas"
+     },
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "Home fuel use times home prices, over households; not a number EIA reports. As good as the weakest of those. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
     },
     "energy.residential": {
      "label": "Residential energy use",
@@ -696,7 +707,7 @@
     "electricity": {
      "part": "own:dispatch",
      "grade": "within",
-     "label": "within 7.8%"
+     "label": "within 12.8%"
     },
     "natural_gas": {
      "part": "stand:natural_gas",
@@ -807,8 +818,28 @@
       "electricity": "own:dispatch"
      },
      "grade": "within",
-     "label_grade": "within 7.8%",
-     "summary": "No EIA counterpart: EIA reports its own price model's output, not this LP's marginal cost."
+     "label_grade": "within 12.8%",
+     "summary": "No EIA counterpart: EIA reports its own price model's output, not this LP's marginal cost. Weakest piece behind it: Electricity dispatch LP (within 12.8%)."
+    },
+    "bill": {
+     "label": "Household energy bill",
+     "modules": {
+      "residential": "port:residential",
+      "electricity:price": "stand:electricity",
+      "natural_gas": "stand:natural_gas"
+     },
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "Home fuel use times home prices, over households; not a number EIA reports. As good as the weakest of those. Weakest piece behind it: Electricity prices (stand-in)."
+    },
+    "unserved": {
+     "label": "Load the fleet cannot meet",
+     "modules": {
+      "electricity": "own:dispatch"
+     },
+     "grade": "within",
+     "label_grade": "within 12.8%",
+     "summary": "No EIA counterpart: EIA's model builds what it needs; this LP runs EIA's reference fleet and builds nothing. Weakest piece behind it: Electricity dispatch LP (within 12.8%)."
     },
     "energy.residential": {
      "label": "Residential energy use",
@@ -937,7 +968,294 @@
      "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 2.07%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
     }
    }
+  },
+  "datacenter": {
+   "modules": {
+    "residential": {
+     "part": "port:residential",
+     "grade": "match",
+     "label": "matches EIA"
+    },
+    "commercial": {
+     "part": "port:commercial",
+     "grade": "match",
+     "label": "matches EIA"
+    },
+    "industrial": {
+     "part": "stand:demand_stub",
+     "grade": "stand",
+     "label": "stand-in"
+    },
+    "transportation": {
+     "part": "port:transportation",
+     "grade": "match",
+     "label": "matches EIA"
+    },
+    "electricity": {
+     "part": "own:dispatch",
+     "grade": "within",
+     "label": "within 12.8%"
+    },
+    "natural_gas": {
+     "part": "stand:natural_gas",
+     "grade": "stand",
+     "label": "stand-in"
+    },
+    "oil": {
+     "part": "stand:oil",
+     "grade": "stand",
+     "label": "stand-in"
+    },
+    "coal": {
+     "part": "stand:coal",
+     "grade": "stand",
+     "label": "stand-in"
+    },
+    "emissions": {
+     "part": "stand:emissions",
+     "grade": "stand",
+     "label": "stand-in"
+    },
+    "electricity:price": {
+     "part": "stand:electricity",
+     "grade": "stand",
+     "label": "stand-in"
+    }
+   },
+   "outputs": {
+    "co2": {
+     "label": "US energy CO2",
+     "modules": {
+      "residential": "port:residential",
+      "commercial": "port:commercial",
+      "industrial": "stand:demand_stub",
+      "transportation": "port:transportation",
+      "electricity": "own:dispatch",
+      "natural_gas": "stand:natural_gas",
+      "oil": "stand:oil",
+      "coal": "stand:coal",
+      "emissions": "stand:emissions"
+     },
+     "gap_pct": 2.44,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 2.44%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    },
+    "pel": {
+     "label": "Power price",
+     "modules": {
+      "electricity:price": "stand:electricity",
+      "residential": "port:residential",
+      "commercial": "port:commercial",
+      "industrial": "stand:demand_stub",
+      "transportation": "port:transportation"
+     },
+     "gap_pct": 0.24,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.24%, 2027-2050. Weakest piece behind it: Electricity prices (stand-in)."
+    },
+    "mg": {
+     "label": "Gasoline price",
+     "modules": {
+      "oil": "stand:oil"
+     },
+     "gap_pct": 0.38,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.38%, 2027-2050. Weakest piece behind it: Oil and refining (stand-in)."
+    },
+    "ng": {
+     "label": "Home gas price",
+     "modules": {
+      "natural_gas": "stand:natural_gas"
+     },
+     "gap_pct": 0.53,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.53%, 2027-2050. Weakest piece behind it: Natural gas (stand-in)."
+    },
+    "gal": {
+     "label": "Gasoline use",
+     "modules": {
+      "transportation": "port:transportation",
+      "oil": "stand:oil"
+     },
+     "gap_pct": 0.15,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.15%, 2027-2050. Weakest piece behind it: Oil and refining (stand-in)."
+    },
+    "use": {
+     "label": "Energy use",
+     "modules": {
+      "residential": "port:residential",
+      "commercial": "port:commercial",
+      "industrial": "stand:demand_stub",
+      "transportation": "port:transportation"
+     },
+     "gap_pct": 0.06,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.06%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    },
+    "whl": {
+     "label": "Wholesale power",
+     "modules": {
+      "electricity": "own:dispatch"
+     },
+     "grade": "within",
+     "label_grade": "within 12.8%",
+     "summary": "No EIA counterpart: EIA reports its own price model's output, not this LP's marginal cost. Weakest piece behind it: Electricity dispatch LP (within 12.8%)."
+    },
+    "bill": {
+     "label": "Household energy bill",
+     "modules": {
+      "residential": "port:residential",
+      "electricity:price": "stand:electricity",
+      "natural_gas": "stand:natural_gas"
+     },
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "Home fuel use times home prices, over households; not a number EIA reports. As good as the weakest of those. Weakest piece behind it: Electricity prices (stand-in)."
+    },
+    "unserved": {
+     "label": "Load the fleet cannot meet",
+     "modules": {
+      "electricity": "own:dispatch"
+     },
+     "grade": "within",
+     "label_grade": "within 12.8%",
+     "summary": "No EIA counterpart: EIA's model builds what it needs; this LP runs EIA's reference fleet and builds nothing. Weakest piece behind it: Electricity dispatch LP (within 12.8%)."
+    },
+    "energy.residential": {
+     "label": "Residential energy use",
+     "modules": {
+      "residential": "port:residential"
+     },
+     "gap_pct": 0.04,
+     "grade": "match",
+     "label_grade": "matches EIA",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.04%, 2027-2050. Every module behind it is a port that matches EIA."
+    },
+    "energy.commercial": {
+     "label": "Commercial energy use",
+     "modules": {
+      "commercial": "port:commercial"
+     },
+     "gap_pct": 0.06,
+     "grade": "match",
+     "label_grade": "matches EIA",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.06%, 2027-2050. Every module behind it is a port that matches EIA."
+    },
+    "energy.industrial": {
+     "label": "Industrial energy use",
+     "modules": {
+      "industrial": "stand:demand_stub"
+     },
+     "gap_pct": 0.11,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.11%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    },
+    "energy.transportation": {
+     "label": "Transportation energy use",
+     "modules": {
+      "transportation": "port:transportation"
+     },
+     "gap_pct": 0.06,
+     "grade": "match",
+     "label_grade": "matches EIA",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.06%, 2027-2050. Every module behind it is a port that matches EIA."
+    },
+    "co2.rs": {
+     "label": "Residential CO2",
+     "modules": {
+      "residential": "port:residential",
+      "natural_gas": "stand:natural_gas",
+      "oil": "stand:oil",
+      "coal": "stand:coal"
+     },
+     "gap_pct": 0.37,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.37%, 2027-2050. Weakest piece behind it: Natural gas (stand-in)."
+    },
+    "co2.cm": {
+     "label": "Commercial CO2",
+     "modules": {
+      "commercial": "port:commercial",
+      "natural_gas": "stand:natural_gas",
+      "oil": "stand:oil",
+      "coal": "stand:coal"
+     },
+     "gap_pct": 0.4,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.40%, 2027-2050. Weakest piece behind it: Natural gas (stand-in)."
+    },
+    "co2.in": {
+     "label": "Industrial CO2",
+     "modules": {
+      "industrial": "stand:demand_stub",
+      "natural_gas": "stand:natural_gas",
+      "oil": "stand:oil",
+      "coal": "stand:coal"
+     },
+     "gap_pct": 0.17,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.17%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    },
+    "co2.tr": {
+     "label": "Transportation CO2",
+     "modules": {
+      "transportation": "port:transportation",
+      "natural_gas": "stand:natural_gas",
+      "oil": "stand:oil",
+      "coal": "stand:coal"
+     },
+     "gap_pct": 0.26,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 0.26%, 2027-2050. Weakest piece behind it: Natural gas (stand-in)."
+    },
+    "co2.el": {
+     "label": "Electricity CO2",
+     "modules": {
+      "electricity": "own:dispatch",
+      "residential": "port:residential",
+      "commercial": "port:commercial",
+      "industrial": "stand:demand_stub",
+      "transportation": "port:transportation",
+      "natural_gas": "stand:natural_gas",
+      "coal": "stand:coal"
+     },
+     "gap_pct": 12.78,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 12.78%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    },
+    "cum": {
+     "label": "CO2 avoided, 2027-2050",
+     "modules": {
+      "residential": "port:residential",
+      "commercial": "port:commercial",
+      "industrial": "stand:demand_stub",
+      "transportation": "port:transportation",
+      "electricity": "own:dispatch",
+      "natural_gas": "stand:natural_gas",
+      "oil": "stand:oil",
+      "coal": "stand:coal",
+      "emissions": "stand:emissions"
+     },
+     "gap_pct": 2.44,
+     "grade": "stand",
+     "label_grade": "stand-in",
+     "summary": "No-policy run vs EIA's AEO2026 reference: worst gap 2.44%, 2027-2050. Weakest piece behind it: Demand stub (any sector not run through its port) (stand-in)."
+    }
+   }
   }
  },
- "tests_collected": 2399
+ "tests_collected": 2404
 }

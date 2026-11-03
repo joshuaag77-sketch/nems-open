@@ -88,13 +88,18 @@ def bundle() -> None:
     for key in dc.SOURCE["cases"]:
         f = OUT / "datacenter" / f"{key}.json"
         if f.exists():
-            cases[key] = json.loads(f.read_text())
+            cases[key] = {**json.loads(f.read_text()), "label": dc.SOURCE["cases"][key]["label"]}
     base = load_case("cb2026")
     eia = {"bill": rounded(bill(base, base, base, households("cb2026"))[fast.J], 0)}
+    # EIA's own high-demand case builds plants: the check on what a fixed fleet does to CO2
+    hi = load_case("higheldmd")
+    hi_co2, ref_co2 = SupplyStandin("higheldmd").solve().co2_total, SupplyStandin("cb2026").solve().co2_total
+    check = {"added_twh": rounded((hi["QBLK/qelas"][US] - base["QBLK/qelas"][US])[fast.J] / dc.TBTU_PER_TWH, 0),
+             "co2_mt": rounded((hi_co2 - ref_co2)[fast.J], 0)}
     data = {"years": fast.YEARS, "start_year": fast.START, "dollars": "2024 $", "sectors": list(SECTORS), "elec": "lp",
             "sources": dc.SOURCE["sources"], "case_notes": {k: {n: v.get(n) for n in ("label", "short", "anchors", "sources", "flex_share")}
                                                             for k, v in dc.SOURCE["cases"].items()},
-            "choices": dc.SOURCE["choices"], "eia": eia, "cases": cases,
+            "choices": dc.SOURCE["choices"], "eia": eia, "eia_builds": check, "cases": cases,
             "complete": len(cases) == len(dc.SOURCE["cases"])}
     (OUT / "datacenter.js").write_text("window.NEMS_DATACENTER = " + json.dumps(data, separators=(",", ":")) + ";\n")
     print(f"datacenter.js: {len(cases)} of {len(dc.SOURCE['cases'])} cases", flush=True)

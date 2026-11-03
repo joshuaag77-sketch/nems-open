@@ -248,3 +248,13 @@ button.link { background: none; border: 0; padding: 0; font: inherit; color: var
   .board-t .num { text-align: left; }
   .board-t td[data-label]::before { content: attr(data-label); color: var(--muted); }
 }
+
+/* the data center story */
+.story .steps { display: flex; flex-wrap: wrap; gap: 8px; }
+.story .steps button { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer; }
+.story .steps button[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.story #step h2 { margin-top: 0; }
+.story .step-nav { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.story #years button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.story .chart-box { height: 300px; }
+.fid-input { color: var(--muted); }

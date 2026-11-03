@@ -77,15 +77,15 @@ STANDINS = {
 # The engine view's modules (web/data/engine.js keys) and what stands behind each in each set.
 # "port:<key>" uses PORTS, "own:<key>" OWN, "stand:<key>" STANDINS.
 ENGINE = {
-    "residential": {"fast": "stand:demand_stub", "real": "port:residential"},
-    "commercial": {"fast": "stand:demand_stub", "real": "port:commercial"},
-    "industrial": {"fast": "stand:demand_stub", "real": "stand:demand_stub"},
-    "transportation": {"fast": "stand:demand_stub", "real": "stand:demand_stub"},
-    "electricity": {"fast": "stand:electricity", "real": "own:dispatch"},
-    "natural_gas": {"fast": "stand:natural_gas", "real": "stand:natural_gas"},
-    "oil": {"fast": "stand:oil", "real": "stand:oil"},
-    "coal": {"fast": "stand:coal", "real": "stand:coal"},
-    "emissions": {"fast": "stand:emissions", "real": "stand:emissions"},
+    "residential": {"fast": "stand:demand_stub", "real": "port:residential", "datacenter": "port:residential"},
+    "commercial": {"fast": "stand:demand_stub", "real": "port:commercial", "datacenter": "port:commercial"},
+    "industrial": {"fast": "stand:demand_stub", "real": "stand:demand_stub", "datacenter": "stand:demand_stub"},
+    "transportation": {"fast": "stand:demand_stub", "real": "stand:demand_stub", "datacenter": "port:transportation"},
+    "electricity": {"fast": "stand:electricity", "real": "own:dispatch", "datacenter": "own:dispatch"},
+    "natural_gas": {"fast": "stand:natural_gas", "real": "stand:natural_gas", "datacenter": "stand:natural_gas"},
+    "oil": {"fast": "stand:oil", "real": "stand:oil", "datacenter": "stand:oil"},
+    "coal": {"fast": "stand:coal", "real": "stand:coal", "datacenter": "stand:coal"},
+    "emissions": {"fast": "stand:emissions", "real": "stand:emissions", "datacenter": "stand:emissions"},
 }
 
 # Numbers on the demo page: how to read them from a run, and the modules that produce them.
@@ -99,6 +99,14 @@ OUTPUTS = {
     "gal": ("Gasoline use", lambda d: d["gasoline_bgal"], ["transportation", "oil"]),
     "use": ("Energy use", lambda d: [sum(v[i] for v in d["energy"].values()) for i in range(len(d["co2"]))], DEMAND),
     "whl": ("Wholesale power", None, ["electricity"]),
+    "bill": ("Household energy bill", None, ["residential", "electricity:price", "natural_gas"]),
+    "unserved": ("Load the fleet cannot meet", None, ["electricity"]),
+}
+REAL_ONLY = {"whl", "unserved"}     # numbers only the dispatch LP has
+NO_COUNTERPART = {
+    "whl": "No EIA counterpart: EIA reports its own price model's output, not this LP's marginal cost.",
+    "unserved": "No EIA counterpart: EIA's model builds what it needs; this LP runs EIA's reference fleet and builds nothing.",
+    "bill": "Home fuel use times home prices, over households; not a number EIA reports. As good as the weakest of those.",
 }
 for sector in DEMAND:
     OUTPUTS[f"energy.{sector}"] = (f"{sector.title()} energy use", lambda d, k=sector: d["energy"][k], [sector])
@@ -227,11 +235,15 @@ def main() -> None:
     runs = {"fast": json.loads((WEB / "scenarios" / "c0_evref_b100.json").read_text())}
     if real_meta.get("complete"):
         runs["real"] = json.loads((WEB / "real" / "c0_evref_b100.json").read_text())
+    dc_reference = WEB / "datacenter" / "reference.json"
+    if dc_reference.exists():
+        runs["datacenter"] = json.loads(dc_reference.read_text())
 
     parts = {f"port:{k}": port_grade(k, scope, tests) for k in PORTS}
     parts.update({f"stand:{k}": stand_grade(k, coef, elast) for k in STANDINS})
     if "real" in runs:
-        gap = worst_gap(runs["real"], ref, lambda d: d["trace"]["co2_sector"]["el"], years)
+        # the worst of every run the LP is in
+        gap = max(worst_gap(runs[s], ref, lambda d: d["trace"]["co2_sector"]["el"], years) for s in runs if s != "fast")
         parts["own:dispatch"] = own_grade("dispatch", tests, gap)
 
     sets = {}
@@ -239,21 +251,21 @@ def main() -> None:
         mods = {}
         for key, by_set in ENGINE.items():
             part = by_set[name]
-            if part not in parts:          # the dispatch LP only runs in the real set
+            if part not in parts:          # the dispatch LP only runs in the real sets
                 part = by_set["fast"]
             mods[key] = {"part": part, **{k: parts[part][k] for k in ("grade", "label")}}
         # retail power prices come from the stand-in in both sets
         mods["electricity:price"] = {"part": "stand:electricity", "grade": "stand", "label": "stand-in"}
         outs = {}
         for key, (label, get, producers) in OUTPUTS.items():
-            if get is None and name != "real":
+            if key in REAL_ONLY and name == "fast":
                 continue
             behind = [mods[p] for p in producers if p in mods]
             worst = max(behind, key=lambda m: RANK[m["grade"]])
             out = {"label": label, "modules": {p: mods[p]["part"] for p in producers if p in mods}}
             if get is None:
                 out.update(grade=worst["grade"], label_grade=worst["label"],
-                           summary="No EIA counterpart: EIA reports its own price model's output, not this LP's marginal cost.")
+                           summary=NO_COUNTERPART[key] + f" Weakest piece behind it: {parts[worst['part']]['name']} ({worst['label']}).")
             else:
                 pct = round(100 * worst_gap(run, ref, get, years), 2)
                 out["gap_pct"] = pct

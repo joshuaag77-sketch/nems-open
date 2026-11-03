@@ -31,7 +31,7 @@
       "date": "July 21, 2025",
       "url": "https://www.anthropic.com/news/build-ai-in-america",
       "read": "the page",
-      "disclosure": "Anthropic makes Claude, which assembled this file. It is an AI developer's own statement of what its industry needs, not a neutral forecast.",
+      "disclosure": "Anthropic makes Claude, the AI that assembled these assumptions. Its report is an AI developer's own statement of what its industry needs, not a neutral forecast.",
       "findings": {
         "ai_capacity_gw_2028": {"value": 50, "where": "section Energy needs for global AI leadership: the US AI sector needs at least 50 GW of electric capacity by 2028"}
       }
@@ -87,12 +87,12 @@
     },
     "utility": {
       "label": "Utility forecasts",
-      "short": "What utilities have told regulators: about 90 GW of new data center load by 2030.",
+      "short": "What utilities and grid operators have published: about 90 GW of new data center load by 2030.",
       "anchors": [{"year": 2030, "growth_gw_since_2025": 90, "source": "grid_strategies_2025"}],
       "sources": ["grid_strategies_2025"]
     },
     "ai_high": {
-      "label": "AI-industry high growth",
+      "label": "High growth: AI industry and analysts",
       "short": "An AI developer's 50 GW for AI by 2028, then BloombergNEF's 194 GW for all data centers by 2035.",
       "anchors": [{"year": 2028, "ai_gw_on_top_of_2025": 50, "source": "anthropic_2025"},
                   {"year": 2035, "total_gw": 194, "source": "bnef_2026"}],
@@ -114,7 +114,8 @@
     "between_anchors": "Straight lines between anchors, starting from EIA's scaled 2025 level.",
     "after_last_anchor": "No source goes further, so the amount added is held at its last anchor year's level; the total keeps growing only with EIA's own path.",
     "non_ai_load": "The 50 GW is AI only. Everything else is held at the 2025 level through 2028.",
-    "flexibility": "Duke's 0.5% is applied as a budget on the added load's energy in each region; the dispatch LP spends it where power is scarcest or dearest. 3-hour blocks, so the short curtailments Duke describes are coarser here.",
-    "fleet": "The LP runs EIA's reference plant fleet and builds nothing, so load the fleet cannot meet is reported as unserved. That number says how much would have to be built, not that the lights go out. Unserved load burns no fuel, so CO2 in these cases is a floor."
+    "flexibility": "Duke's 0.5% is applied as a budget on the added load's energy in each region; the dispatch LP spends it where power is dearest. Duke's result is about peak capacity, which this model does not test, so the small effect here says nothing against it. 3-hour blocks, so the short curtailments Duke describes are coarser here.",
+    "fleet": "The LP runs EIA's reference plant fleet and builds nothing, so all the new load falls on plants with room to run more, mostly gas. A model that builds would meet some of it with new plants, so CO2 and prices here are not what would happen, only what this fleet would do.",
+    "adequacy": "The LP works on 36 typical days in 3-hour blocks with no reserve margin. It tests whether the fleet can make the energy, not whether it can hold the peak hour, so no unserved load here does not mean the grid would be reliable."
   }
 }

@@ -15,6 +15,18 @@
     return;
   }
 
+  await new Promise((ok) => { const s = document.createElement("script"); s.src = "data/datacenter.js"; s.onload = s.onerror = ok; document.head.appendChild(s); });
+  const DC = window.NEMS_DATACENTER;
+  const STORY = [];
+  if (DC && FID.sets.datacenter) {
+    Object.entries(DC.cases).forEach(([k, c]) => {
+      const key = "dc_" + k;
+      STORY.push(key);
+      RUNS.scenarios[key] = { key, label: c.label, set: "datacenter", story: true, raw: c, short: DC.case_notes[k].short,
+        run: { co2: c.co2, bill: c.bill, gas_price: c.prices.gas_home }, eia: RUNS.scenarios.reference.eia };
+    });
+  }
+
   // A fractional change as a percent, in plain decimals.
   const pctText = (x) => (100 * x < 0.01 ? (100 * x).toPrecision(2) : (100 * x).toFixed(2)) + "%";
 
@@ -87,19 +99,21 @@
 
   // ---- scenario cards and diff-two-runs (data/engine3d/runs.json, scenarios) -------------
   const SC = RUNS.scenarios, YEARS = RUNS.years;
-  const OUT = FID.sets.fast.outputs;   // the scenarios run on the fast stand-ins
+  let OUT = FID.sets.fast.outputs;     // the grades of the set the selected run belongs to
   const RANK = { match: 0, within: 1, stand: 2 };
   const worst = (keys) => keys.map((k) => OUT[k]).filter(Boolean).sort((a, b) => RANK[b.grade] - RANK[a.grade])[0];
   // Each headline and the demo numbers its grade comes from (data/fidelity.json): the bill is
   // home fuel use times home prices, so it is only as good as the weakest of those.
   const HEADS = {
     co2: { label: "US energy CO2", unit: " Mt", d: 0, grade: () => OUT.co2 },
-    bill: { label: "Household energy bill", unit: " $/yr", d: 0, pre: "$", grade: () => worst(["energy.residential", "pel", "ng"]) },
-    gas_price: { label: "Home natural gas price", unit: " $/MMBtu", d: 2, pre: "$", grade: () => OUT.ng },
+    bill: { label: "Household energy bill", unit: " a year", d: 0, pre: "$", grade: () => worst(["energy.residential", "pel", "ng"]) },
+    gas_price: { label: "Home natural gas price", unit: " per MMBtu", d: 2, pre: "$", grade: () => OUT.ng },
   };
   let selA = RUNS.scenarios[asked.get("a")] ? asked.get("a") : "reference";
   let selB = RUNS.scenarios[asked.get("b")] && asked.get("b") !== selA ? asked.get("b") : null;
   let comparing = !!selB;
+  let stepFrom = null;                 // the data center step we came from: the diff shows the change
+  let onStep = null;                   // set once the scene exists: the ring animates the change
   if (traceYears.includes(+asked.get("y"))) { yearEl.value = +asked.get("y"); yearOut.textContent = yearEl.value; }
   $("compare").setAttribute("aria-pressed", comparing);
   const year = () => +yearEl.value;
@@ -108,15 +122,35 @@
   const escA = (x) => String(x).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
   function cards() {
-    $("cards").innerHTML = Object.values(SC).map((s) =>
-      `<button type="button" class="card ${s.key === selA ? "a" : ""} ${s.key === selB ? "b" : ""}" data-k="${s.key}">${s.label}` +
-      `<small>EIA's ${s.case} case inputs, ${s.model}, precomputed</small></button>`).join("");
-    $("cards").querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => {
-      const k = b.dataset.k;
-      if (comparing && k !== selA) selB = selB === k ? null : k;
-      else { selA = k; if (selB === k) selB = null; }
-      render(true);
-    }));
+    const card = (s) => `<button type="button" class="card ${s.key === selA ? "a" : ""} ${s.key === selB ? "b" : ""}" data-k="${s.key}">${s.label}` +
+      `<small>${s.story ? `${escA(s.short)} Ported modules and dispatch LP, precomputed.` : `EIA's ${s.case} case inputs, ${s.model}, precomputed`}</small></button>`;
+    const all = Object.values(SC);
+    $("cards").innerHTML = all.filter((s) => !s.story).map(card).join("") +
+      (STORY.length ? `<div class="scen-head story-head"><span>Data center story</span><button class="ghost small" id="step-through" type="button">Step through</button></div>` +
+        all.filter((s) => s.story).map(card).join("") : "");
+    $("cards").querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => pick(b.dataset.k)));
+    const st = $("step-through");
+    if (st) st.addEventListener("click", stepThrough);
+  }
+  function pick(k) {
+    if (comparing && k !== selA) selB = selB === k ? null : k;
+    else {
+      stepFrom = SC[selA].story && SC[k].story && selA !== k ? selA : null;
+      selA = k;
+      if (selB === k) selB = null;
+    }
+    render(true);
+    if (onStep) onStep(stepFrom, selA);
+  }
+  let stepping = false;
+  async function stepThrough() {
+    if (stepping) return;
+    stepping = true;
+    comparing = false; selB = null; $("compare").setAttribute("aria-pressed", false);
+    if (+yearEl.value === +yearEl.max) { yearEl.value = 2035; yearEl.dispatchEvent(new Event("input")); }
+    selA = "reference";
+    for (const k of STORY) { pick(k); await new Promise((ok) => setTimeout(ok, 3600)); }
+    stepping = false;
   }
   let tweenId = 0;
   function heads(animate) {
@@ -146,18 +180,23 @@
       `<path d="${path(b)}" fill="none" stroke="#FAC775" stroke-width="1.5" stroke-dasharray="4 3"/></svg>`;
   }
   function diff() {
-    if (!selB) { $("diff").innerHTML = comparing ? `<span class="k" style="color:var(--dim)">Pick a second scenario.</span>` : ""; return; }
-    const A = SC[selA], B = SC[selB];
+    const pair = selB ? [selA, selB] : stepFrom ? [stepFrom, selA] : null;
+    if (!pair) { $("diff").innerHTML = comparing ? `<span class="k" style="color:var(--dim)">Pick a second scenario.</span>` : ""; return; }
+    const A = SC[pair[0]], B = SC[pair[1]];
     $("diff").innerHTML = `<span style="color:var(--muted)">${B.label} minus ${A.label}, ${year()}</span>` +
       Object.entries(HEADS).map(([m, h]) => {
-        const d = val(selB, m) - val(selA, m), p = val(selA, m) ? (100 * d) / val(selA, m) : 0;
+        const d = val(B.key, m) - val(A.key, m), p = val(A.key, m) ? (100 * d) / val(A.key, m) : 0;
         const cls = Math.abs(p) < 0.05 ? "" : d > 0 ? "up" : "down";
         return `<div><span class="k">${h.label}</span> <span class="d ${cls}">${d >= 0 ? "+" : "-"}${h.pre || ""}${num(Math.abs(d), h.d)}${h.unit} (${p >= 0 ? "+" : ""}${p.toFixed(1)}%)</span>` +
           spark(A.run[m].slice(YEARS.indexOf(RUNS.start_year)), B.run[m].slice(YEARS.indexOf(RUNS.start_year))) + `</div>`;
       }).join("") +
       `<span class="k" style="color:var(--dim)">Lines: ${A.label} solid, ${B.label} dashed, ${RUNS.start_year}-${YEARS[YEARS.length - 1]}.</span>`;
   }
-  function render(animate) { cards(); heads(animate); diff(); writeHash(); }
+  function render(animate) {
+    OUT = (FID.sets[SC[selA].set || "fast"] || FID.sets.fast).outputs;
+    cards(); heads(animate); diff(); writeHash();
+    if (onStep && stepFrom) onStep(stepFrom, selA, true);
+  }
   $("compare").addEventListener("click", () => {
     comparing = !comparing; $("compare").setAttribute("aria-pressed", comparing);
     if (!comparing) selB = null;
@@ -448,6 +487,41 @@
   $("play").addEventListener("click", play);
   yearEl.addEventListener("change", () => { if (!playing) { calls = 0; passesDone = 0; replayYear(+yearEl.value, 1.2); } });
 
+  // ---- the ring animates the change between two data center steps ----------------------------
+  // Each module's own quantity in the two runs; a module with no such number here gets nothing.
+  const THEIR_NUMBER = {
+    residential: (c) => c.energy.residential, commercial: (c) => c.energy.commercial, industrial: (c) => c.energy.industrial,
+    transportation: (c) => c.energy.transportation, electricity: (c) => c.trace.totals.elec,
+    natural_gas: (c) => c.trace.totals.gas, coal: (c) => c.trace.power_burn.coal, refining: (c) => c.trace.totals.gasoline,
+  };
+  const halos = {};
+  Object.keys(THEIR_NUMBER).forEach((k) => {
+    const m = byKey[k];
+    const h = new THREE.Mesh(new THREE.TorusGeometry(m.radius + 3, 0.5, 8, 48), new THREE.MeshBasicMaterial({ color: COLOR.hub, opacity: 0, ...additive }));
+    h.position.copy(m.center); h.visible = false; scene.add(h); halos[k] = { mesh: h, from: 1, to: 1, t: 1, op: 0 };
+  });
+  const changeLbl = {};
+  MODS.forEach((m, i) => { const s = document.createElement("span"); s.className = "chg"; labels[i].appendChild(s); changeLbl[m.key] = s; });
+  onStep = (fromKey, toKey, quiet) => {
+    Object.values(changeLbl).forEach((s) => (s.textContent = ""));
+    Object.values(halos).forEach((h) => { h.op = 0; h.mesh.visible = false; });
+    const A = fromKey && SC[fromKey] && SC[fromKey].raw, B = SC[toKey] && SC[toKey].raw;
+    if (!A || !B) return;
+    const j = YEARS.indexOf(year());
+    Object.entries(THEIR_NUMBER).forEach(([k, get]) => {
+      const a = get(A)[j], b = get(B)[j], pctCh = a ? (100 * (b - a)) / a : 0;
+      if (Math.abs(pctCh) < 0.05) return;     // no visible change
+      const h = halos[k], m = byKey[k];
+      h.mesh.visible = true;
+      h.mesh.material.color.setHex(pctCh > 0 ? COLOR.partial : COLOR.output);
+      h.from = 1; h.to = 1 + Math.min(0.7, Math.abs(pctCh) / 25); h.t = quiet ? 1 : 0;
+      h.op = Math.min(0.95, 0.25 + Math.abs(pctCh) / 12);
+      changeLbl[k].textContent = ` ${pctCh > 0 ? "+" : ""}${pctCh.toFixed(1)}%`;
+      if (!quiet) for (let n = 0; n < Math.min(6, Math.ceil(Math.abs(pctCh) / 2)); n++)
+        setTimeout(() => pulse(pctCh > 0 ? hub : m.center, pctCh > 0 ? m.center : hub, pctCh > 0 ? COLOR.partial : COLOR.output, 700), n * 130);
+    });
+  };
+
   // ---- follow a switch, and hover labels ---------------------------------------------------
   // Click a switch: light the routines that read it by name (RTOVALUE) or, if none does, its
   // owning module; the shared variables those write; and the modules that read those.
@@ -587,6 +661,13 @@
   function tick(now) {
     const dt = now - last; last = now;
     hubMesh.rotation.y += dt * spin; hubMesh.rotation.x += dt * spin * 0.5;
+    Object.values(halos).forEach((h) => {
+      if (!h.mesh.visible) return;
+      h.t = Math.min(1, h.t + dt / 900);
+      const e = 1 - Math.pow(1 - h.t, 3), s = h.from + (h.to - h.from) * e;
+      h.mesh.scale.setScalar(s); h.mesh.material.opacity = h.op * (0.35 + 0.65 * e);
+      h.mesh.quaternion.copy(camera.quaternion);
+    });
     for (let i = pulses.length - 1; i >= 0; i--) {
       const p = pulses[i]; p.t += dt / p.dur;
       if (p.t < 0) continue;
