@@ -279,6 +279,7 @@ def femcalc(s: dict) -> None:
     rnd = s["roundoff_error"]
     num_man, num_req, num_syn = int(s["num_man"]), int(s["num_req"]), int(s["num_syn"])
     syn_loss = s.setdefault("_femcalc_synergy_loss", np.zeros(numtech + 1, dtype=f32))
+    sup_list = sorted(_sup_notes(s).items())
 
     for ildv in range(1, MAXLDV + 1):
         s["ildv"] = ildv
@@ -331,14 +332,29 @@ def femcalc(s: dict) -> None:
                                pslope, f1, inc_gr, invgr)
 
                     if num_man == 0:
-                        # Only the technologies with supersede notes change anything here.
-                        for itech in sorted(_sup_notes(s)):
-                            if itech > numtech or yrs < frst[itech, igp]:
+                        # NOTE_SUPER for the technologies with supersede notes (the only ones it
+                        # changes), in order; the module variables it leaves are set once.
+                        act, mm, fr = actual._p, mmax._p, frst.a[:, igp - 1]
+                        last = None
+                        for itech, its_notes in sup_list:
+                            if itech > numtech or yrs < fr[itech - 1]:
                                 continue
-                            s["itech"] = itech
-                            note_super(s, actual, mmax)
-                            if int(s["return_stat"]) < 0:
-                                raise ValueError("TDM FEMCALC: logic error in supersedes algorithm, market penetration below zero")
+                            for inote, others in its_notes:
+                                tot, mx = act[itech], mm[itech]
+                                for k in others:
+                                    mx = max(mx, mm[k])
+                                for k in others:
+                                    tot = tot + act[k]
+                                    if tot > mx:
+                                        act[k] = act[k] - (tot - mx)
+                                        tot = mx
+                                        if act[k] < ZERO - rnd:
+                                            raise ValueError("TDM FEMCALC: logic error in supersedes algorithm, market penetration below zero")
+                                        elif act[k] < 0.0:
+                                            act[k] = ZERO
+                                last = (len(others) + 2, tot, mx)
+                        if last is not None:
+                            s["i"], s["tot_mkt"], s["max_share"] = last
                         if (yrs >= frst[T, igp]).any():
                             s["inote"], s["return_stat"] = int(s["num_sup"]) + 1, 0
                     for itech in range(1, numtech + 1 if num_man > 0 else 1):
