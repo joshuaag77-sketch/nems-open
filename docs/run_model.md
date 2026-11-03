@@ -18,16 +18,61 @@ print(r.report())   # one line per pass
 
 ## A year
 
-1. Pass 0: the supply stand-in runs on the demand carried in, carbon price included, and
-   its prices are taken whole. Exogenous moves land at once.
-2. Each pass: demand on the current prices, then the supply stand-in on that demand.
-   Prices move halfway to the new answer (relaxation 0.5).
-3. The year is done when no price moved by more than 0.1% in a pass (prices near zero
-   are measured against a 0.01 floor). Most years take 5 to 10 passes with a policy on,
-   1 without.
+The year loop is NEMS's integrating module, ported in `src/nems_open/converge/` from EIA's
+Python integrator (nems-upstream `source/nems_flow.py`, `models/main/nems_iteration_loop.py`,
+`models/converge/`). EIA's settings tables are copied there unchanged.
 
-The report lists, per pass: iteration count, largest relative price change and which
-price, largest relative demand change, and the routines called.
+1. Each iteration (CURITR) runs demand on the current prices, then the supply side on that
+   demand (the stand-in, or the dispatch LP and the stand-in, then EFP for retail
+   electricity).
+2. From iteration 2, each step is tested on what it changed: its outputs against the values
+   it saw. A variable fails when, over divisions 1-9, some change reaches 1% of the
+   midpoint (EIA's measure), some change reaches its absolute tolerance (10 trillion Btu
+   for quantities, 0 for prices), and, for a price, its quantity is at least 10 trillion
+   Btu somewhere. EIA tests the three separately (any() on each), and so does the port.
+3. From iteration 2, each step's outputs are relaxed: new = old + factor x (new - old).
+   Factors are EIA's per variable: 0.5 for electricity, oil product, coal-to-industry and
+   most gas-to-power prices; 1.0 for gas to buildings and industry; 0.8 for power-sector
+   gas, coal and oil use; 1.0 for end-use quantities.
+4. Iteration control (FCRL): once every step passes, one more iteration runs as the final
+   convergence and reporting loop (FCRL = 1). Passing again ends the year (stable); failing
+   with iterations left clears FCRL and goes on. With no iterations left (MAXITR, 2 in
+   cb2026) one final iteration runs with FCRL = 1. So a year takes 3 to MAXITR + 1
+   iterations, and the last has FCRL = 1, which is when EFP writes its statements.
+5. `cycles` repeats the whole run (NEMS's NRUNS, 5 in cb2026), relaxing every year between
+   cycles by EIA's intercycle factors (icnv tables, IRELAX = 2). The default is one
+   cycle: the loop starts from EIA's converged fifth cycle, which already plays the role of
+   the earlier cycles.
+
+The report lists, per iteration: cycle, year, CURITR, FCRL, the largest fractional price
+and demand changes, whether every step passed, and which variables failed.
+
+What differs from NEMS, and why:
+
+- One cycle by default (see 5).
+- Only the price and quantity tables are used. The loop has no endogenous GDP, world oil
+  price, coal-unit or seasonal gas-to-utility variables (conv_Other, conv_Coal*,
+  conv_*GasToUtilities), so those are not tested.
+- Demand is one step: EIA tests and relaxes after each demand module, but no demand
+  quantity has a factor other than 1 and the modules read only prices, so one step gives
+  the same test and the same values.
+- All-sector totals come from the last supply call (SUMQAS in NEMS recomputes them from
+  the relaxed values).
+- Iteration 1 demand sees the carried prices for the year (EIA's converged values, or the
+  previous cycle's), as NEMS's iteration 1 sees its restart file.
+
+### Measured against EIA's settings (stub demand, 2027-2050)
+
+| Case | Iterations a year | Years stable | 2050 vs MAXITR = 20 |
+|---|---|---|---|
+| No policy | 3 | 24 of 24 | identical (EIA's reference within 7.5e-7) |
+| Carbon $50/t, MAXITR = 2 (cb2026) | 3 | 24 of 24 | residential electricity +0.010%, gas -0.0002%, all-sector electricity use -0.007% |
+| Carbon $50/t, MAXITR = 6 | 4 | 24 of 24 | identical |
+| Carbon $50/t, MAXITR = 2, 2 cycles | 3 | 24 of 24 | residential electricity +0.002% |
+
+With EIA's settings the stub loop converges every year inside cb2026's limit; EIA's 1%
+tolerance leaves the answer within 0.01% of a run to full convergence. The old loop
+(0.1% on prices, up to 20 passes) took 5 to 10 passes a year with a policy on.
 
 ## Policy levers
 
@@ -91,7 +136,7 @@ but well above the fitted gasoline response (-0.06).
 
 With no policy, the loop reproduces EIA's reference prices, demand and CO2 exactly
 (stub) or within the ported modules' own drift. Checked 2026-11-02 with ported
-residential for 2030 (runner's working tree, oracle dumps): one pass, US residential
+residential for 2030 (runner's working tree, oracle dumps, before the converge/ port): one pass, US residential
 electricity and gas within 0.1% of EIA. At $50/t: four passes, residential gas -1.5%,
 electricity -1.0%. Test: `NEMS_SLOW=1 pytest tests/test_run_model.py -k ported`, run
 from a checkout that has both the demand runner and the oracle dumps.
