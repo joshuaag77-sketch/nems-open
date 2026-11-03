@@ -14,6 +14,8 @@ from nems_open import oracle_state
 from nems_open.commercial.technology_choice import Carry, technology_choice
 from nems_open.fortran_array import FArray
 
+XDIST_BY_YEAR = True
+
 YEARS = [31, 37, 51]  # 2020, 2026, 2040
 TOL = 1e-4
 

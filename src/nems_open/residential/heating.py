@@ -15,7 +15,7 @@ import numpy as np
 from nems_open.fortran_array import FArray
 from nems_open.residential.common import (BASEYR, ENDYR, LASTSTEOYR, MNUMBLDG, MNUMFUEL, NUM_DIV,
                                           RECSYEAR, f32, powi)
-from nems_open.residential.helpers import replace, rselast, svrte
+from nems_open.residential.helpers import replace, rselast, svrte, vintage_future
 
 NSHELLTYPES = 5
 
@@ -41,6 +41,13 @@ def rhtradd(s: dict) -> None:
     EQCADD, EQCREP, EQCSUR = s["eqcadd"], s["eqcrep"], s["eqcsur"]
     EQCRP90, EQCRP90RP, EQCSR90 = s["eqcrp90"], s["eqcrp90rp"], s["eqcsr90"]
     EQCESE, EQCRET, HSEADD = s["eqcese"], s["eqcret"], s["hseadd"]
+
+    # Survival and housing-decay factors by vintage age (CurCalYr - Y for Y = RECSYEAR+1..CurCalYr-1)
+    ages = np.arange(CurCalYr - RECSYEAR - 1, 0, -1)
+    vint = {c: (np.array([svrte(RTALPHA[c], a, RTK[c], RTLAMBDA[c]) for a in ages], dtype=np.float32),
+                np.array([svrte(RTALPHA[c], a - 1, RTK[c], RTLAMBDA[c]) - svrte(RTALPHA[c], a, RTK[c], RTLAMBDA[c])
+                          for a in ages], dtype=np.float32)) for c in range(c0, c1 + 1)}
+    hpow = {b: np.array([powi(HDR[b], a) for a in ages], dtype=np.float32) for b in range(1, MNUMBLDG + 1)}
 
     # SHARESN is a local in EIA's code, zeroed per class before use
     SHARESN = np.zeros((NHTRFL + 20, MNUMBLDG + 1, NUM_DIV + 1), dtype=np.float32)
@@ -76,28 +83,23 @@ def rhtradd(s: dict) -> None:
                     EQCRP90[CurCalYr, RECCL, B, R] = ((EQCRET[CurCalYr, RECCL] - EQCRET[CurCalYr - 1, RECCL])
                         * EQCESE[RECSYEAR, RECCL, B, R] * powi(HDR[B], CurCalYr - RECSYEAR))
 
-                # vintage replacements of replacements
+                # vintage replacements of replacements, and surviving replacements: running
+                # sums over earlier vintages in year order (terms as float32 arrays, summed
+                # by a sequential accumulate, so the same rounding as the Fortran's loop)
                 if CurCalYr > RECSYEAR + 1:
-                    for Y in range(RECSYEAR + 1, CurCalYr):
-                        TEMP = CurCalYr - Y
-                        ESR = (svrte(RTALPHA[RECCL], TEMP - 1, RTK[RECCL], RTLAMBDA[RECCL])
-                               - svrte(RTALPHA[RECCL], TEMP, RTK[RECCL], RTLAMBDA[RECCL]))
-                        EQCRP90RP[CurCalYr, RECCL, B, R] = (EQCRP90RP[CurCalYr, RECCL, B, R]
-                            + (EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
-                               + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)))
-
-                # surviving replacements
-                if CurCalYr > RECSYEAR + 1:
-                    for Y in range(RECSYEAR + 1, CurCalYr):
-                        TEMP = CurCalYr - Y
-                        ESR = svrte(RTALPHA[RECCL], TEMP, RTK[RECCL], RTLAMBDA[RECCL])
-                        EQCSR90[CurCalYr, RECCL, B, R] = (EQCSR90[CurCalYr, RECCL, B, R]
-                            + (EQCRP90[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)
-                               + EQCRP90RP[Y, RECCL, B, R] * ESR * powi(HDR[B], TEMP)))
-                        HSR = powi(HDR[B], TEMP)
-                        SA = SA + EQCADD[Y, RECCL, B, R] * HSR
-                        EQCSUR[CurCalYr, RECCL, B, R] = (EQCSUR[CurCalYr, RECCL, B, R]
-                            + ((EQCADD[Y, RECCL, B, R] + EQCREP[Y, RECCL, B, R]) * (HSR * ESR)))
+                    v = slice(RECSYEAR + 1, CurCalYr - 1)
+                    sv, hp = vint[RECCL], hpow[B]
+                    rp90, rp90rp = EQCRP90[v, RECCL, B, R], EQCRP90RP[v, RECCL, B, R]
+                    esr = sv[1]  # svrte(age - 1) - svrte(age), oldest vintage first
+                    EQCRP90RP[CurCalYr, RECCL, B, R] = _running(
+                        EQCRP90RP[CurCalYr, RECCL, B, R], rp90 * esr * hp + rp90rp * esr * hp)
+                    esr = sv[0]  # svrte(age)
+                    EQCSR90[CurCalYr, RECCL, B, R] = _running(
+                        EQCSR90[CurCalYr, RECCL, B, R], rp90 * esr * hp + rp90rp * esr * hp)
+                    add = EQCADD[v, RECCL, B, R]
+                    SA = _running(SA, add * hp)
+                    EQCSUR[CurCalYr, RECCL, B, R] = _running(
+                        EQCSUR[CurCalYr, RECCL, B, R], (add + EQCREP[v, RECCL, B, R]) * (hp * esr))
 
                 if B == 1:
                     # what replacements would be without switching, then REPLACE spreads them
@@ -202,19 +204,7 @@ def rhtradd(s: dict) -> None:
                                                   / EXS[RECSYEAR, B, D]) * NHSHELL[CurCalYr, 3, D, B]) + f32(1)
 
     # equipment surviving into each future year
-    EQR90FUT, EQR90RPFUT = s["eqr90fut"], s["eqr90rpfut"]
-    EQREPFUT, EQADDFUT = s["eqrepfut"], s["eqaddfut"]
-    for B in range(1, MNUMBLDG + 1):
-        for R in range(1, NUM_DIV + 1):
-            for RECCL in range(c0, c1 + 1):
-                for Y in range(CurCalYr, ENDYR + 1):
-                    TEMP = Y - CurCalYr
-                    HSR = powi(HDR[B], TEMP)
-                    ESR = svrte(RTALPHA[RECCL], TEMP, RTK[RECCL], RTLAMBDA[RECCL])
-                    EQR90FUT[CurCalYr, Y, RECCL, B, R] = EQCRP90[CurCalYr, RECCL, B, R] * ESR * HSR
-                    EQR90RPFUT[CurCalYr, Y, RECCL, B, R] = EQCRP90RP[CurCalYr, RECCL, B, R] * ESR * HSR
-                    EQREPFUT[CurCalYr, Y, RECCL, B, R] = EQCREP[CurCalYr, RECCL, B, R] * ESR * HSR
-                    EQADDFUT[CurCalYr, Y, RECCL, B, R] = EQCADD[CurCalYr, RECCL, B, R] * ESR * HSR
+    vintage_future(s, CurCalYr, c0, c1)
 
     # aggregate heating systems for investment analysis
     T = CurCalYr
@@ -248,6 +238,16 @@ def rhtradd(s: dict) -> None:
             for B in range(1, MNUMBLDG + 1):
                 GC[CurCalYr, R] = (GC[CurCalYr, R] + HEATOT[CurCalYr, 3, B, R]
                                    + HEATOT[CurCalYr, 4, B, R] + HEATOT[CurCalYr, 10, B, R])
+
+
+def _running(start, terms):
+    """start + terms[0] + terms[1] + ... in float32, in order (a Fortran running sum)."""
+    return np.add.accumulate(np.concatenate([[np.float32(start)], terms.astype(np.float32)]))[-1]
+
+
+def _interleave(*cols):
+    """a0, b0, ..., a1, b1, ...: the order a running sum like TEMP = TEMP + A(Y) + B(Y) adds them."""
+    return np.stack(cols, axis=-1).reshape(-1)
 
 
 def _powf(x, y):
@@ -452,45 +452,37 @@ def rhtrcon(s: dict) -> None:
                     EQCAHVUEC[CurCalYr, RECCL, B, R] = EQCHVUEC[CurCalYr, RECCL, B, R]
                     AFANUEC[RECSYEAR + 1, R, B] = NFANUEC[RECSYEAR + 1, R, B]
                 else:
-                    TEMP = f32(0.0)
-                    TEMP1 = f32(0.0)
-                    TEMP2 = f32(0.0)
-                    for Y in range(RECSYEAR, CurCalYr):
-                        TEMP = TEMP + EQR90FUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R]
-                        TEMP1 = TEMP1 + (EQR90FUT[Y, CurCalYr, RECCL, B, R] + EQADDFUT[Y, CurCalYr, RECCL, B, R]
-                                         + EQREPFUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R]) * FAN
-                        TEMP2 = TEMP2 + EQADDFUT[Y, CurCalYr, RECCL, B, R] + EQREPFUT[Y, CurCalYr, RECCL, B, R]
+                    # Stock-weighted averages over the vintages RECSYEAR..CurCalYr-1: float32 term
+                    # arrays, summed in year order by a sequential accumulate (the Fortran's loops).
+                    v = slice(RECSYEAR, CurCalYr - 1)
+                    a = EQR90FUT[v, CurCalYr, RECCL, B, R]
+                    rp = EQR90RPFUT[v, CurCalYr, RECCL, B, R]
+                    add = EQADDFUT[v, CurCalYr, RECCL, B, R]
+                    rep = EQREPFUT[v, CurCalYr, RECCL, B, R]
+                    TEMP = _running(f32(0.0), _interleave(a, rp))
+                    TEMP1 = _running(f32(0.0), (((a + add) + rep) + rp) * FAN)
+                    TEMP2 = _running(f32(0.0), _interleave(add, rep))
 
                     if TEMP <= 0.0:
                         EQCAUEC[CurCalYr, RECCL, B, R] = EQCNUEC[CurCalYr, RECCL, B, R]
                     else:
-                        EQCAUEC[CurCalYr, RECCL, B, R] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            EQCAUEC[CurCalYr, RECCL, B, R] = EQCAUEC[CurCalYr, RECCL, B, R] + (
-                                EQR90FUT[Y, CurCalYr, RECCL, B, R] * EQCRUEC[Y, RECCL, B, R]
-                                + EQR90RPFUT[Y, CurCalYr, RECCL, B, R] * EQCNIUEC[Y, RECCL, B, R]) / TEMP
+                        EQCAUEC[CurCalYr, RECCL, B, R] = _running(f32(0.0), (
+                            a * EQCRUEC[v, RECCL, B, R] + rp * EQCNIUEC[v, RECCL, B, R]) / TEMP)
 
                     # EIA quirk: AFANUEC is rewritten for every class, so the value the
                     # consumption loop uses comes from the last class (and its TEMP1)
                     if TEMP1 <= 0.0:
                         AFANUEC[CurCalYr, R, B] = NFANUEC[CurCalYr, R, B]
                     else:
-                        AFANUEC[CurCalYr, R, B] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            AFANUEC[CurCalYr, R, B] = AFANUEC[CurCalYr, R, B] + (
-                                EQR90FUT[Y, CurCalYr, RECCL, B, R] * EFANUEC[Y, R, B] * FAN
-                                + EQADDFUT[Y, CurCalYr, RECCL, B, R] * NFANUEC[Y, R, B] * FAN
-                                + EQREPFUT[Y, CurCalYr, RECCL, B, R] * NFANUEC[Y, R, B] * FAN
-                                + EQR90RPFUT[Y, CurCalYr, RECCL, B, R] * NFANUEC[Y, R, B] * FAN) / TEMP1
+                        nf = NFANUEC[v, R, B]
+                        AFANUEC[CurCalYr, R, B] = _running(f32(0.0), (
+                            a * EFANUEC[v, R, B] * FAN + add * nf * FAN + rep * nf * FAN + rp * nf * FAN) / TEMP1)
 
                     if TEMP2 <= 0.0:
                         EQCAHVUEC[CurCalYr, RECCL, B, R] = EQCHVUEC[CurCalYr, RECCL, B, R]
                     else:
-                        EQCAHVUEC[CurCalYr, RECCL, B, R] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            EQCAHVUEC[CurCalYr, RECCL, B, R] = EQCAHVUEC[CurCalYr, RECCL, B, R] + (
-                                EQADDFUT[Y, CurCalYr, RECCL, B, R] * EQCHVUEC[Y, RECCL, B, R]
-                                + EQREPFUT[Y, CurCalYr, RECCL, B, R] * EQCNUEC[Y, RECCL, B, R]) / TEMP2
+                        EQCAHVUEC[CurCalYr, RECCL, B, R] = _running(f32(0.0), (
+                            add * EQCHVUEC[v, RECCL, B, R] + rep * EQCNUEC[v, RECCL, B, R]) / TEMP2)
 
     # average equipment efficiency
     for R in range(1, NUM_DIV + 1):
@@ -499,18 +491,16 @@ def rhtrcon(s: dict) -> None:
                 if CurCalYr == RECSYEAR + 1:
                     WTEQCEFFA[RECSYEAR + 1, RECCL, B, R] = WTEQCEFFN[RECSYEAR + 1, RECCL, B, R]
                 else:
-                    TEMP = f32(0.0)
-                    for Y in range(RECSYEAR, CurCalYr):
-                        TEMP = (TEMP + EQR90FUT[Y, CurCalYr, RECCL, B, R] + EQADDFUT[Y, CurCalYr, RECCL, B, R]
-                                + EQREPFUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R])
+                    v = slice(RECSYEAR, CurCalYr - 1)
+                    a = EQR90FUT[v, CurCalYr, RECCL, B, R]
+                    add = EQADDFUT[v, CurCalYr, RECCL, B, R]
+                    rep = EQREPFUT[v, CurCalYr, RECCL, B, R]
+                    rp = EQR90RPFUT[v, CurCalYr, RECCL, B, R]
+                    TEMP = _running(f32(0.0), _interleave(a, add, rep, rp))
                     if TEMP > 0.0:
-                        WTEQCEFFA[CurCalYr, RECCL, B, R] = 0.0
-                        for Y in range(RECSYEAR, CurCalYr):
-                            WTEQCEFFA[CurCalYr, RECCL, B, R] = WTEQCEFFA[CurCalYr, RECCL, B, R] + (
-                                (EQR90FUT[Y, CurCalYr, RECCL, B, R] * WTEQCEFFR[Y, RECCL, B, R])
-                                + ((EQADDFUT[Y, CurCalYr, RECCL, B, R] * WTEQCEFFHV[Y, RECCL, B, R])
-                                   + (EQREPFUT[Y, CurCalYr, RECCL, B, R] + EQR90RPFUT[Y, CurCalYr, RECCL, B, R])
-                                   * WTEQCEFFN[Y, RECCL, B, R])) / TEMP
+                        WTEQCEFFA[CurCalYr, RECCL, B, R] = _running(f32(0.0), (
+                            (a * WTEQCEFFR[v, RECCL, B, R])
+                            + ((add * WTEQCEFFHV[v, RECCL, B, R]) + (rep + rp) * WTEQCEFFN[v, RECCL, B, R])) / TEMP)
                     else:
                         WTEQCEFFA[CurCalYr, RECCL, B, R] = WTEQCEFFN[CurCalYr, RECCL, B, R]
 

@@ -6,4 +6,7 @@ oracle/run/
 oracle/build/
 oracle/run_*/
 oracle/build_*/
+oracle/upstream_link
+oracle/build_ind.log
+oracle/cycle.sh
 /data/

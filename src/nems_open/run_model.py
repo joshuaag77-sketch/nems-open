@@ -6,8 +6,11 @@ prices, then the supply side on that demand, then the new prices are relaxed tow
 the supply side's answer (P = P + RELAX * (P_new - P)). The year is done when no price
 moved by more than TOL (relative) in a pass. Then the next year starts.
 
-Supply is the stand-in (docs/supply_standin.md). Demand goes through one adapter
-(demand_adapter.py): EIA's ported modules where asked for, a stub elsewhere.
+Supply is the stand-in (docs/supply_standin.md). With elec="lp" the power sector comes from the
+dispatch LP instead (docs/dispatch.md): electricity sales in; fuel use, power CO2 and the wholesale
+marginal cost out, with the carbon price in plant costs. Retail electricity prices stay with the
+stand-in. Demand goes through one adapter (demand_adapter.py): EIA's ported modules where asked
+for, a stub elsewhere.
 
     python -m nems_open.run_model --carbon 50 --ev 0.8 --efficiency 0.9
 """
@@ -43,6 +46,9 @@ class RunResult:
     quantities: dict[str, np.ndarray]   # QBLK, (11, 61), trillion Btu
     co2: dict[str, np.ndarray]          # sector -> (11, 61), million metric tons CO2
     passes: list[Pass] = field(default_factory=list)
+    wholesale: np.ndarray | None = None      # (25, 61) EMM regions, 1987 $/MWh; filled for elec="lp"
+    wholesale_us: np.ndarray | None = None   # (61,) load-weighted, 1987 $/MWh; NaN where not solved
+    generation_twh: dict | None = None       # group -> (61,), US, elec="lp"
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -74,9 +80,12 @@ def _max_rel_change(new: dict, old: dict) -> tuple[float, str]:
 
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
         baseline: str = "cb2026", ported: tuple[str, ...] = (), relax: float = RELAX,
-        tol: float = TOL, max_passes: int = MAX_PASSES, verbose: bool = False) -> RunResult:
+        tol: float = TOL, max_passes: int = MAX_PASSES, verbose: bool = False,
+        elec: str = "standin") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
-    baseline's prices and quantities."""
+    baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP)."""
+    if elec not in ("standin", "lp"):
+        raise ValueError("elec must be 'standin' or 'lp'")
     policy = policy or Policy(start_year=start_year)
     supply = SupplyStandin(baseline)
     base = supply.base
@@ -86,14 +95,30 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
     co2 = None
     passes = []
-    routines = demand.routines + ["supply stand-in"]
+    lp = None
+    wholesale = wholesale_us = generation = None
+    if elec == "lp":
+        from nems_open.emm.couple import ElectricityLP
+        lp = ElectricityLP(supply)
+        wholesale = np.full((25, 61), np.nan)
+        wholesale_us = np.full(61, np.nan)
+        generation = {}
+        cp87 = supply._cp87(carbon)
+    routines = demand.routines + ["supply stand-in" if lp is None else "supply stand-in + dispatch LP"]
+
+    def solve_supply(j: int):
+        """The supply side on the loop's current demand and prices."""
+        if lp is None:
+            return supply.solve(q, carbon_price=carbon)
+        r = lp.solve(FIRST_YEAR + j, q, prices, float(cp87[j]))
+        return supply.solve(q, carbon_price=carbon, power_fuel=r.power_fuel, co2_el=r.co2_el)
 
     for year in range(start_year, end_year + 1):
         j = year - FIRST_YEAR
         last_q = None
         # Pass 0: the supply side on the demand we have, taken whole. Exogenous moves
         # (a carbon price, a new baseline year) land at once instead of being relaxed in.
-        s = supply.solve(q, carbon_price=carbon)
+        s = solve_supply(j)
         for k in prices:
             prices[k][:, j] = s.prices[k][:, j]
         for n in range(1, max_passes + 1):
@@ -104,7 +129,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             last_q = col
             for k, v in col.items():
                 q[k][:, j] = v
-            s = supply.solve(q, carbon_price=carbon)
+            s = solve_supply(j)
             new = {k: s.prices[k][:, j] for k in prices}
             old = {k: prices[k][:, j] for k in prices}
             dp, worst = _max_rel_change(new, old)
@@ -118,12 +143,18 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 break
         for k, v in {**s.power_fuel, **s.totals}.items():
             q[k][:, j] = v[:, j]
+        if lp is not None:
+            last = lp.last[year]
+            wholesale[:, j] = last.wholesale
+            wholesale_us[j] = last.wholesale_us
+            for g, v in last.generation_twh.items():
+                generation.setdefault(g, np.full(61, np.nan))[j] = float(v.sum())
         if co2 is None:
             co2 = {k: v.copy() for k, v in s.co2.items()}
         for k, v in s.co2.items():
             co2[k][:, j] = v[:, j]
         demand.end_year()
-    return RunResult(prices, q, co2, passes)
+    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation)
 
 
 def main(argv=None) -> None:
@@ -135,9 +166,11 @@ def main(argv=None) -> None:
     ap.add_argument("--end", type=int, default=LAST_YEAR)
     ap.add_argument("--baseline", default="cb2026")
     ap.add_argument("--ported", nargs="*", default=[], help="sectors to run through EIA's ported modules")
+    ap.add_argument("--elec", choices=("standin", "lp"), default="standin",
+                    help="power sector: the stand-in, or the dispatch LP (docs/dispatch.md)")
     a = ap.parse_args(argv)
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start)
-    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported))
+    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec)
     print(r.report())
     supply = SupplyStandin(a.baseline)
     base, base_co2 = supply.base, supply.solve().co2_total

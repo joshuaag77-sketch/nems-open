@@ -11,6 +11,8 @@ import pytest
 from nems_open import oracle_state
 from nems_open.commercial.report import report
 
+XDIST_BY_YEAR = True
+
 pytestmark = pytest.mark.skipif(not oracle_state.available("rp_out", 61), reason="oracle state not dumped")
 
 OUTPUTS = ["cmfinalenduse", "cmnonbldguse", "cmfinalunbenchuse", "cmussurvfloortot", "cmusnewfloortot",

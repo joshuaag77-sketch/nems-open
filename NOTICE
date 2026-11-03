@@ -11,5 +11,12 @@ System, AEO2026 release (2026).
 NEMS is a U.S. government work; EIA states that U.S. government publications
 are in the public domain, and releases its other open-source models under
 Apache 2.0. This project is not affiliated with or endorsed by EIA. No EIA
-source code or data is included in this repository; the oracle build fetches
-EIA's code from EIA's own repository and patches a local copy.
+source code is included in this repository; the oracle build fetches EIA's
+code from EIA's own repository and patches a local copy.
+
+EIA data in this repository: web/data/ holds numbers taken from or computed
+from EIA's published AEO2026 runs (the reference series shown as "EIA
+reference", and results of this project's models fitted to those runs), and
+web/data/engine.json holds line counts and routine names read from EIA's
+source. src/nems_open/supply_standin/coefficients.json and
+src/nems_open/demand_elasticities.json are fitted to EIA's runs.

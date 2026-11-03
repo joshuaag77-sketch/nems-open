@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="data/scenarios.js"></script>
+<script src="data/engine.js"></script>
+<script src="data/real.js"></script>
 </head>
 <body>
 <header class="top">
@@ -15,32 +17,46 @@
     <h1>NEMS Open policy sandbox</h1>
     <p class="sub">An open Python rebuild of EIA's National Energy Modeling System, run to 2050. Move a lever, see what changes against EIA's AEO2026 reference.</p>
   </div>
-  <button id="theme" class="ghost" type="button" aria-label="Switch light or dark mode">Dark</button>
+  <nav class="top-nav" aria-label="Page">
+    <button id="go-how" class="ghost" type="button">How this works</button>
+    <a class="ghost" href="about.html">About</a>
+    <button id="theme" class="ghost" type="button" aria-label="Switch light or dark mode">Dark</button>
+  </nav>
 </header>
 
 <main class="layout">
   <aside class="levers" aria-label="Policy levers">
     <h2>Levers</h2>
+    <div class="setswitch" role="group" aria-label="Which model runs">
+      <button type="button" data-set="fast" aria-pressed="true">Fast stand-ins<span>144 scenarios</span></button>
+      <button type="button" data-set="real" aria-pressed="false">Real ported modules<span>16 scenarios</span></button>
+    </div>
+    <p class="fine" id="set-note"></p>
     <div class="lever">
       <label for="carbon">Carbon price from 2027</label>
       <output id="carbon-out">$0 per ton CO2</output>
       <input id="carbon" type="range" min="0" max="8" step="1" value="0">
-      <div class="ticks"><span>$0</span><span>$100</span><span>$200</span></div>
+      <div class="ticks" id="carbon-ticks"></div>
     </div>
     <div class="lever">
       <label for="ev">Plug-in share of new car and light truck sales, 2035</label>
       <output id="ev-out">65% (EIA)</output>
       <input id="ev" type="range" min="0" max="3" step="1" value="1">
-      <div class="ticks"><span>25%</span><span>EIA</span><span>80%</span><span>100%</span></div>
+      <div class="ticks" id="ev-ticks"></div>
     </div>
     <div class="lever">
       <label for="bld">Building energy use by 2050, vs EIA</label>
       <output id="bld-out">Same as EIA</output>
       <input id="bld" type="range" min="0" max="3" step="1" value="0">
-      <div class="ticks"><span>EIA</span><span>-5%</span><span>-10%</span><span>-20%</span></div>
+      <div class="ticks" id="bld-ticks"></div>
     </div>
     <button id="reset" class="ghost" type="button">Back to EIA reference</button>
-    <p class="fine">Every combination was run ahead of time (144 runs), so the sliders snap to the grid. Prices are 2024 dollars.</p>
+    <div class="share">
+      <button id="copy-link" class="ghost" type="button">Copy link to this scenario</button>
+      <button id="download-csv" class="ghost" type="button">Download CSV</button>
+      <p class="fine" id="share-msg" role="status"></p>
+    </div>
+    <p class="fine" id="grid-note"></p>
   </aside>
 
   <section class="results" aria-label="Results">
@@ -54,9 +70,14 @@
     <div class="card">
       <div class="card-head">
         <div class="tabs" role="tablist" id="tabs"></div>
-        <div class="legend"><span class="sw solid"></span>This run <span class="sw dashed"></span>EIA reference</div>
+        <div class="legend"><span class="sw solid"></span>This run <span class="ref-key"><span class="sw dashed"></span>EIA reference</span></div>
       </div>
       <div class="chart-box"><canvas id="chart" aria-label="Chart of the selected measure, 2025 to 2050"></canvas></div>
+    </div>
+
+    <div class="card trace">
+      <div class="card-head"><h2>Trace this number</h2><span class="fine hint">Click any point on the chart</span></div>
+      <div id="trace-body"></div>
     </div>
 
     <div class="card engine">
@@ -68,7 +89,7 @@
           <input id="year" type="range" min="2027" max="2050" step="1" value="2030">
         </div>
       </div>
-      <p class="fine">The real convergence log of this run. Each year, demand and supply take turns until no price moves more than 0.1%. Pass 0 applies the levers; each pass after it narrows the gap.</p>
+      <p class="fine">The real convergence log of this run. Each year, demand and supply take turns until no price moves more than 0.1%. Pass 0 applies the levers; each pass after it narrows the gap. Click a module to see what is inside it.</p>
       <div class="engine-grid">
         <div class="modules" id="modules"></div>
         <div class="passes">
@@ -85,6 +106,34 @@
         <span><i class="dot real"></i>Ported from EIA's code, matches EIA</span>
         <span><i class="dot partial"></i>Being ported</span>
         <span><i class="dot stand"></i>Stand-in, fitted to EIA's runs</span>
+        <span><i class="dot live"></i>Ran for real in this run</span>
+      </div>
+    </div>
+
+    <div class="card how" id="how">
+      <h2>How this works</h2>
+      <div class="how-grid">
+        <div>
+          <h3>The loop</h3>
+          <p>Each year from 2027 to 2050, the demand modules take delivered prices and return fuel use by sector, fuel and census division. The supply side takes that fuel use and returns new prices and CO2. They take turns until no price moves more than 0.1%, the same relaxation NEMS's integrating module uses. The engine view above replays that log.</p>
+          <h3>How a port is checked</h3>
+          <p>We compile EIA's own Fortran with the free gfortran compiler and instrument it to dump every array before and after each routine. That build is the oracle. A Python port counts as done when it reproduces those arrays: most routines bit for bit, the rest within float rounding (largest gap 1e-4, in commercial on-site generation). Whole modules are then checked against EIA's published AEO2026 run, within 0.3%.</p>
+          <h3>Where the numbers come from</h3>
+          <p>EIA's 11 finished AEO2026 runs ship with EIA's NEMS release. The stand-ins are fitted to them, and the reference lines on the chart are EIA's own numbers. The 144 fast scenarios use the demand stub and take seconds each. The 16 "real ported modules" scenarios run residential and commercial through EIA's ported code and electricity through the dispatch LP (an hourly-block dispatch of EIA's plant fleet, solved with the open HiGHS solver); each takes 10 to 45 minutes. The LP runs EIA's reference plant fleet and builds or retires nothing in response to policy, so its carbon-price response is a floor: fuel switching only. With no policy it lands 65 Mt below EIA's 2050 power CO2 (765 against 830); docs/dispatch.md has the known gaps. Switch between them at the top of the levers.</p>
+        </div>
+        <div>
+          <h3>Ported and stand-in, today</h3>
+          <table class="rt" id="status-table"><thead><tr><th>Module</th><th>Status</th><th>EIA lines</th><th>Tests</th></tr></thead><tbody></tbody></table>
+          <p class="fine" id="status-note"></p>
+          <h3>Read more</h3>
+          <ul class="links">
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open">Repository</a></li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/SCOPE.md">SCOPE.md</a>: every module, routine and quirk kept</li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/docs/supply_standin.md">Supply stand-in</a>: fits and limits</li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/docs/run_model.md">The loop and the demand stub</a></li>
+            <li><a href="https://github.com/joshuaag77-sketch/nems-open/blob/main/docs/demand_elasticities.md">Demand elasticities</a>: fit report</li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -92,15 +141,22 @@
       <h2>What is real and what is a stand-in</h2>
       <ul>
         <li><b>Real ports.</b> The residential and commercial demand modules are line-by-line Python ports of EIA's Fortran. Run on EIA's prices they match EIA's AEO2026 reference within 0.3%. The ported residential module has been run through this same loop and holds EIA's numbers.</li>
-        <li><b>In these runs</b> every demand sector uses a fast stub (EIA's reference demand moved by a price elasticity) so each run takes seconds. The ported modules take minutes per year. Industrial and transportation are still being ported.</li>
+        <li><b>In the fast set</b> every demand sector uses a fast stub (EIA's reference demand moved by a price elasticity) so each run takes seconds. The real set runs the ported residential and commercial modules and the dispatch LP instead; there, retail power prices still come from the stand-in, fed by the LP's fuel use. Industrial and transportation are still being ported.</li>
         <li><b>Supply is a stand-in.</b> Electricity, natural gas, oil, refining and coal prices come from curves fitted to EIA's 11 AEO2026 runs, not from ports. On EIA's own growth and demand side cases they land within 2 to 5% of EIA's prices.</li>
         <li><b>Power plants.</b> A carbon price now switches power plants from coal to gas to zero-carbon power, using a response fitted to how plants reacted to gas prices in EIA's high and low gas supply runs (no AEO2026 run has a carbon price). Coal's response to its own cost is assumed, not fitted. Above $100 per ton the curve is extrapolated, and the cost of building replacement renewables is not in the power price, so power prices rise too little.</li>
         <li><b>Stub demand is fitted.</b> How much each sector's use of each fuel responds to its price is fitted to EIA's own side runs (for example -0.28 for home electricity, -0.06 for gasoline). A few fuels without a usable fit keep a placeholder. The stub only responds to a fuel's own price. The EV lever shifts fuel use as the fleet turns over; building efficiency is a flat cut.</li>
       </ul>
-      <p class="fine">EIA's reference here is the AEO2026 Counterfactual Baseline. Source and method: github.com/joshuaag77-sketch/nems-open, docs/supply_standin.md and docs/run_model.md.</p>
+      <p class="fine">EIA's reference here is the AEO2026 Counterfactual Baseline. Method and limits: see "How this works" and the docs linked there.</p>
     </div>
   </section>
 </main>
+<footer class="foot">
+  <p>Data: U.S. Energy Information Administration, Annual Energy Outlook 2026 and the NEMS AEO2026 release. NEMS Open is an independent project, not affiliated with or endorsed by EIA. <a href="about.html">About and credits</a>.</p>
+</footer>
+<dialog id="module-dialog" aria-label="Module details">
+  <button id="module-close" class="ghost close" type="button" aria-label="Close">Close</button>
+  <div id="module-body"></div>
+</dialog>
 <script src="app.js"></script>
 </body>
 </html>

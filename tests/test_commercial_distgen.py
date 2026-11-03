@@ -11,6 +11,8 @@ import pytest
 from nems_open import oracle_state
 from nems_open.commercial import distgen_tables as tables
 
+XDIST_BY_YEAR = True
+
 pytestmark = pytest.mark.skipif(not oracle_state.available("fdg_out", 30), reason="oracle state not dumped")
 
 

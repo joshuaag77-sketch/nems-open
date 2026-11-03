@@ -134,3 +134,82 @@ button.ghost:hover { border-color: var(--accent); color: var(--accent); }
   .engine-controls input { width: 100%; }
   .modules { grid-template-columns: 1fr 1fr; }
 }
+
+/* Clickable modules, module details, trace */
+button.mod { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+button.mod:hover { border-color: var(--accent); }
+button.mod:focus-visible, .tabs button:focus-visible, button.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+dialog#module-dialog {
+  width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 14px;
+  padding: 20px 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+dialog#module-dialog::backdrop { background: rgba(10, 14, 12, 0.45); }
+dialog .close { float: right; }
+dialog h2 { font-size: 1.25rem; margin: 0 0 6px; }
+dialog h3 { font-size: 0.92rem; margin: 18px 0 8px; }
+.status { margin: 0 0 12px; font-weight: 600; font-size: 0.9rem; }
+.status.real { color: var(--real); } .status.partial { color: var(--partial); } .status.stand { color: var(--stand); }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.facts div { background: var(--off); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; font-size: 0.78rem; color: var(--muted); }
+.facts .n { font-size: 1.3rem; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+table.rt { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+table.rt th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); padding: 5px 6px; }
+table.rt td { border-bottom: 1px solid var(--line); padding: 5px 6px; vertical-align: top; font-variant-numeric: tabular-nums; }
+table.rt code, .files code, .made-by code { font-size: 0.78rem; word-break: break-word; }
+table.rt tr.done td:first-child { border-left: 3px solid var(--real); }
+table.rt tr.todo td:first-child { border-left: 3px solid var(--partial); }
+.files { margin: 0; padding-left: 18px; font-size: 0.84rem; }
+
+.trace .hint { margin: 0; }
+.trace-head { display: grid; grid-template-columns: auto 1fr; gap: 24px; margin-bottom: 12px; align-items: start; }
+.made-btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.trace-t td.up { color: var(--bad); } .trace-t td.down { color: var(--good); }
+.story { margin: 10px 0 0; font-size: 0.9rem; }
+
+@media (max-width: 600px) {
+  .trace-head { grid-template-columns: 1fr; gap: 10px; }
+  .facts { grid-template-columns: 1fr 1fr; }
+  dialog#module-dialog { padding: 16px; }
+  table.rt { font-size: 0.76rem; }
+}
+
+/* Navigation, sharing, how this works, footer, about page */
+.top-nav { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+a.ghost { display: inline-block; text-decoration: none; background: transparent; color: var(--ink); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; font-size: 0.85rem; }
+a.ghost:hover { border-color: var(--accent); color: var(--accent); }
+.share { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.share .fine { margin: 0; min-height: 1.2em; color: var(--accent); }
+.how-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+.how h3, .about h3 { font-size: 0.92rem; margin: 14px 0 4px; }
+.how p, .about p { margin: 0 0 8px; }
+.how .dot { margin-right: 6px; }
+.links { margin: 0; padding-left: 18px; font-size: 0.9rem; }
+a { color: var(--accent); }
+button.link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.foot { max-width: 1240px; margin: 0 auto; padding: 0 16px 32px; font-size: 0.8rem; color: var(--muted); }
+.about { max-width: 760px; margin: 0 auto; padding: 8px 16px 40px; }
+.about .card { margin-bottom: 16px; }
+.about ul { padding-left: 18px; margin: 0 0 8px; }
+@media (max-width: 900px) { .how-grid { grid-template-columns: 1fr; } }
+.levers > button.ghost, .share button.ghost { width: 100%; }
+@media (max-width: 600px) {
+  .top { flex-direction: column; gap: 10px; }
+  .top-nav { justify-content: flex-start; }
+}
+
+/* Scenario set switch, modules that ran for real */
+.setswitch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 6px; }
+.setswitch button { font: inherit; font-size: 0.82rem; font-weight: 600; text-align: left; cursor: pointer; color: var(--ink);
+  background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.setswitch button span { display: block; font-weight: 400; font-size: 0.74rem; color: var(--muted); }
+.setswitch button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+.setswitch button:disabled { opacity: 0.5; cursor: not-allowed; }
+.setswitch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#set-note { margin: 0 0 12px; }
+.mod.live { border-color: var(--real); border-left-color: var(--real); border-style: solid; box-shadow: 0 0 0 1px var(--real) inset; }
+.mod.live .tag { color: var(--real); font-weight: 600; }
+.mod.live.on { background: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent) inset; }
+.dot.live { background: transparent; box-shadow: 0 0 0 2px var(--real) inset; }

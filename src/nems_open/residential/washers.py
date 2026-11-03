@@ -17,7 +17,7 @@ Inputs the oracle dump cannot hold, and what the port does about them:
 import numpy as np
 
 from nems_open.residential.common import BASEYR, LASTSTEOYR, MNUMBLDG, NUM_DIV, RECSYEAR, expf, f32, powf, powi
-from nems_open.residential.helpers import eqcost, rselast, svrte
+from nems_open.residential.helpers import STOCK_FUTURES, eqcost, rselast, stock_average, svrte, vintage_future
 
 ENDYR = 2050
 COSTTRSW = 0  # PARAMETER in the rtek include
@@ -276,18 +276,7 @@ def rcwadd(s: dict) -> None:
                 REP[Y0, reccl, b, r] = f32(SA - SUR[Y0, reccl, b, r])
 
     # Vintage this year's equipment into every future year
-    for b in range(1, MNUMBLDG + 1):
-        for r in range(1, NUM_DIV + 1):
-            for reccl in range(int(eupt[EU]) + 1, int(eupt[EU + 1]) + 1):
-                for y in range(Y0, ENDYR + 1):
-                    temp = y - Y0
-                    HSR = powi(HDR[b], temp)
-                    ESR = svrte(ALPHA[reccl], temp, K[reccl], LAM[reccl])
-                    s["eqr90fut"][Y0, y, reccl, b, r] = f32(f32(RP90[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqr90rpfut"][Y0, y, reccl, b, r] = f32(f32(RP90RP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqrepfut"][Y0, y, reccl, b, r] = f32(f32(REP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqaddfut"][Y0, y, reccl, b, r] = f32(f32(ADD[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqcesefut"][Y0, y, reccl, b, r] = f32(f32(ESE[Y0, reccl, b, r] * ESR) * HSR)
+    vintage_future(s, Y0, int(eupt[EU]) + 1, int(eupt[EU + 1]), STOCK_FUTURES + (("eqcesefut", "eqcese"),))
 
     _aggregate_purchases(s, EU)
 
@@ -376,19 +365,8 @@ def rcwcon(s: dict) -> None:
                     if Y == RECSYEAR + 1:
                         WA[RECSYEAR + 1, reccl, b, d] = WN[RECSYEAR + 1, reccl, b, d]
                     else:
-                        TEMP = f32(0.0)
-                        for y in range(RECSYEAR, Y):
-                            TEMP = f32(f32(f32(f32(TEMP + R90F[y, Y, reccl, b, d]) + ADDF[y, Y, reccl, b, d])
-                                           + REPF[y, Y, reccl, b, d]) + R90RPF[y, Y, reccl, b, d])
-                        if TEMP > 0.0:
-                            WA[Y, reccl, b, d] = 0.0
-                            for y in range(RECSYEAR, Y):
-                                new_add = f32(f32(ADDF[y, Y, reccl, b, d] + REPF[y, Y, reccl, b, d]) + R90RPF[y, Y, reccl, b, d])
-                                WA[Y, reccl, b, d] = WA[Y, reccl, b, d] + f32(
-                                    f32(f32(R90F[y, Y, reccl, b, d] * WR[y, reccl, b, d])
-                                        + f32(new_add * WN[y, reccl, b, d])) / TEMP)
-                        else:
-                            WA[Y, reccl, b, d] = WN[Y, reccl, b, d]
+                        _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR, "wteqceffr", "wteqceffn")
+                        WA[Y, reccl, b, d] = WN[Y, reccl, b, d] if avg is None else avg
 
         # Consumption
         for d in range(1, NUM_DIV + 1):
@@ -629,17 +607,7 @@ def rdwadd(s: dict) -> None:
 
                 REP[Y0, reccl, b, r] = f32(SA - SUR[Y0, reccl, b, r])
 
-    for b in range(1, MNUMBLDG + 1):
-        for r in range(1, NUM_DIV + 1):
-            for reccl in range(int(eupt[EU]) + 1, int(eupt[EU + 1]) + 1):
-                for y in range(Y0, ENDYR + 1):
-                    temp = y - Y0
-                    HSR = powi(HDR[b], temp)
-                    ESR = svrte(ALPHA[reccl], temp, K[reccl], LAM[reccl])
-                    s["eqr90fut"][Y0, y, reccl, b, r] = f32(f32(RP90[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqr90rpfut"][Y0, y, reccl, b, r] = f32(f32(RP90RP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqrepfut"][Y0, y, reccl, b, r] = f32(f32(REP[Y0, reccl, b, r] * ESR) * HSR)
-                    s["eqaddfut"][Y0, y, reccl, b, r] = f32(f32(ADD[Y0, reccl, b, r] * ESR) * HSR)
+    vintage_future(s, Y0, int(eupt[EU]) + 1, int(eupt[EU + 1]))
 
     _aggregate_purchases(s, EU)
 
@@ -674,19 +642,8 @@ def rdwcon(s: dict) -> None:
                     if Y == RECSYEAR + 1:
                         AUEC[Y, reccl, b, d] = NUEC[Y, reccl, b, d]
                     else:
-                        TEMP = f32(0.0)
-                        for y in range(RECSYEAR, Y):
-                            TEMP = f32(f32(f32(f32(TEMP + R90F[y, Y, reccl, b, d]) + ADDF[y, Y, reccl, b, d])
-                                           + REPF[y, Y, reccl, b, d]) + R90RPF[y, Y, reccl, b, d])
-                        if TEMP <= 0.0:
-                            AUEC[Y, reccl, b, d] = NUEC[Y, reccl, b, d]
-                        else:
-                            AUEC[Y, reccl, b, d] = 0.0
-                            for y in range(RECSYEAR, Y):
-                                new_add = f32(f32(ADDF[y, Y, reccl, b, d] + REPF[y, Y, reccl, b, d]) + R90RPF[y, Y, reccl, b, d])
-                                AUEC[Y, reccl, b, d] = AUEC[Y, reccl, b, d] + f32(
-                                    f32(f32(R90F[y, Y, reccl, b, d] * RUEC[y, reccl, b, d])
-                                        + f32(new_add * NUEC[y, reccl, b, d])) / TEMP)
+                        _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR, "eqcruec", "eqcnuec")
+                        AUEC[Y, reccl, b, d] = NUEC[Y, reccl, b, d] if avg is None else avg
 
         for b in range(1, MNUMBLDG + 1):
             for d in range(1, NUM_DIV + 1):
@@ -694,19 +651,8 @@ def rdwcon(s: dict) -> None:
                     if Y == RECSYEAR + 1:
                         WA[RECSYEAR + 1, reccl, b, d] = WN[RECSYEAR + 1, reccl, b, d]
                     else:
-                        TEMP = f32(0.0)
-                        for y in range(RECSYEAR, Y):
-                            TEMP = f32(f32(f32(f32(TEMP + R90F[y, Y, reccl, b, d]) + ADDF[y, Y, reccl, b, d])
-                                           + REPF[y, Y, reccl, b, d]) + R90RPF[y, Y, reccl, b, d])
-                        if TEMP > 0.0:
-                            WA[Y, reccl, b, d] = 0.0
-                            for y in range(RECSYEAR, Y):
-                                new_add = f32(f32(ADDF[y, Y, reccl, b, d] + REPF[y, Y, reccl, b, d]) + R90RPF[y, Y, reccl, b, d])
-                                WA[Y, reccl, b, d] = WA[Y, reccl, b, d] + f32(
-                                    f32(f32(R90F[y, Y, reccl, b, d] * WR[y, reccl, b, d])
-                                        + f32(new_add * WN[y, reccl, b, d])) / TEMP)
-                        else:
-                            WA[Y, reccl, b, d] = WN[Y, reccl, b, d]
+                        _, avg = stock_average(s, Y, reccl, b, d, RECSYEAR, "wteqceffr", "wteqceffn")
+                        WA[Y, reccl, b, d] = WN[Y, reccl, b, d] if avg is None else avg
 
         for d in range(1, NUM_DIV + 1):
             s["dswcon"][Y1, d] = 0.0

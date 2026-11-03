@@ -45,7 +45,7 @@ cd ../.. && python -m pytest                             # check every port agai
 python -m nems_open.run_demand 2030
 ```
 
-prints each fuel row, US total, next to EIA's. Residential takes seconds; commercial about 5 minutes a year in pure Python. From Python:
+prints each fuel row, US total, next to EIA's. Residential takes seconds; commercial about 5 s per iteration. From Python:
 
 ```python
 from nems_open.run_demand import DemandRunner, Inputs
