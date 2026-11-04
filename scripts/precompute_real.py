@@ -3,12 +3,16 @@
     python scripts/precompute_real.py [--workers 3] [--oracle-root PATH]
 
 Grid: carbon 0/50/100/200 $/t (2024 $), 2035 EV share at EIA's path or 80%, building
-energy at EIA's or 10% below by 2050. 16 runs. Residential and commercial are EIA's ported
-modules, electricity is the dispatch LP (elec="lp"); industrial and transportation stay on
-the stub and gas, oil and coal on the stand-in. 10 to 45 minutes a run.
+energy at EIA's or 10% below by 2050. 16 runs. Residential, commercial and transportation
+are EIA's ported modules (the EV share acts through TRAN's vehicle choice), electricity is the
+dispatch LP with EIA's ported EFP setting retail prices (elec="lp"); industrial stays on the
+stub and gas, oil and coal on the stand-in. About 20 minutes a run.
 
 Memory: each worker needs about 2 GB. Three workers ran out on a machine with 6 GB free; use
 --workers 1 there.
+
+Runs land in web/data/real_build/ and replace web/data/real/ only once all 16 are done, so the
+page never shows a half-old, half-new set.
 
 The ported modules start each year from the oracle's dumps. --oracle-root is a clone whose
 oracle/run and oracle/run_resd hold them (default: the main NEMS Open folder); it is only
@@ -38,7 +42,8 @@ OUT = ROOT / "web" / "data"
 CARBON = [0, 50, 100, 200]
 EV_2035 = [None, 0.80]
 BUILDINGS_2050 = [1.00, 0.90]
-PORTED = ("residential", "commercial")
+PORTED = ("residential", "commercial", "transportation")
+STAGE = OUT / "real_build"
 DEFAULT_ORACLE = Path.home() / "OneDrive" / "Desktop" / "3. AI Projects" / "NEMS Open"
 
 
@@ -71,10 +76,16 @@ def one(args) -> tuple[str, dict]:
     k = fast.to_2024(base)
     j = fast.J
     sid = fast.scenario_id(carbon, ev, bld)
+    trace = fast.trace(supply, r.quantities, pol, base)
+    # Retail power prices come from the ported EFP, so the stand-in's carbon adder is not in
+    # them; and the EV lever acts inside TRAN, so its gasoline cut is set in bundle() from the
+    # matching run at EIA's EV path.
+    trace["adders"]["electricity"] = None
+    trace["ev_cut_bgal"] = [0.0] * len(trace["ev_cut_bgal"])
     return sid, {
         "id": sid, "carbon": carbon, "ev2035": ev, "buildings2050": bld,
         **fast.series(r.prices, r.quantities, r.co2_total, base),
-        "trace": fast.trace(supply, r.quantities, pol, base),
+        "trace": trace,
         "convergence": report, "routines": r.passes[0].routines,
         # dispatch LP extras: wholesale marginal cost (2024 $/MWh, US, load-weighted) and generation
         "wholesale": [None if np.isnan(x) else round(float(x * k), 1) for x in r.wholesale_us[j]],
@@ -82,6 +93,16 @@ def one(args) -> tuple[str, dict]:
                            for g, v in r.generation_twh.items()},
         "minutes": round((time.time() - t) / 60, 1),
     }
+
+
+def ev_cuts(scen: dict) -> None:
+    """The EV lever's gasoline cut: the matching run at EIA's EV path minus this one."""
+    for d in scen.values():
+        if d["ev2035"] is None:
+            continue
+        ref = scen.get(fast.scenario_id(d["carbon"], None, d["buildings2050"]))
+        if ref:
+            d["trace"]["ev_cut_bgal"] = [round(a - b, 1) for a, b in zip(ref["gasoline_bgal"], d["gasoline_bgal"])]
 
 
 def bundle() -> None:
@@ -105,16 +126,25 @@ def main() -> None:
     ap.add_argument("--bundle-only", action="store_true")
     a = ap.parse_args()
     (OUT / "real").mkdir(parents=True, exist_ok=True)
+    STAGE.mkdir(parents=True, exist_ok=True)
+    grid = list(product(CARBON, EV_2035, BUILDINGS_2050))
     if not a.bundle_only:
-        todo = [(c, e, b, a.oracle_root) for c, e, b in product(CARBON, EV_2035, BUILDINGS_2050)
-                if not (OUT / "real" / f"{fast.scenario_id(c, e, b)}.json").exists()]
+        todo = [(c, e, b, a.oracle_root) for c, e, b in grid
+                if not (STAGE / f"{fast.scenario_id(c, e, b)}.json").exists()]
         print(f"{len(todo)} to run", flush=True)
         with ProcessPoolExecutor(a.workers) as pool:
             for fut in as_completed([pool.submit(one, t) for t in todo]):
                 sid, data = fut.result()
-                (OUT / "real" / f"{sid}.json").write_text(json.dumps(data, separators=(",", ":")))
+                (STAGE / f"{sid}.json").write_text(json.dumps(data, separators=(",", ":")))
                 print(f"done {sid} in {data['minutes']} min", flush=True)
-                bundle()
+    staged = {f.stem: json.loads(f.read_text()) for f in STAGE.glob("*.json")}
+    if len(staged) == len(grid):
+        ev_cuts(staged)
+        for f in (OUT / "real").glob("*.json"):
+            f.unlink()
+        for sid, d in staged.items():
+            (OUT / "real" / f"{sid}.json").write_text(json.dumps(d, separators=(",", ":")))
+        print("replaced data/real with the new runs")
     bundle()
 
 

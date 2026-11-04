@@ -8,7 +8,8 @@
 
   // ---- scenario sets -------------------------------------------------------------
   // fast: every sector on the stub, supply on fitted curves (144 runs).
-  // real: ported residential and commercial plus the dispatch LP (16 runs, scripts/precompute_real.py).
+  // real: ported residential, commercial and transportation, the dispatch LP and ported EFP retail
+  // prices (16 runs, scripts/precompute_real.py).
   // Scenarios load one at a time (data/<dir>/<id>.json, about 3 KB gzipped) and are kept;
   // opened from disk, or if a fetch fails, the page loads the whole set's bundle instead.
   const SETS = { fast: { carbon: meta.carbon, ev2035: meta.ev2035, buildings2050: meta.buildings2050,
@@ -17,7 +18,8 @@
   let set = "fast";
   const grid = () => SETS[set];
   const LIVE = { residential: "Ported module ran in this run", commercial: "Ported module ran in this run",
-                 electricity: "Dispatch LP ran in this run" };
+                 transportation: "Ported module ran in this run, EV share set in its vehicle choice",
+                 electricity: "Dispatch LP and ported retail pricing (EFP) ran in this run" };
 
   // ---- levers --------------------------------------------------------------
   const el = (id) => document.getElementById(id);
@@ -80,7 +82,10 @@
     document.querySelectorAll(".setswitch button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.set === set));
     el("set-note").textContent = set === "fast"
       ? "Every demand sector on a fitted stub, supply on curves fitted to EIA's runs. Seconds a run, so the full grid is here."
-      : "Residential and commercial run EIA's ported code, electricity runs the dispatch LP. Industrial, transportation, gas, oil, coal and retail power prices stay fitted. The LP dispatches EIA's reference plant fleet and builds nothing, so a carbon price cuts power CO2 less here than in the fast set. Ten to 45 minutes a run, so a smaller grid.";
+      : "Residential, commercial and transportation run EIA's ported code; the EV slider sets the plug-in share inside transportation's vehicle choice. Electricity runs the dispatch LP, with retail prices from EIA's ported pricing code (EFP). Industrial, gas, oil and coal stay fitted. The LP dispatches EIA's reference plant fleet and builds nothing, so a carbon price cuts power CO2 less here than in the fast set. About 20 minutes a run, so a smaller grid.";
+    el("ev-hint").textContent = set === "real"
+      ? "Set inside the ported transportation module's vehicle choice."
+      : "Moves gasoline to electricity as the fleet turns over (fitted stub).";
     el("grid-note").textContent = set === "fast"
       ? "Every combination was run ahead of time (144 runs), so the sliders snap to the grid. Prices are 2024 dollars."
       : "Every combination was run ahead of time (16 runs), so the sliders snap to the grid. Prices are 2024 dollars.";
@@ -223,7 +228,7 @@
       case "pel": return [
         row("Electricity sold", t.totals.elec[j], r.totals.elec[j], 2, " quads"),
         row("Gas price to power plants, before carbon", t.gas_to_power[j], r.gas_to_power[j], 2, " $/MMBtu"),
-        row("Carbon cost in the price", t.adders.electricity[j], 0, 2, "¢/kWh")];
+        ...(t.adders.electricity ? [row("Carbon cost in the price", t.adders.electricity[j], 0, 2, "¢/kWh")] : [])];
       case "mg": return [
         row("Gasoline used, all sectors", t.totals.gasoline[j], r.totals.gasoline[j], 2, " quads"),
         row("Carbon cost in the price", t.adders.gasoline[j], 0, 2, " $/gal")];
@@ -242,6 +247,7 @@
   }
   function story(key, s, j) {
     const t = s.trace, a = measure.get(s)[j], b = measure.get(ref)[j];
+    if (key === "pel" && !t.adders.electricity) return "Retail price from EIA's ported pricing code (EFP), on the dispatch LP's costs and the fuel prices above.";
     if (key === "pel" || key === "mg" || key === "ng") {
       if (Math.abs(a - b) < 1e-3) return "Same as EIA: nothing upstream moved.";
       const adder = t.adders[{ pel: "electricity", mg: "gasoline", ng: "gas_home" }[key]][j];
@@ -251,7 +257,7 @@
     if (key === "gal") {
       if (Math.abs(a - b) < 0.05) return "Same as EIA: nothing upstream moved.";
       const cut = t.ev_cut_bgal[j], rest = a - b + cut;
-      return `The EV lever removes ${fmt(cut, 1)} bn gal. The price response ${rest >= 0 ? "adds" : "removes"} ${fmt(Math.abs(rest), 1)} bn gal (fitted stub elasticity).`;
+      return `The EV lever removes ${fmt(cut, 1)} bn gal. The price response ${rest >= 0 ? "adds" : "removes"} ${fmt(Math.abs(rest), 1)} bn gal${set === "real" ? ", the ported module's own response to prices" : " (fitted stub elasticity)"}.`;
     }
     if (key === "whl") return "No EIA line: EIA's run reports its own price model's output, not this LP's marginal cost.";
     if (key === "co2") {
@@ -498,7 +504,7 @@
     const about = [
       `# NEMS Open policy sandbox, scenario ${s.id}: carbon price $${c.carbon}/t CO2 (2024 $) from 2027; plug-in share of new light-duty sales in 2035 ${c.ev === null ? "EIA reference" : Math.round(c.ev * 100) + "%"}; building energy use ${c.bld === 1 ? "as EIA" : Math.round((1 - c.bld) * 100) + "% below EIA"} by 2050.`,
       set === "real"
-        ? "# Real ported modules: residential and commercial from EIA's ported code, electricity from the dispatch LP; industrial, transportation, gas, oil, coal and retail power prices fitted. Reference: EIA AEO2026 Counterfactual Baseline. Not affiliated with or endorsed by EIA."
+        ? "# Real ported modules: residential, commercial and transportation from EIA's ported code (EV share set in transportation's vehicle choice), electricity from the dispatch LP with EIA's ported retail pricing (EFP); industrial, gas, oil and coal fitted. Reference: EIA AEO2026 Counterfactual Baseline. Not affiliated with or endorsed by EIA."
         : "# Fast stand-ins: demand from a fitted stub, supply from a fitted stand-in. Reference: EIA AEO2026 Counterfactual Baseline. Not affiliated with or endorsed by EIA.",
     ];
     return about.join("\n") + "\n" + lines.join("\n") + "\n";
@@ -557,7 +563,7 @@
         const cut = t.ev_cut_bgal[j] - (r.ev_cut_bgal ? r.ev_cut_bgal[j] : 0);
         const all = b.gasoline_bgal[j] - s.gasoline_bgal[j];
         const parts = [];
-        if (Math.abs(cut) >= 0.05) parts.push(`the EV lever takes ${fmt(cut, 1)} bn gal of gasoline out of 2050`);
+        if (Math.abs(cut) >= 0.05) parts.push(`the EV lever${set === "real" ? ", through the ported vehicle choice," : ""} takes ${fmt(cut, 1)} bn gal of gasoline out of 2050`);
         if (Math.abs(all - cut) >= 0.05) parts.push(`higher prices ${all - cut > 0 ? "cut" : "add"}${parts.length ? " another" : ""} ${fmt(Math.abs(all - cut), 1)} bn gal${parts.length ? "" : " of gasoline in 2050"}`);
         return parts.length ? parts.join("; ").replace(/^./, (x) => x.toUpperCase()) + "." : "Small changes in fuel prices.";
       },
@@ -573,8 +579,9 @@
     const say = (k) => (k === "el" ? why.el() : k === "tr" ? why.tr() : k === "in" ? why.in() : why.bld());
     const top = cuts.filter(([, v]) => Math.abs(v) >= 1).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3);
     const big = Math.max(...top.map(([, v]) => Math.abs(v)));
-    box.innerHTML = `<p class="story">CO2 ${total >= 0 ? "falls" : "rises"} by ${fmt(Math.abs(total) / 1000, 2)} Gt over 2027-2050. The biggest moves:</p><ol class="drivers">` +
-      top.map(([k, v]) => `<li><div class="drv-head"><b>${SECTOR_NAME[k]}</b><span>${v >= 0 ? "-" : "+"}${fmt(Math.abs(v))} Mt${total ? `, ${fmt(Math.abs(100 * v / total), 0)}% of the change` : ""}</span></div>
+    const offset = cuts.some(([, v]) => Math.abs(v) >= 1 && v * total < 0);  // shares of the net mean nothing then
+    box.innerHTML = `<p class="story">CO2 ${total >= 0 ? "falls" : "rises"} by ${fmt(Math.abs(total) / 1000, 2)} Gt over 2027-2050. ${offset ? " Sectors partly offset each other." : ""} The biggest moves:</p><ol class="drivers">` +
+      top.map(([k, v]) => `<li><div class="drv-head"><b>${SECTOR_NAME[k]}</b><span>${v >= 0 ? "-" : "+"}${fmt(Math.abs(v))} Mt${offset ? "" : `, ${fmt(Math.abs(100 * v / total), 0)}% of the change`}</span></div>
         <div class="drv-bar"><i class="${v >= 0 ? "cut" : "rise"}" style="width:${(100 * Math.abs(v) / big).toFixed(1)}%"></i></div>
         <p>${say(k)}</p></li>`).join("") + `</ol>`;
   }
