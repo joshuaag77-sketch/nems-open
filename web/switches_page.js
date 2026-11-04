@@ -24,6 +24,21 @@
   fill($("kind"), Object.entries(KIND));
   fill($("module"), mods.map((m) => [m, m === "unknown" ? "Unknown" : m]));
   fill($("status"), Object.entries(STATUS));
+  fill($("verif"), Object.entries(D.summary.verification).filter(([, n]) => n > 0).map(([v]) => [v, v]));
+
+  const VERIFIED = "verified, second read";
+  for (const [v, n] of Object.entries(D.summary.verification).filter(([, c]) => c > 0)) {
+    const tile = el("div", v === VERIFIED ? "sw-tile sw-tile-ok" : "sw-tile");
+    tile.append(el("div", "sw-tile-n", String(n)), el("div", "sw-tile-l", v));
+    $("trust").append(tile);
+  }
+  const FIRST = { wrong: "first pass had a false claim", gap: "first pass missed something material", minor: "first pass needed small fixes", holds: "first pass held" };
+  for (const [v, label] of Object.entries(FIRST)) {
+    const tile = el("div", "sw-tile sw-tile-plain");
+    tile.append(el("div", "sw-tile-n", String(D.summary.first_pass[v] || 0)), el("div", "sw-tile-l", label));
+    $("trust").append(tile);
+  }
+  $("trust-note").textContent = D.summary.trust_note || "";
 
   for (const s of D.switches) {
     s._hay = [s.key, s.what, s.description, s.notes, s.allowed, s.value, s.modules.join(" "), s.section,
@@ -74,7 +89,7 @@
     }
     if (s.evidence.length) box.append(row("Checked at", s.evidence.join(", ")));
     box.append(row("Established by", { reader: "Reading the code", script: "Script, from the scedes row and site search", none: "Nothing yet" }[s.established_by]));
-    box.append(row("Second read", s.second_read ? "Yes, by a separate reader trying to break it" : "No"));
+    box.append(row("Checked", s.verification + (s.first_pass ? `; first pass: ${FIRST[s.first_pass]}` : "")));
     if (s.correction) box.append(row("Corrected on second read", s.correction));
     return box;
   }
@@ -85,6 +100,8 @@
     const head = el("div", "sw-head");
     head.append(el("code", "sw-key", s.key));
     head.append(el("span", "sw-tag", KIND[s.kind]));
+    head.append(el("span", s.verification === VERIFIED ? "sw-tag sw-ok" : "sw-tag sw-warn", s.verification));
+    if (s.first_pass === "wrong") head.append(el("span", "sw-tag sw-warn", "corrected"));
     if (s.status !== "active") head.append(el("span", "sw-tag sw-warn", STATUS[s.status]));
     if (Object.keys(s.side_cases).length) head.append(el("span", "sw-tag sw-side", `${Object.keys(s.side_cases).length} side cases`));
     sum.append(head);
@@ -98,21 +115,20 @@
 
   function apply() {
     const terms = $("q").value.toLowerCase().split(/\s+/).filter(Boolean);
-    const kind = $("kind").value, mod = $("module").value, st = $("status").value;
+    const kind = $("kind").value, mod = $("module").value, st = $("status").value, verif = $("verif").value;
     const side = $("side").checked, nofile = $("nofile").checked;
     const hits = D.switches.filter((s) =>
       terms.every((t) => s._hay.includes(t)) &&
-      (!kind || s.kind === kind) && (!mod || s.modules.includes(mod)) && (!st || s.status === st) &&
+      (!kind || s.kind === kind) && (!mod || s.modules.includes(mod)) && (!st || s.status === st) && (!verif || s.verification === verif) &&
       (!side || Object.keys(s.side_cases).length) && (!nofile || (s.kind !== "file_path" && s.kind !== "build_or_software")));
     const list = $("list");
     list.replaceChildren(...hits.slice(0, 200).map(item));
     const u = D.summary;
     $("count").textContent = `${hits.length} of ${u.keys} keys` + (hits.length > 200 ? ", first 200 shown" : "") +
-      `. ${u.what_unknown} have an unknown meaning. ${u.changed_in_side_cases} change in a side case. ` +
-      `${u.second_read} had a second read, which corrected ${u.corrected}; other entries had one read and may hold errors at a similar rate.`;
+      `. ${u.what_unknown} have an unknown meaning. ${u.changed_in_side_cases} change in a side case.`;
   }
 
-  for (const id of ["q", "kind", "module", "status", "side", "nofile"]) $(id).addEventListener("input", apply);
+  for (const id of ["q", "kind", "module", "status", "verif", "side", "nofile"]) $(id).addEventListener("input", apply);
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash) $("q").value = hash;
   apply();

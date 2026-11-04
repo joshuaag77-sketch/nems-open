@@ -15,7 +15,8 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = ROOT / "nems-upstream"
+sys.path.insert(0, str(ROOT / "src"))
+from nems_open.paths import UPSTREAM  # noqa: E402
 CODE = {".f", ".f90", ".for", ".inc", ".py", ".ams", ".bat", ".ps1", ".c", ".csh", ".sh", ".aimms", ".gms", ".pyf"}
 SKIP = {"scedes", "output", ".git", "__pycache__", "docs"}
 QUOTED = re.compile(r"""(['"])\s*([A-Za-z][A-Za-z0-9_$#-]*)\s*\1""")

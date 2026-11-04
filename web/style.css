@@ -293,3 +293,10 @@ button.link { background: none; border: 0; padding: 0; font: inherit; color: var
 .sw-ul { margin: 0; padding-left: 18px; }
 .sw-mono { font: 0.8rem/1.5 ui-monospace, Consolas, monospace; }
 @media (max-width: 640px) { .sw-row { grid-template-columns: minmax(0, 1fr); } }
+.sw-trust { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.sw-tile { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.sw-tile-n { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--bad); }
+.sw-tile-ok .sw-tile-n { color: var(--good); }
+.sw-tile-plain .sw-tile-n { color: var(--ink); }
+.sw-tile-l { font-size: 0.82rem; color: var(--muted); }
+.sw-ok { color: var(--good); }

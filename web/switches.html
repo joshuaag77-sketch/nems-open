@@ -23,11 +23,17 @@
 </header>
 <main class="board">
   <section class="card">
+    <h2>How far to trust this</h2>
+    <div class="sw-trust" id="trust"></div>
+    <p class="fine" id="trust-note"></p>
+  </section>
+  <section class="card">
     <div class="sw-filters">
       <input type="search" id="q" placeholder="Search keys, meanings, files: OGTECH, carbon, uldsm" aria-label="Search switches">
       <label>Kind <select id="kind"></select></label>
       <label>Module <select id="module"></select></label>
       <label>Status <select id="status"></select></label>
+      <label>Checked <select id="verif"></select></label>
       <label class="sw-check"><input type="checkbox" id="side"> Changed in a side case</label>
       <label class="sw-check"><input type="checkbox" id="nofile"> Hide file paths</label>
     </div>
