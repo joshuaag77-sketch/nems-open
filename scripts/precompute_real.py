@@ -6,7 +6,7 @@ Grid: carbon 0/50/100/200 $/t (2024 $), 2035 EV share at EIA's path or 80%, buil
 energy at EIA's or 10% below by 2050. 16 runs. Residential, commercial and transportation
 are EIA's ported modules (the EV share acts through TRAN's vehicle choice), electricity is the
 dispatch LP with EIA's ported EFP setting retail prices (elec="lp"); industrial stays on the
-stub and gas, oil and coal on the stand-in. About an hour a run.
+stub and gas, oil and coal on the stand-in. About 20 minutes a run.
 
 Memory: each worker needs about 2 GB. Three workers ran out on a machine with 6 GB free; use
 --workers 1 there.

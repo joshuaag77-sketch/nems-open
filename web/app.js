@@ -82,7 +82,7 @@
     document.querySelectorAll(".setswitch button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.set === set));
     el("set-note").textContent = set === "fast"
       ? "Every demand sector on a fitted stub, supply on curves fitted to EIA's runs. Seconds a run, so the full grid is here."
-      : "Residential, commercial and transportation run EIA's ported code; the EV slider sets the plug-in share inside transportation's vehicle choice. Electricity runs the dispatch LP, with retail prices from EIA's ported pricing code (EFP). Industrial, gas, oil and coal stay fitted. The LP dispatches EIA's reference plant fleet and builds nothing, so a carbon price cuts power CO2 less here than in the fast set. About an hour a run, so a smaller grid.";
+      : "Residential, commercial and transportation run EIA's ported code; the EV slider sets the plug-in share inside transportation's vehicle choice. Electricity runs the dispatch LP, with retail prices from EIA's ported pricing code (EFP). Industrial, gas, oil and coal stay fitted. The LP dispatches EIA's reference plant fleet and builds nothing, so a carbon price cuts power CO2 less here than in the fast set. About 20 minutes a run, so a smaller grid.";
     el("ev-hint").textContent = set === "real"
       ? "Set inside the ported transportation module's vehicle choice."
       : "Moves gasoline to electricity as the fleet turns over (fitted stub).";
@@ -241,7 +241,7 @@
     if (key === "gal") {
       if (Math.abs(a - b) < 0.05) return "Same as EIA: nothing upstream moved.";
       const cut = t.ev_cut_bgal[j], rest = a - b + cut;
-      return `The EV lever removes ${fmt(cut, 1)} bn gal. The price response ${rest >= 0 ? "adds" : "removes"} ${fmt(Math.abs(rest), 1)} bn gal (fitted stub elasticity).`;
+      return `The EV lever removes ${fmt(cut, 1)} bn gal. The price response ${rest >= 0 ? "adds" : "removes"} ${fmt(Math.abs(rest), 1)} bn gal${set === "real" ? ", the ported module's own response to prices" : " (fitted stub elasticity)"}.`;
     }
     if (key === "whl") return "No EIA line: EIA's run reports its own price model's output, not this LP's marginal cost.";
     if (key === "co2") {
@@ -562,8 +562,9 @@
     const say = (k) => (k === "el" ? why.el() : k === "tr" ? why.tr() : k === "in" ? why.in() : why.bld());
     const top = cuts.filter(([, v]) => Math.abs(v) >= 1).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3);
     const big = Math.max(...top.map(([, v]) => Math.abs(v)));
-    box.innerHTML = `<p class="story">CO2 ${total >= 0 ? "falls" : "rises"} by ${fmt(Math.abs(total) / 1000, 2)} Gt over 2027-2050. The biggest moves:</p><ol class="drivers">` +
-      top.map(([k, v]) => `<li><div class="drv-head"><b>${SECTOR_NAME[k]}</b><span>${v >= 0 ? "-" : "+"}${fmt(Math.abs(v))} Mt${total ? `, ${fmt(Math.abs(100 * v / total), 0)}% of the change` : ""}</span></div>
+    const offset = cuts.some(([, v]) => Math.abs(v) >= 1 && v * total < 0);  // shares of the net mean nothing then
+    box.innerHTML = `<p class="story">CO2 ${total >= 0 ? "falls" : "rises"} by ${fmt(Math.abs(total) / 1000, 2)} Gt over 2027-2050. ${offset ? " Sectors partly offset each other." : ""} The biggest moves:</p><ol class="drivers">` +
+      top.map(([k, v]) => `<li><div class="drv-head"><b>${SECTOR_NAME[k]}</b><span>${v >= 0 ? "-" : "+"}${fmt(Math.abs(v))} Mt${offset ? "" : `, ${fmt(Math.abs(100 * v / total), 0)}% of the change`}</span></div>
         <div class="drv-bar"><i class="${v >= 0 ? "cut" : "rise"}" style="width:${(100 * Math.abs(v) / big).toFixed(1)}%"></i></div>
         <p>${say(k)}</p></li>`).join("") + `</ol>`;
   }
