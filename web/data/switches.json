@@ -39,14 +39,21 @@
    "reader": 369,
    "script": 169
   },
+  "verification": {
+   "verified, second read": 80,
+   "unverified, one read": 289,
+   "unverified, script only": 169
+  },
   "second_read": 80,
   "corrected": 60,
   "changed_in_side_cases": 26,
-  "bad_evidence": 0
+  "bad_evidence": 0,
+  "trust_note": "A separate reader tried to break 80 entries and changed 60. Treat anything unverified as a lead to check in the code, not as a finding."
  },
  "switches": [
   {
    "key": "AB32SW",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -196,6 +203,7 @@
   },
   {
    "key": "AEOLSTYR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2050",
    "code_default": [
@@ -338,6 +346,7 @@
   },
   {
    "key": "AIMECPBG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -397,6 +406,7 @@
   },
   {
    "key": "AIMECPN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/aimecp.xlsx",
    "code_default": [],
@@ -462,6 +472,7 @@
   },
   {
    "key": "AIMEFDBG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -521,6 +532,7 @@
   },
   {
    "key": "AIMEFDN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/aimefd.xlsx",
    "code_default": [],
@@ -593,6 +605,7 @@
   },
   {
    "key": "AIMMKECP",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -636,6 +649,7 @@
   },
   {
    "key": "AIMMKEFD",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -679,6 +693,7 @@
   },
   {
    "key": "AIMMSECP",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -723,6 +738,7 @@
   },
   {
    "key": "AIMMSEFD",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -767,6 +783,7 @@
   },
   {
    "key": "AIMMSLOC",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "C:\\AIMMS_Installation_Free_Releases\\25.5.7.1-x64-VS2022",
    "code_default": [
@@ -892,6 +909,7 @@
   },
   {
    "key": "AIMMSNG",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -936,6 +954,7 @@
   },
   {
    "key": "AIRAGE",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -971,6 +990,7 @@
   },
   {
    "key": "APITABLEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/apitable.txt",
    "code_default": [],
@@ -1015,6 +1035,7 @@
   },
   {
    "key": "BANKDSCR",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "74",
    "code_default": [],
@@ -1073,6 +1094,7 @@
   },
   {
    "key": "BANKONYR",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2051",
    "code_default": [],
@@ -1121,6 +1143,7 @@
   },
   {
    "key": "BANKSAFE",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -1183,6 +1206,7 @@
   },
   {
    "key": "BEHAVE",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [
@@ -1262,6 +1286,7 @@
   },
   {
    "key": "BIOSEQOK",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -1334,6 +1359,7 @@
   },
   {
    "key": "BLDBASEN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/bld/bldbase.txt",
    "code_default": [],
@@ -1413,6 +1439,7 @@
   },
   {
    "key": "BMYREXP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1996",
    "code_default": [
@@ -1472,6 +1499,7 @@
   },
   {
    "key": "CAFE",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -1525,6 +1553,7 @@
   },
   {
    "key": "CAFEMEET",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -1557,6 +1586,7 @@
   },
   {
    "key": "CAFSHAREXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cafsharex.xlsx",
    "code_default": [],
@@ -1599,6 +1629,7 @@
   },
   {
    "key": "CARBSHRCAN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/carbshrca.csv",
    "code_default": [],
@@ -1641,6 +1672,7 @@
   },
   {
    "key": "CCOST",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -1689,6 +1721,7 @@
   },
   {
    "key": "CCPYPTH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ccats",
    "code_default": [],
@@ -1747,6 +1780,7 @@
   },
   {
    "key": "CHKNAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -1822,6 +1856,7 @@
   },
   {
    "key": "CIO4WK1N",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/cio4wk1.f",
    "code_default": [],
@@ -1868,6 +1903,7 @@
   },
   {
    "key": "CITATIONN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -1906,6 +1942,7 @@
   },
   {
    "key": "CLAGGEXPORTMAPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/claggexportmap.txt",
    "code_default": [],
@@ -1952,6 +1989,7 @@
   },
   {
    "key": "CLBASEYR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2024",
    "code_default": [],
@@ -2022,6 +2060,7 @@
   },
   {
    "key": "CLBYPRDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cpsProdParam.txt",
    "code_default": [],
@@ -2068,6 +2107,7 @@
   },
   {
    "key": "CLCDSR2N",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cdsRegionRef.txt",
    "code_default": [],
@@ -2113,6 +2153,7 @@
   },
   {
    "key": "CLCDSRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cdsRegionRef.txt",
    "code_default": [],
@@ -2159,6 +2200,7 @@
   },
   {
    "key": "CLCPSR2N",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cpsRegionRef.txt",
    "code_default": [],
@@ -2204,6 +2246,7 @@
   },
   {
    "key": "CLCPSRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cpsRegionRef.txt",
    "code_default": [],
@@ -2250,6 +2293,7 @@
   },
   {
    "key": "CLCPSYRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cpsSCrvYearIndx.txt",
    "code_default": [],
@@ -2296,6 +2340,7 @@
   },
   {
    "key": "CLDISTANCEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cldistance.txt",
    "code_default": [],
@@ -2342,6 +2387,7 @@
   },
   {
    "key": "CLEANUP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/scripts/cleanup.sh",
    "code_default": [],
@@ -2382,6 +2428,7 @@
   },
   {
    "key": "CLEXPORTLIMITSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clexportlimits.txt",
    "code_default": [],
@@ -2428,6 +2475,7 @@
   },
   {
    "key": "CLFEASIBLEROUTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clfeasiblerout.txt",
    "code_default": [],
@@ -2474,6 +2522,7 @@
   },
   {
    "key": "CLFLAGSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clflags.txt",
    "code_default": [],
@@ -2520,6 +2569,7 @@
   },
   {
    "key": "CLFREIGHTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clfreight.txt",
    "code_default": [],
@@ -2566,6 +2616,7 @@
   },
   {
    "key": "CLGNPLTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmCoalPlntData.txt",
    "code_default": [],
@@ -2612,6 +2663,7 @@
   },
   {
    "key": "CLHDISPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmhcldist.txt",
    "code_default": [],
@@ -2658,6 +2710,7 @@
   },
   {
    "key": "CLHEWQ2N",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmheastwest.txt",
    "code_default": [],
@@ -2703,6 +2756,7 @@
   },
   {
    "key": "CLHEWQN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmheastwest.txt",
    "code_default": [],
@@ -2749,6 +2803,7 @@
   },
   {
    "key": "CLHMISCN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmhmiscellaneous.txt",
    "code_default": [],
@@ -2795,6 +2850,7 @@
   },
   {
    "key": "CLHSCPRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmhsectoral.txt",
    "code_default": [],
@@ -2841,6 +2897,7 @@
   },
   {
    "key": "CLHWRLDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmhclworld.txt",
    "code_default": [],
@@ -2887,6 +2944,7 @@
   },
   {
    "key": "CLIMPORTLIMITSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/climportlimits.txt",
    "code_default": [],
@@ -2933,6 +2991,7 @@
   },
   {
    "key": "CLIMSURN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cdsImpSurcharge.txt",
    "code_default": [],
@@ -2979,6 +3038,7 @@
   },
   {
    "key": "CLINTLDEMANDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clintldemand.txt",
    "code_default": [],
@@ -3025,6 +3085,7 @@
   },
   {
    "key": "CLINTLQUALITYN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clintlquality.txt",
    "code_default": [],
@@ -3071,6 +3132,7 @@
   },
   {
    "key": "CLINTLSUPPLYN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clintlsupply.txt",
    "code_default": [],
@@ -3117,6 +3179,7 @@
   },
   {
    "key": "CLINTLUSEXPORTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clintlusexport.txt",
    "code_default": [],
@@ -3165,6 +3228,7 @@
   },
   {
    "key": "CLOCEANDISTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cloceandist.txt",
    "code_default": [],
@@ -3213,6 +3277,7 @@
   },
   {
    "key": "CLPRFILN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmProfiles.txt",
    "code_default": [],
@@ -3261,6 +3326,7 @@
   },
   {
    "key": "CLRATESELECN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clrateselec.txt",
    "code_default": [],
@@ -3309,6 +3375,7 @@
   },
   {
    "key": "CLRATESNONELECN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clratesnonelec.txt",
    "code_default": [],
@@ -3357,6 +3424,7 @@
   },
   {
    "key": "CLRCAF2N",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmRCAFwts.txt",
    "code_default": [],
@@ -3400,6 +3468,7 @@
   },
   {
    "key": "CLRCAFN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmRCAFwts.txt",
    "code_default": [],
@@ -3449,6 +3518,7 @@
   },
   {
    "key": "CLSTEON",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/coal/clsteo.txt",
    "code_default": [],
@@ -3484,6 +3554,7 @@
   },
   {
    "key": "CLTONRAILMILEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cltonrailmile.txt",
    "code_default": [],
@@ -3532,6 +3603,7 @@
   },
   {
    "key": "CLTONSPERCARN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cltonspercar.txt",
    "code_default": [],
@@ -3580,6 +3652,7 @@
   },
   {
    "key": "CLUSEXPORTICMMN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/clusexporticmm.txt",
    "code_default": [],
@@ -3628,6 +3701,7 @@
   },
   {
    "key": "CLUSIMPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/cmmUScoalImports.txt",
    "code_default": [],
@@ -3676,6 +3750,7 @@
   },
   {
    "key": "CO2PLFMM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -3802,6 +3877,7 @@
   },
   {
    "key": "COALD2REFMAPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/coald2refmap.xls",
    "code_default": [],
@@ -3837,6 +3913,7 @@
   },
   {
    "key": "COALGETVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/coal/input/coalgetvars.txt",
    "code_default": [],
@@ -3871,6 +3948,7 @@
   },
   {
    "key": "COALN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/coal",
    "code_default": [],
@@ -3914,6 +3992,7 @@
   },
   {
    "key": "COALPUTVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/coal/input/coalputvars.txt",
    "code_default": [],
@@ -3949,6 +4028,7 @@
   },
   {
    "key": "COALUNITO",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "EMM_COALUNITO.txt",
    "code_default": [],
@@ -4008,6 +4088,7 @@
   },
   {
    "key": "COALUNITSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/coal/input/coalunits.txt",
    "code_default": [],
@@ -4052,6 +4133,7 @@
   },
   {
    "key": "CODES123N",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -4087,6 +4169,7 @@
   },
   {
    "key": "COMFLOORN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/comfloor.xls",
    "code_default": [],
@@ -4131,6 +4214,7 @@
   },
   {
    "key": "COMMENT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "....",
    "code_default": [],
@@ -4163,6 +4247,7 @@
   },
   {
    "key": "COMMN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/comm.f",
    "code_default": [],
@@ -4200,6 +4285,7 @@
   },
   {
    "key": "COPYDIR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "./input",
    "code_default": [],
@@ -4274,6 +4360,7 @@
   },
   {
    "key": "CRE8INVESTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/cre8invest.gms",
    "code_default": [],
@@ -4308,6 +4395,7 @@
   },
   {
    "key": "CRE8MPSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/cre8mps.gms",
    "code_default": [],
@@ -4352,6 +4440,7 @@
   },
   {
    "key": "CRUDEXP",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -4469,6 +4558,7 @@
   },
   {
    "key": "CUMCAP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2025",
    "code_default": [],
@@ -4504,6 +4594,7 @@
   },
   {
    "key": "DBDUMP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -4614,6 +4705,7 @@
   },
   {
    "key": "DBDUMPSTART",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2020",
    "code_default": [],
@@ -4661,6 +4753,7 @@
   },
   {
    "key": "DEMGETVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -4697,6 +4790,7 @@
   },
   {
    "key": "DEMPUTVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -4733,6 +4827,7 @@
   },
   {
    "key": "DICTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/dict.txt",
    "code_default": [],
@@ -4784,6 +4879,7 @@
   },
   {
    "key": "DOAMINOF",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "3",
    "code_default": [
@@ -4845,6 +4941,7 @@
   },
   {
    "key": "DOEMALL",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -4901,6 +4998,7 @@
   },
   {
    "key": "DSMSWTCH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -4944,6 +5042,7 @@
   },
   {
    "key": "DUMMYPPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/dummypp",
    "code_default": [],
@@ -4993,6 +5092,7 @@
   },
   {
    "key": "DUMMYXN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/dummyx.f",
    "code_default": [],
@@ -5025,6 +5125,7 @@
   },
   {
    "key": "ECP_ROW_COLN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/ecp_row_col.f90",
    "code_default": [],
@@ -5063,6 +5164,7 @@
   },
   {
    "key": "ECPACT",
+   "verification": "verified, second read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -5111,6 +5213,7 @@
   },
   {
    "key": "ECPARRAYS_ALLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/ecparrays_all.txt",
    "code_default": [],
@@ -5153,6 +5256,7 @@
   },
   {
    "key": "ECPCOEFF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_ECPCOEFF.txt",
    "code_default": [],
@@ -5195,6 +5299,7 @@
   },
   {
    "key": "ECPDATYN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/ecpdaty.xlsx",
    "code_default": [],
@@ -5325,6 +5430,7 @@
   },
   {
    "key": "ECPIDAF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_ECPIDAF.daf",
    "code_default": [],
@@ -5375,6 +5481,7 @@
   },
   {
    "key": "ECPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ecp",
    "code_default": [],
@@ -5420,6 +5527,7 @@
   },
   {
    "key": "ECPODAF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_ECPODAF.daf",
    "code_default": [],
@@ -5462,6 +5570,7 @@
   },
   {
    "key": "ECPSTART",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -5516,6 +5625,7 @@
   },
   {
    "key": "ECPXMLOUT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_ecpxmlout.txt",
    "code_default": [],
@@ -5566,6 +5676,7 @@
   },
   {
    "key": "EDBPGRP",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EDBPGRP.txt",
    "code_default": [],
@@ -5608,6 +5719,7 @@
   },
   {
    "key": "EFD_ROW_COLN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/efd_row_col.f90",
    "code_default": [],
@@ -5646,6 +5758,7 @@
   },
   {
    "key": "EFDARRAYS_ALLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/efdarrays_all.txt",
    "code_default": [],
@@ -5688,6 +5801,7 @@
   },
   {
    "key": "EFDCOEFF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFDCOEFF.txt",
    "code_default": [],
@@ -5730,6 +5844,7 @@
   },
   {
    "key": "EFDDBUG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFDDBUG.txt",
    "code_default": [],
@@ -5772,6 +5887,7 @@
   },
   {
    "key": "EFDLDCV",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -5807,6 +5923,7 @@
   },
   {
    "key": "EFDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/efd",
    "code_default": [],
@@ -5852,6 +5969,7 @@
   },
   {
    "key": "EFDOUT",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -5887,6 +6005,7 @@
   },
   {
    "key": "EFPALLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/efpall.txt",
    "code_default": [],
@@ -5929,6 +6048,7 @@
   },
   {
    "key": "EFPBLDS",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFPBLDS.daf",
    "code_default": [],
@@ -5971,6 +6091,7 @@
   },
   {
    "key": "EFPCNTLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/efpcntl.txt",
    "code_default": [],
@@ -6013,6 +6134,7 @@
   },
   {
    "key": "EFPDATAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/efpdata.txt",
    "code_default": [],
@@ -6050,6 +6172,7 @@
   },
   {
    "key": "EFPR",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFPR.daf",
    "code_default": [],
@@ -6092,6 +6215,7 @@
   },
   {
    "key": "EFPRC",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFPRC.daf",
    "code_default": [],
@@ -6134,6 +6258,7 @@
   },
   {
    "key": "EFPRCY",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFPRCY.daf",
    "code_default": [],
@@ -6176,6 +6301,7 @@
   },
   {
    "key": "EFPRPT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_UEFP.txt",
    "code_default": [],
@@ -6218,6 +6344,7 @@
   },
   {
    "key": "EFPSTM2",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFPSTM2.daf",
    "code_default": [],
@@ -6260,6 +6387,7 @@
   },
   {
    "key": "EFPSTMT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EFPSTMT.daf",
    "code_default": [],
@@ -6302,6 +6430,7 @@
   },
   {
    "key": "EFPTAXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/efptax.txt",
    "code_default": [],
@@ -6344,6 +6473,7 @@
   },
   {
    "key": "EINTLRNN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/eintlrn.txt",
    "code_default": [],
@@ -6386,6 +6516,7 @@
   },
   {
    "key": "ELASSW",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -6429,6 +6560,7 @@
   },
   {
    "key": "ELDATYRN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -6467,6 +6599,7 @@
   },
   {
    "key": "ELGREXP",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "50",
    "code_default": [
@@ -6534,6 +6667,7 @@
   },
   {
    "key": "EMM_COALUNITS",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/coal/input/coalunits.txt",
    "code_default": [],
@@ -6566,6 +6700,7 @@
   },
   {
    "key": "EMM_DBN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/emm_db",
    "code_default": [],
@@ -6617,6 +6752,7 @@
   },
   {
    "key": "EMMBENCH",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -6706,6 +6842,7 @@
   },
   {
    "key": "EMMCNTLN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/emmcntl.txt",
    "code_default": [],
@@ -6779,6 +6916,7 @@
   },
   {
    "key": "EMMDBASE",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EMMDBASE.txt",
    "code_default": [],
@@ -6821,6 +6959,7 @@
   },
   {
    "key": "EMMDBDEFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/emmdbdef.txt",
    "code_default": [],
@@ -6863,6 +7002,7 @@
   },
   {
    "key": "EMMDBDOCN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/emmdbdoc.xls",
    "code_default": [],
@@ -6895,6 +7035,7 @@
   },
   {
    "key": "EMMDBN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/emmdb.mdb",
    "code_default": [],
@@ -6946,6 +7087,7 @@
   },
   {
    "key": "EMMRENEW",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -6999,6 +7141,7 @@
   },
   {
    "key": "EMMRP2",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EMMRP2.txt",
    "code_default": [],
@@ -7041,6 +7184,7 @@
   },
   {
    "key": "EMMRPT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_EMMRPT.txt",
    "code_default": [],
@@ -7083,6 +7227,7 @@
   },
   {
    "key": "ENPRODN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/enprod.txt",
    "code_default": [],
@@ -7133,6 +7278,7 @@
   },
   {
    "key": "EPA111D",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -7233,6 +7379,7 @@
   },
   {
    "key": "EPHRTS",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -7372,6 +7519,7 @@
   },
   {
    "key": "EPHRTSDB",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -7428,6 +7576,7 @@
   },
   {
    "key": "EPHRTSMN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/ephrts.f90",
    "code_default": [],
@@ -7468,6 +7617,7 @@
   },
   {
    "key": "EPMCNTLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/models/epm/input/epm_control.toml",
    "code_default": [],
@@ -7524,6 +7674,7 @@
   },
   {
    "key": "EPMDATAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/epm/input/epmdata.txt",
    "code_default": [],
@@ -7559,6 +7710,7 @@
   },
   {
    "key": "EPMN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -7596,6 +7748,7 @@
   },
   {
    "key": "EPMPY",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/epm",
    "code_default": [],
@@ -7661,6 +7814,7 @@
   },
   {
    "key": "ETHANEREGN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/ethanereg.csv",
    "code_default": [],
@@ -7703,6 +7857,7 @@
   },
   {
    "key": "ETTDBUG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_ETTDBUG.txt",
    "code_default": [],
@@ -7745,6 +7900,7 @@
   },
   {
    "key": "ETTDEMN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/ettdem.daf",
    "code_default": [],
@@ -7809,6 +7965,7 @@
   },
   {
    "key": "ETTDF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_ETTDF.daf",
    "code_default": [],
@@ -7851,6 +8008,7 @@
   },
   {
    "key": "ETTINN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/ettin.txt",
    "code_default": [],
@@ -7916,6 +8074,7 @@
   },
   {
    "key": "ETTTMP",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "ETTTMP.daf",
    "code_default": [],
@@ -7958,6 +8117,7 @@
   },
   {
    "key": "EUEDEXP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -8028,6 +8188,7 @@
   },
   {
    "key": "EXC",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8151,6 +8312,7 @@
   },
   {
    "key": "EXE",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8272,6 +8434,7 @@
   },
   {
    "key": "EXG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8389,6 +8552,7 @@
   },
   {
    "key": "EXH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8505,6 +8669,7 @@
   },
   {
    "key": "EXI",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8597,6 +8762,7 @@
   },
   {
    "key": "EXK",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8689,6 +8855,7 @@
   },
   {
    "key": "EXL",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8781,6 +8948,7 @@
   },
   {
    "key": "EXM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8876,6 +9044,7 @@
   },
   {
    "key": "EXN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -8983,6 +9152,7 @@
   },
   {
    "key": "EXO",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -9086,6 +9256,7 @@
   },
   {
    "key": "EXPLEASE",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -9166,6 +9337,7 @@
   },
   {
    "key": "EXPNGEX2",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "130",
    "code_default": [
@@ -9234,6 +9406,7 @@
   },
   {
    "key": "EXPNGEXP",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "70",
    "code_default": [
@@ -9302,6 +9475,7 @@
   },
   {
    "key": "EXPNGGRW",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "20",
    "code_default": [
@@ -9365,6 +9539,7 @@
   },
   {
    "key": "EXPNGIPT",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "350",
    "code_default": [
@@ -9432,6 +9607,7 @@
   },
   {
    "key": "EXPNGPRC",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "900",
    "code_default": [
@@ -9500,6 +9676,7 @@
   },
   {
    "key": "EXPNGPRD",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2008",
    "code_default": [
@@ -9555,6 +9732,7 @@
   },
   {
    "key": "EXQ",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -9658,6 +9836,7 @@
   },
   {
    "key": "EXR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -9750,6 +9929,7 @@
   },
   {
    "key": "EXSTCAPN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/exstcap.txt",
    "code_default": [],
@@ -9792,6 +9972,7 @@
   },
   {
    "key": "EXT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -9883,6 +10064,7 @@
   },
   {
    "key": "EXW",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -9975,6 +10157,7 @@
   },
   {
    "key": "FEEDSTOCKN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/feedstock.csv",
    "code_default": [],
@@ -10017,6 +10200,7 @@
   },
   {
    "key": "FILEMGRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/filemgr.f",
    "code_default": [],
@@ -10065,6 +10249,7 @@
   },
   {
    "key": "FILERN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/filer.f",
    "code_default": [],
@@ -10114,6 +10299,7 @@
   },
   {
    "key": "FINREGOUT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_FINREGOUT.txt",
    "code_default": [],
@@ -10164,6 +10350,7 @@
   },
   {
    "key": "FINREGYN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/finregy.xlsx",
    "code_default": [],
@@ -10214,6 +10401,7 @@
   },
   {
    "key": "FIRSYR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1990",
    "code_default": [],
@@ -10285,6 +10473,7 @@
   },
   {
    "key": "FSQLITEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/fsqlite.f90",
    "code_default": [],
@@ -10332,6 +10521,7 @@
   },
   {
    "key": "FTAB05N",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -10367,6 +10557,7 @@
   },
   {
    "key": "FTABXMLN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -10402,6 +10593,7 @@
   },
   {
    "key": "FUNFMT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -10437,6 +10629,7 @@
   },
   {
    "key": "FWK1ION",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/fwk1io.f",
    "code_default": [],
@@ -10486,6 +10679,7 @@
   },
   {
    "key": "GAMSVERS",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "c:\\gams\\win64\\43\\gams.exe",
    "code_default": [
@@ -10555,6 +10749,7 @@
   },
   {
    "key": "GDXF9DEFN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/gdxf9def.f",
    "code_default": [],
@@ -10595,6 +10790,7 @@
   },
   {
    "key": "GHGOFFXN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/epm/input/ghgoffx.xlsx",
    "code_default": [],
@@ -10631,6 +10827,7 @@
   },
   {
    "key": "GLFN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -10668,6 +10865,7 @@
   },
   {
    "key": "H2AIMMSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/hmm",
    "code_default": [],
@@ -10721,6 +10919,7 @@
   },
   {
    "key": "H2PUTVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/hmm/input/h2putvars.txt",
    "code_default": [],
@@ -10771,6 +10970,7 @@
   },
   {
    "key": "HEMN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -10808,6 +11008,7 @@
   },
   {
    "key": "HGSTRUCT",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -10865,6 +11066,7 @@
   },
   {
    "key": "HIRENEW",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -10926,6 +11128,7 @@
   },
   {
    "key": "HISTORY",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -11013,6 +11216,7 @@
   },
   {
    "key": "HSMPYPTH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/hsm",
    "code_default": [],
@@ -11064,6 +11268,7 @@
   },
   {
    "key": "HYDROGEN_DATAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/hydrogen_data.csv",
    "code_default": [],
@@ -11103,6 +11308,7 @@
   },
   {
    "key": "HYDROGENN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ephrts",
    "code_default": [],
@@ -11154,6 +11360,7 @@
   },
   {
    "key": "I4SCNT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -11209,6 +11416,7 @@
   },
   {
    "key": "I4SITE",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -11270,6 +11478,7 @@
   },
   {
    "key": "IBFACTRO",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_IBFACTRO.csv",
    "code_default": [],
@@ -11312,6 +11521,7 @@
   },
   {
    "key": "ICMMCOMMODITYMAPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../coal/input/ICMMcommodityMap.txt",
    "code_default": [],
@@ -11360,6 +11570,7 @@
   },
   {
    "key": "IDMPYPTH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/idm",
    "code_default": [],
@@ -11413,6 +11624,7 @@
   },
   {
    "key": "IFEEDDBG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_IFEEDDBG.txt",
    "code_default": [],
@@ -11455,6 +11667,7 @@
   },
   {
    "key": "IJUMPCAL",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2050",
    "code_default": [],
@@ -11504,6 +11717,7 @@
   },
   {
    "key": "IJUMPYR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "61",
    "code_default": [],
@@ -11559,6 +11773,7 @@
   },
   {
    "key": "IND_BOILERSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/ind_boilers.csv",
    "code_default": [],
@@ -11591,6 +11806,7 @@
   },
   {
    "key": "IND_COALN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/ind_coal.csv",
    "code_default": [],
@@ -11633,6 +11849,7 @@
   },
   {
    "key": "IND_ELECTRICN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/ind_electric.csv",
    "code_default": [],
@@ -11675,6 +11892,7 @@
   },
   {
    "key": "IND_H2N",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/ind_H2.csv",
    "code_default": [],
@@ -11717,6 +11935,7 @@
   },
   {
    "key": "INDBENCH",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDBENCH.txt",
    "code_default": [],
@@ -11759,6 +11978,7 @@
   },
   {
    "key": "INDBEUN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/indbeu.txt",
    "code_default": [],
@@ -11809,6 +12029,7 @@
   },
   {
    "key": "INDBMOVR",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -11893,6 +12114,7 @@
   },
   {
    "key": "INDBUG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDBUG.txt",
    "code_default": [],
@@ -11935,6 +12157,7 @@
   },
   {
    "key": "INDCMENTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/indcment.txt",
    "code_default": [],
@@ -11977,6 +12200,7 @@
   },
   {
    "key": "INDCOGENXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/indcogenx.xlsx",
    "code_default": [],
@@ -12019,6 +12243,7 @@
   },
   {
    "key": "INDM",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDM.csv",
    "code_default": [],
@@ -12061,6 +12286,7 @@
   },
   {
    "key": "INDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/ind.f",
    "code_default": [],
@@ -12114,6 +12340,7 @@
   },
   {
    "key": "INDNN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "IDM_INDN.csv",
    "code_default": [],
@@ -12150,6 +12377,7 @@
   },
   {
    "key": "INDOUTF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDOUTF.csv",
    "code_default": [],
@@ -12192,6 +12420,7 @@
   },
   {
    "key": "INDREG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDREG.csv",
    "code_default": [],
@@ -12237,6 +12466,7 @@
   },
   {
    "key": "INDREG1",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDREG1.csv",
    "code_default": [],
@@ -12287,6 +12517,7 @@
   },
   {
    "key": "INDREG2",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDREG2.csv",
    "code_default": [],
@@ -12329,6 +12560,7 @@
   },
   {
    "key": "INDREG3",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDREG3.csv",
    "code_default": [],
@@ -12371,6 +12603,7 @@
   },
   {
    "key": "INDREG4",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDREG4.csv",
    "code_default": [],
@@ -12413,6 +12646,7 @@
   },
   {
    "key": "INDRUNN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/indrun.txt",
    "code_default": [],
@@ -12455,6 +12689,7 @@
   },
   {
    "key": "INDT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDT.csv",
    "code_default": [],
@@ -12497,6 +12732,7 @@
   },
   {
    "key": "INDTST",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDTST.txt",
    "code_default": [],
@@ -12539,6 +12775,7 @@
   },
   {
    "key": "INDUSA",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_INDUSA.csv",
    "code_default": [],
@@ -12581,6 +12818,7 @@
   },
   {
    "key": "INPTDAF",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -12616,6 +12854,7 @@
   },
   {
    "key": "INTALLINN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/iem/intallin.xml",
    "code_default": [],
@@ -12666,6 +12905,7 @@
   },
   {
    "key": "INTBALANCEN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/iem/intbalance.xml",
    "code_default": [],
@@ -12708,6 +12948,7 @@
   },
   {
    "key": "INTCRDSHRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/iem/intcrdshr.xls",
    "code_default": [],
@@ -12743,6 +12984,7 @@
   },
   {
    "key": "INTLDBG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IEM_INTLDBG.txt",
    "code_default": [],
@@ -12793,6 +13035,7 @@
   },
   {
    "key": "INTLFDBK",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -12878,6 +13121,7 @@
   },
   {
    "key": "IPMM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -12935,6 +13179,7 @@
   },
   {
    "key": "IRELAX",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -13033,6 +13278,7 @@
   },
   {
    "key": "IRONSTLXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/ironstlx.xlsx",
    "code_default": [],
@@ -13075,6 +13321,7 @@
   },
   {
    "key": "ISTEEL",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "IDM_ISTEEL.csv",
    "code_default": [],
@@ -13117,6 +13364,7 @@
   },
   {
    "key": "ITECHN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/itech.txt",
    "code_default": [],
@@ -13181,6 +13429,7 @@
   },
   {
    "key": "ITLBSHRN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/itlbshr.txt",
    "code_default": [],
@@ -13223,6 +13472,7 @@
   },
   {
    "key": "JUMPYR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2050",
    "code_default": [],
@@ -13255,6 +13505,7 @@
   },
   {
    "key": "KBEHAVN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kbehav.txt",
    "code_default": [],
@@ -13305,6 +13556,7 @@
   },
   {
    "key": "KBLDGN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kbldg.txt",
    "code_default": [],
@@ -13355,6 +13607,7 @@
   },
   {
    "key": "KCAPFACN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kcapfac.txt",
    "code_default": [],
@@ -13405,6 +13658,7 @@
   },
   {
    "key": "KCOGENN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kcogen.txt",
    "code_default": [],
@@ -13455,6 +13709,7 @@
   },
   {
    "key": "KDBOUT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "CDM_DBOUT.txt",
    "code_default": [],
@@ -13505,6 +13760,7 @@
   },
   {
    "key": "KDEBUG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "CDM_DEBUG.txt",
    "code_default": [],
@@ -13563,6 +13819,7 @@
   },
   {
    "key": "KDEGDAYN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/bld/kdegday.txt",
    "code_default": [],
@@ -13642,6 +13899,7 @@
   },
   {
    "key": "KDELEFFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kdeleff.txt",
    "code_default": [],
@@ -13692,6 +13950,7 @@
   },
   {
    "key": "KDGENOUT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "CDM_DGENOUT.txt",
    "code_default": [],
@@ -13742,6 +14001,7 @@
   },
   {
    "key": "KDSEFFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kdseff.txt",
    "code_default": [],
@@ -13792,6 +14052,7 @@
   },
   {
    "key": "KDSFSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kdsfs.txt",
    "code_default": [],
@@ -13842,6 +14103,7 @@
   },
   {
    "key": "KDSSTMN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kdsstm.txt",
    "code_default": [],
@@ -13892,6 +14154,7 @@
   },
   {
    "key": "KEEPOPEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -13963,6 +14226,7 @@
   },
   {
    "key": "KEMFACN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kemfac.txt",
    "code_default": [],
@@ -14013,6 +14277,7 @@
   },
   {
    "key": "KFLSPCN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kflspc.txt",
    "code_default": [],
@@ -14063,6 +14328,7 @@
   },
   {
    "key": "KGENTKN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kgentk.txt",
    "code_default": [],
@@ -14116,6 +14382,7 @@
   },
   {
    "key": "KHURELAN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/khurela.txt",
    "code_default": [],
@@ -14166,6 +14433,7 @@
   },
   {
    "key": "KINTENSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kintens.txt",
    "code_default": [],
@@ -14216,6 +14484,7 @@
   },
   {
    "key": "KMELSN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kmels.txt",
    "code_default": [],
@@ -14268,6 +14537,7 @@
   },
   {
    "key": "KMINFLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kminfl.txt",
    "code_default": [],
@@ -14318,6 +14588,7 @@
   },
   {
    "key": "KPARMN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kparm.txt",
    "code_default": [],
@@ -14370,6 +14641,7 @@
   },
   {
    "key": "KPREMN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kprem.txt",
    "code_default": [],
@@ -14420,6 +14692,7 @@
   },
   {
    "key": "KQUANT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "CDM_QUANT.txt",
    "code_default": [],
@@ -14462,6 +14735,7 @@
   },
   {
    "key": "KRENEWN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/krenew.txt",
    "code_default": [],
@@ -14512,6 +14786,7 @@
   },
   {
    "key": "KRPT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "CDM_RPTOUT.txt",
    "code_default": [],
@@ -14562,6 +14837,7 @@
   },
   {
    "key": "KSDELAN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/ksdela.txt",
    "code_default": [],
@@ -14612,6 +14888,7 @@
   },
   {
    "key": "KSDOUT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "CDM_SDOUT.txt",
    "code_default": [],
@@ -14662,6 +14939,7 @@
   },
   {
    "key": "KSHEFFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/ksheff.txt",
    "code_default": [],
@@ -14712,6 +14990,7 @@
   },
   {
    "key": "KSTEON",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/ksteo.txt",
    "code_default": [],
@@ -14762,6 +15041,7 @@
   },
   {
    "key": "KTEKXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/ktekx.xlsx",
    "code_default": [],
@@ -14812,6 +15092,7 @@
   },
   {
    "key": "KVARSDIN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kvarsdi.txt",
    "code_default": [],
@@ -14862,6 +15143,7 @@
   },
   {
    "key": "KVINTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/cdm/kvint.txt",
    "code_default": [],
@@ -14912,6 +15194,7 @@
   },
   {
    "key": "LASTYR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2050",
    "code_default": [],
@@ -15045,6 +15328,7 @@
   },
   {
    "key": "LAYINN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -15106,6 +15390,7 @@
   },
   {
    "key": "LAYOUTN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -15141,6 +15426,7 @@
   },
   {
    "key": "LCFSOPT",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -15237,6 +15523,7 @@
   },
   {
    "key": "LDSMRPT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_LDSMRPT.txt",
    "code_default": [],
@@ -15302,6 +15589,7 @@
   },
   {
    "key": "LDSMSTRN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/ldsmstr.txt",
    "code_default": [],
@@ -15344,6 +15632,7 @@
   },
   {
    "key": "LEGIRA",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -15455,6 +15744,7 @@
   },
   {
    "key": "LF_NEMN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lf_nem.gms",
    "code_default": [],
@@ -15499,6 +15789,7 @@
   },
   {
    "key": "LFG_CAPACITY",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "RFM_LFG_CAPACITY.csv",
    "code_default": [],
@@ -15541,6 +15832,7 @@
   },
   {
    "key": "LFG_PARAMETERSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/lfg_parameters.xlsx",
    "code_default": [],
@@ -15583,6 +15875,7 @@
   },
   {
    "key": "LFHISTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/lfhist.gdx",
    "code_default": [],
@@ -15615,6 +15908,7 @@
   },
   {
    "key": "LFINPUTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lfinput.gms",
    "code_default": [],
@@ -15655,6 +15949,7 @@
   },
   {
    "key": "LFINVESTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/lfinvest.gdx",
    "code_default": [],
@@ -15690,6 +15985,7 @@
   },
   {
    "key": "LFMINPUTN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/lfminput.gdx",
    "code_default": [],
@@ -15748,6 +16044,7 @@
   },
   {
    "key": "LFMINSETN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/lfminset.gdx",
    "code_default": [],
@@ -15783,6 +16080,7 @@
   },
   {
    "key": "LFMODELN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lfmodel.gms",
    "code_default": [],
@@ -15827,6 +16125,7 @@
   },
   {
    "key": "LFPREPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lfprep.gms",
    "code_default": [],
@@ -15871,6 +16170,7 @@
   },
   {
    "key": "LFREPORTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lfreport.gms",
    "code_default": [],
@@ -15915,6 +16215,7 @@
   },
   {
    "key": "LFREPSETN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lfrepset.gms",
    "code_default": [],
@@ -15959,6 +16260,7 @@
   },
   {
    "key": "LFSHELLN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/lfshell.gms",
    "code_default": [],
@@ -16019,6 +16321,7 @@
   },
   {
    "key": "LNGGAMCN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "-425",
    "code_default": [],
@@ -16058,6 +16361,7 @@
   },
   {
    "key": "LNGGAMLV",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "550",
    "code_default": [],
@@ -16097,6 +16401,7 @@
   },
   {
    "key": "LNGGUESS",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "50",
    "code_default": [
@@ -16149,6 +16454,7 @@
   },
   {
    "key": "LORENEW",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -16210,6 +16516,7 @@
   },
   {
    "key": "MACCAFE",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -16255,6 +16562,7 @@
   },
   {
    "key": "MACFDBK",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -16307,6 +16615,7 @@
   },
   {
    "key": "MACN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/mac.f",
    "code_default": [],
@@ -16345,6 +16654,7 @@
   },
   {
    "key": "MACTAX",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -16435,6 +16745,7 @@
   },
   {
    "key": "MASTERN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -16472,6 +16783,7 @@
   },
   {
    "key": "MAXITR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [
@@ -16555,6 +16867,7 @@
   },
   {
    "key": "MCEVCODEN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/mcevcode.txt",
    "code_default": [],
@@ -16597,6 +16910,7 @@
   },
   {
    "key": "MCEVRGMDN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/mcevrgmd.wf1",
    "code_default": [],
@@ -16639,6 +16953,7 @@
   },
   {
    "key": "MCEVSUBSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/mcevsubs.prg",
    "code_default": [],
@@ -16689,6 +17004,7 @@
   },
   {
    "key": "MCEVWORKN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/mcevwork.wf1",
    "code_default": [],
@@ -16745,6 +17061,7 @@
   },
   {
    "key": "MCHIGHLON",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/mchighlo.xls",
    "code_default": [],
@@ -16788,6 +17105,7 @@
   },
   {
    "key": "MCPARMSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/macro/mcparms.txt",
    "code_default": [],
@@ -16830,6 +17148,7 @@
   },
   {
    "key": "MCRPT",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -16865,6 +17184,7 @@
   },
   {
    "key": "MINSCORE",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "3.9",
    "code_default": [],
@@ -16925,6 +17245,7 @@
   },
   {
    "key": "MMAC",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -16997,6 +17318,7 @@
   },
   {
    "key": "MNDBGCV",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -17032,6 +17354,7 @@
   },
   {
    "key": "MNEXPECT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "ITG_MNEXPECT.txt",
    "code_default": [],
@@ -17082,6 +17405,7 @@
   },
   {
    "key": "MNFACTORXN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "./input/mnfactorx.xlsx",
    "code_default": [],
@@ -17136,6 +17460,7 @@
   },
   {
    "key": "MNRISKN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "./input/mnrisk_processed.csv",
    "code_default": [],
@@ -17197,6 +17522,7 @@
   },
   {
    "key": "MOEXPECT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "ITG_MOEXPECT.txt",
    "code_default": [],
@@ -17247,6 +17573,7 @@
   },
   {
    "key": "MOREOPT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "MOREOPT",
    "code_default": [],
@@ -17354,6 +17681,7 @@
   },
   {
    "key": "MPSSHELLN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/source/mpsshell.gms",
    "code_default": [],
@@ -17398,6 +17726,7 @@
   },
   {
    "key": "MSWDATN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/mswdat.txt",
    "code_default": [],
@@ -17448,6 +17777,7 @@
   },
   {
    "key": "MU1PRDSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/mu1prds.txt",
    "code_default": [],
@@ -17506,6 +17836,7 @@
   },
   {
    "key": "MU2PRDSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/mu2prds.txt",
    "code_default": [],
@@ -17564,6 +17895,7 @@
   },
   {
    "key": "NEMRWR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -17673,6 +18005,7 @@
   },
   {
    "key": "NEMSFUNCTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/nemsfunct.f",
    "code_default": [],
@@ -17713,6 +18046,7 @@
   },
   {
    "key": "NEMSPYENN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "c:/python_environments/aeo2026_py312",
    "code_default": [],
@@ -17772,6 +18106,7 @@
   },
   {
    "key": "NEMSPYENV",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "c:/python_environments/aeo2026_py312",
    "code_default": [
@@ -17895,6 +18230,7 @@
   },
   {
    "key": "NEMSWK1N",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/nemswk1.f",
    "code_default": [],
@@ -17943,6 +18279,7 @@
   },
   {
    "key": "NGAIMMSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ngas",
    "code_default": [],
@@ -17986,6 +18323,7 @@
   },
   {
    "key": "NGASSUMPTIONSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngassumptions.txt",
    "code_default": [],
@@ -18030,6 +18368,7 @@
   },
   {
    "key": "NGCANADAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngcanada.txt",
    "code_default": [],
@@ -18075,6 +18414,7 @@
   },
   {
    "key": "NGCAPACITYN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngcapacity.txt",
    "code_default": [],
@@ -18119,6 +18459,7 @@
   },
   {
    "key": "NGEIAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngeia.txt",
    "code_default": [],
@@ -18163,6 +18504,7 @@
   },
   {
    "key": "NGGETVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ngas/input/nggetvars.txt",
    "code_default": [],
@@ -18198,6 +18540,7 @@
   },
   {
    "key": "NGLNGEXPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/nglngexp.txt",
    "code_default": [],
@@ -18243,6 +18586,7 @@
   },
   {
    "key": "NGMARKUPSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngmarkups.txt",
    "code_default": [],
@@ -18287,6 +18631,7 @@
   },
   {
    "key": "NGMEXICON",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngmexico.txt",
    "code_default": [],
@@ -18332,6 +18677,7 @@
   },
   {
    "key": "NGPLPRICEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ngpl",
    "code_default": [],
@@ -18387,6 +18733,7 @@
   },
   {
    "key": "NGPUTVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/ngas/input/ngputvars.txt",
    "code_default": [],
@@ -18423,6 +18770,7 @@
   },
   {
    "key": "NGSETMAPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngsetmap.txt",
    "code_default": [],
@@ -18468,6 +18816,7 @@
   },
   {
    "key": "NGSPOTPRCN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngspotprc.txt",
    "code_default": [],
@@ -18513,6 +18862,7 @@
   },
   {
    "key": "NGSTEOFACTINN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngsteofactin.txt",
    "code_default": [],
@@ -18559,6 +18909,7 @@
   },
   {
    "key": "NGTEXASN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngtexas.txt",
    "code_default": [],
@@ -18611,6 +18962,7 @@
   },
   {
    "key": "NGTXCAPAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/texas_capacity.txt",
    "code_default": [],
@@ -18656,6 +19008,7 @@
   },
   {
    "key": "NGVARTARN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "../../ngas/input/ngvartar.txt",
    "code_default": [],
@@ -18701,6 +19054,7 @@
   },
   {
    "key": "NRG2007",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -18767,6 +19121,7 @@
   },
   {
    "key": "NRG2008",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -18799,6 +19154,7 @@
   },
   {
    "key": "NRGBILL",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -18877,6 +19233,7 @@
   },
   {
    "key": "NRUNS",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "5",
    "code_default": [
@@ -18997,6 +19354,7 @@
   },
   {
    "key": "NUGPIPEN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/nugpipe.txt",
    "code_default": [],
@@ -19039,6 +19397,7 @@
   },
   {
    "key": "NYRS",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "3",
    "code_default": [],
@@ -19089,6 +19448,7 @@
   },
   {
    "key": "OFFSETDO",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "15",
    "code_default": [],
@@ -19138,6 +19498,7 @@
   },
   {
    "key": "OFFSETI",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -19194,6 +19555,7 @@
   },
   {
    "key": "OFFSETIN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "15",
    "code_default": [],
@@ -19243,6 +19605,7 @@
   },
   {
    "key": "OGTECH",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -19365,6 +19728,7 @@
   },
   {
    "key": "ORACLESW",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -19432,6 +19796,7 @@
   },
   {
    "key": "ORCLCL",
+   "verification": "verified, second read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -19481,6 +19846,7 @@
   },
   {
    "key": "ORCLECP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -19554,6 +19920,7 @@
   },
   {
    "key": "ORCLEFD",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -19621,6 +19988,7 @@
   },
   {
    "key": "ORCLEFP",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -19687,6 +20055,7 @@
   },
   {
    "key": "ORDC",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -19740,6 +20109,7 @@
   },
   {
    "key": "ORDE",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "7",
    "code_default": [],
@@ -19793,6 +20163,7 @@
   },
   {
    "key": "ORDG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "10",
    "code_default": [],
@@ -19846,6 +20217,7 @@
   },
   {
    "key": "ORDH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "13",
    "code_default": [],
@@ -19899,6 +20271,7 @@
   },
   {
    "key": "ORDI",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "5",
    "code_default": [],
@@ -19952,6 +20325,7 @@
   },
   {
    "key": "ORDK",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "4",
    "code_default": [],
@@ -20005,6 +20379,7 @@
   },
   {
    "key": "ORDL",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "9",
    "code_default": [],
@@ -20058,6 +20433,7 @@
   },
   {
    "key": "ORDM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -20111,6 +20487,7 @@
   },
   {
    "key": "ORDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "12",
    "code_default": [],
@@ -20164,6 +20541,7 @@
   },
   {
    "key": "ORDO",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "11",
    "code_default": [],
@@ -20217,6 +20595,7 @@
   },
   {
    "key": "ORDQ",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "14",
    "code_default": [],
@@ -20270,6 +20649,7 @@
   },
   {
    "key": "ORDR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "3",
    "code_default": [],
@@ -20323,6 +20703,7 @@
   },
   {
    "key": "ORDT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "6",
    "code_default": [],
@@ -20376,6 +20757,7 @@
   },
   {
    "key": "ORDW",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "8",
    "code_default": [],
@@ -20429,6 +20811,7 @@
   },
   {
    "key": "OUTDAF",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "EMM_OUTDAF.daf",
    "code_default": [],
@@ -20471,6 +20854,7 @@
   },
   {
    "key": "PACIFIC",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "ITG_pacific.csv",
    "code_default": [],
@@ -20556,6 +20940,7 @@
   },
   {
    "key": "PFGUESS",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "50",
    "code_default": [
@@ -20619,6 +21004,7 @@
   },
   {
    "key": "PLANCAPN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/plancap.txt",
    "code_default": [],
@@ -20661,6 +21047,7 @@
   },
   {
    "key": "PLNTDAFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/plntdaf.daf",
    "code_default": [],
@@ -20724,6 +21111,7 @@
   },
   {
    "key": "PLNTTMP",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "PLNTTMP.daf",
    "code_default": [],
@@ -20766,6 +21154,7 @@
   },
   {
    "key": "PLTDATAN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/pltdata.txt",
    "code_default": [],
@@ -20804,6 +21193,7 @@
   },
   {
    "key": "POLYCOST",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "100",
    "code_default": [
@@ -20870,6 +21260,7 @@
   },
   {
    "key": "PREPDB",
+   "verification": "unverified, script only",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -20922,6 +21313,7 @@
   },
   {
    "key": "PREPETTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/prepett",
    "code_default": [],
@@ -20971,6 +21363,7 @@
   },
   {
    "key": "PREPPLTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/prepplt",
    "code_default": [],
@@ -21011,6 +21404,7 @@
   },
   {
    "key": "preppltN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -21058,6 +21452,7 @@
   },
   {
    "key": "PRODFLOWN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/prodflow.txt",
    "code_default": [],
@@ -21108,6 +21503,7 @@
   },
   {
    "key": "PROPANEREGN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/idm/propanereg.csv",
    "code_default": [],
@@ -21150,6 +21546,7 @@
   },
   {
    "key": "PROPCON",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/propco.csv",
    "code_default": [],
@@ -21200,6 +21597,7 @@
   },
   {
    "key": "PRTDBGC",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21245,6 +21643,7 @@
   },
   {
    "key": "PRTDBGE",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21291,6 +21690,7 @@
   },
   {
    "key": "PRTDBGG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -21334,6 +21734,7 @@
   },
   {
    "key": "PRTDBGH",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21377,6 +21778,7 @@
   },
   {
    "key": "PRTDBGI",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -21423,6 +21825,7 @@
   },
   {
    "key": "PRTDBGK",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21470,6 +21873,7 @@
   },
   {
    "key": "PRTDBGL",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -21513,6 +21917,7 @@
   },
   {
    "key": "PRTDBGM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21556,6 +21961,7 @@
   },
   {
    "key": "PRTDBGN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -21599,6 +22005,7 @@
   },
   {
    "key": "PRTDBGO",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21642,6 +22049,7 @@
   },
   {
    "key": "PRTDBGQ",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21685,6 +22093,7 @@
   },
   {
    "key": "PRTDBGR",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21746,6 +22155,7 @@
   },
   {
    "key": "PRTDBGT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21789,6 +22199,7 @@
   },
   {
    "key": "PRTDBGW",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -21832,6 +22243,7 @@
   },
   {
    "key": "PSBASEUNFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/psbaseunf.zip",
    "code_default": [],
@@ -21882,6 +22294,7 @@
   },
   {
    "key": "PSELASTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pselast.txt",
    "code_default": [],
@@ -21924,6 +22337,7 @@
   },
   {
    "key": "PSELASTOSPN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pselastosp.txt",
    "code_default": [],
@@ -21966,6 +22380,7 @@
   },
   {
    "key": "PSELASTS96N",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pselasts96.txt",
    "code_default": [],
@@ -22008,6 +22423,7 @@
   },
   {
    "key": "PSRAINN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/psrain.txt",
    "code_default": [],
@@ -22050,6 +22466,7 @@
   },
   {
    "key": "PSRESULTTBN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/psresulttb.txt",
    "code_default": [],
@@ -22092,6 +22509,7 @@
   },
   {
    "key": "PSSIMN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pssim.txt",
    "code_default": [],
@@ -22141,6 +22559,7 @@
   },
   {
    "key": "PSSIMOUT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "RFM_PSSIMOUT.txt",
    "code_default": [],
@@ -22184,6 +22603,7 @@
   },
   {
    "key": "PSWHATIFRGN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pswhatifrg.txt",
    "code_default": [],
@@ -22226,6 +22646,7 @@
   },
   {
    "key": "PSWHATIFUSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pswhatifus.txt",
    "code_default": [],
@@ -22284,6 +22705,7 @@
   },
   {
    "key": "PSWINDN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/pswind.txt",
    "code_default": [],
@@ -22326,6 +22748,7 @@
   },
   {
    "key": "QSBLKN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "./input/qsblk_processed.csv",
    "code_default": [],
@@ -22379,6 +22802,7 @@
   },
   {
    "key": "RBENALLN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "ITG_RBENALLN.csv",
    "code_default": [],
@@ -22429,6 +22853,7 @@
   },
   {
    "key": "READDAN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -22466,6 +22891,7 @@
   },
   {
    "key": "REBRACKT",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -22532,6 +22958,7 @@
   },
   {
    "key": "REFINEN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/source/refine.f",
    "code_default": [],
@@ -22595,6 +23022,7 @@
   },
   {
    "key": "REFOGMAPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/refogmap.txt",
    "code_default": [],
@@ -22655,6 +23083,7 @@
   },
   {
    "key": "REFRENT",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -22730,6 +23159,7 @@
   },
   {
    "key": "RENDATN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/rendat.txt",
    "code_default": [],
@@ -22781,6 +23211,7 @@
   },
   {
    "key": "RENEWBM",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [
@@ -22837,6 +23268,7 @@
   },
   {
    "key": "RENEWGE",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -22925,6 +23357,7 @@
   },
   {
    "key": "RENEWMS",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [
@@ -22981,6 +23414,7 @@
   },
   {
    "key": "RENEWN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/renew.f",
    "code_default": [],
@@ -23019,6 +23453,7 @@
   },
   {
    "key": "RENEWWI",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -23091,6 +23526,7 @@
   },
   {
    "key": "REPORTRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/reporter",
    "code_default": [],
@@ -23144,6 +23580,7 @@
   },
   {
    "key": "RESDEQP",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "RDM_EQPOUT.txt",
    "code_default": [],
@@ -23194,6 +23631,7 @@
   },
   {
    "key": "RESDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/resd.f",
    "code_default": [],
@@ -23232,6 +23670,7 @@
   },
   {
    "key": "RESTARTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "K:/output/aeo2026/cb2026/d011626a/restart.rlx",
    "code_default": [],
@@ -23367,6 +23806,7 @@
   },
   {
    "key": "RESTOREN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/rest",
    "code_default": [],
@@ -23413,6 +23853,7 @@
   },
   {
    "key": "RESTPREPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/rest/input/restprep.txt",
    "code_default": [],
@@ -23447,6 +23888,7 @@
   },
   {
    "key": "RETAIN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "45",
    "code_default": [],
@@ -23532,6 +23974,7 @@
   },
   {
    "key": "RFADJBFO",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "LFMM_RFADJBFO.txt",
    "code_default": [],
@@ -23611,6 +24054,7 @@
   },
   {
    "key": "RFHISTN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/rfhist.txt",
    "code_default": [],
@@ -23686,6 +24130,7 @@
   },
   {
    "key": "RFINVESTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/rfinvest.txt",
    "code_default": [],
@@ -23765,6 +24210,7 @@
   },
   {
    "key": "RGENTKN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rgentk.txt",
    "code_default": [],
@@ -23815,6 +24261,7 @@
   },
   {
    "key": "ROUTDBG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "ITG_ROUTDBG.txt",
    "code_default": [],
@@ -23865,6 +24312,7 @@
   },
   {
    "key": "RPSTRANCHEN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/emm/rpstranche.txt",
    "code_default": [],
@@ -23985,6 +24433,7 @@
   },
   {
    "key": "RSEFF01N",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rseff01.txt",
    "code_default": [],
@@ -24027,6 +24476,7 @@
   },
   {
    "key": "RSESTARN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsestar.txt",
    "code_default": [],
@@ -24069,6 +24519,7 @@
   },
   {
    "key": "RSGENTKN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsgentk.txt",
    "code_default": [],
@@ -24135,6 +24586,7 @@
   },
   {
    "key": "RSHTSHRN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rshtshr.txt",
    "code_default": [],
@@ -24177,6 +24629,7 @@
   },
   {
    "key": "RSMELSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsmels.txt",
    "code_default": [],
@@ -24242,6 +24695,7 @@
   },
   {
    "key": "RSMESSN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsmess.xlsx",
    "code_default": [],
@@ -24292,6 +24746,7 @@
   },
   {
    "key": "RSMISCN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsmisc.txt",
    "code_default": [],
@@ -24357,6 +24812,7 @@
   },
   {
    "key": "RSMLGTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsmlgt.txt",
    "code_default": [],
@@ -24422,6 +24878,7 @@
   },
   {
    "key": "RSRET01N",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsret01.txt",
    "code_default": [],
@@ -24464,6 +24921,7 @@
   },
   {
    "key": "RSSQFTN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rssqft.txt",
    "code_default": [],
@@ -24506,6 +24964,7 @@
   },
   {
    "key": "RSSTEON",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rssteo.txt",
    "code_default": [],
@@ -24548,6 +25007,7 @@
   },
   {
    "key": "RSSTKEFFN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsstkeff.txt",
    "code_default": [],
@@ -24590,6 +25050,7 @@
   },
   {
    "key": "RSSTKN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsstk.txt",
    "code_default": [],
@@ -24632,6 +25093,7 @@
   },
   {
    "key": "RSSWITCHN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -24677,6 +25139,7 @@
   },
   {
    "key": "RSUECN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsuec.txt",
    "code_default": [],
@@ -24719,6 +25182,7 @@
   },
   {
    "key": "RSUECSHLN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rdm/rsuecshl.txt",
    "code_default": [],
@@ -24784,6 +25248,7 @@
   },
   {
    "key": "RSXLSDBG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "RDM_XLSXDBG.txt",
    "code_default": [],
@@ -24834,6 +25299,7 @@
   },
   {
    "key": "RUN45Q",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -24945,6 +25411,7 @@
   },
   {
    "key": "RUNEMMSQL",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -25006,6 +25473,7 @@
   },
   {
    "key": "RUNEPM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -25085,6 +25553,7 @@
   },
   {
    "key": "RUNPOLY",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -25158,6 +25627,7 @@
   },
   {
    "key": "RUNRNGPL",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -25217,6 +25687,7 @@
   },
   {
    "key": "RUNSTORE",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -25260,6 +25731,7 @@
   },
   {
    "key": "RW-ALL_SERIES_UIDN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/RW-all_series_UID.csv",
    "code_default": [],
@@ -25305,6 +25777,7 @@
   },
   {
    "key": "RWCNFG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "config.ini",
    "code_default": [],
@@ -25379,6 +25852,7 @@
   },
   {
    "key": "SO2DAF",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -25414,6 +25888,7 @@
   },
   {
    "key": "SOLARCLIPINN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/solarclipin.txt",
    "code_default": [],
@@ -25456,6 +25931,7 @@
   },
   {
    "key": "SOLARINN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/solarin.txt",
    "code_default": [],
@@ -25498,6 +25974,7 @@
   },
   {
    "key": "STEOBM",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -25586,6 +26063,7 @@
   },
   {
    "key": "STEODBUG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "ITG_STEODBUG.txt",
    "code_default": [],
@@ -25628,6 +26106,7 @@
   },
   {
    "key": "STEOLISTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/steolist.txt",
    "code_default": [],
@@ -25664,6 +26143,7 @@
   },
   {
    "key": "STEONG",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],
@@ -25721,6 +26201,7 @@
   },
   {
    "key": "STEOVARSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/steovars.csv",
    "code_default": [],
@@ -25766,6 +26247,7 @@
   },
   {
    "key": "STIMULUS",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -25847,6 +26329,7 @@
   },
   {
    "key": "STSCALNG",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [],
@@ -25919,6 +26402,7 @@
   },
   {
    "key": "TABREQN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -25965,6 +26449,7 @@
   },
   {
    "key": "TFILERN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/tfiler.f",
    "code_default": [],
@@ -25999,6 +26484,7 @@
   },
   {
    "key": "TRANAIR",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "TDM_TRANAIR.txt",
    "code_default": [],
@@ -26041,6 +26527,7 @@
   },
   {
    "key": "TRANAIRN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/tranair.f",
    "code_default": [],
@@ -26079,6 +26566,7 @@
   },
   {
    "key": "TRANEFF",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "0",
    "code_default": [
@@ -26203,6 +26691,7 @@
   },
   {
    "key": "TRANFRTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/tranfrt.f",
    "code_default": [],
@@ -26241,6 +26730,7 @@
   },
   {
    "key": "TRANN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/tran.f",
    "code_default": [],
@@ -26279,6 +26769,7 @@
   },
   {
    "key": "TRANSET",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -26314,6 +26805,7 @@
   },
   {
    "key": "TRNAIRXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnairx.xlsx",
    "code_default": [],
@@ -26356,6 +26848,7 @@
   },
   {
    "key": "TRNFEM",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnfem.csv",
    "code_default": [],
@@ -26401,6 +26894,7 @@
   },
   {
    "key": "TRNFEMXN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -26436,6 +26930,7 @@
   },
   {
    "key": "TRNH2OUT",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -26471,6 +26966,7 @@
   },
   {
    "key": "TRNHDV_BMPGSTK",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnhdv_bmpgstk.csv",
    "code_default": [],
@@ -26516,6 +27012,7 @@
   },
   {
    "key": "TRNHDV_TECHBASE_P2",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnhdv_techbase_p2.csv",
    "code_default": [],
@@ -26561,6 +27058,7 @@
   },
   {
    "key": "TRNHDVXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnhdvx.xlsx",
    "code_default": [],
@@ -26603,6 +27101,7 @@
   },
   {
    "key": "TRNLDVVMT",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnldv_vmt.csv",
    "code_default": [],
@@ -26648,6 +27147,7 @@
   },
   {
    "key": "TRNLDVXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnldvx.xlsx",
    "code_default": [],
@@ -26690,6 +27190,7 @@
   },
   {
    "key": "TRNNHTSA",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnnhtsa.csv",
    "code_default": [],
@@ -26742,6 +27243,7 @@
   },
   {
    "key": "TRNNHTSAXN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnnhtsax.xlsx",
    "code_default": [],
@@ -26784,6 +27286,7 @@
   },
   {
    "key": "TRNSTOCKX_HDV",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnstockx_hdv.csv",
    "code_default": [],
@@ -26829,6 +27332,7 @@
   },
   {
    "key": "TRNSTOCKX_HDV_PRE2012",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnstockx_hdv_pre2012.csv",
    "code_default": [],
@@ -26874,6 +27378,7 @@
   },
   {
    "key": "TRNSTOCKX_LDV",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/tdm/trnstockx_ldv.csv",
    "code_default": [],
@@ -26919,6 +27424,7 @@
   },
   {
    "key": "TRNSTOCKXN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -26956,6 +27462,7 @@
   },
   {
    "key": "TTECH",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [
@@ -27025,6 +27532,7 @@
   },
   {
    "key": "UAIMMSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uaimms.f",
    "code_default": [],
@@ -27061,6 +27569,7 @@
   },
   {
    "key": "UCAPEN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/ucape.f",
    "code_default": [],
@@ -27096,6 +27605,7 @@
   },
   {
    "key": "UDAFN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/udaf.f",
    "code_default": [],
@@ -27140,6 +27650,7 @@
   },
   {
    "key": "UDATN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/udat.f",
    "code_default": [],
@@ -27184,6 +27695,7 @@
   },
   {
    "key": "UECPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uecp.f",
    "code_default": [],
@@ -27220,6 +27732,7 @@
   },
   {
    "key": "UEFDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uefd.f",
    "code_default": [],
@@ -27256,6 +27769,7 @@
   },
   {
    "key": "UEFPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uefp.f",
    "code_default": [],
@@ -27292,6 +27806,7 @@
   },
   {
    "key": "UESQLN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uesql.f90",
    "code_default": [],
@@ -27337,6 +27852,7 @@
   },
   {
    "key": "ULDSMN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uldsm.f",
    "code_default": [],
@@ -27381,6 +27897,7 @@
   },
   {
    "key": "UNUGSN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/unugs.f",
    "code_default": [],
@@ -27416,6 +27933,7 @@
   },
   {
    "key": "UREADN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/uread.f",
    "code_default": [],
@@ -27460,6 +27978,7 @@
   },
   {
    "key": "UTILDR",
+   "verification": "verified, second read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -27503,6 +28022,7 @@
   },
   {
    "key": "UTILN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/util.f",
    "code_default": [],
@@ -27539,6 +28059,7 @@
   },
   {
    "key": "VARLISTLN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/models/lfmm/input/varlistl.txt",
    "code_default": [],
@@ -27662,6 +28183,7 @@
   },
   {
    "key": "VARLISTN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/varlist.txt",
    "code_default": [],
@@ -27727,6 +28249,7 @@
   },
   {
    "key": "VARLISTRECN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/varlistrec.txt",
    "code_default": [],
@@ -27764,6 +28287,7 @@
   },
   {
    "key": "VLDCTLRN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/validator_controller.csv",
    "code_default": [],
@@ -27830,6 +28354,7 @@
   },
   {
    "key": "VLDIEQN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/validator_inequality_keys.csv",
    "code_default": [],
@@ -27875,6 +28400,7 @@
   },
   {
    "key": "VLDSUBN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/validator_subset_keys.csv",
    "code_default": [],
@@ -27920,6 +28446,7 @@
   },
   {
    "key": "WCDCFUSN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -27957,6 +28484,7 @@
   },
   {
    "key": "WDUMP",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "RFM_WDUMP.txt",
    "code_default": [],
@@ -28041,6 +28569,7 @@
   },
   {
    "key": "WELLPF",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [
@@ -28108,6 +28637,7 @@
   },
   {
    "key": "WESAREAN",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/wesarea.txt",
    "code_default": [],
@@ -28158,6 +28688,7 @@
   },
   {
    "key": "WGEPARMN",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/wgeparm.txt",
    "code_default": [],
@@ -28238,6 +28769,7 @@
   },
   {
    "key": "WGTGUESS",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "50",
    "code_default": [],
@@ -28297,6 +28829,7 @@
   },
   {
    "key": "WHYDRON",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/whydro.txt",
    "code_default": [],
@@ -28384,6 +28917,7 @@
   },
   {
    "key": "WINDDBG",
+   "verification": "unverified, script only",
    "in_cb2026": true,
    "value": "RFM_WINDDBG.txt",
    "code_default": [],
@@ -28426,6 +28960,7 @@
   },
   {
    "key": "WODSUPPN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/wodsupp.txt",
    "code_default": [],
@@ -28471,6 +29006,7 @@
   },
   {
    "key": "WODTECHN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/input/rfm/wodtech.txt",
    "code_default": [],
@@ -28516,6 +29052,7 @@
   },
   {
    "key": "WOPA_ONE",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "30",
    "code_default": [
@@ -28581,6 +29118,7 @@
   },
   {
    "key": "WOPA_TWO",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "30",
    "code_default": [
@@ -28633,6 +29171,7 @@
   },
   {
    "key": "WOPLIMIT",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2602",
    "code_default": [
@@ -28685,6 +29224,7 @@
   },
   {
    "key": "WORLDN",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "$NEMS/source/world.f",
    "code_default": [],
@@ -28721,6 +29261,7 @@
   },
   {
    "key": "WWOP",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "2",
    "code_default": [],
@@ -28819,6 +29360,7 @@
   },
   {
    "key": "XPRESSINN",
+   "verification": "unverified, one read",
    "in_cb2026": false,
    "value": null,
    "code_default": [],
@@ -28854,6 +29396,7 @@
   },
   {
    "key": "YEARPR",
+   "verification": "unverified, one read",
    "in_cb2026": true,
    "value": "2025",
    "code_default": [],
@@ -28940,6 +29483,7 @@
   },
   {
    "key": "ZTCCOSTM",
+   "verification": "verified, second read",
    "in_cb2026": true,
    "value": "1",
    "code_default": [],

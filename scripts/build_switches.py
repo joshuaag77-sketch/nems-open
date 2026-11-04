@@ -11,6 +11,7 @@ not exist is flagged, not dropped.
 
 import json
 import os
+import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -18,13 +19,15 @@ from pathlib import Path
 import switch_sites
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = ROOT / "nems-upstream"
+sys.path.insert(0, str(ROOT / "src"))
+from nems_open.paths import UPSTREAM  # noqa: E402
 MEANINGS = ROOT / "scripts" / "switches_meanings.json"
 WEB = ROOT / "web" / "data"
 KINDS = {"policy", "technology_or_market_assumption", "model_control", "debug_reporting", "file_path",
          "build_or_software", "unknown"}
 STATUS = {"active", "read_no_effect", "not_read", "unknown"}
 SITE_CAP = 12
+VERIFIED, ONE_READ, SCRIPT = "verified, second read", "unverified, one read", "unverified, script only"
 CASES = {"altelec": "Alternative electricity", "alttrnp": "Alternative transportation",
          "electrnp": "Alternative electricity and transportation", "higheldmd": "High electricity demand",
          "highogs": "High oil and gas supply", "lowogs": "Low oil and gas supply",
@@ -97,8 +100,9 @@ def build():
                  "status": "unknown", "evidence": [], "notes": "", "established_by": "none", "second_read": False, "correction": ""}
         bad = [e for e in m["evidence"] if not evidence_ok(e)]
         defaults = sorted({s["default"] for s in x["sites"] if s.get("default")})
+        verification = VERIFIED if m["second_read"] else ONE_READ if m["established_by"] == "reader" else SCRIPT
         rows.append({
-            "key": k, "in_cb2026": x["in_cb2026"], "value": x["value"], "code_default": defaults,
+            "key": k, "verification": verification, "in_cb2026": x["in_cb2026"], "value": x["value"], "code_default": defaults,
             "owner": x["owner"], "owner_name": x["owner_name"], "section": x["section"], "description": x["description"],
             **m, "bad_evidence": bad,
             "side_cases": real, "side_cases_path_only": sorted(c for c in x["side_cases"] if c not in real),
@@ -111,9 +115,12 @@ def build():
         "what_unknown": sum(r["what"] == "unknown" for r in rows),
         "by_status": dict(Counter(r["status"] for r in rows)), "by_kind": dict(Counter(r["kind"] for r in rows)),
         "established_by": dict(Counter(r["established_by"] for r in rows)),
+        "verification": {v: sum(r["verification"] == v for r in rows) for v in (VERIFIED, ONE_READ, SCRIPT)},
         "second_read": sum(r["second_read"] for r in rows), "corrected": sum(bool(r["correction"]) for r in rows),
         "changed_in_side_cases": sum(bool(r["side_cases"]) for r in rows),
         "bad_evidence": sum(bool(r["bad_evidence"]) for r in rows)}
+    summary["trust_note"] = (f"A separate reader tried to break {summary['second_read']} entries and changed {summary['corrected']}. "
+                             "Treat anything unverified as a lead to check in the code, not as a finding.")
     doc = {"source": "EIA NEMS scedes files and source code, read in nems-upstream", "side_cases": CASES,
            "other_scedes": {"cb2026_solo": "cb2026 standalone variant", "prepett": "EMM transmission preprocessor run", "prepplt": "EMM plant preprocessor run"},
            "summary": summary, "switches": rows}
