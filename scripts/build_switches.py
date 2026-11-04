@@ -61,19 +61,23 @@ def from_scedes(x):
 
 
 def evidence_ok(ref):
+    """file, file:line or file:first-last: the file exists and the lines are in it."""
     path, _, line = ref.rpartition(":")
+    if not line.replace("-", "").isdigit():
+        return (UPSTREAM / ref).is_file()
     p = UPSTREAM / path
-    if not p.is_file() or not line.isdigit():
+    if not p.is_file():
         return False
     with open(p, encoding="utf-8", errors="replace") as f:
-        return sum(1 for _ in f) >= int(line) >= 1
+        return sum(1 for _ in f) >= int(line.split("-")[-1]) >= 1
 
 
 def clean(m, key):
     out = {"what": m.get("what") or "unknown", "values": m.get("values") or [], "allowed": m.get("allowed") or "unknown",
            "modules": m.get("modules") or ["unknown"], "kind": m.get("kind"), "status": m.get("status"),
-           "evidence": m.get("evidence") or [], "notes": m.get("notes") or "", "established_by": "reader",
-           "second_read": bool(m.get("second_read")), "correction": m.get("correction") or ""}
+           "evidence": m.get("evidence") or [], "notes": m.get("notes") or "", "established_by": m.get("established_by", "reader"),
+           "second_read": bool(m.get("second_read")), "correction": m.get("correction") or "",
+           "first_pass": m.get("first_pass"), "round": m.get("round")}
     if out["kind"] not in KINDS:
         out["kind"] = "unknown"
     if out["status"] not in STATUS:
@@ -117,10 +121,16 @@ def build():
         "established_by": dict(Counter(r["established_by"] for r in rows)),
         "verification": {v: sum(r["verification"] == v for r in rows) for v in (VERIFIED, ONE_READ, SCRIPT)},
         "second_read": sum(r["second_read"] for r in rows), "corrected": sum(bool(r["correction"]) for r in rows),
+        "first_pass": dict(Counter(r["first_pass"] for r in rows if r["first_pass"])),
+        "first_pass_round2": dict(Counter(r["first_pass"] for r in rows if r["round"] == 2)),
         "changed_in_side_cases": sum(bool(r["side_cases"]) for r in rows),
         "bad_evidence": sum(bool(r["bad_evidence"]) for r in rows)}
-    summary["trust_note"] = (f"A separate reader tried to break {summary['second_read']} entries and changed {summary['corrected']}. "
-                             "Treat anything unverified as a lead to check in the code, not as a finding.")
+    fp, n = summary["first_pass"], summary["second_read"]
+    summary["trust_note"] = (
+        f"A separate reader tried to break {n} entries. Of the first-pass entries, {fp.get('wrong', 0)} had a false claim "
+        f"({fp.get('wrong', 0) / max(n, 1):.0%}), {fp.get('gap', 0)} missed something material, {fp.get('minor', 0)} needed only small fixes, "
+        f"and {fp.get('holds', 0)} held. Those were fixed from the code, but a corrected entry has been read by one reader since, "
+        "and two readers can disagree. Verified means checked twice, not proven: confirm a key in the code before building on it.")
     doc = {"source": "EIA NEMS scedes files and source code, read in nems-upstream", "side_cases": CASES,
            "other_scedes": {"cb2026_solo": "cb2026 standalone variant", "prepett": "EMM transmission preprocessor run", "prepplt": "EMM plant preprocessor run"},
            "summary": summary, "switches": rows}
