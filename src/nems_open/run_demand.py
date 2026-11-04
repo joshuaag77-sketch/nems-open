@@ -189,8 +189,9 @@ class CommercialSector:
 class IndustrialSector:
     """SUBROUTINE IND (source/ind.f): the slot industrial fills as its port lands.
 
-    Ported so far (branch `industrial`): CALBSC, CALSTOT and INDTOTAL, the boiler and
-    fuel accounting inside ISEAM's loop over 24 industries and 4 Census regions. The
+    Ported so far: CALBSC, CALSTOT and INDTOTAL (boiler and fuel accounting inside ISEAM's
+    loop over 24 industries and 4 Census regions) and COGINIT, EVALCOGEN and CALGEN (combined
+    heat and power). The
     steps that carry those results to QBLK (MODCAL, NATTOTAL, WRQTY, and WEXOG's
     history and STEO benchmarking) are not ported, so the ported routines cannot move
     QBLK yet. Until they are, the sector's fuel use is the industrial oracle's: EIA's
@@ -201,7 +202,7 @@ class IndustrialSector:
     """
     name = "industrial"
     suffix = "in"
-    ported = ("CALBSC", "CALSTOT", "INDTOTAL")
+    ported = ("CALBSC", "CALSTOT", "INDTOTAL", "COGINIT", "EVALCOGEN", "CALGEN")
 
     @staticmethod
     def oracle_out():
