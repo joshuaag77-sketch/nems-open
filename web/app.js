@@ -529,7 +529,6 @@
     el("status-table").querySelectorAll("[data-mod]").forEach((b) => b.addEventListener("click", () => openModule(b.dataset.mod)));
     el("status-note").textContent = `From the repo on ${ENGINE.totals.generated}: ${fmt(ENGINE.totals.tests)} tests in all. EIA lines count every source file the module replaces, AIMMS models included.`;
   }
-  el("go-how").addEventListener("click", () => el("how").scrollIntoView({ behavior: "smooth", block: "start" }));
 
   // ---- wiring ------------------------------------------------------------------
   // ---- what changed ---------------------------------------------------------------

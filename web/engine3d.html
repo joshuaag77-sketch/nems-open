@@ -10,15 +10,16 @@
           --match: #1D9E75; --partial: #EF9F27; --stand: #888780; --fixed: #4a4945; --input: #7F77DD; --output: #5DCAA5; --hub: #FAC775; }
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
   #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-  .hero { position: fixed; left: 28px; top: 24px; max-width: 470px; pointer-events: none; }
+  .hero { position: fixed; left: 28px; top: 64px; max-width: 470px; pointer-events: none; }
   .hero h1 { font-size: 26px; font-weight: 500; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .hero .indep { margin-top: 8px; font-size: 12px; color: var(--dim); }
   .hero p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
   .cols { position: fixed; top: 50%; width: 100%; pointer-events: none; font-size: 12px; color: var(--dim); letter-spacing: 0.08em; }
   .cols div { position: absolute; transform: translateX(-50%); }
   .lbl { position: fixed; font-size: 12px; color: var(--ink); pointer-events: none; white-space: nowrap; transform: translate(-50%, -150%); text-shadow: 0 0 6px #000; }
   .lbl { text-align: center; } .lbl small { color: var(--muted); font-size: 10px; }
   .lbl.hot { color: var(--hub); }
-  .scen { position: fixed; z-index: 4; right: 28px; top: 24px; width: 300px; max-height: calc(100% - 110px); overflow: auto; background: #11141bcc; border: 0.5px solid var(--line);
+  .scen { position: fixed; z-index: 4; right: 28px; top: 64px; width: 300px; max-height: calc(100% - 150px); overflow: auto; background: #11141bcc; border: 0.5px solid var(--line);
           border-radius: 12px; padding: 12px 14px; font-size: 13px; backdrop-filter: blur(4px); }
   .scen-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; color: var(--muted); }
   button.small { padding: 4px 10px; font-size: 12px; }
@@ -38,7 +39,7 @@
   .diff { margin-top: 10px; display: grid; gap: 8px; }
   .diff svg { width: 100%; height: 34px; display: block; }
   .diff .d { font-variant-numeric: tabular-nums; } .diff .up { color: #ef8a70; } .diff .down { color: #5ccf93; }
-  #panel { position: fixed; z-index: 5; left: 28px; top: 172px; width: 300px; max-height: calc(100% - 300px); overflow: auto; background: #11141bdd;
+  #panel { position: fixed; z-index: 5; left: 28px; top: 232px; width: 300px; max-height: calc(100% - 360px); overflow: auto; background: #11141bdd;
            border: 0.5px solid var(--line); border-radius: 12px; padding: 14px 16px; font-size: 13px; display: none; backdrop-filter: blur(4px); }
   #panel h3 { margin: 0 0 6px; font-size: 15px; font-weight: 500; }
   #panel p { margin: 6px 0; color: var(--muted); line-height: 1.45; }
@@ -78,11 +79,12 @@
   #err { position: fixed; inset: 0; display: none; place-items: center; text-align: center; color: var(--muted); padding: 24px; }
 </style>
 </head>
-<body>
+<body class="fixed-page">
 <canvas id="c" aria-label="Three-dimensional view of NEMS's modules, routines and shared variables"></canvas>
 <div class="hero">
   <h1>Inside the model behind America's energy outlook</h1>
   <p id="hero-text">Loading EIA's structure...</p>
+  <p class="indep">An independent project. Not affiliated with EIA; built on EIA's published NEMS code and AEO2026.</p>
 </div>
 <div class="cols" aria-hidden="true"><div style="left:16%">SWITCHES IN</div><div style="left:50%">ENGINE</div><div style="left:84%">NUMBERS OUT</div></div>
 <section class="scen" id="scen" aria-label="Scenarios">
@@ -108,6 +110,7 @@
 <div id="err"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="site.js"></script>
 <script src="engine3d.js"></script>
 </body>
 </html>
