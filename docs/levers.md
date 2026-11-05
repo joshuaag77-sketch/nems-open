@@ -44,6 +44,7 @@ Change against the same run with the lever off, US, starting 2027. Levers on sta
 ## What to know before showing these
 
 - **EV sales is a target, not an addition.** EIA's reference already reaches 49% plug-in sales in 2030 and 65% in 2035, so 0.5 from 2027 lowers EV sales in 2035 and raises CO2 by 11 Mt. Use a value above the reference.
+- **EV charging reaches the grid through the buildings rows when TRAN is ported** (QELRS and QELCM add TRQ_ELEC; QELTR is passenger rail only), one iteration later, as in NEMS's module order. Only an `ev_share` target hands TRAN's load over. If a carbon or oil price moves EV sales inside TRAN, the buildings keep EIA's charging load, so that extra load is missing. The stub path puts the load on QELTR instead: the US total is right, the sector split is not EIA's.
 - **Plentiful gas raises CO2.** That is EIA's answer too: its high supply case adds 260 Mt in 2035. The stand-in adds 113, so it under-reacts.
 - **Coal retirements look small late.** EIA's own coal burn falls fast (7,500 trillion Btu in 2025, 21 in 2050), so the lever has less to close each year.
 - **No lever carries a capital cost into prices.** Closing coal or building nuclear does not move retail electricity through plant costs. Building codes and standards do not charge the builder for shells; residential standards do raise equipment cost, read off each class's own efficiency-to-cost line.
