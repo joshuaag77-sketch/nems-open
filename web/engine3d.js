@@ -209,6 +209,8 @@
   const webgl = (() => { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } })();
   if (innerWidth < 700 || !webgl) { flatView(); return; }
 
+  if (innerWidth < 1280) { $("scen").classList.add("shut"); $("scen-toggle").textContent = "Show scenarios"; $("scen-toggle").setAttribute("aria-expanded", false); }
+
   // ---- scene -------------------------------------------------------------------------
   const canvas = $("c");
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -218,8 +220,25 @@
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 3000);
   const controls = new THREE.OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 0.3;
-  const home = () => { camera.position.set(0, 80, 330); controls.target.set(0, 0, 0); };
+  // The scene is about 400 units wide. Back the camera off until it fits the space the scenario
+  // panel leaves free, and slide it into that space, so no module hides behind the panel.
+  const PANEL_W = 328;
+  const freeW = () => innerWidth - ($("scen").classList.contains("shut") ? 0 : PANEL_W);
+  function frame() {
+    if ($("scen").classList.contains("shut")) camera.clearViewOffset();
+    else camera.setViewOffset(innerWidth, innerHeight, PANEL_W / 2, 0, innerWidth, innerHeight);
+  }
+  const home = () => {
+    const d = Math.max(310, (340 * innerHeight) / (freeW() * 0.9326));
+    camera.position.set(0, d * 0.24, d); controls.target.set(0, 0, 0); frame();
+  };
   home();
+  $("scen-toggle").addEventListener("click", () => {
+    const shut = $("scen").classList.toggle("shut");
+    $("scen-toggle").textContent = shut ? "Show scenarios" : "Hide";
+    $("scen-toggle").setAttribute("aria-expanded", !shut);
+    home();
+  });
 
   // A seeded random, so the layout is the same on every load.
   function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -400,6 +419,7 @@
   let downAt = null;
   canvas.addEventListener("pointerdown", (e) => (downAt = [e.clientX, e.clientY]));
   canvas.addEventListener("pointerup", (e) => {
+    tip.style.display = "none";
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;  // a drag, not a click
     mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(mouse, camera);
@@ -655,7 +675,7 @@
   else if (byKey[asked.get("m")]) showModule(byKey[asked.get("m")]);
 
   // ---- loop -----------------------------------------------------------------------------
-  function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+  function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; frame(); camera.updateProjectionMatrix(); }
   addEventListener("resize", resize); resize();
   let last = performance.now();
   function tick(now) {
