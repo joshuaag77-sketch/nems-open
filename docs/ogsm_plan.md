@@ -48,17 +48,22 @@ caveats: `canada.py` takes some AIMMS outputs (Canadian gas production, from the
 model) as inputs from the restart file, and the integrated run takes natural gas demand and
 prices from the NGMM, which is AIMMS. In a standalone run these come from the reference restart.
 
-## What the task should become
+## Result of the standalone run (2026-11-06)
 
-Not a port. Three options, in order of effort:
+`src/nems_open/ogsm/run_hsm.py` runs EIA's HSM from NEMS_UPSTREAM on the cb2026 restart, through a pure
+Python `pyfiler1` stand-in (`pyfiler1.py`). One core, 9 minutes for 2024 to 2050, no solver.
+`compare.py` checks its OGSMOUT arrays against the restart.
 
-1. **Run EIA's HSM as is** against `cb2026` restart inputs and check that it reproduces the
-   OGSM arrays in the shipped `restart.npz`. This is the oracle: Python run against Python.
-   Needs `pyfiler1` or a thin replacement over `src/nems_open/snapshot.py`.
-2. **Wrap it** as `src/nems_open/ogsm/` with a price-in, production-out call, and replace
-   `supply_standin` for oil and gas production. Vendor the HSM code (Apache 2.0, NOTICE).
-3. **Speed and levers.** HSM is slow and pandas heavy. Only worth doing if the game needs it
-   per turn.
+- 2020 to 2025: equal to the restart (history and STEO).
+- From 2026 it diverges. US dry gas production (ogngprd) falls to 36,000 by 2050 where EIA's run
+  rises to 104,700. Crude (ogcoprd) falls to 16.7 where EIA has 23.8. 50 of 95 arrays match
+  to 1e-4 (the ones HSM does not rewrite), 40 are off by more than 1%.
+- Likely cause, not yet shown: the standalone loop in `hsm.py` is marked as a debug path. In a
+  real NEMS run HSM is called each year and iteration with expectations and project lists carried
+  in `fcrl_var.pkl` and `ncrl_var.pkl`, and prices come from converged NGTDM and LFMM passes. The
+  standalone loop may not feed the same price paths or state.
+- So the `ogs='hsm'` switch is not built: a switch that cuts gas supply by 65% by 2050 would be
+  worse than the stand-in, which reproduces EIA's cases.
 
-Open question for the orchestrator: go with 1 and 2? Nothing in this lane needs the Fortran
-oracle, so the `ogsm` target in `oracle/` is not added.
+Next step if this continues: log the price arrays HSM reads each year (wellhead gas, WTI) and diff them
+against the restart, then the pickled expectations.
