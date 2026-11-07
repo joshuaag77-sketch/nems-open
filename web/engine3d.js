@@ -86,6 +86,7 @@
   yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
   const asked = new URLSearchParams(location.hash.slice(1));
   let followKey = null, openMod = null, mapOn = false;
+  let dollarOn = false;
   function writeHash() {
     const q = new URLSearchParams();
     if (selA !== "reference") q.set("a", selA);
@@ -94,6 +95,8 @@
     if (followKey) q.set("sw", followKey);
     if (openMod) q.set("m", openMod);
     if (mapOn) q.set("map", "1");
+    if (dollarOn) q.set("d", "1");
+    if (typeof demandOn !== "undefined" && demandOn) q.set("demand", "1");
     history.replaceState(null, "", "#" + q.toString());
   }
 
@@ -195,6 +198,7 @@
   function render(animate) {
     OUT = (FID.sets[SC[selA].set || "fast"] || FID.sets.fast).outputs;
     cards(); heads(animate); diff(); writeHash();
+    if (demandOn) demandUpdate();
     if (onStep && stepFrom) onStep(stepFrom, selA, true);
   }
   $("compare").addEventListener("click", () => {
@@ -209,6 +213,8 @@
   const webgl = (() => { try { return !!document.createElement("canvas").getContext("webgl"); } catch (e) { return false; } })();
   if (innerWidth < 700 || !webgl) { flatView(); return; }
 
+  if (innerWidth < 1280) { $("scen").classList.add("shut"); $("scen-toggle").textContent = "Show scenarios"; $("scen-toggle").setAttribute("aria-expanded", false); }
+
   // ---- scene -------------------------------------------------------------------------
   const canvas = $("c");
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -218,8 +224,30 @@
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 3000);
   const controls = new THREE.OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 0.3;
-  const home = () => { camera.position.set(0, 80, 330); controls.target.set(0, 0, 0); };
+  // The scene is about 400 units wide. Back the camera off until it fits the space the scenario
+  // panel leaves free, and slide it into that space, so no module hides behind the panel.
+  const PANEL_W = 328, LEFT_W = 360;
+  const rightW = () => ($("scen").classList.contains("shut") ? 0 : PANEL_W);
+  const leftW = () => ($("panel").style.display === "block" ? LEFT_W : 0);
+  const freeW = () => innerWidth - rightW() - leftW();
+  let framed = "";
+  function frame() {
+    framed = `${rightW()}:${leftW()}`;
+    const x = (rightW() - leftW()) / 2;
+    if (!x) camera.clearViewOffset(); else camera.setViewOffset(innerWidth, innerHeight, x, 0, innerWidth, innerHeight);
+    camera.updateProjectionMatrix();
+  }
+  const home = () => {
+    const d = Math.max(310, (340 * innerHeight) / (freeW() * 0.9326));
+    camera.position.set(0, d * 0.24, d); controls.target.set(0, 0, 0); frame();
+  };
   home();
+  $("scen-toggle").addEventListener("click", () => {
+    const shut = $("scen").classList.toggle("shut");
+    $("scen-toggle").textContent = shut ? "Show scenarios" : "Hide";
+    $("scen-toggle").setAttribute("aria-expanded", !shut);
+    home();
+  });
 
   // A seeded random, so the layout is the same on every load.
   function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -400,6 +428,7 @@
   let downAt = null;
   canvas.addEventListener("pointerdown", (e) => (downAt = [e.clientX, e.clientY]));
   canvas.addEventListener("pointerup", (e) => {
+    tip.style.display = "none";
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;  // a drag, not a click
     mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
     ray.setFromCamera(mouse, camera);
@@ -540,13 +569,16 @@
   }
   let following = null;
   function clearFollow() {
-    following = null; followKey = null; writeHash();
+    following = null; followKey = null;
+    if (dollarOn) { dollarOn = false; $("dollar").setAttribute("aria-pressed", false); clearInterval(dollarTimer); dollarTimer = null; document.body.classList.remove("focus"); }
+    writeHash();
     meshes.forEach((m) => paint(m, null));
     MODS.forEach((m) => { if (m.inner) m.inner.material.opacity = 0.16; if (m.shell) m.shell.material.opacity = 0.22; });
     shown.forEach((e) => (e.tube.material.opacity = 0.35));
     hot([]);
   }
   function follow(s) {
+    if (dollarOn) { dollarOn = false; $("dollar").setAttribute("aria-pressed", false); clearInterval(dollarTimer); dollarTimer = null; document.body.classList.remove("focus"); }
     following = s; followKey = s.key; openMod = null; writeHash();
     const rs = s.routines.map((k) => routineBy[k]).filter(Boolean);
     const startMods = rs.length ? [...new Set(rs.map((r) => r.module))] : byKey[s.module] ? [s.module] : [];
@@ -578,6 +610,170 @@
     $("unfollow").addEventListener("click", () => { clearFollow(); panel.style.display = "none"; });
   }
 
+  // ---- follow a dollar ---------------------------------------------------------------------
+  // Start at the household bill. The bill is what a home buys times what it pays, so walk to the
+  // prices the residential module reads (RDPR), to the modules that write those prices, and to
+  // the switches read by the code that sets them. Variables, routines and writers come from
+  // EIA's code (structure.json, routines.json); switches and their verification from switches.json.
+  const RDPR = R.routines.find((r) => r.module === "residential" && r.name === "RDPR");
+  const FUEL = { pel: "Electricity", png: "Natural gas", pds: "Distillate", plg: "Liquid petroleum gases" };
+  const SWNAME = { electricity: "Electricity", natural_gas: "Natural gas", refining: "Refinery", coal: "Coal", oil_gas_supply: "Oil and gas supply" };
+  const SW_KIND = { policy: "policy", technology_or_market_assumption: "market assumption", model_control: "model control" };
+  const priceVars = RDPR ? RDPR.reads.filter((k) => k.startsWith("AMPBLK/")).sort((a, b) => Object.keys(FUEL).indexOf(a.slice(7, 10)) - Object.keys(FUEL).indexOf(b.slice(7, 10))).map((k) => {
+    const sfx = k.split("/")[1], mp = "MPBLK/" + sfx, q = "QBLK/q" + sfx.slice(1);
+    const wr = R.routines.filter((r) => r.writes.includes(mp));
+    return { adj: k, mp, q: outByKey[q] ? q : null, fuel: FUEL[sfx.slice(0, 3)] || sfx, desc: (outByKey[mp] || outByKey[k] || {}).description,
+      units: (outByKey[k] || {}).units, mods: ((outByKey[mp] || {}).writers || []).filter((x) => byKey[x]),
+      wr, wrNames: new Set(wr.map((r) => r.name)), hubWriter: wr.find((r) => r.module === "hub") };
+  }) : [];
+  let SWD = null, dollarTimer = null;
+  const verifiedOf = (s) => /^verified/.test(s.verification || "");
+  const outsHas = (k) => sw.some((s) => s.key === k);
+  function switchesFor(p) {
+    const eligible = (s) => s.status === "active" && (s.kind in SW_KIND);
+    const direct = (s) => (s.sites || []).some((x) => p.wrNames.has(x.routine));
+    const modLevel = (s) => (s.kind === "policy" || s.kind === "technology_or_market_assumption") && p.mods.some((m) => SWNAME[m] && (s.modules || []).includes(SWNAME[m]));
+    const all = SWD.filter((s) => eligible(s) && (direct(s) || modLevel(s)));
+    const ok = all.filter(verifiedOf);
+    const rank = (s) => (s.kind === "model_control" ? 2 : 0) + (direct(s) ? 0 : 1);
+    ok.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
+    return { ok, left: all.length - ok.length, direct };
+  }
+  const swNameOf = (m) => (byKey[m] ? byKey[m].name : m);
+  function dollarPanel() {
+    const j = YEARS.indexOf(year()), g = HEADS.bill.grade();
+    const ref = SC.reference.run, hg = SC.high_gas_price;
+    const effect = selA !== "reference"
+      ? `${SC[selA].label} vs Reference, ${year()}: home gas price $${num(val(selA, "gas_price"), 2)} vs $${num(ref.gas_price[j], 2)} per MMBtu, bill $${num(val(selA, "bill"), 0)} vs $${num(ref.bill[j], 0)}.`
+      : hg ? `In the recorded High gas price run, ${year()}: home gas price $${num(val("high_gas_price", "gas_price"), 2)} vs $${num(ref.gas_price[j], 2)} per MMBtu, and the bill $${num(val("high_gas_price", "bill"), 0)} vs $${num(ref.bill[j], 0)}.` : "";
+    const trust = SWD.filter(verifiedOf).length;
+    const rows = priceVars.map((p) => {
+      const sx = switchesFor(p), shownSw = sx.ok.slice(0, 5), rest = sx.ok.slice(5);
+      const item = (s) => `<details class="swd"><summary><b>${escA(s.key)}</b> <span class="dimk">${SW_KIND[s.kind]}${sx.direct(s) ? ", read where the price is set" : ""}</span></summary>` +
+        `<p>${escA((s.what || s.description || "").slice(0, 260))}${(s.what || "").length > 260 ? "..." : ""}</p>` +
+        `<p class="dimk">Value in this release: ${escA(s.value)}. ${escA(s.verification)}. ` +
+        `${outsHas(s.key) ? `<a href="#" data-sw="${escA(s.key)}">Follow it in 3D</a>` : ""}</p></details>`;
+      const setter = p.mods.length ? p.mods.map(swNameOf).join(", ") : p.hubWriter ? `the integrating module (${p.hubWriter.name})` : "no module here";
+      const byName = {}; p.wr.forEach((r) => ((byName[r.name] = byName[r.name] || new Set()).add(r.file)));
+      const where = p.wr.length ? ` in ${Object.entries(byName).map(([n, f]) => `${n} (${[...f].join(", ")})`).join("; ")}` : "";
+      const unparsed = p.mods.find((m) => !byKey[m].routines);
+      return `<div class="dstep"><b>${p.fuel}</b> <span class="dimk">${p.mp}, ${escA(p.units || "")}</span>` +
+        `<p>Set by <b>${setter}</b>${escA(where)}.${unparsed ? ` ${swNameOf(unparsed)} is not parsed into routines here.` : ""}</p>` +
+        (shownSw.length ? `<p class="dimk">Switches read in that code:</p>${shownSw.map(item).join("")}${rest.length ? `<details class="more"><summary>${rest.length} more</summary>${rest.map(item).join("")}</details>` : ""}`
+          : `<p class="dimk">No verified policy or market switch found for this price in the parsed reads.</p>`) +
+        (sx.left ? `<p class="dimk">${sx.left} entries left out: not marked verified.</p>` : "") + `</div>`;
+    }).join("");
+    panel.innerHTML = `<h3>Follow a dollar</h3><span class="tag" style="color:#FAC775">Walked back from the bill</span>
+      <p><b>$${num(val(selA, "bill"), 0)}</b> a year per household, ${year()}, ${SC[selA].label}${g ? ` <span class="pill ${g.grade}" title="${escA(g.summary)}">${g.label_grade}</span>` : ""}.
+      A bill is what a home buys times what it pays. The residential module's routine RDPR reads ${priceVars.length} prices (${priceVars.map((p) => p.fuel.toLowerCase()).join(", ")});
+      the quantities it buys are written by its own EXCONS routine.</p>
+      <p class="dimk">The home reads the adjusted copy of each price (AMPBLK). The code that copies EIA's supply-side price (MPBLK) into it is not fully parsed here, so that link is matched by name: same fuel, same sector.</p>
+      ${rows}
+      ${effect ? `<p>${effect}</p>` : ""}
+      <p class="dimk">${trust} of ${SWD.length} switch entries are marked verified. Verified means checked by two readers of the code, not proven. A stand-in model produced the bill, so read the levels as stand-in numbers.</p>
+      <button class="ghost small" id="unfollow" type="button">Clear</button>`;
+    panel.style.display = "block";
+    panel.querySelectorAll("[data-sw]").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault(); const s = sw.find((x) => x.key === a.dataset.sw); if (s) { clearFollow(); follow(s); } }));
+    $("unfollow").addEventListener("click", () => { clearFollow(); panel.style.display = "none"; });
+  }
+  async function dollarStart() {
+    if (dollarOn) { clearFollow(); panel.style.display = "none"; return; }
+    if (following) clearFollow();
+    if (mapOn) setMap(false);
+    openMod = null;
+    if (!SWD) {
+      panel.innerHTML = "<p>Reading the switch data...</p>"; panel.style.display = "block";
+      try { SWD = (await load("data/switches.json")).switches; } catch (e) { panel.innerHTML = "<p>The switch data did not load.</p>"; return; }
+    }
+    dollarOn = true; $("dollar").setAttribute("aria-pressed", true); document.body.classList.add("focus");
+    following = { dollar: true };
+    const setters = new Set(priceVars.flatMap((p) => p.mods));
+    const lit = new Set(priceVars.flatMap((p) => [p.adj, p.mp, p.q].filter(Boolean)));
+    const perPrice = priceVars.map((p) => ({ p, list: switchesFor(p).ok.slice(0, 5) }));
+    const litSw = new Set(perPrice.flatMap((x) => x.list.map((s) => s.key)));
+    const litR = new Set([...(RDPR ? [routineKey(RDPR)] : []), ...priceVars.flatMap((p) => p.wr.map(routineKey))]);
+    const on = new Set(["residential", ...setters]);
+    paint(swMesh, (x) => litSw.has(x.key));
+    paint(outMesh, (o) => lit.has(o.key));
+    MODS.filter((m) => m.dots).forEach((m) => paint(m.dots, (r) => litR.has(routineKey(r))));
+    MODS.forEach((m) => {
+      if (m.inner) m.inner.material.opacity = on.has(m.key) ? 0.3 : 0.03;
+      if (m.shell) m.shell.material.opacity = on.has(m.key) ? 0.5 : 0.06;
+    });
+    shown.forEach((e) => (e.tube.material.opacity = setters.has(e.from) && e.to === "residential" ? 0.8 : 0.05));
+    hot([...on]); writeHash(); dollarPanel(); home();
+    // a bead runs switch -> the module that sets the price -> the home, again and again while this is on
+    const run = () => {
+      const res = byKey.residential.center, seen = new Set();
+      perPrice.forEach(({ p, list }) => p.mods.forEach((k) => {
+        list.slice(0, 2).forEach((s, i) => { const o = sw.find((x) => x.key === s.key); if (o) setTimeout(() => pulse(o.pos, byKey[k].center, COLOR.input, 900), i * 160); });
+        if (!seen.has(k)) { seen.add(k); setTimeout(() => pulse(byKey[k].center, res, COLOR.hub, 900, 1.5), 1000); }
+      }));
+    };
+    run(); dollarTimer = setInterval(run, 2600);
+  }
+  $("dollar").addEventListener("click", dollarStart);
+
+
+  // ---- time scrubber: module size = share of energy demand that year ---------------------------
+  // The four demand modules grow and shrink (area proportional to share) with their sector's energy
+  // use in a recorded run, in quads. Other modules have no demand share and keep their size.
+  const DSEC = ["residential", "commercial", "industrial", "transportation"];
+  var demandOn = false; let sweepTimer = null;
+  const demandSrc = () => {
+    if (!DC || !DC.cases) return null;
+    const own = SC[selA] && SC[selA].story ? selA.slice(3) : "reference";
+    const c = DC.cases[own] || DC.cases.reference;
+    return c ? { c, label: DC.case_notes[DC.cases[own] ? own : "reference"].label, own: !!DC.cases[own] && SC[selA].story } : null;
+  };
+  function shares() {
+    const s = demandSrc(); if (!s) return null;
+    const j = YEARS.indexOf(year());
+    const q = Object.fromEntries(DSEC.map((k) => [k, s.c.energy[k][j]]));
+    const tot = DSEC.reduce((a, k) => a + q[k], 0);
+    return { q, tot, share: Object.fromEntries(DSEC.map((k) => [k, q[k] / tot])), src: s };
+  }
+  DSEC.forEach((k) => { byKey[k].s = 1; byKey[k].sTo = 1; });
+  function applyScale(m) {
+    const s = m.s;
+    [m.dots, m.inner].forEach((o) => { if (o) { o.scale.setScalar(s); o.position.copy(m.center).multiplyScalar(1 - s); } });
+    m.hit.scale.setScalar(s);
+  }
+  function demandUpdate() {
+    const d = $("demandbar");
+    const sh = demandOn ? shares() : null;
+    DSEC.forEach((k) => { byKey[k].sTo = sh ? Math.sqrt(sh.share[k] / 0.25) : 1; });
+    labels.forEach((el, i) => { const k = MODS[i].key; const sub = el.querySelector(".dshare"); if (sub) sub.remove();
+      if (sh && sh.share[k] !== undefined) { const t = document.createElement("small"); t.className = "dshare"; t.style.color = "#FAC775"; t.style.display = "block"; t.textContent = `${(100 * sh.share[k]).toFixed(0)}% of demand`; el.appendChild(t); } });
+    if (!sh) { d.style.display = "none"; return; }
+    const col = { residential: "#1D9E75", commercial: "#5DCAA5", industrial: "#EF9F27", transportation: "#7F77DD" };
+    d.innerHTML = `<div class="bar3">${DSEC.map((k) => `<i style="width:${100 * sh.share[k]}%;background:${col[k]}"></i>`).join("")}</div>` +
+      DSEC.map((k) => `<div><span>${byKey[k].name}</span><span>${sh.q[k].toFixed(1)} quads, ${(100 * sh.share[k]).toFixed(0)}%</span></div>`).join("") +
+      `<div><span>All four, ${year()}</span><span>${sh.tot.toFixed(1)} quads</span></div>` +
+      `<p style="margin:6px 0 0;color:var(--dim)">Module size follows its share of this year's energy demand, from the recorded run "${escA(sh.src.label)}" (${sh.src.own ? "the selected run" : "the data center story's EIA reference run, since the selected scenario records no sector energy"}; ported residential, commercial and transportation, stand-in industry). Supply modules have no demand share and keep their size.</p>` +
+      `<button class="ghost small" id="sweep" type="button">${sweepTimer ? "Stop" : "Sweep 2027 to 2050"}</button>`;
+    d.style.display = "block";
+    $("sweep").addEventListener("click", sweep);
+  }
+  function sweep() {
+    if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; demandUpdate(); return; }
+    yearEl.value = yearEl.min; yearEl.dispatchEvent(new Event("input"));
+    sweepTimer = setInterval(() => {
+      if (+yearEl.value >= +yearEl.max) { clearInterval(sweepTimer); sweepTimer = null; demandUpdate(); return; }
+      yearEl.value = +yearEl.value + 1; yearEl.dispatchEvent(new Event("input"));
+    }, 450);
+    demandUpdate();
+  }
+  function setDemand(on) {
+    demandOn = on; $("demand-btn").setAttribute("aria-pressed", on);
+    if (!on && sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
+    demandUpdate(); writeHash();
+  }
+  if (!demandSrc()) $("demand-btn").disabled = true;
+  $("demand-btn").addEventListener("click", () => setDemand(!demandOn));
+  yearEl.addEventListener("input", () => { if (demandOn) demandUpdate(); });
+  if (asked.get("demand") === "1") setDemand(true);
   const tip = document.createElement("div");
   tip.className = "tip"; tip.setAttribute("role", "tooltip"); document.body.appendChild(tip);
   function describe(kind, it) {
@@ -651,11 +847,12 @@
   $("map").addEventListener("click", () => setMap(!mapOn));
 
   if (asked.get("map") === "1") setMap(true);
+  if (asked.get("d") === "1") dollarStart();
   if (asked.get("sw") && sw.find((s) => s.key === asked.get("sw"))) follow(sw.find((s) => s.key === asked.get("sw")));
   else if (byKey[asked.get("m")]) showModule(byKey[asked.get("m")]);
 
   // ---- loop -----------------------------------------------------------------------------
-  function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+  function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; frame(); camera.updateProjectionMatrix(); }
   addEventListener("resize", resize); resize();
   let last = performance.now();
   function tick(now) {
@@ -676,9 +873,11 @@
       p.mesh.position.lerpVectors(p.from, p.to, p.t);
       p.mesh.material.opacity = (p.dim ? 0.55 : 1) * (1 - p.t * 0.6);
     }
+    if (framed !== `${rightW()}:${leftW()}`) frame();
+    DSEC.forEach((k) => { const m = byKey[k]; if (Math.abs(m.sTo - m.s) > 0.002) { m.s += (m.sTo - m.s) * Math.min(1, dt / 220); applyScale(m); } });
     controls.update(); renderer.render(scene, camera);
     MODS.forEach((m, i) => {
-      const v = m.center.clone().add(V(0, m.radius, 0)).project(camera), el = labels[i];
+      const v = m.center.clone().add(V(0, m.radius * (m.s || 1), 0)).project(camera), el = labels[i];
       if (v.z > 1) { el.style.display = "none"; return; }
       el.style.display = "block";
       el.style.left = ((v.x + 1) / 2) * innerWidth + "px";
