@@ -658,7 +658,14 @@ def write_state_routine(inc_dir, source_text=None):
     return len(calls)
 
 
+# Variables the dump hooks must leave out: names the 2026 source declares where the hook sits but another
+# release does not (ORACLE_SKIP_VARS="applyramp,datactrservpenetration", found from the compiler's
+# "has no IMPLICIT type" errors; see docs/aeo_diff2.md).
+SKIP_VARS = {v.strip().lower() for v in os.environ.get("ORACLE_SKIP_VARS", "").split(",") if v.strip()}
+
+
 def private_dumps(tag, names, src_decls):
+    names = [n for n in names if n.lower() not in SKIP_VARS]
     return [c for c in (dump_call(tag, n, *src_decls.get(n.lower(), ("?", 0))) for n in names) if c]
 
 

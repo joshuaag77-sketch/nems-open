@@ -160,8 +160,13 @@ def write_filelist(upstream: Path, scenario: str, file_modes=False):
     path), and write filemodes.txt with each file's action, access, form and
     record length from the scedes file, for stubs.f90's FILE_MGR."""
     rows, opts, modes = [], [], []
-    text = (upstream / "scedes" / f"scedes.{scenario}.csv").read_text(encoding="latin-1")
-    for parts in csv.reader(text.splitlines()):
+    csv_path = upstream / "scedes" / f"scedes.{scenario}.csv"
+    if csv_path.exists():
+        lines = list(csv.reader(csv_path.read_text(encoding="latin-1").splitlines()))
+    else:           # AEO2025 and earlier: scedes.<scenario> holds KEY=value lines
+        text = (upstream / "scedes" / f"scedes.{scenario}").read_text(encoding="latin-1")
+        lines = [list(l.partition("=")[0::2]) for l in text.splitlines() if "=" in l]
+    for parts in lines:
         if len(parts) < 2 or parts[0].startswith("#"):
             continue
         key, value = parts[0].strip(), parts[1].strip()
@@ -226,7 +231,8 @@ def common_aliases(inc_dir: Path, includes):
 
 def dump_restart(upstream: Path, scenario: str, members, aliases=None):
     aliases = aliases or {}
-    runs = sorted((upstream / "output" / "aeo2026" / scenario).glob("*/restart.npz"))
+    year = os.environ.get("NEMS_AEO_YEAR", "2026")        # "2025" for the AEO2025 checkout (docs/aeo_diff.md)
+    runs = sorted((upstream / "output" / f"aeo{year}" / scenario).glob("*/restart.npz"))
     z = np.load(runs[0], allow_pickle=False)
     dump = RUN / "dump"
     dump.mkdir(parents=True, exist_ok=True)
