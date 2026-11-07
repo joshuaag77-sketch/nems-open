@@ -83,12 +83,40 @@ class Policy:
     building_efficiency: object = 1.0   # multiplier on residential and commercial fuel use
     start_year: int = 2027
     commercial: object = None           # commercial.levers.CommercialLevers: real-input levers (needs commercial ported)
+    added_load: object = None           # datacenter.AddedLoad: electricity added to commercial, flat across the year
+    # The plain levers (nems_open.levers has what each moves and its fidelity grade)
+    building_code: float = 0.0          # fraction less heating and cooling need in new buildings
+    appliance_standard: float = 0.0     # fraction more efficient than the least efficient equipment on offer
+    coal_retirement: object = 0.0       # share of EIA's coal fleet closed early, reached by 2035
+    renewable_cost: float = 0.0         # -1 EIA's low zero-carbon cost case, +1 its high case
+    load_growth: object = 0.0           # TWh of extra US electricity sales in 2050, linear from start_year
+    gas_supply: float = 0.0             # -1 EIA's low oil and gas supply case, +1 its high case
+    oil_price: object = 1.0             # multiple of EIA's Brent price
+    nuclear: object = 1.0               # multiple of EIA's nuclear output, reached by 2040
 
     def carbon(self) -> np.ndarray:
         return by_year(self.carbon_price, self.start_year, 0.0)
 
     def efficiency(self) -> np.ndarray:
         return by_year(self.building_efficiency, self.start_year, 1.0)
+
+    def commercial_levers(self):
+        """CommercialLevers for this policy: the explicit ones plus the plain building levers."""
+        if not (self.building_code or self.appliance_standard):
+            return self.commercial
+        from dataclasses import replace
+
+        from nems_open.commercial.levers import CommercialLevers
+        c = self.commercial or CommercialLevers()
+        return replace(c, shell_improvement=c.shell_improvement or self.building_code,
+                       shell_start_year=self.start_year if self.building_code else c.shell_start_year,
+                       standard_tightening=self.appliance_standard, tightening_year=self.start_year)
+
+    def residential_levers(self):
+        if not (self.building_code or self.appliance_standard):
+            return None
+        from nems_open.residential.levers import ResidentialLevers
+        return ResidentialLevers(self.building_code, self.appliance_standard, self.start_year)
 
 
 def fuel_of(name: str) -> str:
@@ -149,13 +177,14 @@ class PortedSectors:
     """EIA's ported modules through the demand runner (branch demand-runner)."""
 
     def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, parallel: bool = True,
-                 commercial_levers=None, ev_share: dict | None = None):
+                 commercial_levers=None, ev_share: dict | None = None, residential_levers=None):
         from nems_open.run_demand import EQUIVALENCED, SECTOR_QUANTITIES, DemandRunner, sum_quantities
         self._equivalenced = EQUIVALENCED
         self._names = SECTOR_QUANTITIES
         self._sum = sum_quantities
         self.runner = DemandRunner(start_year, sectors=sectors, parallel=parallel and len(sectors) > 1,
-                                   commercial_levers=commercial_levers, ev_share=ev_share)
+                                   commercial_levers=commercial_levers, ev_share=ev_share,
+                                   residential_levers=residential_levers)
         self.inputs = self.runner.inputs
         self.base = base
         self.suffixes = [SECTORS[s] for s in sectors]
@@ -211,11 +240,15 @@ class DemandAdapter:
         ported = usable_ported(ported, start_year)
         if policy.commercial is not None and "commercial" not in ported:
             raise ValueError("commercial levers need the ported commercial module (ported=(..., 'commercial'))")
+        if (policy.building_code or policy.appliance_standard) and not {"residential", "commercial"} & set(ported):
+            raise ValueError("building codes and appliance standards edit ported modules' inputs: "
+                             "port residential or commercial (ported=(...))")
         ev_by_year = None
         if policy.ev_share is not None and "transportation" in ported:
             target = by_year(policy.ev_share, policy.start_year, np.nan)
             ev_by_year = {FIRST_YEAR + j: float(v) for j, v in enumerate(target) if not np.isnan(v)}
-        self.ported = (PortedSectors(start_year, ported, base, commercial_levers=policy.commercial, ev_share=ev_by_year)
+        self.ported = (PortedSectors(start_year, ported, base, commercial_levers=policy.commercial_levers(),
+                                     ev_share=ev_by_year, residential_levers=policy.residential_levers())
                        if ported else None)
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}
@@ -244,8 +277,27 @@ class DemandAdapter:
             for k in out:
                 if k[-2:] in BUILDINGS and fuel_of(k) not in TOTAL_FUELS:
                     out[k] = out[k] * eff
+        self._add_load(out, j)
+        if self.policy.load_growth is not None and np.any(self.policy.load_growth):
+            from nems_open.levers import load_added
+            out["QBLK/qelcm"] = out["QBLK/qelcm"] + load_added(self.policy, self.base, j)
         self._totals(out, j, keep_regions)
         return out
+
+    def _add_load(self, q: dict, j: int) -> None:
+        """Data center load on top of commercial electricity (a ported module's US and California
+        rows are not rebuilt by _totals, so they are moved here too)."""
+        add = self.policy.added_load
+        if add is None or j < self.policy.start_year - FIRST_YEAR:
+            return
+        k = "QBLK/qelcm"
+        inc = add.tbtu(j)
+        ref = self.base[k][:, j]
+        v = q[k].copy()
+        v[:9] = v[:9] + inc
+        v[US] = v[US] + inc.sum()
+        v[9] = v[9] + inc[8] * (ref[9] / ref[8] if ref[8] else 0.0)     # California, within the Pacific
+        q[k] = v
 
     def _totals(self, q: dict, j: int, keep_regions=frozenset()) -> None:
         """US row as the sum of divisions; petroleum, renewable and total rows rebuilt from

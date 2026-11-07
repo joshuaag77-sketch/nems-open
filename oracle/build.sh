@@ -88,7 +88,18 @@ mkdir -p "$WORK/$B" "$WORK/$R"
 cd "$WORK/$B"
 $PY -I "$ORACLE/patch_intel.py" "$U/source/$SRC.f" $SRC.f90
 $PY -I "$ORACLE/hooks.py" "$U" $SRC.f90 $MOD
-wk1
-gfortran $FLAGS -c $SRC.f90 wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$ORACLE/stubs.f90" load_restart.f90 oracle_state.f90 "$ORACLE/$DRIVER.f90"
+$PY -I "$ORACLE/wk1_subset.py" "$U/source/nemswk1.f" wk1_raw.f
+$PY -I "$ORACLE/patch_intel.py" wk1_raw.f wk1_subset.f90
+# stubs.f90 is preprocessed: gfortran's newunit numbers are negative, and EIA's ind.f tests
+# "unit .le. 0" as "file not opened", so the industrial build asks for positive units.
+STUBFLAGS="-cpp"
+if [ "$MOD" = ind ]; then
+  # ind.f passes short arrays to longer dummy arguments (shares_calc), which gfortran
+  # only allows under -std=legacy.
+  FLAGS="$FLAGS -std=legacy"; STUBFLAGS="-cpp -DPOSUNIT"
+fi
+FLAGS="$FLAGS $ORACLE_EXTRA_FLAGS"   # e.g. -ffpe-trap=invalid to stop at the first NaN
+gfortran $FLAGS -c $SRC.f90 wk1_subset.f90 "$ORACLE/readrng_stub.f90" load_restart.f90 oracle_state.f90 "$ORACLE/$DRIVER.f90"
+gfortran $FLAGS $STUBFLAGS -c "$ORACLE/stubs.f90"
 gfortran -o "$WORK/$R/oracle$EXE" $SRC.o wk1_subset.o readrng_stub.o stubs.o load_restart.o oracle_state.o $DRIVER.o
 echo "built $WORK/$R/oracle$EXE"

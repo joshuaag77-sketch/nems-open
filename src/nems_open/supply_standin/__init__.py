@@ -4,6 +4,6 @@ Stands in for the electricity, gas, oil, refining and coal modules until they ar
 ported. See docs/supply_standin.md.
 """
 
-from nems_open.supply_standin.model import Result, SupplyStandin
+from nems_open.supply_standin.model import Result, SupplyShifts, SupplyStandin
 
-__all__ = ["Result", "SupplyStandin"]
+__all__ = ["Result", "SupplyShifts", "SupplyStandin"]

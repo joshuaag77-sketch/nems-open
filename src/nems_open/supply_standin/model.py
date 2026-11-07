@@ -123,6 +123,13 @@ class Result:
         return sum(v[US] for v in self.co2.values())
 
 
+@dataclass
+class SupplyShifts:
+    """Levers on the stand-in's own curves (nems_open.levers builds these)."""
+    price: dict = field(default_factory=dict)       # MPBLK/p* -> (11, 61) multiplier
+    power: dict = field(default_factory=dict)       # QBLK/q*el -> (11, 61) trillion Btu added
+
+
 class SupplyStandin:
     def __init__(self, baseline: str = "cb2026", coefficients: Path = COEFFICIENTS, base: dict | None = None):
         self.baseline = baseline
@@ -177,8 +184,9 @@ class SupplyStandin:
 
     # Prices ----------------------------------------------------------------
 
-    def _prices(self, totals: dict, brent) -> dict[str, np.ndarray]:
-        """Every MPBLK price before carbon adders."""
+    def _prices(self, totals: dict, brent, mult: dict | None = None) -> dict[str, np.ndarray]:
+        """Every MPBLK price before carbon adders. mult: multipliers from a lever, applied to gas
+        before electricity reads the gas price to power plants."""
         base = self.base
         prices = {}
         names = sorted(k for k in base if k.startswith("MPBLK/p"))
@@ -192,6 +200,8 @@ class SupplyStandin:
             if fuel not in regs:
                 regs[fuel] = regressors(fuel, totals, base, brent, prices.get("MPBLK/pngel"))
             prices[name] = self._move(name, regs[fuel], brent)
+            if mult and name in mult:
+                prices[name] = prices[name] * mult[name]
         return prices
 
     # Power-sector fuel switching ------------------------------------------------
@@ -271,7 +281,8 @@ class SupplyStandin:
     # The call --------------------------------------------------------------
 
     def solve(self, demand: dict | None = None, brent=None, carbon_price=None,
-              power_fuel: dict | None = None, co2_el: np.ndarray | None = None) -> Result:
+              power_fuel: dict | None = None, co2_el: np.ndarray | None = None,
+              shifts: SupplyShifts | None = None) -> Result:
         """Prices and emissions for one set of end-use demands.
 
         demand: QBLK-style arrays for the residential, commercial, industrial and
@@ -287,12 +298,17 @@ class SupplyStandin:
             stand-in's power-sector fuel use and its fuel switching; fuels not listed keep the
             stand-in's value. Gas and coal prices then respond to that fuel use.
         co2_el: power-sector CO2 (11, 61), million metric tons, replacing the stand-in's own.
+        shifts: SupplyShifts, moves in prices and power-sector fuel that levers ask for.
         """
         base = self.base
         q = self._demand(demand or {})
         d_elec_us = sum(q[f"QBLK/qel{s}"][US] - base[f"QBLK/qel{s}"][US] for s in DEMAND_SECTORS)
         brent = base["INTOUT/brent_price"] if brent is None else np.asarray(brent, dtype=np.float64)
         power0 = self._power_fuel(d_elec_us)
+        mult = shifts.price if shifts else None
+        if shifts:
+            for k, d in shifts.power.items():
+                power0[k] = np.maximum(power0[k] + d, 0.0)
         cp87 = self._cp87(carbon_price)
         # Power plants switch fuel as fuel costs (carbon included) move, which moves gas
         # use, which moves the gas price: iterate to a fixed point (a few rounds).
@@ -301,7 +317,7 @@ class SupplyStandin:
             power = {**power0, **{k: np.asarray(v, dtype=np.float64) for k, v in power_fuel.items()}}
         for _ in range(0 if power_fuel is not None else SWITCH_ROUNDS):
             totals = self._totals(q, power)
-            prices = self._prices(totals, brent)
+            prices = self._prices(totals, brent, mult)
             new = self._switch(power0, prices, cp87)
             change = max(float(np.max(np.abs(new[k] - power[k]) / (np.abs(power[k]) + 1.0))) for k in new)
             # Damped steps: gas burn and the gas price pull against each other, and a full
@@ -310,7 +326,7 @@ class SupplyStandin:
             if change < SWITCH_TOL:
                 break
         totals = self._totals(q, power)
-        prices = self._prices(totals, brent)
+        prices = self._prices(totals, brent, mult)
 
         all_q = {**{k: v for k, v in base.items() if k.startswith("QBLK/")}, **q, **power}
         co2 = {}
