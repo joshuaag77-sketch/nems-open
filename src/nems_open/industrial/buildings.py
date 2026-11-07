@@ -56,4 +56,4 @@ def calbtot(s: dict, base: dict) -> None:
             pfac = f32(prat ** BLD_ELAS)
             enbqty[i, j] = pfac * (EWEIGHT * emplx * f32(enbint[i, j]) + PWEIGHT * prodvx * uec[i, j])
     for j in range(1, 6):
-        enbqty[7, j] = enbqty[1:7, j].sum(dtype=f32)
+        enbqty[7, j] = enbqty[1:6, j].sum(dtype=f32)
