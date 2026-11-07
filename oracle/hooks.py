@@ -413,6 +413,16 @@ IND_TARGETS = [
          end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.4"),
     dict(tag="nat7", call=r"CALL NATTOTAL\b", nth=1,
          end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.4"),
+    dict(tag="btot", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="btot1", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="btot7", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="btot8", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.8 .and. indreg.eq.2"),
+    dict(tag="btot12", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.12 .and. indreg.eq.1"),
 ]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
@@ -440,7 +450,7 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "lookahead", "ijumpyr", "ieyr", "DollarYearCHP", "StandByFrac", "CARBSHR", "CARBSHR_AB", "QGFIN", "QELIN",
                    "aGFIN", "pGFIN", "aELIN", "SteamSeg_Food", "SteamSeg_Paper", "SteamSeg_Chem", "SteamSeg_Steel",
                    "SteamSeg_Other", "stemcurlag", "IFSBYP", "IFSLOCBY", "BYPSTMM", "BYPSTMI", "BYPSTMR", "BYPSTM",
-                   "TQMAIN", "TQINTR", "TQRENW", "QSLUIN", "MC_REVIND", "MSEDYR",
+                   "ENBINT", "EMPLX", "PRODVX", "EMPLXIBYR", "PRODVXIBYR", "TQMAIN", "TQINTR", "TQRENW", "QSLUIN", "MC_REVIND", "MSEDYR",
                    "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
 IND_DECL_FILES = ["parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
                   "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
