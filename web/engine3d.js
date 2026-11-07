@@ -86,6 +86,7 @@
   yearEl.addEventListener("input", () => { yearOut.textContent = yearEl.value; });
   const asked = new URLSearchParams(location.hash.slice(1));
   let followKey = null, openMod = null, mapOn = false;
+  let dollarOn = false;
   function writeHash() {
     const q = new URLSearchParams();
     if (selA !== "reference") q.set("a", selA);
@@ -94,6 +95,7 @@
     if (followKey) q.set("sw", followKey);
     if (openMod) q.set("m", openMod);
     if (mapOn) q.set("map", "1");
+    if (dollarOn) q.set("d", "1");
     history.replaceState(null, "", "#" + q.toString());
   }
 
@@ -222,11 +224,16 @@
   controls.enableDamping = true; controls.autoRotate = true; controls.autoRotateSpeed = 0.3;
   // The scene is about 400 units wide. Back the camera off until it fits the space the scenario
   // panel leaves free, and slide it into that space, so no module hides behind the panel.
-  const PANEL_W = 328;
-  const freeW = () => innerWidth - ($("scen").classList.contains("shut") ? 0 : PANEL_W);
+  const PANEL_W = 328, LEFT_W = 360;
+  const rightW = () => ($("scen").classList.contains("shut") ? 0 : PANEL_W);
+  const leftW = () => ($("panel").style.display === "block" ? LEFT_W : 0);
+  const freeW = () => innerWidth - rightW() - leftW();
+  let framed = "";
   function frame() {
-    if ($("scen").classList.contains("shut")) camera.clearViewOffset();
-    else camera.setViewOffset(innerWidth, innerHeight, PANEL_W / 2, 0, innerWidth, innerHeight);
+    framed = `${rightW()}:${leftW()}`;
+    const x = (rightW() - leftW()) / 2;
+    if (!x) camera.clearViewOffset(); else camera.setViewOffset(innerWidth, innerHeight, x, 0, innerWidth, innerHeight);
+    camera.updateProjectionMatrix();
   }
   const home = () => {
     const d = Math.max(310, (340 * innerHeight) / (freeW() * 0.9326));
@@ -560,13 +567,16 @@
   }
   let following = null;
   function clearFollow() {
-    following = null; followKey = null; writeHash();
+    following = null; followKey = null;
+    if (dollarOn) { dollarOn = false; $("dollar").setAttribute("aria-pressed", false); clearInterval(dollarTimer); dollarTimer = null; document.body.classList.remove("focus"); }
+    writeHash();
     meshes.forEach((m) => paint(m, null));
     MODS.forEach((m) => { if (m.inner) m.inner.material.opacity = 0.16; if (m.shell) m.shell.material.opacity = 0.22; });
     shown.forEach((e) => (e.tube.material.opacity = 0.35));
     hot([]);
   }
   function follow(s) {
+    if (dollarOn) { dollarOn = false; $("dollar").setAttribute("aria-pressed", false); clearInterval(dollarTimer); dollarTimer = null; document.body.classList.remove("focus"); }
     following = s; followKey = s.key; openMod = null; writeHash();
     const rs = s.routines.map((k) => routineBy[k]).filter(Boolean);
     const startMods = rs.length ? [...new Set(rs.map((r) => r.module))] : byKey[s.module] ? [s.module] : [];
@@ -597,6 +607,111 @@
     panel.style.display = "block";
     $("unfollow").addEventListener("click", () => { clearFollow(); panel.style.display = "none"; });
   }
+
+  // ---- follow a dollar ---------------------------------------------------------------------
+  // Start at the household bill. The bill is what a home buys times what it pays, so walk to the
+  // prices the residential module reads (RDPR), to the modules that write those prices, and to
+  // the switches read by the code that sets them. Variables, routines and writers come from
+  // EIA's code (structure.json, routines.json); switches and their verification from switches.json.
+  const RDPR = R.routines.find((r) => r.module === "residential" && r.name === "RDPR");
+  const FUEL = { pel: "Electricity", png: "Natural gas", pds: "Distillate", plg: "Liquid petroleum gases" };
+  const SWNAME = { electricity: "Electricity", natural_gas: "Natural gas", refining: "Refinery", coal: "Coal", oil_gas_supply: "Oil and gas supply" };
+  const SW_KIND = { policy: "policy", technology_or_market_assumption: "market assumption", model_control: "model control" };
+  const priceVars = RDPR ? RDPR.reads.filter((k) => k.startsWith("AMPBLK/")).sort((a, b) => Object.keys(FUEL).indexOf(a.slice(7, 10)) - Object.keys(FUEL).indexOf(b.slice(7, 10))).map((k) => {
+    const sfx = k.split("/")[1], mp = "MPBLK/" + sfx, q = "QBLK/q" + sfx.slice(1);
+    const wr = R.routines.filter((r) => r.writes.includes(mp));
+    return { adj: k, mp, q: outByKey[q] ? q : null, fuel: FUEL[sfx.slice(0, 3)] || sfx, desc: (outByKey[mp] || outByKey[k] || {}).description,
+      units: (outByKey[k] || {}).units, mods: ((outByKey[mp] || {}).writers || []).filter((x) => byKey[x]),
+      wr, wrNames: new Set(wr.map((r) => r.name)), hubWriter: wr.find((r) => r.module === "hub") };
+  }) : [];
+  let SWD = null, dollarTimer = null;
+  const verifiedOf = (s) => /^verified/.test(s.verification || "");
+  const outsHas = (k) => sw.some((s) => s.key === k);
+  function switchesFor(p) {
+    const eligible = (s) => s.status === "active" && (s.kind in SW_KIND);
+    const direct = (s) => (s.sites || []).some((x) => p.wrNames.has(x.routine));
+    const modLevel = (s) => (s.kind === "policy" || s.kind === "technology_or_market_assumption") && p.mods.some((m) => SWNAME[m] && (s.modules || []).includes(SWNAME[m]));
+    const all = SWD.filter((s) => eligible(s) && (direct(s) || modLevel(s)));
+    const ok = all.filter(verifiedOf);
+    const rank = (s) => (s.kind === "model_control" ? 2 : 0) + (direct(s) ? 0 : 1);
+    ok.sort((a, b) => rank(a) - rank(b) || a.key.localeCompare(b.key));
+    return { ok, left: all.length - ok.length, direct };
+  }
+  const swNameOf = (m) => (byKey[m] ? byKey[m].name : m);
+  function dollarPanel() {
+    const j = YEARS.indexOf(year()), g = HEADS.bill.grade();
+    const ref = SC.reference.run, hg = SC.high_gas_price;
+    const effect = selA !== "reference"
+      ? `${SC[selA].label} vs Reference, ${year()}: home gas price $${num(val(selA, "gas_price"), 2)} vs $${num(ref.gas_price[j], 2)} per MMBtu, bill $${num(val(selA, "bill"), 0)} vs $${num(ref.bill[j], 0)}.`
+      : hg ? `In the recorded High gas price run, ${year()}: home gas price $${num(val("high_gas_price", "gas_price"), 2)} vs $${num(ref.gas_price[j], 2)} per MMBtu, and the bill $${num(val("high_gas_price", "bill"), 0)} vs $${num(ref.bill[j], 0)}.` : "";
+    const trust = SWD.filter(verifiedOf).length;
+    const rows = priceVars.map((p) => {
+      const sx = switchesFor(p), shownSw = sx.ok.slice(0, 5), rest = sx.ok.slice(5);
+      const item = (s) => `<details class="swd"><summary><b>${escA(s.key)}</b> <span class="dimk">${SW_KIND[s.kind]}${sx.direct(s) ? ", read where the price is set" : ""}</span></summary>` +
+        `<p>${escA((s.what || s.description || "").slice(0, 260))}${(s.what || "").length > 260 ? "..." : ""}</p>` +
+        `<p class="dimk">Value in this release: ${escA(s.value)}. ${escA(s.verification)}. ` +
+        `${outsHas(s.key) ? `<a href="#" data-sw="${escA(s.key)}">Follow it in 3D</a>` : ""}</p></details>`;
+      const setter = p.mods.length ? p.mods.map(swNameOf).join(", ") : p.hubWriter ? `the integrating module (${p.hubWriter.name})` : "no module here";
+      const byName = {}; p.wr.forEach((r) => ((byName[r.name] = byName[r.name] || new Set()).add(r.file)));
+      const where = p.wr.length ? ` in ${Object.entries(byName).map(([n, f]) => `${n} (${[...f].join(", ")})`).join("; ")}` : "";
+      const unparsed = p.mods.find((m) => !byKey[m].routines);
+      return `<div class="dstep"><b>${p.fuel}</b> <span class="dimk">${p.mp}, ${escA(p.units || "")}</span>` +
+        `<p>Set by <b>${setter}</b>${escA(where)}.${unparsed ? ` ${swNameOf(unparsed)} is not parsed into routines here.` : ""}</p>` +
+        (shownSw.length ? `<p class="dimk">Switches read in that code:</p>${shownSw.map(item).join("")}${rest.length ? `<details class="more"><summary>${rest.length} more</summary>${rest.map(item).join("")}</details>` : ""}`
+          : `<p class="dimk">No verified policy or market switch found for this price in the parsed reads.</p>`) +
+        (sx.left ? `<p class="dimk">${sx.left} entries left out: not marked verified.</p>` : "") + `</div>`;
+    }).join("");
+    panel.innerHTML = `<h3>Follow a dollar</h3><span class="tag" style="color:#FAC775">Walked back from the bill</span>
+      <p><b>$${num(val(selA, "bill"), 0)}</b> a year per household, ${year()}, ${SC[selA].label}${g ? ` <span class="pill ${g.grade}" title="${escA(g.summary)}">${g.label_grade}</span>` : ""}.
+      A bill is what a home buys times what it pays. The residential module's routine RDPR reads ${priceVars.length} prices (${priceVars.map((p) => p.fuel.toLowerCase()).join(", ")});
+      the quantities it buys are written by its own EXCONS routine.</p>
+      <p class="dimk">The home reads the adjusted copy of each price (AMPBLK). The code that copies EIA's supply-side price (MPBLK) into it is not fully parsed here, so that link is matched by name: same fuel, same sector.</p>
+      ${rows}
+      ${effect ? `<p>${effect}</p>` : ""}
+      <p class="dimk">${trust} of ${SWD.length} switch entries are marked verified. Verified means checked by two readers of the code, not proven. A stand-in model produced the bill, so read the levels as stand-in numbers.</p>
+      <button class="ghost small" id="unfollow" type="button">Clear</button>`;
+    panel.style.display = "block";
+    panel.querySelectorAll("[data-sw]").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault(); const s = sw.find((x) => x.key === a.dataset.sw); if (s) { clearFollow(); follow(s); } }));
+    $("unfollow").addEventListener("click", () => { clearFollow(); panel.style.display = "none"; });
+  }
+  async function dollarStart() {
+    if (dollarOn) { clearFollow(); panel.style.display = "none"; return; }
+    if (following) clearFollow();
+    if (mapOn) setMap(false);
+    openMod = null;
+    if (!SWD) {
+      panel.innerHTML = "<p>Reading the switch data...</p>"; panel.style.display = "block";
+      try { SWD = (await load("data/switches.json")).switches; } catch (e) { panel.innerHTML = "<p>The switch data did not load.</p>"; return; }
+    }
+    dollarOn = true; $("dollar").setAttribute("aria-pressed", true); document.body.classList.add("focus");
+    following = { dollar: true };
+    const setters = new Set(priceVars.flatMap((p) => p.mods));
+    const lit = new Set(priceVars.flatMap((p) => [p.adj, p.mp, p.q].filter(Boolean)));
+    const perPrice = priceVars.map((p) => ({ p, list: switchesFor(p).ok.slice(0, 5) }));
+    const litSw = new Set(perPrice.flatMap((x) => x.list.map((s) => s.key)));
+    const litR = new Set([...(RDPR ? [routineKey(RDPR)] : []), ...priceVars.flatMap((p) => p.wr.map(routineKey))]);
+    const on = new Set(["residential", ...setters]);
+    paint(swMesh, (x) => litSw.has(x.key));
+    paint(outMesh, (o) => lit.has(o.key));
+    MODS.filter((m) => m.dots).forEach((m) => paint(m.dots, (r) => litR.has(routineKey(r))));
+    MODS.forEach((m) => {
+      if (m.inner) m.inner.material.opacity = on.has(m.key) ? 0.3 : 0.03;
+      if (m.shell) m.shell.material.opacity = on.has(m.key) ? 0.5 : 0.06;
+    });
+    shown.forEach((e) => (e.tube.material.opacity = setters.has(e.from) && e.to === "residential" ? 0.8 : 0.05));
+    hot([...on]); writeHash(); dollarPanel(); home();
+    // a bead runs switch -> the module that sets the price -> the home, again and again while this is on
+    const run = () => {
+      const res = byKey.residential.center, seen = new Set();
+      perPrice.forEach(({ p, list }) => p.mods.forEach((k) => {
+        list.slice(0, 2).forEach((s, i) => { const o = sw.find((x) => x.key === s.key); if (o) setTimeout(() => pulse(o.pos, byKey[k].center, COLOR.input, 900), i * 160); });
+        if (!seen.has(k)) { seen.add(k); setTimeout(() => pulse(byKey[k].center, res, COLOR.hub, 900, 1.5), 1000); }
+      }));
+    };
+    run(); dollarTimer = setInterval(run, 2600);
+  }
+  $("dollar").addEventListener("click", dollarStart);
 
   const tip = document.createElement("div");
   tip.className = "tip"; tip.setAttribute("role", "tooltip"); document.body.appendChild(tip);
@@ -671,6 +786,7 @@
   $("map").addEventListener("click", () => setMap(!mapOn));
 
   if (asked.get("map") === "1") setMap(true);
+  if (asked.get("d") === "1") dollarStart();
   if (asked.get("sw") && sw.find((s) => s.key === asked.get("sw"))) follow(sw.find((s) => s.key === asked.get("sw")));
   else if (byKey[asked.get("m")]) showModule(byKey[asked.get("m")]);
 
@@ -696,6 +812,7 @@
       p.mesh.position.lerpVectors(p.from, p.to, p.t);
       p.mesh.material.opacity = (p.dim ? 0.55 : 1) * (1 - p.t * 0.6);
     }
+    if (framed !== `${rightW()}:${leftW()}`) frame();
     controls.update(); renderer.render(scene, camera);
     MODS.forEach((m, i) => {
       const v = m.center.clone().add(V(0, m.radius, 0)).project(camera), el = labels[i];
