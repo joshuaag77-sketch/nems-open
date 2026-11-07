@@ -67,3 +67,27 @@ Python `pyfiler1` stand-in (`pyfiler1.py`). One core, 9 minutes for 2024 to 2050
 
 Next step if this continues: log the price arrays HSM reads each year (wellhead gas, WTI) and diff them
 against the restart, then the pickled expectations.
+
+## Why it does not reproduce (checked 2026-11-06)
+
+Not the prices. The wellhead prices HSM writes (ogngwhp, ogpcrwhp, ogcowhp) are within 0.1% to 0.7%
+of the restart's, so it is working from the right NGTDM and oil price paths.
+
+The break is in drilling. Total wells (ognowell) match to 2025 and then HSM drills about twice as many in
+2026 (36,257 against EIA's 18,796), keeps that to 2045, and ends below EIA in 2050. Gas and crude
+fall away from EIA's from 2026 too. So the first wrong thing is the drilling step in the first
+year after the STEO years, not anything the other modules feed in.
+
+What the standalone path does differently from a NEMS run, all in `models/hsm/module_unf.py`:
+- Line 634 forces `param_ncrl = 0` with the comment that NGMM cannot run offline. So the reporting
+  loop is skipped: no "realized production" adjustment (`onshore.py:7981`, `8224`).
+- The FCRL and NCRL pickles that carry expected production, projects and drilling between iterations
+  are only read when `integrated_switch` is True (lines 696-701). Standalone starts each year
+  from the setup state with `current_iteration` left unset.
+- The year loop in `hsm.py` is labelled a temporary debug path.
+
+Conclusion: EIA's standalone HSM is a debug run, not a replay of their integrated result. A match
+needs the carried state from the integrated loop (the pickles, ncrl=1 pass), which the restart file does
+not hold. Next step if continued: run with `integrated_switch` on, iteration 1 then reporting, per
+year, feeding it our own pickles. That is a larger job than a thin adapter. Until then keep
+`supply_standin`; no `ogs` switch.
