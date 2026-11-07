@@ -47,7 +47,7 @@ Until then the table above is the finding: how much changed, with no attribution
 ## Update: a 2025 commercial oracle (aeo-diff2)
 The AEO2025 Fortran was compiled under WSL (`oracle/build_wsl.sh`, skipping two variables the 2025 source lacks: `applyramp`, `datactrservpenetration`) and run on the ref2025 restart and 2025 input files, dumping 2025, 2030 and 2040. `scripts/aeo_diff_oracle_cmp.py` compares its state with the restart.
 
-Where it reproduces EIA's 2025 reference (national, all regions within the stated bound): electricity (2025: 4,849.90 vs 4,849.86 TBtu; 2030: 5,127.76 vs 5,127.55; 2040: 6,447.8 vs 6,451.8, regional worst 0.55%), natural gas (within 0.007%), distillate, LPG, motor gasoline, residual, steam, PV and biomass (PV drifts to 1.7% nationally at 2040, 7% in the worst region).
+Where it reproduces EIA's 2025 reference (national, all regions within the stated bound): electricity (2025: 4,849.90 vs 4,849.86 TBtu; 2030: 5,127.76 vs 5,127.55; 2040: 6,447.8 vs 6,451.8, regional worst 0.55%), natural gas (regional worst 0.007%), distillate (0.014%), LPG, residual, motor gasoline and biomass (all within 1e-6 to 1e-4). Steam and PV drift with time: national 2040 steam 56.29 vs 56.39 (0.2%), PV 298.05 vs 296.35 (0.6%), worst region 2.7% and 7.5%.
 
 Where it does not: **coal** (oracle holds 12.1 TBtu flat; the restart has 16.3, 18.2 and 22.8 for 2025, 2030, 2040) and **kerosene** (2030: 1.78 vs 2.16). Something outside the commercial module that the restart carries is not reproduced, so no attribution is made for coal or kerosene.
 
