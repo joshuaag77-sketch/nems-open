@@ -199,11 +199,6 @@ def flatten_workbooks(upstream: Path):
                         str(upstream / book), sheet, str(out)], check=True)
 
 
-<<<<<<< HEAD
-def dump_restart(upstream: Path, scenario: str, members):
-    year = os.environ.get("NEMS_AEO_YEAR", "2026")        # "2025" for the AEO2025 checkout (docs/aeo_diff2.md)
-    runs = sorted((upstream / "output" / f"aeo{year}" / scenario).glob("*/restart.npz"))
-=======
 def common_aliases(inc_dir: Path, includes):
     """{(BLOCK, name): [other names]} for COMMON blocks that two includes declare with
     different variable names over the same memory (ampblk calls the industrial
@@ -236,8 +231,8 @@ def common_aliases(inc_dir: Path, includes):
 
 def dump_restart(upstream: Path, scenario: str, members, aliases=None):
     aliases = aliases or {}
-    runs = sorted((upstream / "output" / "aeo2026" / scenario).glob("*/restart.npz"))
->>>>>>> 458c06f4b25232b2b87276934c23fe00d263b5c2
+    year = os.environ.get("NEMS_AEO_YEAR", "2026")        # "2025" for the AEO2025 checkout (docs/aeo_diff.md)
+    runs = sorted((upstream / "output" / f"aeo{year}" / scenario).glob("*/restart.npz"))
     z = np.load(runs[0], allow_pickle=False)
     dump = RUN / "dump"
     dump.mkdir(parents=True, exist_ok=True)
