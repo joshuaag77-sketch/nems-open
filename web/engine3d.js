@@ -96,6 +96,7 @@
     if (openMod) q.set("m", openMod);
     if (mapOn) q.set("map", "1");
     if (dollarOn) q.set("d", "1");
+    if (typeof demandOn !== "undefined" && demandOn) q.set("demand", "1");
     history.replaceState(null, "", "#" + q.toString());
   }
 
@@ -197,6 +198,7 @@
   function render(animate) {
     OUT = (FID.sets[SC[selA].set || "fast"] || FID.sets.fast).outputs;
     cards(); heads(animate); diff(); writeHash();
+    if (demandOn) demandUpdate();
     if (onStep && stepFrom) onStep(stepFrom, selA, true);
   }
   $("compare").addEventListener("click", () => {
@@ -713,6 +715,65 @@
   }
   $("dollar").addEventListener("click", dollarStart);
 
+
+  // ---- time scrubber: module size = share of energy demand that year ---------------------------
+  // The four demand modules grow and shrink (area proportional to share) with their sector's energy
+  // use in a recorded run, in quads. Other modules have no demand share and keep their size.
+  const DSEC = ["residential", "commercial", "industrial", "transportation"];
+  var demandOn = false; let sweepTimer = null;
+  const demandSrc = () => {
+    if (!DC || !DC.cases) return null;
+    const own = SC[selA] && SC[selA].story ? selA.slice(3) : "reference";
+    const c = DC.cases[own] || DC.cases.reference;
+    return c ? { c, label: DC.case_notes[DC.cases[own] ? own : "reference"].label, own: !!DC.cases[own] && SC[selA].story } : null;
+  };
+  function shares() {
+    const s = demandSrc(); if (!s) return null;
+    const j = YEARS.indexOf(year());
+    const q = Object.fromEntries(DSEC.map((k) => [k, s.c.energy[k][j]]));
+    const tot = DSEC.reduce((a, k) => a + q[k], 0);
+    return { q, tot, share: Object.fromEntries(DSEC.map((k) => [k, q[k] / tot])), src: s };
+  }
+  DSEC.forEach((k) => { byKey[k].s = 1; byKey[k].sTo = 1; });
+  function applyScale(m) {
+    const s = m.s;
+    [m.dots, m.inner].forEach((o) => { if (o) { o.scale.setScalar(s); o.position.copy(m.center).multiplyScalar(1 - s); } });
+    m.hit.scale.setScalar(s);
+  }
+  function demandUpdate() {
+    const d = $("demandbar");
+    const sh = demandOn ? shares() : null;
+    DSEC.forEach((k) => { byKey[k].sTo = sh ? Math.sqrt(sh.share[k] / 0.25) : 1; });
+    labels.forEach((el, i) => { const k = MODS[i].key; const sub = el.querySelector(".dshare"); if (sub) sub.remove();
+      if (sh && sh.share[k] !== undefined) { const t = document.createElement("small"); t.className = "dshare"; t.style.color = "#FAC775"; t.style.display = "block"; t.textContent = `${(100 * sh.share[k]).toFixed(0)}% of demand`; el.appendChild(t); } });
+    if (!sh) { d.style.display = "none"; return; }
+    const col = { residential: "#1D9E75", commercial: "#5DCAA5", industrial: "#EF9F27", transportation: "#7F77DD" };
+    d.innerHTML = `<div class="bar3">${DSEC.map((k) => `<i style="width:${100 * sh.share[k]}%;background:${col[k]}"></i>`).join("")}</div>` +
+      DSEC.map((k) => `<div><span>${byKey[k].name}</span><span>${sh.q[k].toFixed(1)} quads, ${(100 * sh.share[k]).toFixed(0)}%</span></div>`).join("") +
+      `<div><span>All four, ${year()}</span><span>${sh.tot.toFixed(1)} quads</span></div>` +
+      `<p style="margin:6px 0 0;color:var(--dim)">Module size follows its share of this year's energy demand, from the recorded run "${escA(sh.src.label)}" (${sh.src.own ? "the selected run" : "the data center story's EIA reference run, since the selected scenario records no sector energy"}; ported residential, commercial and transportation, stand-in industry). Supply modules have no demand share and keep their size.</p>` +
+      `<button class="ghost small" id="sweep" type="button">${sweepTimer ? "Stop" : "Sweep 2027 to 2050"}</button>`;
+    d.style.display = "block";
+    $("sweep").addEventListener("click", sweep);
+  }
+  function sweep() {
+    if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; demandUpdate(); return; }
+    yearEl.value = yearEl.min; yearEl.dispatchEvent(new Event("input"));
+    sweepTimer = setInterval(() => {
+      if (+yearEl.value >= +yearEl.max) { clearInterval(sweepTimer); sweepTimer = null; demandUpdate(); return; }
+      yearEl.value = +yearEl.value + 1; yearEl.dispatchEvent(new Event("input"));
+    }, 450);
+    demandUpdate();
+  }
+  function setDemand(on) {
+    demandOn = on; $("demand-btn").setAttribute("aria-pressed", on);
+    if (!on && sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
+    demandUpdate(); writeHash();
+  }
+  if (!demandSrc()) $("demand-btn").disabled = true;
+  $("demand-btn").addEventListener("click", () => setDemand(!demandOn));
+  yearEl.addEventListener("input", () => { if (demandOn) demandUpdate(); });
+  if (asked.get("demand") === "1") setDemand(true);
   const tip = document.createElement("div");
   tip.className = "tip"; tip.setAttribute("role", "tooltip"); document.body.appendChild(tip);
   function describe(kind, it) {
@@ -813,9 +874,10 @@
       p.mesh.material.opacity = (p.dim ? 0.55 : 1) * (1 - p.t * 0.6);
     }
     if (framed !== `${rightW()}:${leftW()}`) frame();
+    DSEC.forEach((k) => { const m = byKey[k]; if (Math.abs(m.sTo - m.s) > 0.002) { m.s += (m.sTo - m.s) * Math.min(1, dt / 220); applyScale(m); } });
     controls.update(); renderer.render(scene, camera);
     MODS.forEach((m, i) => {
-      const v = m.center.clone().add(V(0, m.radius, 0)).project(camera), el = labels[i];
+      const v = m.center.clone().add(V(0, m.radius * (m.s || 1), 0)).project(camera), el = labels[i];
       if (v.z > 1) { el.style.display = "none"; return; }
       el.style.display = "block";
       el.style.left = ((v.x + 1) / 2) * innerWidth + "px";
