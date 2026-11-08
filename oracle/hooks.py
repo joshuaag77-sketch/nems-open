@@ -407,6 +407,22 @@ IND_TARGETS = [
          end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
     dict(tag="cgen1", call=r"CALL CALGEN\b", nth=0,
          end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="nat", call=r"CALL NATTOTAL\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="nat1", call=r"CALL NATTOTAL\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.4"),
+    dict(tag="nat7", call=r"CALL NATTOTAL\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.4"),
+    dict(tag="btot", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="btot1", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="btot7", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="btot8", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.8 .and. indreg.eq.2"),
+    dict(tag="btot12", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.12 .and. indreg.eq.1"),
 ]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
@@ -434,9 +450,10 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "lookahead", "ijumpyr", "ieyr", "DollarYearCHP", "StandByFrac", "CARBSHR", "CARBSHR_AB", "QGFIN", "QELIN",
                    "aGFIN", "pGFIN", "aELIN", "SteamSeg_Food", "SteamSeg_Paper", "SteamSeg_Chem", "SteamSeg_Steel",
                    "SteamSeg_Other", "stemcurlag", "IFSBYP", "IFSLOCBY", "BYPSTMM", "BYPSTMI", "BYPSTMR", "BYPSTM",
+                   "ENBINT", "EMPLX", "PRODVX", "EMPLXIBYR", "PRODVXIBYR", "TQMAIN", "TQINTR", "TQRENW", "QSLUIN", "MC_REVIND", "MSEDYR",
                    "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
 IND_DECL_FILES = ["parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
-                  "ampblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
+                  "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
                       includes=[], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
                       decl_files=IND_DECL_FILES, module_text=True, module_name="I_", decls_only=True)

@@ -77,6 +77,9 @@ RULES = [
     # consumption, which does not exist yet), so EIA's code relies on the cap.
     (re.compile(r"min\(CARBSHRCA\(INDDIR\),1\.0\)", re.I),
      "merge(1.0,min(CARBSHRCA(INDDIR),1.0),isnan(CARBSHRCA(INDDIR)))"),
+    # CALBTOT keeps the base-year production and employment in local arrays that persist between calls
+    (re.compile(r"^(\s*)real emplxIBYR\(numind,4\),prodvxIBYR\(numind,4\)[ \t]*$", re.I | re.M), r"\1"),
+    (re.compile(r"^(\s*REAL EMPLX)[ ]+!.*$", re.I | re.M), r"\1"+"\n      REAL EMPLXIBYR(numind,4), PRODVXIBYR(numind,4)"),
     # NaN report format (format 2336) gives an I4 edit descriptor to a REAL; Intel prints it, gfortran stops.
     (re.compile(r'6\(":",I4\),2\(":",F21\.6\)'), '5(":",I4),3(":",F21.6)'),
     # INDSIC and INDGRP only write EIA's internal spreadsheet reports (indsic.csv, indreg*.csv,
