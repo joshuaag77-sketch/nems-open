@@ -5,6 +5,7 @@ folder holding its input/ folder, restart.npz, dict.txt, varlist.txt and FILELIS
 under NEMS_OGSM_WORK (default ~/dev/oracle-cache/ogsm). pyfiler1 is our pure Python stand-in.
 """
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -20,8 +21,13 @@ def work_dir() -> Path:
     return Path(os.environ.get("NEMS_OGSM_WORK", Path.home() / "dev" / "oracle-cache" / "ogsm"))
 
 
-def prepare(restart: Path = REFERENCE_RUN) -> Path:
-    """Build the work folder (cheap to redo) and return it."""
+def prepare(restart: Path = REFERENCE_RUN, scedes: str = "scedes.cb2026.csv") -> Path:
+    """Build the work folder (cheap to redo) and return it.
+
+    EIA ships models/hsm/input/setup.csv pointing standalone runs at scedes.lowogs.csv, the low oil and gas
+    supply side case (OGTECH=30, technology 50% slower, benchmarked to one STEO year only). That is not the
+    reference case, so we point the work copy at `scedes` (cb2026, the reference).
+    """
     work = work_dir()
     src = upstream() / "models" / "hsm"
     work.mkdir(parents=True, exist_ok=True)
@@ -37,6 +43,8 @@ def prepare(restart: Path = REFERENCE_RUN) -> Path:
     for d in ("intermediate_tables", "debug", "debug/projects_debug/crude", "debug/projects_debug/natgas", "debug/projects_debug/selected",
               "debug/projects_debug/all", "debug/steo_debug"):
         (work / d).mkdir(parents=True, exist_ok=True)
+    setup = work / "input" / "setup.csv"
+    setup.write_text(re.sub(r"(?m)^(standalone_scedes_file,)[^,]*", lambda m: m.group(1) + scedes, setup.read_text()))
     shutil.copy(restart, work / "restart.npz")
     return work
 
@@ -50,6 +58,11 @@ def run(restart: Path = REFERENCE_RUN):
     os.chdir(work)
     import pyfiler1
     pyfiler1.load(str(work / "restart.npz"))
+    # HSM adds this year's wells onto ognowell in the restart. In a NEMS run it zeroes it
+    # each year after the STEO start (module_unf.py:976); the standalone loop never reaches that line, so the
+    # reference run's own values stayed in and every well was counted twice. Zero it, as NEMS does. (Zeroing ogcruderef too breaks the 2027 price weights, so leave it.)
+    first = 2026 - 1990
+    pyfiler1.ogsmout.ognowell[first:] = 0
     import restart_load
     restart_load.read_restart_file = lambda *a, **k: None  # already loaded; EIA's loader trips on scalar keys
     import hsm

@@ -91,3 +91,31 @@ needs the carried state from the integrated loop (the pickles, ncrl=1 pass), whi
 not hold. Next step if continued: run with `integrated_switch` on, iteration 1 then reporting, per
 year, feeding it our own pickles. That is a larger job than a thin adapter. Until then keep
 `supply_standin`; no `ogs` switch.
+
+## Fixed (2026-11-10): HSM now reproduces cb2026 past the STEO years
+
+The section above guessed wrong. The pickles and the ncrl pass were not the cause. Two standalone input
+errors were:
+
+1. EIA's `models/hsm/input/setup.csv` points standalone runs at `scedes.lowogs.csv`, the low oil and gas
+   supply side case (OGTECH=30: technology 50% slower, side_case_adj 0.5, benchmarked to one STEO year
+   instead of two). We were running the wrong scenario. `run_hsm.prepare` now rewrites the work copy to
+   `scedes.cb2026.csv`.
+2. `ognowell` (wells completed) is built with `+=` onto the restart value. A NEMS run zeroes it each year
+   (`module_unf.py:976`); the standalone loop never reaches that line, so the reference run's own wells
+   stayed in and every well counted twice (36,257 against 18,796 in 2026). `run_hsm.run` zeroes 2026 on.
+   Zeroing `ogcruderef` too breaks the 2027 price weights (NaN in the offshore step), so it is left alone.
+
+Result (`scripts/run_hsm_cb2026.py`, one core, 9 minutes; `compare.py`):
+
+| | 2026 | 2030 | 2040 | 2050 |
+|---|---|---|---|---|
+| dry gas ogngprd, HSM / EIA | 77.4k / 78.2k | 78.0k / 82.1k | 94.5k / 93.1k | 106.9k / 104.7k |
+| crude ogcoprd | 25.1 / 25.3 | 25.2 / 25.2 | 23.8 / 23.8 | 23.8 / 23.8 |
+| wells ognowell | 18.0k / 18.8k | 19.0k / 19.8k | 23.2k / 23.6k | 26.8k / 28.1k |
+
+Gas is within 5% every year, crude within 1%, wells within 5%. Of 95 arrays, 72 are within 1% and 54
+within 1e-4. Left over: `ogjobs` is about 30% high (jobs appear tied to a cumulative well count), and
+NGPL splits, `ogprdadof` and `ogqshlgas` are off by 5 to 30% in places. `ognglak` differs in one year
+only: EIA's restart has 0 in 2030, which looks like an EIA artifact. Not worth chasing before the
+`ogs='hsm'` switch; the switch itself is still not built.
