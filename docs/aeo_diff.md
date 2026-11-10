@@ -1,6 +1,6 @@
 # AEO2025 against AEO2026
 
-What this answers: how much of each headline change between EIA's two public releases comes from changed input data and how much from changed code. Result: **the split is not possible for any of the five green modules with what we have, and this document says why instead of guessing.** What does exist is EIA's own change between the two reference runs (below), the readers that make AEO2025 usable, and a test of whether our code reproduces AEO2025 from AEO2025 inputs (it does not).
+What this answers: how much of each headline change between EIA's two public releases comes from changed input data and how much from changed code. Result: **the split is not possible for any module with what we have, and this document says why instead of guessing.** A 2025 oracle now exists for commercial and was checked against the restart (section below); it narrows the gap but does not close it. What does exist is EIA's own change between the two reference runs (below), the readers that make AEO2025 usable, and a test of whether our code reproduces AEO2025 from AEO2025 inputs (it does not).
 
 ## Data (fetched with Josh's approval, 2026-11-03)
 - `output/aeo2025/ref2025.zip` from github.com/EIAgov/NEMS, tag `AEO2025-Public-Release` (Git LFS, 26,408,808 bytes, sha256 798d3133...: matches the pointer). It holds `ref2025/d031725c/restart.rlx` (172 MB), EIA's reference restart.
@@ -43,3 +43,16 @@ A third route, running our 2026 module files with only the 2025 restart's prices
 3. For the driver-only route: the seven missing arrays recomputed from 2025 inputs.
 
 Until then the table above is the finding: how much changed, with no attribution.
+
+## Update: a 2025 commercial oracle (aeo-diff2)
+The AEO2025 Fortran was compiled under WSL (`oracle/build_wsl.sh`, skipping two variables the 2025 source lacks: `applyramp`, `datactrservpenetration`) and run on the ref2025 restart and 2025 input files, dumping 2025, 2030 and 2040. `scripts/aeo_diff_oracle_cmp.py` compares its state with the restart.
+
+Where it reproduces EIA's 2025 reference (national, all regions within the stated bound): electricity (2025: 4,849.90 vs 4,849.86 TBtu; 2030: 5,127.76 vs 5,127.55; 2040: 6,447.8 vs 6,451.8, regional worst 0.55%), natural gas (regional worst 0.007%), distillate (0.014%), LPG, residual, motor gasoline and biomass (all within 1e-6 to 1e-4). Steam and PV drift with time: national 2040 steam 56.29 vs 56.39 (0.2%), PV 298.05 vs 296.35 (0.6%), worst region 2.7% and 7.5%.
+
+Where it does not: **coal** (oracle holds 12.1 TBtu flat; the restart has 16.3, 18.2 and 22.8 for 2025, 2030, 2040) and **kerosene** (2030: 1.78 vs 2.16). Something outside the commercial module that the restart carries is not reproduced, so no attribution is made for coal or kerosene.
+
+Same-code test of the other direction (2025 code on 2026 inputs and the 2026 restart): **refused by the code itself.** The 2025 loader stops with 18 size mismatches, all in the cogeneration block (`CGCOMMCAP`, `CGCOMMGEN`, `CGRESQ` and 15 more): 32,208 values in 2025, 34,892 in 2026, which is 12 against 13 technologies. That is a code change in the data layout, so 2026 inputs cannot be fed to the 2025 code without a mapping, and a mapping would be a guess. The 2026 code on 2025 inputs fails the same way in reverse (it needs arrays the 2025 restart lacks, see above).
+
+Result for commercial: electricity and gas reproduce in 2025, but both split directions are blocked by layout changes (cogeneration technologies, floorspace width). The headline table stands unattributed. Residential was not built: its 2025 files have a different class structure (30 against 29 equipment classes), which blocks it before any oracle run.
+
+What would settle it: map the 12 cogeneration technologies to the 13 (EIA's release notes or the diff of `cogen`), then run the hybrid. The code effect would be the 2025 against 2026 oracle on the same inputs, and the input effect the rest.
