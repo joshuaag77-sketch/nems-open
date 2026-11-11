@@ -523,6 +523,22 @@ IND_TARGETS = [
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1 .and. ifuel.eq.1 .and. istep.eq.2"),
     dict(tag="cs18_32", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1 .and. ifuel.eq.3 .and. istep.eq.2"),
+    dict(tag="m7", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="m1", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="m1b", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.4"),
+    dict(tag="m24", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="m18", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1"),
+    dict(tag="m3", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="m6", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.6 .and. indreg.eq.3"),
+    dict(tag="m14", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.14 .and. indreg.eq.4"),
 ]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
@@ -552,7 +568,7 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "SteamSeg_Other", "stemcurlag", "IFSBYP", "IFSLOCBY", "BYPSTMM", "BYPSTMI", "BYPSTMR", "BYPSTM",
                    "ENBINT", "EMPLX", "PRODVX", "EMPLXIBYR", "PRODVXIBYR", "TQMAIN", "TQINTR", "TQRENW", "QSLUIN", "MC_REVIND", "MSEDYR",
                    # CONTAB
-                   "MANHP", "NONHP", "REFCON", "H2CON", "AGCON", "MINECON", "CONSTCON", "FOODCON", "PAPERCON", "CHEMCON", "GLASSCON", "CEMENTCON", "STEELCON", "ALUMCON", "FABMETALCON", "MACHINECON", "COMPUTECON", "TRANEQUIPCON", "ELECEQUIPON", "WOODPRODCON", "PLASTICCON", "LTCHEMCON", "OTHRNMMCON", "OTHRPRIMCON", "MISCFINCON", "QtyByInd", "QELRF", "QELeth", "QNGRF", "QNGeth", "QCLRF", "QCLeth", "QRLRF", "QDSRF", "QLGRF", "QSGRF", "QPCRF", "QCCRF", "QOTRF", "QH2RF", "QELHM", "QNGHMHP", "QNGHMPF", "CGOGSQ", "mainfuels",
+                   "MANHP", "NONHP", "REFCON", "H2CON", "AGCON", "MINECON", "CONSTCON", "FOODCON", "PAPERCON", "CHEMCON", "GLASSCON", "CEMENTCON", "STEELCON", "ALUMCON", "FABMETALCON", "MACHINECON", "COMPUTECON", "TRANEQUIPCON", "ELECEQUIPON", "WOODPRODCON", "PLASTICCON", "LTCHEMCON", "OTHRNMMCON", "OTHRPRIMCON", "MISCFINCON", "QtyByInd", "QELRF", "QELeth", "QNGRF", "QNGeth", "QCLRF", "QCLeth", "QRLRF", "QDSRF", "QLGRF", "QSGRF", "QPCRF", "QCCRF", "QOTRF", "QH2RF", "QELHM", "QNGHMHP", "QNGHMPF", "CGOGSQ", "mainfuels", "carbshr_ab", "carbshrca", "elown", "elsale", "HPbeff", "beff",
                    # CALPROD etc
                    "mpastp", "ifmax", "ifloc", "ifbyp", "iflocby", "bypcsc", "bypint", "bypintlag", "bypqty", "prodlag", "prodcur", "idlcap", "idlcaplag", "idval", "techstrtyr", "frztech", "hitech", "bypadibyr", "bscibyr", "enpint", "enpintlag", "bcsc", "ijumpcalyr", "itpc", "steolastyr", "tpc1", "tpc2", "enpqty", "chemship", "fertilizer_h2", "prodretr", "retrate", "iretire", "phdrat", "prodx", "prodflow", "ntmax", "ipastp", "prodxlag", "prcxlag", "foodship", "prodxibyr", "rei_adj", "rei_adj_lag", "ind_flow_share", "BUSHEL", "curitr", "sumprodcur", "co2_clink", "co2_lime",  "bypbscm", "bypbsci", "bypbscr",
                    "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
