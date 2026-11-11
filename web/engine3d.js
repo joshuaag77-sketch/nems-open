@@ -27,6 +27,44 @@
     });
   }
 
+  // ---- "Your scenario": the levers someone set on 2050.html (#yours=carbon_price:100,ev_2035:0.9) ----
+  // A real run that page finished in this tab is used as is; otherwise the same instant estimate the
+  // 2050 page shows (web/ux2050_model.js). Either way the card says which it is.
+  const early = new URLSearchParams(location.hash.slice(1));
+  const YOURS_ARG = early.get("yours");
+  if (YOURS_ARG !== null && window.UX2050) {
+    try {
+      const emu = await load("data/ux2050/emulator.json");
+      const x = UX2050.decode(emu, YOURS_ARG), real = UX2050.loadReal(x);
+      const o = real ? real.result : UX2050.emulate(emu, x);
+      const SECT = [["residential", "rs"], ["commercial", "cm"], ["industrial", "in"], ["transportation", "tr"]];
+      const FUELS = ["petroleum", "gas", "coal", "renewables", "electricity"];
+      const yrs = RUNS.years, at = (arr) => yrs.map((y) => arr[emu.years.indexOf(y)]);
+      // each ring module's own quantity, as the data center story records it (quads)
+      const raw = (r) => ({
+        energy: Object.fromEntries(SECT.map(([n, c]) => [n, at(r.flow_petroleum_rs.map((_, j) => FUELS.reduce((a, f) => a + r[`flow_${f}_${c}`][j], 0)))])),
+        trace: { totals: { elec: at(r.elec_sales_twh.map((v) => (v * 3.412) / 1000)),
+                           gas: at(r.flow_gas_el.map((_, j) => ["rs", "cm", "in", "tr", "el"].reduce((a, c) => a + r[`flow_gas_${c}`][j], 0))) },
+                 power_burn: { coal: at(r.power_coal) } },
+      });
+      const NAMES = { carbon_price: "carbon price", ev_2035: "EV sales", load_growth: "new load", building_code: "building codes",
+        appliance_standard: "appliance standards", coal_retirement: "coal retirements", renewable_cost: "wind and solar cost",
+        gas_supply: "gas supply", oil_price: "oil price", nuclear: "nuclear" };
+      const d = UX2050.defaults(emu), moved = UX2050.KEYS.filter((k) => Math.abs(x[k] - d[k]) > 1e-9);
+      const left = real ? [] : moved.filter((k) => UX2050.REAL_ONLY.includes(k));
+      const yours = {
+        key: "yours", label: "Your scenario", mine: true, real: !!real, set: real ? "datacenter" : "fast",
+        short: (moved.length ? `Your levers from the 2050 page: ${moved.map((k) => NAMES[k]).join(", ")}.` : "The 2050 page at EIA's settings.") +
+          (real ? ` Real run: ported residential, commercial and transportation, supply on stand-ins (${(real.elapsed_s / 60).toFixed(1)} min).`
+                : ` Instant estimate fitted to fast-loop runs (stand-ins), not a run.${left.length ? ` Leaves out ${left.map((k) => NAMES[k]).join(" and ")}.` : ""}`),
+        run: { co2: at(o.co2), bill: at(o.bill), gas_price: at(o.price_gas_home) },
+        eia: RUNS.scenarios.reference.eia, raw: raw(o),
+      };
+      RUNS.scenarios = Object.assign({ yours }, RUNS.scenarios);   // first card
+      RUNS.scenarios._eia = { key: "_eia", hidden: true, label: "EIA reference", raw: raw(emu.eia) };
+    } catch (e) { console.warn("Your scenario did not load:", e); }
+  }
+
   // A fractional change as a percent, in plain decimals.
   const pctText = (x) => (100 * x < 0.01 ? (100 * x).toPrecision(2) : (100 * x).toFixed(2)) + "%";
 
@@ -90,6 +128,7 @@
   function writeHash() {
     const q = new URLSearchParams();
     if (selA !== "reference") q.set("a", selA);
+    if (YOURS_ARG !== null && SC.yours) q.set("yours", YOURS_ARG);
     if (selB) q.set("b", selB);
     q.set("y", yearEl.value);
     if (followKey) q.set("sw", followKey);
@@ -126,8 +165,8 @@
 
   function cards() {
     const card = (s) => `<button type="button" class="card ${s.key === selA ? "a" : ""} ${s.key === selB ? "b" : ""}" data-k="${s.key}">${s.label}` +
-      `<small>${s.story ? `${escA(s.short)} Ported modules and dispatch LP, precomputed.` : `EIA's ${s.case} case inputs, ${s.model}, precomputed`}</small></button>`;
-    const all = Object.values(SC);
+      `<small>${s.mine ? escA(s.short) : s.story ? `${escA(s.short)} Ported modules and dispatch LP, precomputed.` : `EIA's ${s.case} case inputs, ${s.model}, precomputed`}</small></button>`;
+    const all = Object.values(SC).filter((s) => !s.hidden);
     $("cards").innerHTML = all.filter((s) => !s.story).map(card).join("") +
       (STORY.length ? `<div class="scen-head story-head"><span>Data center story</span><button class="ghost small" id="step-through" type="button">Step through</button></div>` +
         all.filter((s) => s.story).map(card).join("") : "");
@@ -143,7 +182,7 @@
       if (selB === k) selB = null;
     }
     render(true);
-    if (onStep) onStep(stepFrom, selA);
+    if (onStep) onStep(stepFrom || (SC[selA].mine ? "_eia" : null), selA);
   }
   let stepping = false;
   async function stepThrough() {
@@ -183,7 +222,7 @@
       `<path d="${path(b)}" fill="none" stroke="#FAC775" stroke-width="1.5" stroke-dasharray="4 3"/></svg>`;
   }
   function diff() {
-    const pair = selB ? [selA, selB] : stepFrom ? [stepFrom, selA] : null;
+    const pair = selB ? [selA, selB] : stepFrom ? [stepFrom, selA] : SC[selA].mine ? ["reference", selA] : null;
     if (!pair) { $("diff").innerHTML = comparing ? `<span class="k" style="color:var(--dim)">Pick a second scenario.</span>` : ""; return; }
     const A = SC[pair[0]], B = SC[pair[1]];
     $("diff").innerHTML = `<span style="color:var(--muted)">${B.label} minus ${A.label}, ${year()}</span>` +
@@ -200,6 +239,7 @@
     cards(); heads(animate); diff(); writeHash();
     if (demandOn) demandUpdate();
     if (onStep && stepFrom) onStep(stepFrom, selA, true);
+    else if (onStep && SC[selA].mine) onStep("_eia", selA, !animate);   // your scenario against EIA's reference
   }
   $("compare").addEventListener("click", () => {
     comparing = !comparing; $("compare").setAttribute("aria-pressed", comparing);
@@ -538,7 +578,9 @@
     if (!A || !B) return;
     const j = YEARS.indexOf(year());
     Object.entries(THEIR_NUMBER).forEach(([k, get]) => {
-      const a = get(A)[j], b = get(B)[j], pctCh = a ? (100 * (b - a)) / a : 0;
+      const sa = get(A), sb = get(B);
+      if (!sa || !sb) return;                  // a run without this module's number
+      const a = sa[j], b = sb[j], pctCh = a ? (100 * (b - a)) / a : 0;
       if (Math.abs(pctCh) < 0.05) return;     // no visible change
       const h = halos[k], m = byKey[k];
       h.mesh.visible = true;
@@ -550,6 +592,8 @@
         setTimeout(() => pulse(pctCh > 0 ? hub : m.center, pctCh > 0 ? m.center : hub, pctCh > 0 ? COLOR.partial : COLOR.output, 700), n * 130);
     });
   };
+
+  if (SC[selA] && SC[selA].mine) onStep("_eia", selA);
 
   // ---- follow a switch, and hover labels ---------------------------------------------------
   // Click a switch: light the routines that read it by name (RTOVALUE) or, if none does, its
@@ -722,6 +766,7 @@
   const DSEC = ["residential", "commercial", "industrial", "transportation"];
   var demandOn = false; let sweepTimer = null;
   const demandSrc = () => {
+    if (SC[selA] && SC[selA].mine) return { c: SC[selA].raw, label: "Your scenario", own: true, mine: true };
     if (!DC || !DC.cases) return null;
     const own = SC[selA] && SC[selA].story ? selA.slice(3) : "reference";
     const c = DC.cases[own] || DC.cases.reference;
@@ -751,7 +796,7 @@
     d.innerHTML = `<div class="bar3">${DSEC.map((k) => `<i style="width:${100 * sh.share[k]}%;background:${col[k]}"></i>`).join("")}</div>` +
       DSEC.map((k) => `<div><span>${byKey[k].name}</span><span>${sh.q[k].toFixed(1)} quads, ${(100 * sh.share[k]).toFixed(0)}%</span></div>`).join("") +
       `<div><span>All four, ${year()}</span><span>${sh.tot.toFixed(1)} quads</span></div>` +
-      `<p style="margin:6px 0 0;color:var(--dim)">Module size follows its share of this year's energy demand, from the recorded run "${escA(sh.src.label)}" (${sh.src.own ? "the selected run" : "the data center story's EIA reference run, since the selected scenario records no sector energy"}; ported residential, commercial and transportation, stand-in industry). Supply modules have no demand share and keep their size.</p>` +
+      `<p style="margin:6px 0 0;color:var(--dim)">Module size follows its share of this year's energy demand, from ${sh.src.mine ? `your scenario (${SC[selA].real ? "a real run: ported residential, commercial and transportation, stand-in industry" : "an instant estimate from the fast loop, every sector a stand-in"})` : `the recorded run "${escA(sh.src.label)}" (${sh.src.own ? "the selected run" : "the data center story's EIA reference run, since the selected scenario records no sector energy"}; ported residential, commercial and transportation, stand-in industry)`}. Supply modules have no demand share and keep their size.</p>` +
       `<button class="ghost small" id="sweep" type="button">${sweepTimer ? "Stop" : "Sweep 2027 to 2050"}</button>`;
     d.style.display = "block";
     $("sweep").addEventListener("click", sweep);

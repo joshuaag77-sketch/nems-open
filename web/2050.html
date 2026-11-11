@@ -5,12 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your America in 2050</title>
 <meta name="description" content="Move ten plain levers and see America's power plants, energy flows and household energy bill to 2050, from an open rebuild of EIA's energy model. Every number carries how far to trust it.">
-<link rel="stylesheet" href="ux2050.css">
+<link rel="stylesheet" href="ux2050.css?v=2">
 <script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 <script defer src="site.js"></script>
-<script defer src="ux2050.js"></script>
+<script defer src="ux2050_model.js?v=2"></script>
+<script defer src="ux2050.js?v=2"></script>
 </head>
 <body>
 <header class="hd">
@@ -30,10 +31,10 @@
       <h2>Start from a story</h2>
       <div id="stories" class="story-row"></div>
     </section>
-    <section aria-label="Levers">
-      <h2>Or pull the levers yourself</h2>
+    <details id="lever-box" class="lever-box" open>
+      <summary><h2>Or pull the levers yourself</h2></summary>
       <div id="levers"></div>
-    </section>
+    </details>
     <section class="run">
       <p id="instant-note" class="notice" hidden></p>
       <button id="run" class="btn primary" type="button" disabled>Run the real model</button>
@@ -78,6 +79,7 @@
     </div>
   </section>
 </main>
+<div id="minibar" class="minibar" aria-live="polite"></div>
 <noscript><p class="panel">This page needs JavaScript.</p></noscript>
 </body>
 </html>

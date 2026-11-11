@@ -96,38 +96,13 @@
   const S = { emu: null, plants: null, fid: null, x: {}, year: 2035, story: "eia", out: null, src: null,
     real: {}, server: false, job: null };
 
-  function defaults() {
-    const x = {};
-    for (const l of LEVERS) x[l.key] = l.key === "ev_2035" ? S.emu.levers.ev_2035.off : (S.emu.levers[l.key] ? S.emu.levers[l.key].off : 0);
-    return x;
-  }
-  const sig = (x) => LEVERS.map((l) => `${l.key}=${(+x[l.key]).toFixed(3)}`).join("&");
-
-  // ---- the emulator -------------------------------------------------------------------------------
-  // The polynomial, shifted so EIA's settings return the reference run exactly (the fit was measured that way).
-  function emulate(x) {
-    const raw = poly(x);
-    if (!S.refPoly) S.refPoly = poly(Object.fromEntries(Object.entries(S.emu.levers).map(([n, L]) => [n, L.off])));
-    const out = {};
-    for (const k in raw) out[k] = raw[k].map((v, j) => v - S.refPoly[k][j] + S.emu.fast_reference[k][j]);
-    for (const k in out) if (!k.startsWith("co2")) out[k] = out[k].map((v) => Math.max(0, v));   // a polynomial can dip below zero
-    return out;
-  }
-  function poly(x) {
-    const names = Object.keys(S.emu.levers);
-    const z = names.map((n) => { const L = S.emu.levers[n]; return 2 * (x[n] - L.low) / (L.high - L.low) - 1; });
-    const f = S.emu.terms.map((t) => t.reduce((a, i) => a * z[i], 1));
-    const out = {};
-    for (const [k, coef] of Object.entries(S.emu.coef)) {
-      const ny = coef[0].length, y = new Array(ny).fill(0);
-      for (let t = 0; t < coef.length; t++) { const ft = f[t]; if (ft === 0) continue; const row = coef[t]; for (let j = 0; j < ny; j++) y[j] += row[j] * ft; }
-      out[k] = y;
-    }
-    return out;
-  }
+  const defaults = () => UX2050.defaults(S.emu);
+  const sig = UX2050.sig;
+  const emulate = (x) => UX2050.emulate(S.emu, x);   // web/ux2050_model.js, shared with engine3d.html
 
   function compute() {
     const s = sig(S.x);
+    if (!S.real[s]) { const kept = UX2050.loadReal(S.x); if (kept) S.real[s] = kept; }   // a run from earlier in this tab
     if (S.real[s]) {
       S.out = S.real[s].result; S.src = { kind: "real", ported: S.real[s].ported, job: S.real[s] };
     } else {
@@ -191,6 +166,17 @@
       <div class="v">${fmt(value, digits)} <small>${unit}</small></div>
       <div class="d ${dir}">${word}</div><div class="grades">${badge(gradeOf(key, S.src))}</div></div>`;
   }
+  // Phones: one line that stays on screen while the levers move (CSS shows it under 860 px).
+  function paintMini() {
+    const co2 = at("co2"), bill = at("bill"), dc = co2 - eia("co2"), db = bill - eia("bill");
+    // the same "about the same" rule as the headline cards: under half a percent
+    const sign = (v, ref, f) => (Math.abs(v) < 0.005 * Math.abs(ref) ? "same as EIA" : `${v > 0 ? "+" : "-"}${f(Math.abs(v))} vs EIA`);
+    $("minibar").innerHTML = `<span>${S.year}</span>` +
+      `<span>CO2 <b>${fmt(co2)} Mt</b> ${sign(dc, eia("co2"), (v) => fmt(v) + " Mt")} ${badge(gradeOf("co2", S.src))}</span>` +
+      `<span>Bill <b>$${fmt(bill)}</b> ${sign(db, eia("bill"), (v) => "$" + fmt(v))} ${badge(gradeOf("bill", S.src))}</span>` +
+      `<a href="#map-card" id="mini-go">Map</a>`;
+  }
+
   function paintStats() {
     $("stats").innerHTML =
       stat("US energy CO2", "co2", at("co2"), "million t", eia("co2"), 0, true) +
@@ -271,7 +257,7 @@
     const c = $("map-fg").getContext("2d"), rows = S.plants.rows, groups = S.plants.groups;
     c.setTransform(M.dpr, 0, 0, M.dpr, 0, 0); c.clearRect(0, 0, M.w, M.h);
     const k = utilization(S.year), y = S.year;
-    const scale = Math.sqrt(M.w / 900) * 0.2;
+    const scale = Math.pow(Math.min(1, M.w / 900), 0.75) * 0.2;   // smaller dots on a phone-sized map
     const cap = {}, served = {}, wanted = {};
     // draw big plants first so small ones stay visible on top
     const order = M.order || (M.order = rows.map((_, i) => i).sort((a, b) => rows[b][2] - rows[a][2]));
@@ -410,13 +396,13 @@
     const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ levers }) });
     const body = await res.json();
     if (!res.ok) { $("run-note").textContent = body.error || "The server refused the run."; return; }
-    S.job = { id: body.id, sig: sig(S.x), elapsed: 0 }; paintMode();
+    S.job = { id: body.id, sig: sig(S.x), x: { ...S.x }, elapsed: 0 }; paintMode();
     const poll = async () => {
       const j = await (await fetch(`/api/run/${S.job.id}`)).json();
       S.job.elapsed = j.elapsed_s;
       if (j.status === "running") { paintMode(); setTimeout(poll, 3000); return; }
-      const s = S.job.sig; S.job = null;
-      if (j.status === "done") { S.real[s] = j; }
+      const s = S.job.sig, ran = S.job.x; S.job = null;
+      if (j.status === "done") { S.real[s] = j; UX2050.saveReal(ran, j); }
       else $("run-note").textContent = `The real run failed: ${j.error}`;
       update();
     };
@@ -445,12 +431,15 @@
   let raf = 0;
   function update() {
     compute();
-    paintLevers(); paintMode(); paintStats();
+    paintLevers(); paintMode(); paintStats(); paintMini();
     for (const el of document.querySelectorAll(".yr")) el.textContent = S.year;
     $("map-year").textContent = S.year; $("year").value = S.year;
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => { drawPlants(); paintRiver(); paintBill(); });
     writeHash();
+    // "How did it get that?": the engine opens on this scenario (engine3d.js reads `yours`)
+    const enc = UX2050.encode(S.emu, S.x);
+    $("how").href = `engine3d.html#a=yours&y=${S.year}` + (enc ? `&yours=${encodeURIComponent(enc)}` : "&yours=");
   }
 
   async function main() {
@@ -462,6 +451,9 @@
     layoutMap(); update();
     $("year").addEventListener("input", (e) => { S.year = +e.target.value; update(); });
     $("map").addEventListener("mousemove", hover);
+    $("map").addEventListener("click", hover);   // touch screens have no hover: a tap shows the same card
+    if (innerWidth < 860) $("lever-box").open = false;   // phones: stories first, the ten sliders one tap away
+    $("minibar").addEventListener("click", (e) => { if (e.target.id === "mini-go") { e.preventDefault(); document.querySelector(".map-card").scrollIntoView({ behavior: "smooth" }); } });
     $("map").addEventListener("mouseleave", () => { $("tip").hidden = true; });
     let timer = null;
     $("play").addEventListener("click", () => {
