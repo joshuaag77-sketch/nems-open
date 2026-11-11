@@ -44,7 +44,8 @@ def quarterly_target(annual: pd.Series, start: pd.Period, end: pd.Period) -> pd.
 class Economy:
     """FRB/US with add-factors that reproduce EIA's reference GDP growth."""
 
-    def __init__(self, snapshot_path: Path = REFERENCE_RUN):
+    def __init__(self, snapshot_path: Path = REFERENCE_RUN, gdpr=None):
+        """gdpr: EIA's real GDP by calendar year 1990 to 2050 to pin to (default: the restart file's)."""
         if not available():
             raise RuntimeError("pyfrbus not found; see the module docstring")
         if str(FRBUS_DIR) not in sys.path:
@@ -59,7 +60,7 @@ class Economy:
         data.loc[self.start : self.end, "dfpsrp"] = 1
         self.model = Frbus(str(FRBUS_DIR / "models" / "model.xml"))
         traced = self.model.init_trac(self.start, self.end, data)
-        eia = eia_gdp_path(snapshot_path)
+        eia = eia_gdp_path(snapshot_path) if gdpr is None else pd.Series(np.asarray(gdpr, float), index=np.arange(1990, 1990 + len(gdpr)))
         tgt = quarterly_target(eia, self.start, self.end)
         traced["xgdp_t"] = traced.loc[self.start - 1, "xgdp"] * (tgt / tgt.loc[self.start - 1])
         # LONGBASE's mechanical extrapolation has an artificial unemployment swing after 2040: hold the

@@ -30,7 +30,7 @@ def energy_bill_change(scenario, reference, region: int = 10) -> pd.Series:
     region is the 0-based census-division column of MPBLK (10 = the US row). Prices are 1987$/MMBtu
     and quantities trillion Btu, so p*q/1000 is 1987$ billions; GDP is converted to 1987$ with MC_JPGDP.
     """
-    names = set(reference.files)
+    names = set(reference.keys())
     delta = np.zeros(len(YEARS))
     for key in names:
         # fuels bought by power plants (suffix "el") are already inside the electricity price
