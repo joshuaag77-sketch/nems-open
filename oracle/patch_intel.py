@@ -55,6 +55,9 @@ RULES = [
     # Industrial (ind.f). A parenthesized item list in READ, "(a(4,1),a(4,4:5))", is not
     # an implied DO; drop the parentheses.
     (re.compile(r"\(enbint\(4,1\),enbint\(4,4:5\)\)"), "enbint(4,1),enbint(4,4:5)"),
+    # Industrial: "IF(INDREG.EQ.4) CALL CONTAB(5)" -> block IF, so the oracle can hook the CALL line.
+    (re.compile(r"^(\s*)IF\s*\(\s*indreg\s*\.eq\.\s*4\s*\)\s*CALL\s+CONTAB\(5\)\s*$", re.I | re.M),
+     "IF(INDREG.EQ.4) THEN" + chr(10) + "  CALL CONTAB(5)" + chr(10) + "ENDIF"),
     # Intel's backslash edit descriptor (no line advance) is only used on console output.
     (re.compile(r"f9\.2\\\)'"), "f9.2)'"),
     # Numeric variable-format expressions, <26-10+1>F12.3: any repeat count that covers the list.
@@ -80,6 +83,12 @@ RULES = [
     # CALBTOT keeps the base-year production and employment in local arrays that persist between calls
     (re.compile(r"^(\s*)real emplxIBYR\(numind,4\),prodvxIBYR\(numind,4\)[ \t]*$", re.I | re.M), r"\1"),
     (re.compile(r"^(\s*REAL EMPLX)[ ]+!.*$", re.I | re.M), r"\1"+"\n      REAL EMPLXIBYR(numind,4), PRODVXIBYR(numind,4)"),
+    # CALPROD keeps PRODXIBYR (base-year production) and CALCSC keeps REI_Adj in local arrays that persist
+    # between calls; move them to MODULE I_ so the oracle can dump them.
+    (re.compile(r"^\s*REAL PRODXIBYR\(numind,4\)/nz\*0\./.*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL REI_Adj(?:_Lag)?\(3,17,maxstep\).*$", re.I | re.M), ""),
+    (re.compile(r"^(\s*REAL EMPLXIBYR\(numind,4\), PRODVXIBYR\(numind,4\))$", re.I | re.M),
+     chr(92) + "1" + chr(10) + "      REAL PRODXIBYR(numind,4)" + chr(10) + "      REAL REI_Adj(3,17,maxstep), REI_Adj_Lag(3,17,maxstep)"),
     # NaN report format (format 2336) gives an I4 edit descriptor to a REAL; Intel prints it, gfortran stops.
     (re.compile(r'6\(":",I4\),2\(":",F21\.6\)'), '5(":",I4),3(":",F21.6)'),
     # INDSIC and INDGRP only write EIA's internal spreadsheet reports (indsic.csv, indreg*.csv,
