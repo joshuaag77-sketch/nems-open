@@ -89,16 +89,21 @@ def default_elec_price(elec: str, baseline: str = "cb2026") -> str:
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
-        elec: str = "standin", elec_price: str | None = None, base: dict | None = None) -> RunResult:
+        elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
+        macro: str | None = None) -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
     (about 10 s an iteration, plus a pre-roll from 2021 to start_year); None picks
     default_elec_price(elec, baseline). maxitr, cycles: NEMS's MAXITR and NRUNS.
     relax=False is IRELAX = 0 (tests only, no relaxation). base: replace the baseline case's arrays
-    (prices, quantities, Brent, macro) with these, e.g. a blend of EIA's cases (nems_open.uncertainty)."""
+    (prices, quantities, Brent, macro) with these, e.g. a blend of EIA's cases (nems_open.uncertainty).
+    macro: None keeps EIA's economy; "frbus" runs the economy module (nems_open.macro.drive) each cycle and feeds
+    GDP, floorspace and industry output to demand; cycle 1 sees the oil price only, so use cycles >= 2."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
+    if macro not in (None, "frbus"):
+        raise ValueError("macro must be None or 'frbus'")
     if elec_price is None:
         elec_price = default_elec_price(elec, baseline)
     if elec_price not in ("standin", "efp"):
@@ -128,7 +133,11 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     years = slice(start_year - FIRST_YEAR, end_year - FIRST_YEAR + 1)
 
     for cycle in range(1, cycles + 1):
-        demand = DemandAdapter(base, policy, start_year, ported)
+        path = None
+        if macro == "frbus":
+            from nems_open.macro.drive import scenario_macro
+            path = scenario_macro(base, oil, prices if cycle > 1 else None)
+        demand = DemandAdapter(base, policy, start_year, ported, macro=path)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -248,6 +257,8 @@ def main(argv=None) -> None:
                     help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py); "
                          "default efp with --elec lp on cb2026, else the stand-in")
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
+    ap.add_argument("--macro", choices=("frbus",), default=None,
+                    help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
     ap.add_argument("--cycles", type=int, default=1, help=f"passes over all years, relaxed between (EIA cb2026: {NRUNS})")
     a = ap.parse_args(argv)
     commercial = None
@@ -261,7 +272,7 @@ def main(argv=None) -> None:
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price,
-            maxitr=a.maxitr, cycles=a.cycles)
+            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro)
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:

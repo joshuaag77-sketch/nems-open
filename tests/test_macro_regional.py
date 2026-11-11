@@ -15,11 +15,12 @@ def runs():
 
 @pytest.fixture(scope="module")
 def model(runs):
-    return regional.Regional(runs["cb2026"]).fit(runs["lowogs"])
+    return regional.Regional(runs["cb2026"]).fit(runs["lowogs"], runs["hm2026"], runs["lm2026"])
 
 
 def _predict(model, runs, case):
-    return model.predict(regional.gdp_gap(runs[case]["mc_gdpr"], runs["cb2026"]["mc_gdpr"]))
+    gap = regional.gdp_gap(runs[case]["mc_gdpr"], runs["cb2026"]["mc_gdpr"])
+    return model.predict(gap, regional.industrial_price_gap(runs[case], runs["cb2026"]))
 
 
 def test_reference_gap_zero_reproduces_reference(runs, model):
@@ -59,3 +60,25 @@ def test_holdout_highogs_beats_no_change(model, runs, key):
     rms = lambda a, b: np.sqrt((np.log(a[keep] / b[keep]) ** 2).mean())
     assert keep.sum() > 300
     assert rms(p, t) < rms(r, t)
+
+
+def test_price_term_beats_gdp_alone_on_held_out_highogs(runs):
+    """The per-industry energy price term is what the first version lacked."""
+    ref = runs["cb2026"]
+    flat = lambda a: a[: regional.DIVISIONS][:, :, regional.FIT].reshape(-1, 25)
+    both = regional.Regional(ref).fit(runs["lowogs"], runs["hm2026"], runs["lm2026"])
+    gdp = regional.Regional(ref).fit(runs["lowogs"], runs["hm2026"], runs["lm2026"], ridge=1e12)
+    for key in ("mc_revind", "mc_empna"):
+        t, r = flat(runs["highogs"][key]), flat(ref[key])
+        out = {}
+        for name, m in (("both", both), ("gdp", gdp)):
+            p = flat(_predict(m, runs, "highogs")[key])
+            keep = (p > 0).all(1) & (t > 0).all(1) & (r > 0).all(1)
+            out[name] = np.sqrt((np.log(p[keep] / t[keep]) ** 2).mean())
+        assert out["both"] < out["gdp"]
+
+
+def test_price_gap_is_zero_at_reference_and_positive_in_lowogs(runs):
+    ref = runs["cb2026"]
+    assert np.allclose(regional.industrial_price_gap(ref, ref), 0.0)
+    assert regional.industrial_price_gap(runs["lowogs"], ref)[40:61].min() > 0
