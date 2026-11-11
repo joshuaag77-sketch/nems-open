@@ -34,3 +34,24 @@ def test_oil_shock_lowers_output_and_raises_prices(econ):
     gdp = econ.annual(hi, "xgdp") - econ.annual(base, "xgdp")
     assert gdp.loc[2027:2035].max() < 0
     assert (econ.annual(hi, "pcpi") - econ.annual(base, "pcpi")).loc[2027] > 0
+
+
+def _gap(econ, name, ref):
+    from nems_open.macro import bridge
+    import pandas as pd
+
+    z = np.load(frbus_core.ROOT / "data" / "aeo2026" / f"{name}.npz")
+    r = econ.run(bridge.oil_multiplier(z, ref).loc[2026:2050], bridge.energy_bill_change(z, ref), bridge.KAPPA)
+    mine = 100 * (econ.annual(r, "xgdp") / econ.annual(econ.reference, "xgdp") - 1)
+    eia = pd.Series(100 * (z["MACOUT/mc_gdpr"] / ref["MACOUT/mc_gdpr"] - 1), index=range(1990, 2051)).loc[2026:2050]
+    return mine, eia
+
+
+@pytest.mark.parametrize("name, fitted", [("lowogs", True), ("highogs", False)])
+def test_bridge_reproduces_eia_gdp_gap(econ, name, fitted):
+    """kappa was fitted on lowogs; highogs is held out and must still beat 'no effect' with the right sign."""
+    ref = np.load(frbus_core.ROOT / "data" / "aeo2026" / "cb2026.npz")
+    mine, eia = _gap(econ, name, ref)
+    rmse = np.sqrt(((mine - eia) ** 2).mean())
+    assert rmse < 0.7 * np.sqrt((eia**2).mean())
+    assert np.sign(mine.loc[2035]) == np.sign(eia.loc[2035])

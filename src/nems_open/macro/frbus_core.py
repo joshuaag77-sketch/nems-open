@@ -76,10 +76,12 @@ class Economy:
         s = frame.loc[self.start : self.end, var]
         return s.groupby(lambda p: p.year).mean()
 
-    def run(self, oil_multiplier: float | pd.Series = 1.0) -> pd.DataFrame:
+    def run(self, oil_multiplier: float | pd.Series = 1.0, bill: pd.Series | None = None, kappa: float = 0.0) -> pd.DataFrame:
         """Solve with the real imported-oil price (poilr) held at the reference path times a multiplier.
 
         A float scales every quarter; a Series indexed by calendar year scales each year.
+        bill (energy spending change as a share of GDP, by year) pins total consumption (ecnia) at
+        (1 - kappa * bill) times its reference path; the rest of the economy responds.
         """
         data = self.reference.copy()
         if isinstance(oil_multiplier, pd.Series):
@@ -89,4 +91,10 @@ class Economy:
             mult = float(oil_multiplier)
         data.loc[self.start : self.end, "poilr"] = self.reference.loc[self.start : self.end, "poilr"] * mult
         self.model.exogenize(["poilr"])
+        if bill is not None and kappa:
+            share = bill.reindex(range(FIRST_YEAR - 1, LAST_YEAR + 1)).fillna(0.0)
+            qs = pd.period_range(self.start, self.end, freq="Q")
+            level = np.interp([p.year + (p.quarter - 0.5) / 4 for p in qs], share.index + 0.5, share.values)
+            data.loc[self.start : self.end, "ecnia_t"] = self.reference.loc[self.start : self.end, "ecnia"] * (1 - kappa * level)
+            return self.model.mcontrol(self.start, self.end, data, ["ecnia"], ["ecnia_t"], ["eco_aerr"])
         return self.model.solve(self.start, self.end, data)
