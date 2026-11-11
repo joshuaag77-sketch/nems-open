@@ -48,3 +48,28 @@ Switch atlas (`switches.html`): every key in EIA's scedes files, where the code 
 what it does, and which AEO side cases change it. `python scripts/build_switches.py` writes
 `data/switches.json` and `data/switches.js` from `scripts/switches_meanings.json` (what readers
 established from the code) and `scripts/switch_sites.py` (what a script can establish).
+
+## Your America in 2050 (`2050.html`)
+
+One screen for the curious public: ten levers or a story card on the left; a map of EIA's plant file
+(27,124 of 27,337 units with coordinates, sized by capacity, colored by fuel, brightness by how hard
+each runs) over the 25 EMM regions with a 2027-2050 slider; an energy river (sources to uses, from
+QBLK); and the household energy bill against EIA's reference.
+
+- Instant answers come from an emulator (`data/ux2050/emulator.json`): a polynomial fitted to 257
+  fast-loop runs over eight levers (`python scripts/build_ux2050.py runs`, then `fit`). Each number's
+  purple tag is the emulator's error on held-out runs; its grade badge is the weakest piece behind it,
+  from `data/fidelity.json`. Building codes and appliance standards need EIA's ported buildings code,
+  which the fast loop refuses, so the emulator leaves them out and says so.
+- "Run the real model" calls `run_model.run` with residential, commercial and transportation ported,
+  through `python scripts/serve_2050.py` (serves `web/` on http://localhost:8050 and adds `/api/run`).
+  The page labels which result is which. Without the server the button explains how to start it.
+- Plants: `python scripts/build_ux2050.py plants` writes `data/ux2050/plants.json` from the EMM plant
+  file (`V_EMM_PLTF860`). Plants appear and retire on EIA's schedule; levers change how much they run,
+  never which exist. Brightness is each plant's capacity factor scaled so its fuel matches the run's
+  national total. Region borders are approximate (each point takes its nearest plant's region).
+- "How did it get that?" opens `engine3d.html`.
+
+Vercel preview: `vercel.json` serves `web/` with `/` going to `2050.html`; `.vercelignore` uploads
+only `web/`; git deploys are off. A preview is `vercel deploy` (never `--prod`) from the repo root.
+The preview has no `/api`, so it shows instant estimates only. Nothing is deployed yet.

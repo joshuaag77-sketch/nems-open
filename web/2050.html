@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your America in 2050</title>
+<meta name="description" content="Move ten plain levers and see America's power plants, energy flows and household energy bill to 2050, from an open rebuild of EIA's energy model. Every number carries how far to trust it.">
+<link rel="stylesheet" href="ux2050.css">
+<script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
+<script defer src="site.js"></script>
+<script defer src="ux2050.js"></script>
+</head>
+<body>
+<header class="hd">
+  <div class="hd-title">
+    <h1>Your America in 2050</h1>
+    <p>Pull the levers. An open rebuild of EIA's energy model shows what changes, and how far to trust each number.</p>
+  </div>
+  <div class="hd-mode">
+    <span id="mode" class="mode mode-emu" title="">Instant estimate</span>
+    <a class="btn ghost" id="how" href="engine3d.html">How did it get that?</a>
+  </div>
+</header>
+
+<main class="grid">
+  <aside class="panel levers" aria-label="Levers">
+    <section class="stories" aria-label="Story cards">
+      <h2>Start from a story</h2>
+      <div id="stories" class="story-row"></div>
+    </section>
+    <section aria-label="Levers">
+      <h2>Or pull the levers yourself</h2>
+      <div id="levers"></div>
+    </section>
+    <section class="run">
+      <p id="instant-note" class="notice" hidden></p>
+      <button id="run" class="btn primary" type="button" disabled>Run the real model</button>
+      <p id="run-note" class="fine"></p>
+    </section>
+  </aside>
+
+  <section class="center">
+    <div id="stats" class="stats" aria-live="polite"></div>
+
+    <div class="panel map-card">
+      <div class="card-hd">
+        <h2>Power plants in <span id="map-year">2035</span></h2>
+        <div id="legend" class="legend"></div>
+      </div>
+      <div id="map" class="map" role="img" aria-label="Map of US power plants by fuel">
+        <canvas id="map-bg"></canvas>
+        <canvas id="map-fg"></canvas>
+        <div id="tip" class="tip" hidden></div>
+      </div>
+      <div class="timebar">
+        <button id="play" class="btn ghost small" type="button" aria-label="Play years">Play</button>
+        <input id="year" type="range" min="2027" max="2050" step="1" value="2035" aria-label="Year">
+        <span class="yr-ends">2027</span><span class="yr-ends right">2050</span>
+      </div>
+      <p class="fine" id="map-note"></p>
+    </div>
+
+    <div class="lower">
+      <div class="panel">
+        <div class="card-hd"><h2>Where America's energy goes, <span class="yr">2035</span></h2><span id="river-grade"></span></div>
+        <svg id="river" class="river" role="img" aria-label="Energy flow from sources to uses"></svg>
+        <p class="fine">Quadrillion Btu. Width is energy. Sources on the left, the power sector in the middle, homes, businesses, factories and vehicles on the right. "Losses" is energy burned in power plants that never reaches a plug.</p>
+      </div>
+      <div class="panel bill">
+        <div class="card-hd"><h2>Your household energy bill</h2><span id="bill-grade"></span></div>
+        <div class="bill-big"><span id="bill-now">$0</span><span class="bill-unit">a year in <span class="yr">2035</span></span></div>
+        <div id="bill-vs" class="bill-vs"></div>
+        <svg id="bill-chart" class="bill-chart" role="img" aria-label="Household energy bill by year, this scenario against EIA"></svg>
+        <p class="fine">Home energy only: electricity, gas, propane, heating oil. Not gasoline. 2024 dollars per household, averaged over the US. EIA does not report this number; it is home fuel use times home prices over households, from EIA's reference for the comparison.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<noscript><p class="panel">This page needs JavaScript.</p></noscript>
+</body>
+</html>
