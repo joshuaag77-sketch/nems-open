@@ -119,3 +119,21 @@ within 1e-4. Left over: `ogjobs` is about 30% high (jobs appear tied to a cumula
 NGPL splits, `ogprdadof` and `ogqshlgas` are off by 5 to 30% in places. `ognglak` differs in one year
 only: EIA's restart has 0 in 2030, which looks like an EIA artifact. Not worth chasing before the
 `ogs='hsm'` switch; the switch itself is still not built.
+
+## The `ogs='hsm'` switch (2026-11-11)
+
+`run_model.run(..., ogs="hsm")` (CLI `--ogs hsm`) runs EIA's HSM once after the year loop and returns its
+OGSMOUT arrays as `RunResult.ogsm` (dry gas `ogngprd`, crude `ogcoprd`, wells `ognowell`, and the rest).
+Code: `src/nems_open/ogsm/couple.py` (scaling, cache), `worker.py` (one HSM run per process, because HSM
+keeps global state), `run_hsm.run(scale=...)`.
+
+What it does: HSM reads wellhead gas prices (`ogprcng`, `ogwprng`) and crude prices (`rfcrudewhp`) from the
+restart. The run's US power-sector gas price over the baseline's, and Brent over the baseline's, scale
+those arrays. Test with gas prices +30% from 2027: 2030 gas +4.5%, 2050 gas +9.8% (117.4k against 106.9k),
+2026 unchanged (STEO year). Results are cached under `~/dev/oracle-cache/ogsm-cache` by their inputs; a cold
+run is about 9 minutes on one core.
+
+What it is not: a gas market. The stand-in has no production, only price curves, so HSM adds quantities
+and replaces no calculation. HSM's production does not feed back into gas prices, because NGMM (AIMMS) is
+not here. Needs baseline `cb2026`. The gas-supply lever still moves prices through the stand-in and does
+not set HSM's side case (OGTECH); that would need a third restart variant per lever setting.

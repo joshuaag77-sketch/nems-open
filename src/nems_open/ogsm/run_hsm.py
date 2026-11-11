@@ -10,6 +10,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from nems_open.paths import REFERENCE_RUN, UPSTREAM
 
 
@@ -49,15 +51,23 @@ def prepare(restart: Path = REFERENCE_RUN, scedes: str = "scedes.cb2026.csv") ->
     return work
 
 
-def run(restart: Path = REFERENCE_RUN):
-    """Run HSM for every year; return the pyfiler1 stand-in, whose arrays now hold HSM's outputs."""
-    work = prepare(restart)
+def run(restart: Path = REFERENCE_RUN, scedes: str = "scedes.cb2026.csv", scale: dict | None = None):
+    """Run HSM for every year; return the pyfiler1 stand-in, whose arrays now hold HSM's outputs.
+
+    scale: {"BLOCK/var": ratio} multiplies those restart arrays along their last (year) axis before the
+    run. nems_open.ogsm.couple uses it to hand HSM a run's prices (NGTDMREP/ogprcng, ogwprng, LFMMOUT/rfcrudewhp).
+    """
+    work = prepare(restart, scedes)
     os.environ.setdefault("MPLBACKEND", "Agg")
     os.environ["OMP_NUM_THREADS"] = "1"
     sys.path[:0] = [str(Path(__file__).parent), str(upstream() / "models" / "hsm"), str(upstream() / "models" / "main")]
     os.chdir(work)
     import pyfiler1
     pyfiler1.load(str(work / "restart.npz"))
+    for name, ratio in (scale or {}).items():
+        block, var = name.split("/")
+        arr = getattr(getattr(pyfiler1, block.lower()), var)
+        arr *= np.asarray(ratio, dtype=arr.dtype)
     # HSM adds this year's wells onto ognowell in the restart. In a NEMS run it zeroes it
     # each year after the STEO start (module_unf.py:976); the standalone loop never reaches that line, so the
     # reference run's own values stayed in and every well was counted twice. Zero it, as NEMS does. (Zeroing ogcruderef too breaks the 2027 price weights, so leave it.)

@@ -63,6 +63,7 @@ class RunResult:
     stable: dict[int, bool] = field(default_factory=dict)   # year -> converged twice running (last cycle)
     unserved_twh: np.ndarray | None = None   # (61,) load the LP's fixed fleet could not meet, elec="lp"
     curtailed_twh: np.ndarray | None = None  # (61,) flexible load the LP cut, elec="lp"
+    ogsm: dict | None = None                 # EIA's HSM output arrays (ogngprd, ogcoprd, ognowell, ...), ogs="hsm"
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -90,7 +91,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
-        macro: str | None = None) -> RunResult:
+        macro: str | None = None, ogs: str = "standin") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
@@ -104,6 +105,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
+    if ogs not in ("standin", "hsm"):
+        raise ValueError("ogs must be 'standin' or 'hsm'")
+    if ogs == "hsm" and baseline != "cb2026":
+        raise ValueError("ogs='hsm' starts from the cb2026 restart, so the baseline must be cb2026")
     if elec_price is None:
         elec_price = default_elec_price(elec, baseline)
     if elec_price not in ("standin", "efp"):
@@ -230,7 +235,13 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 for k in d:
                     if k in between.relax:
                         d[k][:, years] = before[k] + between.relax[k] * (d[k][:, years] - before[k])
-    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed)
+    hsm = None
+    if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)
+        from nems_open.ogsm import couple
+        ratio = lambda a, b: np.divide(a, b, out=np.ones(61), where=b > 0)
+        hsm = couple.production(ratio(prices["MPBLK/pngel"][US], base["MPBLK/pngel"][US]),
+                                ratio(oil, base["INTOUT/brent_price"]) if oil is not None else None)
+    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm)
 
 
 def main(argv=None) -> None:
@@ -256,6 +267,8 @@ def main(argv=None) -> None:
     ap.add_argument("--elec-price", choices=("standin", "efp"), default=None,
                     help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py); "
                          "default efp with --elec lp on cb2026, else the stand-in")
+    ap.add_argument("--ogs", choices=("standin", "hsm"), default="standin",
+                    help="oil and gas production: none (stand-in), or EIA's HSM on the run's prices (9 min extra)")
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
     ap.add_argument("--macro", choices=("frbus",), default=None,
                     help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
@@ -271,13 +284,16 @@ def main(argv=None) -> None:
         commercial = CommercialLevers(shell_improvement=a.shell_code, shell_start_year=a.shell_year, standards=tuple(stds))
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
-    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price,
+    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs,
             maxitr=a.maxitr, cycles=a.cycles, macro=a.macro)
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
             grade, why = levers.fidelity(name, tuple(a.ported), a.elec)
             print(f"{levers.label(name, tuple(a.ported), a.elec)}: {grade}. {why}")
+    if r.ogsm is not None:
+        j = a.end - FIRST_YEAR
+        print(f"\nHSM {a.end}: dry gas {r.ogsm['ogngprd'][j]:.0f} (ogngprd), crude {r.ogsm['ogcoprd'][j]:.1f} (ogcoprd), wells {r.ogsm['ognowell'][j]:.0f}")
     supply = SupplyStandin(a.baseline)
     base, base_co2 = supply.base, supply.solve().co2_total
     j = a.end - FIRST_YEAR
