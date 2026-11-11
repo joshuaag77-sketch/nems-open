@@ -539,6 +539,8 @@ IND_TARGETS = [
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.6 .and. indreg.eq.3"),
     dict(tag="m14", call=r"CALL MODCAL\(.original.\)", nth=0,
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.14 .and. indreg.eq.4"),
+    dict(tag="wx", call=r"CALL WEXOG\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[]),
 ]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
@@ -571,8 +573,10 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "MANHP", "NONHP", "REFCON", "H2CON", "AGCON", "MINECON", "CONSTCON", "FOODCON", "PAPERCON", "CHEMCON", "GLASSCON", "CEMENTCON", "STEELCON", "ALUMCON", "FABMETALCON", "MACHINECON", "COMPUTECON", "TRANEQUIPCON", "ELECEQUIPON", "WOODPRODCON", "PLASTICCON", "LTCHEMCON", "OTHRNMMCON", "OTHRPRIMCON", "MISCFINCON", "QtyByInd", "QELRF", "QELeth", "QNGRF", "QNGeth", "QCLRF", "QCLeth", "QRLRF", "QDSRF", "QLGRF", "QSGRF", "QPCRF", "QCCRF", "QOTRF", "QH2RF", "QELHM", "QNGHMHP", "QNGHMPF", "CGOGSQ", "mainfuels", "carbshr_ab", "carbshrca", "elown", "elsale", "HPbeff", "beff",
                    # CALPROD etc
                    "mpastp", "ifmax", "ifloc", "ifbyp", "iflocby", "bypcsc", "bypint", "bypintlag", "bypqty", "prodlag", "prodcur", "idlcap", "idlcaplag", "idval", "techstrtyr", "frztech", "hitech", "bypadibyr", "bscibyr", "enpint", "enpintlag", "bcsc", "ijumpcalyr", "itpc", "steolastyr", "tpc1", "tpc2", "enpqty", "chemship", "fertilizer_h2", "prodretr", "retrate", "iretire", "phdrat", "prodx", "prodflow", "ntmax", "ipastp", "prodxlag", "prcxlag", "foodship", "prodxibyr", "rei_adj", "rei_adj_lag", "ind_flow_share", "BUSHEL", "curitr", "sumprodcur", "co2_clink", "co2_lime",  "bypbscm", "bypbsci", "bypbscr",
+                   # WEXOG
+                   "bf", "rbf", "bf_seds", "rbf_steo", "rbf_seds", "bf_steo", "firmshr", "bmain_adjusted", "brenew_adjusted", "asphalttarget", "asphaltpercent", "feedngtotal", "feedhgltotal", "feednaphtotal", "steoq", "icuriyr", "msedyr", "sedslastyr", "fcrl", "co2_elec", "qngpin", "ogsupgas", "cfngc", "cfelq", "mc_gslgisnhwyr", "qselin", "qsngin", "qsclin", "qsmcin", "qsciin", "qsrsin", "qsdsin", "qslgin", "qsmgin", "qspcin", "qsasin", "qsluin", "qspfin", "qsksin", "qsotin", "qshoin", "qsbmin", "qsmsin", "qsppin", "qsgfin", "qsgiin", "qsprin", "qelinh2ng", "qelinh2e", "h2_chem_demand_div", "qelin", "qh2inpf", "qgfin", "qgiin", "inqngpf", "qngin", "qclin", "qmcin", "qciin", "qrsin", "qrlin", "qdsin", "qlgin", "inqlgpf", "inqlghp", "qmgin", "qsgin", "qpcin", "qasin", "qluin", "qpfin", "qkSin", "qotin", "qh2inhp", "qhoin", "qbmin", "qmsin", "qtrin", "qh2in", "byprdh2in", "qprin", "tqrenw", "qh2rf", "qh2tr", "qh2el", "qcleth", "qngeth",
                    "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
-IND_DECL_FILES = ["wrenew", "hmmblk", "parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
+IND_DECL_FILES = ["ccatsdat", "ngtdmrep", "convfact", "wrenew", "hmmblk", "parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
                   "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
                       includes=["hmmblk"], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,

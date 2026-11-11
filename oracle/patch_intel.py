@@ -89,6 +89,23 @@ RULES = [
     (re.compile(r"^\s*REAL REI_Adj(?:_Lag)?\(3,17,maxstep\).*$", re.I | re.M), ""),
     (re.compile(r"^(\s*REAL EMPLXIBYR\(numind,4\), PRODVXIBYR\(numind,4\))$", re.I | re.M),
      chr(92) + "1" + chr(10) + "      REAL PRODXIBYR(numind,4)" + chr(10) + "      REAL REI_Adj(3,17,maxstep), REI_Adj_Lag(3,17,maxstep)"),
+    # WEXOG keeps its benchmark factors and feedstock series in local variables that persist between calls;
+    # move them to MODULE I_ so the oracle can dump them.
+    (re.compile(r"^\s*REAL BF_SEDS\(MAINFL,NCENSREG\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL RBF_SEDS\(RENEWFL,NCENSREG\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL BF_STEO\(MAINFL\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL RBF_STEO\(RENEWFL\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL BMAIN_ADJUSTED\(MAINFL,5\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL BRENEW_ADJUSTED\(RENEWFL,5\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real asphalttarget\(5\), asphaltpercent\(5\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::feedngtotal\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::FEEDHGLtotal\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::feednaphtotal\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^(\s*)REAL FIRMSHR\(5\),SUMCDIV", re.I | re.M), r"\1REAL SUMCDIV"),
+    (re.compile(r"^(\s*REAL PRODXIBYR\(numind,4\))$", re.I | re.M),
+     r"\1" + chr(10) + "      REAL BF_SEDS(mainfuels-1,4), RBF_SEDS(8,4), BF_STEO(mainfuels-1), RBF_STEO(8), FIRMSHR(5)" + chr(10)
+     + "      REAL BMAIN_ADJUSTED(mainfuels-1,5), BRENEW_ADJUSTED(8,5), asphalttarget(5), asphaltpercent(5)" + chr(10)
+     + "      REAL,ALLOCATABLE::feedngtotal(:), FEEDHGLtotal(:), feednaphtotal(:)"),
     # NaN report format (format 2336) gives an I4 edit descriptor to a REAL; Intel prints it, gfortran stops.
     (re.compile(r'6\(":",I4\),2\(":",F21\.6\)'), '5(":",I4),3(":",F21.6)'),
     # INDSIC and INDGRP only write EIA's internal spreadsheet reports (indsic.csv, indreg*.csv,
