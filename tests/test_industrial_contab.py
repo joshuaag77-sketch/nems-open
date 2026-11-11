@@ -32,6 +32,8 @@ def test_contab(tag, icr, y):
         pytest.skip("not dumped")
     before = oracle_state.load(f"{tag}_in", y, "ind", only=NEED)
     after = oracle_state.load(f"{tag}_out", y, "ind", only=NEED)
+    if not hasattr(before.get("qeleth"), "a"):
+        pytest.skip("dump predates the wrenew arrays (rebuild the ind oracle)")
     s = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in before.items()}
     contab(s, icr if icr == 5 else int(s["indreg"]))
     for name in ALL_TABLES + ["qtybyind"]:
