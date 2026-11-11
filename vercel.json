@@ -3,7 +3,8 @@
   "outputDirectory": "web",
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [{ "source": "/", "destination": "/engine3d.html" }],
+  "rewrites": [{ "source": "/", "destination": "/2050.html" }],
+  "git": { "deploymentEnabled": false },
   "headers": [
     { "source": "/data/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },
     { "source": "/(.*).(js|css)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },

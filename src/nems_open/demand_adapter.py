@@ -52,6 +52,13 @@ def elasticity(sector: str, fuel: str) -> float:
     fuel = "ng" if fuel in CORE_NONCORE else fuel
     return ELASTICITY.get((sector, fuel), PLACEHOLDER[sector])
 
+
+def gdp_elasticity(sector: str, fuel: str) -> float:
+    """Fitted elasticity of fuel use to the real-GDP gap (0 where the fit has none)."""
+    fuel = "ng" if fuel in CORE_NONCORE else fuel
+    return _FITTED.get(sector, {}).get("fuels", {}).get(fuel, {}).get("gdp", 0.0)
+
+
 # Fleet turnover for the EV lever: the fleet's plug-in share closes 1/VEHICLE_LIFE of
 # the gap to the sales share each year.
 VEHICLE_LIFE = 15
@@ -133,6 +140,7 @@ class StubSector:
                       and len(k) == 10 and fuel_of(k) not in TOTAL_FUELS]
         self.lag = {k: np.zeros(11) for k in self.names}  # lagged dlog relative price
         self._pending = {}
+        self.gap = None   # macro="frbus": log gap of GDP (industrial output for "in") to the baseline, by year
 
     def price_name(self, qname: str) -> str | None:
         f = fuel_of(qname)
@@ -152,6 +160,8 @@ class StubSector:
                 lag = (1 - k_adj) * self.lag[k] + k_adj * dlog
                 self._pending[k] = lag
                 q = q * np.exp(elasticity(self.suffix, fuel_of(k)) * lag)
+            if self.gap is not None:
+                q = q * np.exp(gdp_elasticity(self.suffix, fuel_of(k)) * self.gap[j])
             out[k] = q
         return out
 
@@ -188,6 +198,11 @@ class PortedSectors:
         self.inputs = self.runner.inputs
         self.base = base
         self.suffixes = [SECTORS[s] for s in sectors]
+
+    def set_commflsp(self, commflsp: np.ndarray) -> None:
+        """The scenario MC_COMMFLSP for the commercial module (macro="frbus")."""
+        full = self.inputs.by_var["mc_commflsp"]
+        self.inputs.overrides[full] = np.asarray(commflsp, dtype=self.inputs.snapshot[full].dtype)
 
     def _set_prices(self, prices: dict) -> None:
         """What the demand modules read (AMPBLK, AEUSPRC) moved by the same ratio as our
@@ -234,7 +249,9 @@ class PortedSectors:
 
 
 class DemandAdapter:
-    def __init__(self, base: dict, policy: Policy, start_year: int, ported: tuple[str, ...] = ()):
+    def __init__(self, base: dict, policy: Policy, start_year: int, ported: tuple[str, ...] = (), macro=None):
+        """macro: a nems_open.macro.drive.MacroPath. GDP moves the stub sectors (industrial output for
+        industry) and the scenario floorspace feeds the ported commercial module."""
         self.base = base
         self.policy = policy
         ported = usable_ported(ported, start_year)
@@ -252,6 +269,11 @@ class DemandAdapter:
                        if ported else None)
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}
+        if macro is not None:
+            for sfx, stub in self.stubs.items():
+                stub.gap = macro.industry_gap if sfx == "in" else macro.gap
+            if self.ported and "commercial" in ported:
+                self.ported.set_commflsp(macro.commflsp)
         self.efficiency = policy.efficiency()
         # The stub lever only when transportation is a stub: the port has the real one.
         self._ev = EVLever(base, policy) if policy.ev_share is not None and "tr" in self.stubs else None

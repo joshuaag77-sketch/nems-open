@@ -1,0 +1,5 @@
+# Vercel uploads only the static site: web/ and this config. Everything else (EIA inputs, oracles, src) stays local.
+/*
+!/web
+!/vercel.json
+/web/data/real_build

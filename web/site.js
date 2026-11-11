@@ -1,6 +1,7 @@
 // One shared navigation bar and footer for every page. Plain DOM, no dependencies.
 (function () {
   const PAGES = [
+    ["2050.html", "Your 2050"],
     ["engine3d.html", "Engine"],
     ["index.html", "Policy demo"],
     ["scoreboard.html", "Scoreboard"],
@@ -9,7 +10,7 @@
     ["index.html?how", "How it works"],
     ["about.html", "About"],
   ];
-  const here = (location.pathname.split("/").pop() || "engine3d.html").toLowerCase();
+  const here = (location.pathname.split("/").pop() || "2050.html").toLowerCase();
   const css = document.createElement("style");
   css.textContent = `
 .site-nav{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 16px;
