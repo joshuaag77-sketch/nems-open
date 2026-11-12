@@ -29,8 +29,8 @@ tests/test_agent_live.py` then checks five questions against the real API.
 
 | Tool | What it does |
 |---|---|
-| `list_levers` | The three levers (carbon price 0 to 200 dollars a ton, plug-in share of new light-duty sales in 2035, building energy use in 2050 as a fraction of EIA's), the years (2025 to 2050), the region level (US total), the measures it can read, and what is not available. |
-| `run_scenario` | Run the model with a set of levers (every sector on the fitted stand-ins). Settings on the demo's grid are read from `web/data/scenarios/` and are instant; others run live (4 to 8 seconds), at most 4 per question. Returns a scenario id. |
+| `list_levers` | The eight levers the agent can set (carbon price, EV sales, data center and other new load, early coal closures, wind and solar cost, gas supply, oil price, nuclear) with ranges, the years (2025 to 2050), the region level (US total), the measures it can read, and what is not available (building codes and appliance standards need the 12-minute real run). |
+| `run_scenario` | Run the page's instant estimate (`agent/emulator.py`, the same fit `web/2050.html` shows) for a set of levers. Instant; at most 8 scenarios per question. Returns a scenario id. The page sets its sliders to the lever values the agent ran. |
 | `read_result` | One measure, one year, from a scenario: the value, EIA's reference, the difference and the percent difference. |
 | `trace_number` | The modules behind a measure, each one's grade, the variable, and how far a no-policy run is from EIA's reference (`web/data/fidelity.json`). |
 | `read_uncertainty` | 10th, 50th and 90th percentile of US CO2, household bill or home gas price at a carbon price of 0, 50 or 100, from the sampling in `docs/uncertainty.md`. |
@@ -77,7 +77,7 @@ written by hand in the agent.
 
 | # | Question | Expected |
 |---|---|---|
-| 1 | What does a $50 carbon price do to US energy CO2 in 2040, compared with EIA's reference? | Answer. Runs the $50 grid scenario, reads CO2 for 2040, cites the emissions, demand and supply stand-ins, says they are stand-ins. |
+| 1 | What does a $50 carbon price do to US energy CO2 in 2040, compared with EIA's reference? | Answer. Runs the $50 scenario, reads CO2 for 2040, cites the emissions, demand and supply stand-ins, says they are stand-ins. |
 | 2 | How much more would a household pay per MMBtu for gas in 2035 with a $100 carbon price? | Answer. Reads the home gas price against the reference; says it is a price, not a bill. |
 | 3 | If 80% of new light-duty vehicles sold in 2035 are plug-ins, how much less gasoline do we use in 2040? | Answer. Scenario with ev_share_2035 0.8, reads gasoline use for 2040 against the reference. |
 | 4 | Which module produces the electricity price, and how far can I trust it? | Answer. `trace_number`: module, variable `MPBLK/pelas`, grade. No scenario. |

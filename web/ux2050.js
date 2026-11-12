@@ -415,52 +415,88 @@
   // there; on static hosting the box says so instead of failing.
   const EXAMPLES = [
     "What does a $50 carbon price do to US energy CO2 in 2040?",
-    "How much would 90% EV sales by 2035 cut gasoline demand?",
-    "What would a $100 carbon price do to my household energy bill in 2040?",
-    "How far can I trust the carbon price numbers?",
+    "How much less petroleum would transportation use in 2040 if 90% of new cars are EVs by 2035?",
+    "If data centers add 600 TWh a year by 2050, what happens to electricity prices?",
+    "What does a $100 carbon price do to a household's energy bill in 2040?",
   ];
+  const ASK_TIMEOUT_MS = 90000;
+  let askTimer = 0, undo = null;
   function paintAsk() {
-    const note = $("ask-note"), off = !S.server || !S.key;
+    const note = $("ask-note");
     if (!S.checked) { $("ask-q").disabled = $("ask-go").disabled = true; note.textContent = ""; return; }
+    const off = !S.server || !S.key;
     $("ask-q").disabled = off || S.asking; $("ask-go").disabled = off || S.asking;
     for (const b of document.querySelectorAll(".ask .story")) b.disabled = off || S.asking;
     if (!S.server) note.innerHTML = "Asking needs the local server: <code>python scripts/serve_2050.py</code> with ANTHROPIC_API_KEY set, then open this page from it. This copy of the page cannot answer questions.";
     else if (!S.key) note.innerHTML = "The local server has no ANTHROPIC_API_KEY, so it cannot answer questions. Set it and restart <code>python scripts/serve_2050.py</code>.";
-    else note.textContent = S.asking ? "Working on it. The model runs scenarios and checks every number, usually under a minute." : "Answers use only numbers the model produced, each with its module and grade. Starts from 2027; the US as a whole.";
+    else if (!S.asking) note.textContent = "Answers use only numbers the model produced, each with its module and grade. Policy starts in 2027; the US as a whole.";
   }
   const clampLever = (l, v) => Math.min(l.hi, Math.max(l.lo, v));
+  // Text from the model, made safe first (escaped), then **bold**, "- " lists and paragraphs, then [n] marks as links.
+  function mdSafe(text) {
+    const inline = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[(\d+)\]/g, '<sup><a href="#src-$1">[$1]</a></sup>');
+    return String(text).split(/\n{2,}/).map((blk) => {
+      const lines = blk.split("\n");
+      if (lines.every((l) => /^\s*[-*]\s+/.test(l))) return "<ul>" + lines.map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`).join("") + "</ul>";
+      if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) return "<ol>" + lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("") + "</ol>";
+      return `<p>${inline(blk.replace(/^#{1,6}\s+/, "")).replace(/\n/g, "<br>")}</p>`;
+    }).join("");
+  }
+  const gradeClass = (g) => (g === "stand" || g === "within" ? g : g === "reference" || g === "setting" ? "data" : "match");
+  function paintChip() {
+    const el = $("ask-chip"); if (!el) return;
+    if (!undo) { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = `<span>The model set these levers: ${undo.applied.map(esc).join("; ")}.${undo.others ? " Your other levers are still set, so the page may differ from the answer." : ""}</span><button type="button" class="btn ghost" id="ask-undo">Undo</button>`;
+    $("ask-undo").addEventListener("click", () => { S.x = undo.before; S.story = undo.story; undo = null; update(); paintChip(); });
+  }
   function showAnswer(a) {
     const out = $("ask-out"); out.hidden = false;
-    if (a.error && !a.body) { out.innerHTML = `<p class="ask-err">${esc(a.message || a.error)}</p>`; return; }
-    const body = esc(a.body).replace(/\[(\d+)\]/g, (m, n) => `<sup><a href="#src-${n}">[${n}]</a></sup>`);
-    let h = `<p class="ask-body">${body}</p>`;
-    if (a.applied && a.applied.length) h += `<p class="ask-set">Levers set to the scenario it ran: ${a.applied.map(esc).join("; ")}. The map and numbers below show it.</p>`;
-    if (a.unmapped && a.unmapped.length) h += `<p class="ask-set">Not set on this page: ${a.unmapped.map(esc).join("; ")}.</p>`;
+    if (a.error && !a.body) { out.innerHTML = `<p class="ask-err">${esc(a.message || "The server could not answer.")}</p>`; return; }
+    let h = `<div id="ask-chip" class="ask-chip" hidden></div><div class="ask-body">${mdSafe(a.body)}`;
+    if (a.outside && a.outside.length) h += `<p class="ask-outside"><b>Not from the model:</b> ${a.outside.map(esc).join(" ")}</p>`;
+    h += "</div>";
     if (a.sources && a.sources.length)
-      h += `<ul class="ask-src">${a.sources.map((s) => `<li id="src-${s.n}"><span class="g g-${s.grade === "stand" || s.grade === "within" ? s.grade : s.grade === "reference" || s.grade === "setting" ? "data" : "match"}" title="${esc(s.grade_label)}">${esc(s.grade_label)}</span><span class="sl" title="${esc(s.line)}">${esc(s.line)}</span></li>`).join("")}</ul>`;
+      h += `<details class="ask-src-box"><summary>Sources (${a.sources.length})</summary><ul class="ask-src">${a.sources.map((s) =>
+        `<li id="src-${s.markers[0]}"><span class="g g-${gradeClass(s.grade)}" title="${esc(s.grade_label)}">${esc(s.grade_label)}</span><span class="sl">${esc(s.line)}</span></li>`).join("")}</ul></details>`;
     if (a.basis) h += `<p class="ask-basis">${esc(a.basis)}</p>`;
-    out.innerHTML = h;
+    out.innerHTML = h; paintChip();
+    out.onclick = (e) => {   // a [n] mark opens the Sources list at that line (and leaves the page's address alone)
+      const a = e.target.closest('a[href^="#src-"]'); if (!a) return;
+      e.preventDefault(); const box = out.querySelector(".ask-src-box"); if (box) box.open = true;
+      const li = out.querySelector(a.getAttribute("href")); if (li) li.scrollIntoView({ block: "nearest" });
+    };
+  }
+  function applyLevers(apply) {
+    const before = { ...S.x }, story = S.story, applied = [], x = { ...S.x };
+    for (const [k, v] of Object.entries(apply || {})) {
+      const l = LEVERS.find((t) => t.key === k); if (!l) continue;
+      x[k] = clampLever(l, +v); applied.push(`${l.title} ${l.show(x[k], S.emu.levers.ev_2035.off).replace(" (EIA)", "")}`);
+    }
+    if (!applied.length) { undo = null; return; }
+    const d = defaults(), set = new Set(Object.keys(apply));
+    const others = LEVERS.some((l) => !set.has(l.key) && Math.abs(before[l.key] - d[l.key]) > 1e-9);
+    S.x = x; S.story = null; undo = { before, story, applied, others }; update();
   }
   async function ask(q) {
     q = q.trim(); if (!q || S.asking) return;
     $("ask-q").value = q; S.asking = true; paintAsk();
-    const out = $("ask-out"); out.hidden = false; out.innerHTML = `<p class="fine">Asking...</p>`;
+    const out = $("ask-out"), t0 = Date.now(); out.hidden = false; undo = null;
+    const tick = () => { out.innerHTML = `<p class="fine"><span class="spin"></span>The model is working on it: ${Math.round((Date.now() - t0) / 1000)} s. It runs scenarios and checks every number, usually 20 to 60 seconds.</p>`; };
+    tick(); askTimer = setInterval(tick, 1000);
+    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ASK_TIMEOUT_MS);
     let a;
     try {
-      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
-      a = await res.json();
+      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }), signal: ctl.signal });
+      try { a = await res.json(); } catch (e) { a = { error: "bad_reply", message: "The server sent something the page could not read." }; }
       if (!res.ok) a = { error: a.error || "failed", message: a.message || "The server could not answer." };
-    } catch (e) { a = { error: "network", message: "The local server did not respond. Is scripts/serve_2050.py still running?" }; }
-    S.asking = false;
-    if (!a.error && a.apply) {
-      const x = defaults(), applied = [];
-      for (const [k, v] of Object.entries(a.apply)) {
-        const l = LEVERS.find((t) => t.key === k); if (!l) continue;
-        x[k] = clampLever(l, +v); applied.push(`${l.title} ${l.show(x[k], S.emu.levers.ev_2035.off).replace(" (EIA)", "")}`);
-      }
-      if (applied.length) { S.x = x; S.story = null; a.applied = applied; update(); }
+    } catch (e) {
+      a = { error: "network", message: e.name === "AbortError" ? "That took longer than 90 seconds, so the page stopped waiting. Try a simpler question." : "The local server did not respond. Is scripts/serve_2050.py still running?" };
     }
-    showAnswer(a); paintAsk();
+    clearTimeout(to); clearInterval(askTimer); S.asking = false;
+    showAnswer(a);
+    if (!a.error && a.apply) { applyLevers(a.apply); paintChip(); }
+    paintAsk();
   }
   function buildAsk() {
     $("ask-ex").innerHTML = EXAMPLES.map((q) => `<button class="story" type="button">${esc(q)}</button>`).join("");

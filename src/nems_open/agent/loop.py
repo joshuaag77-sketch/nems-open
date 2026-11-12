@@ -23,21 +23,18 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 MAX_TURNS = 14
 MAX_REPAIRS = 3
 
-SYSTEM = """You answer questions about US energy policy using NEMS Open, an open rebuild of EIA's National Energy \
-Modeling System, through the tools you are given. You are not the source of any number: the tools are.
+SYSTEM = """You answer questions about US energy policy using NEMS Open, an open rebuild of EIA's National Energy Modeling System, through the tools you are given. You are not the source of any number: the tools are.
 
 Rules, which the program enforces whether or not you follow them:
-- State a number only through submit_answer: write {c1}, {c2}... in the text and list each as a claim giving the \
-result id (r1, r2...) and the field. The program prints the number and adds its module, variable and grade as a \
-source. Do not type any other number, except years and numbers the user gave you or you set in run_scenario.
+- State a number only through submit_answer: write {c1}, {c2}... in the text and list each as a claim giving the result id (r1, r2...) and the field. The program prints the number with its unit and adds its module, variable and grade as a source. So write {c1}, never "{c1} million tons" or "{c1}%": no unit and no percent sign after a placeholder. Do not type any other number, except years and numbers the user gave you or you set in run_scenario.
+- The difference fields print as sizes without a sign. Say "lower" or "higher" yourself, using the result's direction. Never write "-7% lower".
 - Comparisons need two numbers from read_result (value and reference), or use its difference fields.
-- Most of this model is fitted stand-ins, not EIA's own modules, and the program says so under your answer. Say in \
-your own words what a number does and does not mean; do not call a policy effect EIA's result.
-- If the question needs something the model cannot resolve (a place below the national level, a site, hours, a year \
-outside 2025 to 2050, a lever that is not listed, a topic outside US energy and CO2), set can_answer to false and \
-say why. Do not approximate it from national numbers.
-- Policy starts in 2027, so a result for an earlier year matches EIA's reference.
-- Keep answers short and plain. Finish by calling submit_answer exactly once."""
+- Anything you say that the tools did not give you (background, how a policy is designed, what a term means, what other studies find) goes in not_from_model, one sentence each, with no numbers, or is left out. Do not put it in the answer. Prefer leaving it out.
+- Most of this model is fitted stand-ins, not EIA's own modules, and the program says so under your answer. Say in your own words what a number does and does not mean; do not call a policy effect EIA's result.
+- You can set eight levers: carbon price, EV sales, data center and other new load, early coal closures, wind and solar cost, gas supply, oil price and nuclear output. Building codes and appliance standards are not available. If the question needs something the model cannot resolve (a place below the national level, a site, hours, a year outside 2025 to 2050, a lever that is not listed, a topic outside US energy and CO2), set can_answer to false, say why, and put the closest question about the US as a whole in suggestion. Do not approximate it from national numbers. Do not name internal lever or field names in your text; use plain words.
+- Policy starts in 2027, so a result for an earlier year is EIA's reference.
+- Write plain sentences: no markdown, no bullets, no bold. Keep answers short.
+- Finish by calling submit_answer exactly once."""
 
 
 @dataclass
@@ -54,6 +51,10 @@ class AgentAnswer:
     output_tokens: int = 0
     error: str = ""
     runs: list = field(default_factory=list)    # lever settings of every scenario the question ran, in order
+    body: str = ""                              # the prose with numbers filled in (text adds sources and basis)
+    basis: str = ""
+    outside: list = field(default_factory=list)  # sentences that are not from the model
+    sources: list = field(default_factory=list)  # one per fact: markers, line, grade
 
 
 def make_client():
@@ -93,7 +94,8 @@ class PolicyAgent:
     def ask(self, question: str) -> AgentAnswer:
         declined = rules.gate(question)
         if declined:
-            return AgentAnswer(text=rules.decline_text(declined.reason), declined=True, gated=True)
+            text = rules.decline_text(declined.reason, declined.suggestion)
+            return AgentAnswer(text=text, body=text, declined=True, gated=True)
 
         box = Toolbox()
         messages = [{"role": "user", "content": question}]
@@ -145,6 +147,7 @@ class PolicyAgent:
             if done is not None:
                 out.text, out.declined, out.stand_in, out.claims = done.text, done.declined, done.stand_in, done.claims
                 out.runs = list(box.runs)
+                out.body, out.basis, out.outside, out.sources = done.body or done.text, done.basis, done.outside, done.sources
                 return out
             if repairs > MAX_REPAIRS:
                 out.error = "answer rejected too many times"

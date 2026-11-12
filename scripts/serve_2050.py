@@ -57,43 +57,31 @@ def make_agent():
 
 
 def page_levers(runs: list) -> tuple[dict, list]:
-    """The page's lever settings for the scenario the agent ran, and what the page cannot show.
-
-    The agent's levers are carbon_price, ev_share_2035 (omitted = EIA's path) and building_energy_2050 (a fraction of
-    EIA's building fuel use). The page has carbon_price and ev_2035 under the same meaning; its building levers are
-    cuts to new-building heating and cooling, a different thing, so that one is reported, not mapped.
-    The scenario shown is the last one run that moves anything, else the last one.
-    """
+    """The page's lever settings for the scenario the agent ran. The agent now uses the page's own lever names and its
+    own instant estimate, so this is a pass-through of the last scenario that moves anything (else the last one)."""
     if not runs:
         return {}, []
-    moved = [r for r in runs if r.get("carbon_price", 0) > 0 or "ev_share_2035" in r or r.get("building_energy_2050", 1.0) < 1.0]
-    run = (moved or runs)[-1]
-    apply = {"carbon_price": run.get("carbon_price", 0.0)}
-    if "ev_share_2035" in run:
-        apply["ev_2035"] = run["ev_share_2035"]
-    unmapped = []
-    if run.get("building_energy_2050", 1.0) < 1.0:
-        unmapped.append(f"building energy use at {run['building_energy_2050']:.0%} of EIA's by 2050 (the page's building levers are a different setting)")
-    return apply, unmapped
+    run = ([r for r in runs if r] or runs)[-1]
+    return {k: v for k, v in run.items() if k in LEVER_NAMES}, []
 
 
-def split_text(text: str) -> tuple[str, str]:
-    """(answer prose, basis statement): the page shows sources from the claims, so the Sources block is dropped."""
-    nn = chr(10) * 2
-    body, _, rest = text.partition(nn + "Sources" + chr(10))
-    basis = ""
-    for part in (rest, body):
-        if nn + "Basis: " in part:
-            if part is body:
-                body = part.partition(nn + "Basis: ")[0]
-            basis = "Basis: " + part.partition(nn + "Basis: ")[2]
-            break
-    return body, basis
+MAX_BODY = 4096
+
+
+def friendly(e: Exception) -> str:
+    """A plain sentence for a failure of the model service. Never the exception text (it can carry request details)."""
+    n = type(e).__name__
+    if "Authentication" in n or "PermissionDenied" in n:
+        return "The model service rejected this server's API key. Check the key and restart the server."
+    if "RateLimit" in n or "Overloaded" in n or "InternalServer" in n:
+        return "The model service is busy right now. Try again in a minute."
+    if "Timeout" in n or "Connection" in n:
+        return "The model service could not be reached. Check the internet connection and try again."
+    return "Something went wrong while answering. Try again; if it keeps happening, check the server window."
 
 
 def ask(question: str) -> tuple[int, dict]:
     """(status, body) for one question. All errors are plain text; nothing here prints or returns the API key."""
-    from nems_open.agent import rules
     q = (question or "").strip()
     if not q:
         return 400, {"error": "bad_request", "message": "Type a question first."}
@@ -106,18 +94,18 @@ def ask(question: str) -> tuple[int, dict]:
     except RuntimeError as e:          # make_client: no key
         if "ANTHROPIC_API_KEY" in str(e):
             return 503, {"error": "no_key", "message": "No ANTHROPIC_API_KEY is set for this server, so questions cannot be answered."}
-        return 502, {"error": "agent", "message": "The agent failed (RuntimeError)."}
-    except Exception as e:             # network, API status, SDK: the class name is enough, never the request
         traceback.print_exc()
-        return 502, {"error": "agent", "message": f"The agent failed ({type(e).__name__})."}
+        return 502, {"error": "agent", "message": friendly(e)}
+    except Exception as e:             # network, API status, SDK
+        traceback.print_exc()
+        return 502, {"error": "agent", "message": friendly(e)}
     finally:
         ASKING.release()
-    body, basis = split_text(a.text)
     apply, unmapped = page_levers(a.runs)
-    return 200, {"body": body, "declined": a.declined, "error": a.error,
-                 "sources": [{"n": c.marker, "text": c.text, "grade": c.citation["grade"],
-                              "grade_label": c.citation["grade_label"], "line": rules.source_line(c)} for c in a.claims],
-                 "basis": basis, "apply": apply, "unmapped": unmapped, "stand_in": a.stand_in,
+    return 200, {"body": a.body or a.text, "declined": a.declined, "error": a.error, "outside": a.outside,
+                 "sources": [{"markers": s["markers"], "grade": s["grade"], "grade_label": s["grade_label"],
+                              "line": s["line"]} for s in a.sources],
+                 "basis": a.basis, "apply": apply, "unmapped": unmapped, "stand_in": a.stand_in,
                  "model": a.model, "tokens": {"in": a.input_tokens, "out": a.output_tokens}}
 
 
@@ -188,6 +176,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/ask":
             n = int(self.headers.get("Content-Length", 0) or 0)
+            if n > MAX_BODY:
+                return self._json(413, {"error": "too_large", "message": "That request is too large."})
             try:
                 q = json.loads(self.rfile.read(n) or b"{}").get("question")
             except (ValueError, AttributeError):

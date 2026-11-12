@@ -10,11 +10,12 @@ from types import SimpleNamespace
 
 import pytest
 from nems_open.agent import PolicyAgent, rules
+from nems_open.agent import knowledge as K
 from nems_open.agent import scenarios as S
 from nems_open.agent.__main__ import main as cli
 from nems_open.agent.tools import SCHEMAS, Toolbox
 
-pytestmark = pytest.mark.skipif(not (S.WEB_DATA / "fidelity.json").exists(), reason="demo data missing")
+pytestmark = pytest.mark.skipif(not (K.WEB_DATA / "fidelity.json").exists(), reason="demo data missing")
 
 SAMPLES = json.loads((Path(rules.__file__).with_name("sample_questions.json")).read_text(encoding="utf-8"))
 
@@ -57,8 +58,9 @@ def rid_of(messages, _tool=None):
 
 
 def grid_value(sid, path, year):
-    rec = json.loads((S.WEB_DATA / "scenarios" / f"{sid}.json").read_text())
-    return S.value(rec, path, year)
+    """The model's value for a scenario id like carbon_price=50 (or eia_reference), by the page's own estimate."""
+    levers = {} if sid == "eia_reference" else {k: float(v) for k, v in (kv.split("=") for kv in sid.split(";"))}
+    return S.value(S.run(levers)[1], K.MEASURES[path[0]], year)
 
 
 # ---- the gate ---------------------------------------------------------------------------------------
@@ -85,23 +87,53 @@ def test_every_tool_schema_is_strict_and_closed():
         assert set(t["input_schema"]["required"]) == set(t["input_schema"]["properties"])
 
 
-def test_run_and_read_a_grid_scenario_match_the_demo_data():
+def test_run_and_read_a_scenario_matches_the_pages_own_estimate():
     box = Toolbox()
-    run, err = box.call("run_scenario", {"carbon_price": 50, "ev_share_2035": None, "building_energy_2050": 1.0})
-    assert not err and run["scenario_id"] == "c50_evref_b100" and run["source"] == "precomputed grid"
+    run, err = box.call("run_scenario", {"carbon_price": 50})
+    assert not err and run["scenario_id"] == "carbon_price=50" and run["levers"] == {"carbon_price": 50.0}
     res, err = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "co2", "year": 2040})
     assert not err
-    assert res["fields"]["value"] == pytest.approx(grid_value("c50_evref_b100", ("co2",), 2040), abs=1e-3)
-    assert res["fields"]["difference"] == pytest.approx(res["fields"]["value"] - res["fields"]["reference"], abs=1e-3)
-    assert res["grade"] == "stand-in"
-    assert box.live_runs == 0
+    assert res["fields"]["value"] == pytest.approx(grid_value("carbon_price=50", ("co2",), 2040), abs=1e-3)
+    assert res["fields"]["difference"] == pytest.approx(abs(res["fields"]["value"] - res["fields"]["reference"]), abs=1e-3)
+    assert res["grade"] == "stand-in" and "lower" in res["direction"]
+
+
+def test_all_eight_levers_run_and_the_two_real_run_only_ones_are_refused():
+    box = Toolbox()
+    levers = {"carbon_price": 25, "ev_2035": 0.9, "load_growth": 600, "coal_retirement": 0.5, "renewable_cost": -0.5,
+              "gas_supply": 0.5, "oil_price": 1.5, "nuclear": 1.5}
+    run, err = box.call("run_scenario", levers)
+    assert not err and set(run["levers"]) == set(levers)
+    schema = next(t for t in SCHEMAS if t["name"] == "run_scenario")["input_schema"]
+    assert set(schema["properties"]) == set(levers)
+    for name in ("building_code", "appliance_standard"):
+        assert box.call("run_scenario", {name: 0.2})[1]
+    assert box.call("run_scenario", {"nuclear": 3})[1] and box.call("run_scenario", {"nope": 1})[1]
+
+
+def test_data_centers_and_nuclear_move_what_the_page_says_they_move():
+    box = Toolbox()
+    base, _ = box.call("run_scenario", {})
+    dc, _ = box.call("run_scenario", {"load_growth": 600})
+    nu, _ = box.call("run_scenario", {"nuclear": 1.5})
+    sales = lambda sid: box.call("read_result", {"scenario_id": sid, "measure": "electricity_sales", "year": 2050})[0]
+    assert sales(dc["scenario_id"])["fields"]["value"] > sales(base["scenario_id"])["fields"]["value"]
+    uranium = lambda sid: box.call("read_result", {"scenario_id": sid, "measure": "power_nuclear", "year": 2050})[0]
+    assert uranium(nu["scenario_id"])["fields"]["value"] > uranium(base["scenario_id"])["fields"]["value"]
+
+
+def test_the_household_bill_can_be_read():
+    box = Toolbox()
+    run, _ = box.call("run_scenario", {"carbon_price": 100})
+    res, err = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "household_bill", "year": 2040})
+    assert not err and res["fields"]["value"] > 0 and "home energy only" in res["note"]
 
 
 def test_tool_errors_are_returned_not_raised():
     box = Toolbox()
     assert box.call("read_result", {"scenario_id": "nope", "measure": "co2", "year": 2040})[1]
-    assert box.call("run_scenario", {"carbon_price": 500, "ev_share_2035": None, "building_energy_2050": 1.0})[1]
-    run, _ = box.call("run_scenario", {"carbon_price": 0, "ev_share_2035": None, "building_energy_2050": 1.0})
+    assert box.call("run_scenario", {"carbon_price": 500})[1]
+    run, _ = box.call("run_scenario", {"carbon_price": 0})
     assert box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "co2", "year": 1975})[1]
     assert box.call("unknown", {})[1]
 
@@ -121,34 +153,27 @@ def test_uncertainty_bands_are_ordered_and_labelled():
     assert box.call("read_uncertainty", {"measure": "co2", "carbon_price": 37, "year": 2050})[1]
 
 
-def test_live_runs_are_limited(monkeypatch):
-    calls = []
-
-    def fake_load(carbon, ev, bld):
-        calls.append(carbon)
-        return f"fake{carbon}", {"co2": [0.0] * 26}, "live run"
-
-    monkeypatch.setattr(S, "load", fake_load)
+def test_scenarios_per_question_are_limited():
     box = Toolbox()
-    for c in (61, 62, 63, 64):
-        assert not box.call("run_scenario", {"carbon_price": c, "ev_share_2035": None, "building_energy_2050": 1.0})[1]
-    assert box.call("run_scenario", {"carbon_price": 65, "ev_share_2035": None, "building_energy_2050": 1.0})[1]
-    assert box.live_runs == 4
+    for c in range(1, 9):
+        assert not box.call("run_scenario", {"carbon_price": c})[1]
+    assert box.call("run_scenario", {"carbon_price": 9})[1]
 
 
-def test_an_off_grid_scenario_really_runs():
+def test_a_year_before_policy_is_eias_own_number():
     box = Toolbox()
-    run, err = box.call("run_scenario", {"carbon_price": 60, "ev_share_2035": None, "building_energy_2050": 1.0})
-    assert not err and run["source"] == "live run"
-    hi, _ = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "co2", "year": 2050})
-    assert hi["fields"]["difference"] < 0           # a carbon price lowers CO2 against the reference
+    run, _ = box.call("run_scenario", {"carbon_price": 50})
+    res, _ = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "co2", "year": 2025})
+    assert res["grade"] == "EIA's own number" and res["fields"]["difference"] == 0 and round(res["fields"]["value"]) == 4832
+    r, problems = rules.check(submit("US energy CO2 in 2025 was {c1}.", [claim("c1", res["result_id"], "value")]), box, "q")
+    assert not problems and "Grade: EIA's own number" in r.text and not r.stand_in and "4,832 million t" in r.text
 
 
 # ---- the rules --------------------------------------------------------------------------------------
 
 def stocked():
     box = Toolbox()
-    run, _ = box.call("run_scenario", {"carbon_price": 50, "ev_share_2035": None, "building_energy_2050": 1.0})
+    run, _ = box.call("run_scenario", {"carbon_price": 50})
     res, _ = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "co2", "year": 2040})
     return box, res["result_id"]
 
@@ -163,12 +188,12 @@ def submit(prose, claims, can=True, reason=""):
 
 def test_a_good_answer_gets_its_numbers_sources_and_the_stand_in_notice():
     box, rid = stocked()
-    r, problems = rules.check(submit("A $50 carbon price puts US CO2 in 2040 at {c1} million tons, {c2}% against EIA.",
+    r, problems = rules.check(submit("A $50 carbon price puts US CO2 in 2040 at {c1}, {c2} lower than EIA.",
                                      [claim("c1", rid, "value"), claim("c2", rid, "difference_pct", 1)]), box,
                               "What does a $50 carbon price do in 2040?")
     assert not problems
     v = box.results[rid]["numbers"]["value"]
-    assert f"{v:,.0f} [1]" in r.text and "[2]" in r.text
+    assert f"{v:,.0f} million t [1]" in r.text and "% [2]" in r.text and "%%" not in r.text and "% [2]%" not in r.text
     assert "Module:" in r.text and "Variable:" in r.text and "Grade: stand-in" in r.text
     assert r.stand_in and "rest on stand-ins" in r.text
 
@@ -181,7 +206,7 @@ def test_a_number_without_a_claim_is_rejected():
 
 def test_the_users_own_numbers_years_and_run_levers_are_allowed():
     box, rid = stocked()
-    r, problems = rules.check(submit("With a $50 carbon price from 2027, CO2 in 2040 is {c1} million tons (10th to 90th "
+    r, problems = rules.check(submit("With a $50 carbon price from 2027, CO2 in 2040 is {c1} (10th to 90th "
                                      "percentile bands exist too).", [claim("c1", rid, "value")]), box,
                               "What does a $50 carbon price do?")
     assert not problems and r is not None
@@ -216,7 +241,7 @@ def test_numbers_that_are_not_model_outputs_say_so():
 
 def test_eia_reference_numbers_cite_eia():
     box, rid = stocked()
-    r, _ = rules.check(submit("EIA's reference has {c1} million tons.", [claim("c1", rid, "reference")]), box, "q")
+    r, _ = rules.check(submit("EIA's reference has {c1}.", [claim("c1", rid, "reference")]), box, "q")
     assert "Grade: EIA's own number" in r.text and not r.stand_in
 
 
@@ -224,17 +249,17 @@ def test_eia_reference_numbers_cite_eia():
 
 def test_a_full_conversation_through_the_loop():
     model = ScriptedModel(
-        lambda m: reply(use("run_scenario", carbon_price=50, ev_share_2035=None, building_energy_2050=1.0)),
-        lambda m: reply(use("read_result", scenario_id="c50_evref_b100", measure="co2", year=2040)),
-        lambda m: reply(use("submit_answer", **submit("A $50 carbon price puts 2040 CO2 at {c1} million tons, {c2} against "
+        lambda m: reply(use("run_scenario", carbon_price=50)),
+        lambda m: reply(use("read_result", scenario_id="carbon_price=50", measure="co2", year=2040)),
+        lambda m: reply(use("submit_answer", **submit("A $50 carbon price puts 2040 CO2 at {c1}, {c2} away from "
                                                       "EIA's reference.",
                                                       [claim("c1", rid_of(m, "read_result"), "value"),
                                                        claim("c2", rid_of(m, "read_result"), "difference")]))),
     )
     ans = PolicyAgent(client=model).ask("What does a $50 carbon price do to US energy CO2 in 2040?")
-    value = grid_value("c50_evref_b100", ("co2",), 2040)
+    value = grid_value("carbon_price=50", ("co2",), 2040)
     assert not ans.error and not ans.declined and ans.stand_in
-    assert f"{value:,.0f} [1]" in ans.text and "Grade: stand-in" in ans.text and "stand-ins" in ans.text
+    assert f"{value:,.0f} million t [1]" in ans.text and "Grade: stand-in" in ans.text and "stand-ins" in ans.text
     assert [c["tool"] for c in ans.tool_calls] == ["run_scenario", "read_result"] and ans.turns == 3
     assert ans.input_tokens == 300
     # the request carries the tools, the adaptive thinking setting, effort and the fallback opt-in
@@ -246,17 +271,17 @@ def test_a_full_conversation_through_the_loop():
 
 def test_a_rejected_answer_is_sent_back_and_repaired():
     def first(m):
-        return reply(use("run_scenario", carbon_price=0, ev_share_2035=None, building_energy_2050=1.0))
+        return reply(use("run_scenario", carbon_price=0))
 
     def second(m):
-        return reply(use("read_result", scenario_id="c0_evref_b100", measure="gas_home_price", year=2035))
+        return reply(use("read_result", scenario_id="carbon_price=0", measure="gas_home_price", year=2035))
 
     def bad(m):
         return reply(use("submit_answer", **submit("Home gas costs 9.99 dollars per MMBtu in 2035.", [])))
 
     def good(m):
         assert "Rejected" in m[-1]["content"][0]["content"] and "9.99" in m[-1]["content"][0]["content"]
-        return reply(use("submit_answer", **submit("Home gas costs {c1} dollars per MMBtu in 2035.",
+        return reply(use("submit_answer", **submit("Home gas costs {c1} in 2035.",
                                                    [claim("c1", "r1", "value", 2)])))
 
     ans = PolicyAgent(client=ScriptedModel(first, second, bad, good)).ask("What do homes pay for gas in 2035?")
@@ -334,11 +359,11 @@ def test_requests_through_the_real_sdk_have_the_right_shape():
 
     script = [
         message([{"type": "tool_use", "id": "toolu_a", "name": "run_scenario",
-                  "input": {"carbon_price": 0, "ev_share_2035": None, "building_energy_2050": 1.0}}], "tool_use"),
+                  "input": {"carbon_price": 0}}], "tool_use"),
         message([{"type": "tool_use", "id": "toolu_b", "name": "read_result",
-                  "input": {"scenario_id": "c0_evref_b100", "measure": "co2", "year": 2040}}], "tool_use"),
+                  "input": {"scenario_id": "carbon_price=0", "measure": "co2", "year": 2040}}], "tool_use"),
         message([{"type": "tool_use", "id": "toolu_c", "name": "submit_answer",
-                  "input": submit("With no carbon price, 2040 CO2 is {c1} million tons.", [claim("c1", "r1", "value")])}],
+                  "input": submit("With no carbon price, 2040 CO2 is {c1}.", [claim("c1", "r1", "value")])}],
                 "tool_use"),
     ]
 
@@ -350,8 +375,8 @@ def test_requests_through_the_real_sdk_have_the_right_shape():
                                  http_client=httpx.Client(transport=httpx.MockTransport(handler)))
     ans = PolicyAgent(client=client).ask("What is US energy CO2 in 2040 with no carbon price?")
     assert not ans.error, ans.text
-    value = grid_value("c0_evref_b100", ("co2",), 2040)
-    assert f"{value:,.0f} [1]" in ans.text
+    value = grid_value("carbon_price=0", ("co2",), 2040)
+    assert f"{value:,.0f} million t [1]" in ans.text
 
     headers, body = sent[0]
     assert body["model"] == "claude-opus-5-5" and body["thinking"] == {"type": "adaptive"}
@@ -363,4 +388,117 @@ def test_requests_through_the_real_sdk_have_the_right_shape():
     second = sent[1][1]["messages"]
     assert second[1]["role"] == "assistant" and second[1]["content"][0]["id"] == "toolu_a"
     assert second[2]["content"][0]["tool_use_id"] == "toolu_a"
-    assert json.loads(second[2]["content"][0]["content"])["scenario_id"] == "c0_evref_b100"
+    assert json.loads(second[2]["content"][0]["content"])["scenario_id"] == "carbon_price=0"
+
+
+# ---- audit fixes: percent signs, direction, units, outside knowledge, sources, gate ------------------
+
+def two_results():
+    box = Toolbox()
+    run, _ = box.call("run_scenario", {"carbon_price": 50})
+    co2, _ = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "co2", "year": 2040})
+    gas, _ = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "gasoline_price", "year": 2040})
+    return box, co2["result_id"], gas["result_id"]
+
+
+def test_a_typed_percent_after_a_percent_claim_is_stripped_and_differences_have_no_sign():
+    box, co2, _ = two_results()
+    r, problems = rules.check(submit("CO2 is {c1}% lower, about {c2} less.",
+                                     [claim("c1", co2, "difference_pct", 1), claim("c2", co2, "difference")]), box, "q")
+    assert not problems
+    pct = box.results[co2]["numbers"]["difference_pct"]
+    assert f"{pct:,.1f}% [1] lower" in r.text and "%%" not in r.text and "% [1]%" not in r.text
+    assert "-" not in r.body.split("lower")[0]                  # a size, not a negative number
+    assert box.results[co2]["numbers"]["difference"] >= 0
+
+
+def test_a_unit_typed_after_a_claim_is_rejected():
+    box, co2, _ = two_results()
+    r, problems = rules.check(submit("CO2 is {c1} million tons.", [claim("c1", co2, "value")]), box, "q")
+    assert r is None and any("unit" in p for p in problems)
+
+
+def test_claims_print_with_their_units():
+    box, co2, gas = two_results()
+    r, _ = rules.check(submit("Gasoline is {c1} and CO2 is {c2}.", [claim("c1", gas, "value", 2), claim("c2", co2, "value")]),
+                       box, "q")
+    assert "$" in r.body and "/gal [1]" in r.body and " million t [2]" in r.body
+
+
+def test_outside_knowledge_is_marked_not_from_the_model_and_carries_no_numbers():
+    box, co2, _ = two_results()
+    sub = submit("CO2 is {c1}.", [claim("c1", co2, "value")])
+    r, problems = rules.check({**sub, "not_from_model": ["A carbon dividend returns revenue to households."]}, box, "q")
+    assert not problems and r.outside == ["A carbon dividend returns revenue to households."]
+    assert "Not from the model: A carbon dividend" in r.text and "dividend" not in r.body
+    r, problems = rules.check({**sub, "not_from_model": ["Net zero by 2050 needs 80% less."]}, box, "q")
+    assert r is None and problems
+
+
+def test_markdown_in_the_answer_is_rejected():
+    box, co2, _ = two_results()
+    r, problems = rules.check(submit("**CO2** is {c1}.", [claim("c1", co2, "value")]), box, "q")
+    assert r is None and any("markdown" in p for p in problems)
+
+
+def test_sources_are_one_line_per_fact_with_each_module_once():
+    box, co2, gas = two_results()
+    r, _ = rules.check(submit("CO2 is {c1}, {c2} lower, and gasoline {c3}.",
+                              [claim("c1", co2, "value"), claim("c2", co2, "difference_pct", 1), claim("c3", gas, "value", 2)]),
+                       box, "q")
+    assert len(r.claims) == 3 and len(r.sources) == 2
+    line = r.sources[0]["line"]
+    assert line.startswith("[1] [2] ") and "\n" not in line
+    assert line.count("Demand stub (any sector not run through its port)") == 1
+
+
+def test_the_submit_schema_carries_the_new_fields():
+    props = rules.SUBMIT["input_schema"]["properties"]
+    assert {"suggestion", "not_from_model"} <= set(props) and set(rules.SUBMIT["input_schema"]["required"]) == set(props)
+
+
+@pytest.mark.parametrize("q", [
+    "How would a wind farm on a hill fare if we price carbon?", "What does Washington policy do to CO2 today?",
+    "How does an election year change what a carbon price does to CO2?", "What is US energy use today?",
+    "Which county-level cuts matter for national CO2?",
+])
+def test_the_gate_no_longer_over_matches(q):
+    assert rules.gate(q) is None
+
+
+@pytest.mark.parametrize("q", ["What about power prices in Texas?", "Electricity on my street in 2035",
+                               "What was CO2 in 1975?", "What happens to the S&P 500 under a carbon tax?"])
+def test_the_gate_still_catches_the_clear_cases(q):
+    assert rules.gate(q) is not None
+
+
+def test_a_decline_suggests_a_national_question_and_names_no_internal_levers():
+    d = rules.gate("What about power prices in Texas?")
+    text = rules.decline_text(d.reason, d.suggestion)
+    assert "Closest question I can answer: What does" in text and "US" in d.suggestion
+    for internal in ("ev_share_2035", "building_energy_2050", "ev_2035", "carbon_price"):
+        assert internal not in text
+    assert "data center" in rules.SCOPE and "nuclear" in rules.SCOPE
+
+
+def test_a_model_decline_carries_its_suggestion():
+    box, _, _ = two_results()
+    r, problems = rules.check(submit("", [], can=False, reason="it is about one state") | {"suggestion": "What does a carbon price do to US CO2?"}, box, "q")
+    assert not problems and "Closest question I can answer: What does a carbon price" in r.text
+
+
+def test_outside_knowledge_in_the_prose_is_rejected_by_keyword():
+    box, co2, _ = two_results()
+    r, problems = rules.check(submit("CO2 is {c1}, and a carbon dividend would return the money.",
+                                     [claim("c1", co2, "value")]), box, "q")
+    assert r is None and any("not_from_model" in p for p in problems)
+    r, problems = rules.check(submit("CO2 is {c1}, short of net zero.", [claim("c1", co2, "value")]), box, "q")
+    assert r is None
+
+
+def test_the_bill_prints_with_a_dollar_sign_and_no_unit_to_double():
+    box = Toolbox()
+    run, _ = box.call("run_scenario", {"carbon_price": 100})
+    res, _ = box.call("read_result", {"scenario_id": run["scenario_id"], "measure": "household_bill", "year": 2040})
+    r, problems = rules.check(submit("The bill is {c1} a year.", [claim("c1", res["result_id"], "value")]), box, "q")
+    assert not problems and r.body.startswith("The bill is $") and r.body.count("a year") == 1

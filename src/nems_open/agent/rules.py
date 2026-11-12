@@ -15,10 +15,11 @@ from dataclasses import dataclass, field
 
 from nems_open.agent import knowledge as K
 
-SCOPE = ("This model resolves the US as a whole in each year from 2025 to 2050, with three policy levers: a carbon "
-         "price, the plug-in share of new car and truck sales, and building energy use. It does not resolve states, "
-         "counties, neighbourhoods or sites, hours or days, years before 2025 (history is EIA's data), or anything "
-         "outside US energy and CO2.")
+SCOPE = ("This model reports the US as a whole in each year from 2025 to 2050. You can change a carbon price, the "
+         "plug-in share of new car sales, data center and other new electricity demand, early coal closures, wind and "
+         "solar costs, gas supply, the oil price and nuclear output. It does not resolve states, counties, "
+         "neighbourhoods or sites, hours or days, years before 2025 (history is EIA's data), or anything outside US "
+         "energy and CO2.")
 
 SUBMIT = {"name": "submit_answer", "strict": True,
           "description": "End the turn with your answer. Put every number in the answer as a placeholder like {c1} and "
@@ -33,33 +34,46 @@ SUBMIT = {"name": "submit_answer", "strict": True,
                   "id": {"type": "string"}, "result_id": {"type": "string"}, "field": {"type": "string"},
                   "decimals": {"type": "integer"}}, "required": ["id", "result_id", "field", "decimals"],
                   "additionalProperties": False}},
-              "reason_cannot_answer": {"type": "string"}},
-              "required": ["can_answer", "answer", "claims", "reason_cannot_answer"], "additionalProperties": False}}
+              "reason_cannot_answer": {"type": "string"},
+              "suggestion": {"type": "string", "description": "when can_answer is false: the closest question about the "
+                             "US as a whole that the model can answer, or an empty string"},
+              "not_from_model": {"type": "array", "items": {"type": "string"}, "description": "any sentence that "
+                                 "states something the tools did not give you (background, policy design, definitions). "
+                                 "Put it here, not in answer. No numbers. Prefer an empty list."}},
+              "required": ["can_answer", "answer", "claims", "reason_cannot_answer", "suggestion", "not_from_model"],
+              "additionalProperties": False}}
 
 
 # ---- the scope gate ---------------------------------------------------------------------------------
 
 STATES = ("alabama alaska arizona arkansas california colorado connecticut delaware florida georgia hawaii idaho illinois "
           "indiana iowa kansas kentucky louisiana maine maryland massachusetts michigan minnesota mississippi missouri "
-          "montana nebraska nevada ohio oklahoma oregon pennsylvania tennessee texas utah vermont virginia washington "
+          "montana nebraska nevada ohio oklahoma oregon pennsylvania tennessee texas utah vermont virginia "
           "wisconsin wyoming").split() + ["new hampshire", "new jersey", "new mexico", "new york", "north carolina",
                                           "north dakota", "rhode island", "south carolina", "south dakota", "west virginia"]
 CITIES = ("pittsburgh philadelphia chicago houston dallas austin boston seattle portland denver phoenix atlanta miami "
           "detroit minneapolis baltimore brooklyn manhattan").split() + ["los angeles", "san francisco", "san diego",
                                                                          "new york city", "washington dc", "las vegas"]
 GATES = [
-    ("place", re.compile(r"\b(street|avenue|zip ?code|postal code|county|neighbou?rhood|hill|hilltop|ridge|"
+    ("place", re.compile(r"\b(street|avenue|zip ?code|postal code|my county|in \w+ county|my neighbou?rhood|"
                          r"my (town|city|village|farm|block|house|apartment|building)|our (town|city|village|farm))\b",
                          re.I),
      "it asks about a specific place or site, which is below the national level"),
-    ("state_or_city", re.compile(r"\b(" + "|".join(STATES + CITIES) + r")\b", re.I),
+    ("state_or_city", re.compile(r"\b(" + "|".join(STATES + CITIES) + r"|washington state)\b", re.I),
      "it asks about a state or city; this agent reads national totals only"),
-    ("hourly", re.compile(r"\b(hourly|each hour|per hour|by the hour|this (week|weekend|summer|winter)|tomorrow|today)\b", re.I),
+    ("hourly", re.compile(r"\b(hourly|each hour|per hour|by the hour|this (week|weekend|summer|winter))\b", re.I),
      "it asks about hours, days or the near term; the model is annual"),
-    ("not_energy", re.compile(r"\b(stock market|s&p|bitcoin|crypto|election|mortgage|recession odds|jobs? numbers?|"
-                              r"unemployment|inflation rate|real estate prices?)\b", re.I),
+    ("not_energy", re.compile(r"\b(stock market|s&p|bitcoin|crypto|election results|win the election|mortgage|"
+                              r"recession odds|jobs? numbers?|unemployment|inflation rate|real estate prices?)\b", re.I),
      "it is outside US energy and CO2"),
 ]
+SUGGEST = {
+    "place": "What does this policy do to US electricity prices or CO2 in 2040?",
+    "state_or_city": "What does this policy do to US electricity prices or CO2 in 2040?",
+    "hourly": "What does this policy do to US energy CO2 in 2035?",
+    "year": "What does this policy do to US energy CO2 in 2040?",
+    "not_energy": "What does a $50 carbon price do to US energy CO2 in 2040?",
+}
 YEAR_ASKED = re.compile(r"\b(?:in|by|for|during|at|as of)\s+(?:the year\s+)?(\d{4})\b", re.I)
 
 
@@ -67,6 +81,10 @@ YEAR_ASKED = re.compile(r"\b(?:in|by|for|during|at|as of)\s+(?:the year\s+)?(\d{
 class Declined:
     reason: str
     category: str
+
+    @property
+    def suggestion(self) -> str:
+        return SUGGEST.get(self.category, "")
 
 
 def gate(question: str) -> Declined | None:
@@ -85,8 +103,9 @@ def gate(question: str) -> Declined | None:
     return None
 
 
-def decline_text(reason: str) -> str:
-    return f"I can't answer that from this model: {reason}\n\n{SCOPE}"
+def decline_text(reason: str, suggestion: str = "") -> str:
+    extra = f"\n\nClosest question I can answer: {suggestion.strip()}" if suggestion.strip() else ""
+    return f"I can't answer that from this model: {reason}{extra}\n\n{SCOPE}"
 
 
 # ---- checking and rendering an answer ---------------------------------------------------------------
@@ -94,6 +113,12 @@ def decline_text(reason: str) -> str:
 PLACEHOLDER = re.compile(r"\{(c\d+)\}")
 NUMBER = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?(?:st|nd|rd|th)?%?")
 ORDINAL = re.compile(r"\d+(?:st|nd|rd|th)$")
+PCT_AFTER = re.compile(r"\{(c\d+)\}\s*(?:%|percent\b|per cent\b)")
+UNIT_AFTER = re.compile(r"\{(c\d+)\}\s+(?:million|billion|trillion|quads?|cents?|TWh|kWh|dollars?|MMBtu|gallons?|"
+                        r"(?:metric )?tons?|tonnes?|per (?:year|gallon|MMBtu|kWh|ton|household))\b", re.I)
+OUTSIDE_TERMS = re.compile(r"\b(dividends?|rebates?|net[- ]zero|paris (?:agreement|accord)|inflation reduction act|social cost|"
+                           r"tax credits?|subsid(?:y|ies))\b", re.I)
+MD = re.compile(r"\*\*|__|^\s*#{1,6}\s|^\s*[-*]\s", re.M)
 
 
 @dataclass
@@ -107,10 +132,14 @@ class Claim:
 
 @dataclass
 class Rendered:
-    text: str
+    text: str                                   # everything as one string (the command line prints this)
     claims: list[Claim] = field(default_factory=list)
     declined: bool = False
     stand_in: bool = False
+    body: str = ""                              # the prose, numbers filled in
+    basis: str = ""                             # the stand-in statement
+    outside: list[str] = field(default_factory=list)    # sentences that are not from the model
+    sources: list[dict] = field(default_factory=list)   # one per fact: markers, line, grade
 
 
 def _fmt(value: float, decimals: int) -> str:
@@ -140,18 +169,29 @@ def short_variable(variable: str) -> str:
 
 
 def short_what(what: str) -> str:
-    """Drop the scenario id from 'US energy CO2, 2040, scenario c50_...' (it is the page's job to show the levers)."""
+    """Drop the scenario id from 'US energy CO2, 2040, scenario c50_...' (the page shows the levers)."""
     return what.split(", scenario ", 1)[0]
 
 
-def source_line(c: "Claim") -> str:
-    """One short line per source: what, value, module(s) once each, variable name, grade."""
-    cit = c.citation
+def source_group(claims: list["Claim"]) -> dict:
+    """One line for the claims that share a fact (same result and same citation): markers, what, module, variable, grade."""
+    cit = claims[0].citation
+    marks = " ".join(f"[{c.marker}]" for c in claims)
     what = short_what(cit.get("what", ""))
-    if what and c.field != "value":
-        what += f" ({c.field.replace('_', ' ')})"
-    head = f"[{c.marker}] {what} = {c.text}." if what else f"[{c.marker}] {c.text}."
-    return f"{head} Module: {cit['module']}. Variable: {short_variable(cit['variable'])}. Grade: {cit['grade_label']}."
+    line = (f"{marks} {what + '. ' if what else ''}Module: {cit['module']}. "
+            f"Variable: {short_variable(cit['variable'])}. Grade: {cit['grade_label']}.")
+    return {"markers": [c.marker for c in claims], "line": line, "grade": cit["grade"], "grade_label": cit["grade_label"]}
+
+
+def source_line(c: "Claim") -> str:
+    return source_group([c])["line"]
+
+
+def group_sources(claims: list["Claim"]) -> list[dict]:
+    groups: dict = {}
+    for c in claims:
+        groups.setdefault((c.rid, c.citation["module"], c.citation["grade"], c.citation.get("what")), []).append(c)
+    return [source_group(g) for g in groups.values()]
 
 
 def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[str]]:
@@ -160,6 +200,7 @@ def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[s
     can = submission.get("can_answer")
     prose = submission.get("answer", "")
     claims = submission.get("claims") or []
+    outside = [s.strip() for s in (submission.get("not_from_model") or []) if s and s.strip()]
     allowed = set(box.lever_numbers())          # what the user said, and the lever values the agent ran
     for tok in NUMBER.findall(question):
         if not ORDINAL.search(tok):
@@ -167,6 +208,17 @@ def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[s
                 allowed.add(float(tok.rstrip("%").replace(",", "")))
             except ValueError:
                 pass
+
+    problems += _stray_numbers(" ".join(outside), set())
+    for s in outside:
+        if PLACEHOLDER.search(s):
+            problems.append("not_from_model sentences must not use claims")
+    m = OUTSIDE_TERMS.search(prose)
+    if m:
+        problems.append(f'"{m.group(0)}" is outside knowledge, not a model result: put the sentence in not_from_model '
+                        "or remove it")
+    if MD.search(prose):
+        problems.append("write plain sentences: no markdown (**, #, or - lists)")
 
     if can is False:
         if claims or PLACEHOLDER.search(prose):
@@ -176,8 +228,8 @@ def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[s
             problems.append("reason_cannot_answer is required when can_answer is false")
         if problems:
             return None, problems
-        text = decline_text(submission["reason_cannot_answer"].strip())
-        return Rendered(text=text, declined=True), []
+        text = decline_text(submission["reason_cannot_answer"].strip(), submission.get("suggestion", ""))
+        return Rendered(text=text, body=text, declined=True), []
 
     by_id = {}
     for c in claims:
@@ -199,7 +251,18 @@ def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[s
         problems.append(f"the answer uses {{{cid}}} but there is no claim {cid}")
     for cid in set(by_id) - set(used):
         problems.append(f"claim {cid} is never used in the answer")
+    def unit_of(cid):
+        c = by_id.get(cid)
+        res = box.results.get(c["result_id"]) if c else None
+        return (res or {}).get("fmt", {}).get(c["field"], ("", "")) if c else ("", "")
 
+    for m in UNIT_AFTER.finditer(prose):
+        if "".join(unit_of(m.group(1))):
+            problems.append("the program prints each number with its unit; do not write the unit after a placeholder "
+                            "(write {c1}, not {c1} million tons)")
+            break
+    # the program prints "%" itself for a percent field; one typed after the placeholder would double it
+    prose = PCT_AFTER.sub(lambda m: "{" + m.group(1) + "}" if "%" in unit_of(m.group(1))[1] else m.group(0), prose)
     problems += _stray_numbers(prose, allowed)
     if problems:
         return None, problems
@@ -216,23 +279,27 @@ def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[s
         c = by_id[cid]
         res = box.results[c["result_id"]]
         value = res["numbers"][c["field"]]
-        txt = _fmt(value, int(c.get("decimals", res.get("digits", 2))))
-        if c["field"].endswith("_pct"):
-            txt += "%"
+        pre, suf = res.get("fmt", {}).get(c["field"], ("", ""))
+        txt = pre + _fmt(value, int(c.get("decimals", res.get("digits", 2)))) + suf
         claim = order[markers[cid] - 1]
         claim.text = txt
         return f"{txt} [{markers[cid]}]"
 
-    text = PLACEHOLDER.sub(fill, prose)
-    text = text.replace("%%", "%")
-    notes = [source_line(c) for c in order]
+    body = PLACEHOLDER.sub(fill, prose).rstrip()
+    sources = group_sources(order)
     stand = [c for c in order if c.citation["grade"] in ("stand", "within")]
-    out = text.rstrip()
-    if notes:
-        out += "\n\nSources\n" + "\n".join(notes)
+    basis = ""
     if stand:
         modules = sorted({c.citation.get("weakest_module", c.citation["module"]) for c in stand})
-        out += ("\n\nBasis: these numbers rest on stand-ins, not on EIA's own modules: " + "; ".join(modules) +
-                ". With no policy the stand-ins reproduce EIA's reference run by construction; a policy moves them by "
-                "curves fitted to EIA's side cases, so read policy effects as estimates, not as EIA's results.")
-    return Rendered(text=out, claims=order, stand_in=bool(stand)), []
+        basis = ("Basis: these numbers rest on stand-ins, not on EIA's own modules: " + "; ".join(modules) +
+                 ". With no policy the stand-ins reproduce EIA's reference run by construction; a policy moves them by "
+                 "curves fitted to EIA's side cases, so read policy effects as estimates, not as EIA's results.")
+    out = body
+    if outside:
+        out += "\n\nNot from the model: " + " ".join(outside)
+    if sources:
+        out += "\n\nSources\n" + "\n".join(s["line"] for s in sources)
+    if basis:
+        out += "\n\n" + basis
+    return Rendered(text=out, claims=order, stand_in=bool(stand), body=body, basis=basis, outside=outside,
+                    sources=sources), []

@@ -53,36 +53,51 @@ class Measure:
     variable: str                      # the model variable or definition behind the number
     modules: tuple[str, ...]           # fidelity modules the number passes through
     output: str | None                 # fidelity output row, when there is one
-    path: tuple[str, ...]              # where the value sits in a scenario record
+    path: tuple[str, ...]              # the page emulator's output name(s); several are summed
     digits: int = 1
+    prefix: str = ""                   # printed with the number: "$3.04/gal", "4,832 million t"
+    suffix: str = ""
+    note: str = ""                     # what the measure is not
+
+
+DEMAND = ("residential", "commercial", "industrial", "transportation")
+SUPPLY = ("electricity", "natural_gas", "oil", "coal", "emissions")
+
+
+def _energy(sector, code):
+    return tuple(f"flow_{s}_{code}" for s in ("coal", "electricity", "gas", "petroleum", "renewables"))
 
 
 MEASURES = {m.key: m for m in (
     Measure("co2", "US energy CO2", "million metric tons CO2 a year",
             "RunResult.co2_total: fuel use times EIA's carbon factors (EMEBLK), scaled to EIA's sector carbon",
-            ("residential", "commercial", "industrial", "transportation", "electricity", "natural_gas", "oil", "coal",
-             "emissions"), "co2", ("co2",), 0),
+            DEMAND + SUPPLY, "co2", ("co2",), 0, suffix=" million t"),
     Measure("electricity_price", "Average electricity price", "cents per kWh, 2024 dollars", "MPBLK/pelas",
-            ("electricity:price", "residential", "commercial", "industrial", "transportation"), "pel",
-            ("prices", "electricity"), 2),
+            ("electricity:price",) + DEMAND, "pel", ("price_electricity",), 2, suffix=" cents/kWh"),
     Measure("gas_home_price", "Natural gas price to homes", "dollars per MMBtu, 2024 dollars", "MPBLK/pngrs",
-            ("natural_gas",), "ng", ("prices", "gas_home"), 2),
+            ("natural_gas",), "ng", ("price_gas_home",), 2, prefix="$", suffix="/MMBtu"),
     Measure("gasoline_price", "Gasoline price", "dollars per gallon, 2024 dollars", "MPBLK/pmgtr",
-            ("oil",), "mg", ("prices", "gasoline"), 2),
+            ("oil",), "mg", ("price_gasoline",), 2, prefix="$", suffix="/gal"),
     Measure("diesel_price", "Diesel price", "dollars per gallon, 2024 dollars", "MPBLK/pdstr",
-            ("oil",), None, ("prices", "diesel"), 2),
-    Measure("gasoline_use", "Gasoline use", "billion gallons a year", "QBLK/qmgtr (motor gasoline, transportation)",
-            ("transportation", "oil"), "gal", ("gasoline_bgal",), 1),
-    Measure("power_sales", "Electricity sold to end users", "quads a year", "QBLK/qelas",
-            ("electricity", "residential", "commercial", "industrial", "transportation"), None, ("power_sales",), 2),
+            ("oil",), None, ("price_diesel",), 2, prefix="$", suffix="/gal"),
+    Measure("household_bill", "Household home-energy bill", "dollars per household a year, 2024 dollars",
+            "home fuel use times home prices, over households (electricity, gas, propane, heating oil)",
+            ("residential", "electricity", "natural_gas"), "bill", ("bill",), 0, prefix="$",
+            note="home energy only, not gasoline; EIA does not publish this number"),
+    Measure("electricity_sales", "Electricity sold to end users", "terawatt-hours a year", "QBLK/qelas",
+            ("electricity",) + DEMAND, None, ("elec_sales_twh",), 0, suffix=" TWh"),
+    Measure("petroleum_transport", "Petroleum used in transportation", "quads a year", "QBLK/qtptr",
+            ("transportation", "oil"), None, ("flow_petroleum_tr",), 2, suffix=" quads"),
     Measure("energy_residential", "Residential energy use", "quads a year", "QBLK/qtsrs",
-            ("residential",), "energy.residential", ("energy", "residential"), 2),
+            ("residential",), "energy.residential", _energy("", "rs"), 2, suffix=" quads"),
     Measure("energy_commercial", "Commercial energy use", "quads a year", "QBLK/qtscm",
-            ("commercial",), "energy.commercial", ("energy", "commercial"), 2),
+            ("commercial",), "energy.commercial", _energy("", "cm"), 2, suffix=" quads"),
     Measure("energy_industrial", "Industrial energy use", "quads a year", "QBLK/qtsin",
-            ("industrial",), "energy.industrial", ("energy", "industrial"), 2),
+            ("industrial",), "energy.industrial", _energy("", "in"), 2, suffix=" quads"),
     Measure("energy_transportation", "Transportation energy use", "quads a year", "QBLK/qtstr",
-            ("transportation",), "energy.transportation", ("energy", "transportation"), 2),
+            ("transportation",), "energy.transportation", _energy("", "tr"), 2, suffix=" quads"),
+    *[Measure(f"power_{g}", f"Power plants: {g} used", "quads a year", f"QBLK/{v}", ("electricity",), None, (f"power_{g}",), 2, suffix=" quads")
+      for g, v in (("coal", "qclel"), ("gas", "qngel"), ("nuclear", "qurel"), ("wind", "qwiel"), ("solar", "qpvel"))],
 )}
 
 

@@ -41,7 +41,7 @@ def main(argv=None) -> int:
 
     declined = rules.gate(a.question)
     if declined:                        # no key and no model call needed
-        print(rules.decline_text(declined.reason))
+        print(rules.decline_text(declined.reason, declined.suggestion))
         return 0
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print("No ANTHROPIC_API_KEY in the environment, so nothing was sent. Set it and run again.", file=sys.stderr)
