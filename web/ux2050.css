@@ -75,10 +75,10 @@ h2{font-size:14px;color:var(--ink)}
 .bill-chart text{fill:var(--ink3);font-size:10px}
 .notice{font-size:12px;color:var(--warn);border:1px solid #5c4a2a;border-radius:8px;padding:7px 9px;margin:0}
 @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.lower{grid-template-columns:1fr}}
-.lever-box summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline}
-.lever-box summary::-webkit-details-marker{display:none}
-.lever-box summary::after{content:"Hide";font-size:12px;color:var(--ink3)}
-.lever-box:not([open]) summary::after{content:"Show all 10";color:var(--accent)}
+.lever-box>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline}
+.lever-box>summary::-webkit-details-marker{display:none}
+.lever-box>summary::after{content:"Hide";font-size:12px;color:var(--ink3)}
+.lever-box:not([open])>summary::after{content:"Show all 10";color:var(--accent)}
 .minibar{display:none}
 @media (max-width:860px){.grid{grid-template-columns:1fr}.levers{position:static;max-height:none}.map{aspect-ratio:1.4/1}
   /* phones: the result stays in view while the levers move */
@@ -129,3 +129,17 @@ h2{font-size:14px;color:var(--ink)}
 @media (max-width:1100px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stats.expert{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:480px){.hh .v{font-size:24px}.dots-row{padding:0 8px 4px}}
 @media (max-width:640px){.guide{bottom:10px;padding:12px 14px}.guide h3{font-size:16px}.guide p{font-size:13px}}
+
+/* simplify-2 */
+.lever label{display:inline-flex;align-items:center;gap:2px}
+.lever .lg .ends{margin-left:6px;font-size:10.5px}
+.lever-foot{justify-content:space-between}
+.more-levers{border-top:1px solid var(--line);margin-top:4px;padding-top:6px}
+.more-levers summary{display:block;cursor:pointer;color:var(--accent);font-size:13px;padding:4px 0;list-style:none}
+.more-levers summary::-webkit-details-marker{display:none}
+.more-levers summary::before{content:"+ "}.more-levers[open] summary::before{content:"- "}
+.more-levers summary span{color:var(--ink3)}
+.hh .v small{cursor:help}
+.guide.side{transform:none;bottom:auto}
+.guide-on{outline:none;box-shadow:0 0 0 3px var(--accent),0 0 40px rgba(93,202,165,.45);border-radius:12px;position:relative;z-index:1;transition:box-shadow .3s ease}
+@media (max-width:640px){.hh .v small{display:block;margin-top:-2px}}
