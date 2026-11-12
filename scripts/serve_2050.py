@@ -6,7 +6,11 @@ Then open http://localhost:8050/2050.html. Static files come from web/. Two endp
 
     POST /api/run         {"levers": {...}}  starts a run (one at a time), returns {"id": ...}
     GET  /api/run/<id>    {"status": "running" | "done" | "failed", "elapsed_s", "result"?, "error"?}
-    GET  /api/health      {"ok": true, "ported": [...]}
+    GET  /api/health      {"ok": true, "ported": [...], "ask": true when ANTHROPIC_API_KEY is set}
+    POST /api/ask         {"question": "..."}  runs the policy agent (src/nems_open/agent) and returns
+                          {"body", "sources", "basis", "declined", "apply", "unmapped", ...}. One at a time.
+                          Needs ANTHROPIC_API_KEY in the environment; the key is read there and never sent
+                          to the page, logged or stored. Without it: 503 {"error": "no_key"}.
 
 A run is run_model.run with residential, commercial and transportation through EIA's ported
 routines and supply on the stand-in, 2027-2050. Each lever's grade for that run comes from
@@ -16,6 +20,7 @@ server, so the page's button says the real model needs this script.
 
 import argparse
 import json
+import os
 import sys
 import threading
 import time
@@ -41,6 +46,79 @@ LIMITS = {"carbon_price": (0, 500), "ev_2035": (0, 1), "load_growth": (0, 2000),
 
 JOBS: dict[str, dict] = {}
 BUSY = threading.Lock()
+ASKING = threading.Lock()
+MAX_QUESTION = 600
+
+
+def make_agent():
+    """The policy agent on the real API (key from the environment). Tests replace this with a scripted stub."""
+    from nems_open.agent import PolicyAgent
+    return PolicyAgent()
+
+
+def page_levers(runs: list) -> tuple[dict, list]:
+    """The page's lever settings for the scenario the agent ran, and what the page cannot show.
+
+    The agent's levers are carbon_price, ev_share_2035 (omitted = EIA's path) and building_energy_2050 (a fraction of
+    EIA's building fuel use). The page has carbon_price and ev_2035 under the same meaning; its building levers are
+    cuts to new-building heating and cooling, a different thing, so that one is reported, not mapped.
+    The scenario shown is the last one run that moves anything, else the last one.
+    """
+    if not runs:
+        return {}, []
+    moved = [r for r in runs if r.get("carbon_price", 0) > 0 or "ev_share_2035" in r or r.get("building_energy_2050", 1.0) < 1.0]
+    run = (moved or runs)[-1]
+    apply = {"carbon_price": run.get("carbon_price", 0.0)}
+    if "ev_share_2035" in run:
+        apply["ev_2035"] = run["ev_share_2035"]
+    unmapped = []
+    if run.get("building_energy_2050", 1.0) < 1.0:
+        unmapped.append(f"building energy use at {run['building_energy_2050']:.0%} of EIA's by 2050 (the page's building levers are a different setting)")
+    return apply, unmapped
+
+
+def split_text(text: str) -> tuple[str, str]:
+    """(answer prose, basis statement): the page shows sources from the claims, so the Sources block is dropped."""
+    nn = chr(10) * 2
+    body, _, rest = text.partition(nn + "Sources" + chr(10))
+    basis = ""
+    for part in (rest, body):
+        if nn + "Basis: " in part:
+            if part is body:
+                body = part.partition(nn + "Basis: ")[0]
+            basis = "Basis: " + part.partition(nn + "Basis: ")[2]
+            break
+    return body, basis
+
+
+def ask(question: str) -> tuple[int, dict]:
+    """(status, body) for one question. All errors are plain text; nothing here prints or returns the API key."""
+    from nems_open.agent import rules
+    q = (question or "").strip()
+    if not q:
+        return 400, {"error": "bad_request", "message": "Type a question first."}
+    if len(q) > MAX_QUESTION:
+        return 400, {"error": "bad_request", "message": f"Keep the question under {MAX_QUESTION} characters."}
+    if not ASKING.acquire(blocking=False):
+        return 409, {"error": "busy", "message": "Another question is being answered. Try again in a minute."}
+    try:
+        a = make_agent().ask(q)
+    except RuntimeError as e:          # make_client: no key
+        if "ANTHROPIC_API_KEY" in str(e):
+            return 503, {"error": "no_key", "message": "No ANTHROPIC_API_KEY is set for this server, so questions cannot be answered."}
+        return 502, {"error": "agent", "message": "The agent failed (RuntimeError)."}
+    except Exception as e:             # network, API status, SDK: the class name is enough, never the request
+        traceback.print_exc()
+        return 502, {"error": "agent", "message": f"The agent failed ({type(e).__name__})."}
+    finally:
+        ASKING.release()
+    body, basis = split_text(a.text)
+    apply, unmapped = page_levers(a.runs)
+    return 200, {"body": body, "declined": a.declined, "error": a.error,
+                 "sources": [{"n": c.marker, "text": c.text, "grade": c.citation["grade"],
+                              "grade_label": c.citation["grade_label"], "line": rules.source_line(c)} for c in a.claims],
+                 "basis": basis, "apply": apply, "unmapped": unmapped, "stand_in": a.stand_in,
+                 "model": a.model, "tokens": {"in": a.input_tokens, "out": a.output_tokens}}
 
 
 def clean(levers: dict) -> dict:
@@ -95,7 +173,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/health":
-            return self._json(200, {"ok": True, "ported": list(PORTED), "elec": ELEC})
+            return self._json(200, {"ok": True, "ported": list(PORTED), "elec": ELEC,
+                                    "ask": bool(os.environ.get("ANTHROPIC_API_KEY"))})
         if self.path.startswith("/api/run/"):
             job = JOBS.get(self.path.rsplit("/", 1)[-1])
             if not job:
@@ -107,6 +186,15 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/ask":
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                q = json.loads(self.rfile.read(n) or b"{}").get("question")
+            except (ValueError, AttributeError):
+                return self._json(400, {"error": "bad_request", "message": "body must be JSON with a question"})
+            if not isinstance(q, str):
+                return self._json(400, {"error": "bad_request", "message": "body must be JSON with a question"})
+            return self._json(*ask(q))
         if self.path != "/api/run":
             return self._json(404, {"error": "not found"})
         n = int(self.headers.get("Content-Length", 0) or 0)
