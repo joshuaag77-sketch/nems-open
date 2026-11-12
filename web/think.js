@@ -476,19 +476,19 @@
   async function lapse() {
     if (S.lapse) { pause(); return; }
     pause(); const token = ++S.token; S.lapse = true; buttons();
-    let prev = null, passes = 0;
+    let prev = null, passes = 0, agreed = 0;
     S.lapseLog = [];
     for (let y = S.meta.years[0]; y <= S.meta.years[1]; y++) {
       setYear(y, false);
       const b = S.beats[S.beats.length - 1];
-      passes += b.st.i;
+      passes += b.st.i; agreed += b.st.ok ? 1 : 0;
       yearBeat(b, prev);
       paintCO2(y);
       prev = b.vals;
       if (!(await wait(REDUCED ? 900 : 600, token))) return;
     }
     S.lapse = false; S.pos = S.beats.length - 1; buttons();
-    finale(true, passes);
+    finale(true, passes, agreed);
   }
   // A year in the time-lapse: where the loop settled, with each edge lit by how much its value moved
   // since the year before (both recorded, settled values).
@@ -510,7 +510,19 @@
     $("pass").textContent = `${S.year}`;
     $("scrub").value = S.beats.length - 1;
   }
-  function finale(on, passes) {
+  // Plain reasons under the 2050 number, each read off the recorded values, never assumed.
+  function whyLines(b, y) {
+    const v = (k) => b.vals[idx(k)], e = (k) => eiaAt(k, y), r = (k) => rel(v(k), e(k)), lev = S.sc.levers || {}, out = [];
+    if (lev.coal_retirement && e("qclel") < 0.1)
+      out.push(`EIA's own reference burns almost no coal by ${y} (${fmt(e("qclel"), 2)} quads), so closing coal early cuts CO2 in the 2030s, not here.`);
+    if (Math.abs(r("qtsrs")) < 0.01 && r("qelrs") > 0.02 && r("qngrs") < -0.02)
+      out.push(`Homes use about the same energy as EIA's: electricity ${pct(r("qelrs"))}${lev.ev_2035 ? " (EIA counts EV charging at home as home electricity)" : ""} offsets gas ${pct(r("qngrs"))}.`);
+    const ported = (S.sc.ported || []).map((m) => MODS[m].name.toLowerCase());
+    out.push(ported.length ? `How far power plants, fuel prices and industry respond is a stand-in's fitted estimate; ${ported.join(", ")} run EIA's ported code.`
+      : "Every sector here is a stand-in, so treat the size of the change as rough.");
+    return out;
+  }
+  function finale(on, passes, agreed) {
     const f = $("finale");
     if (!on) { f.hidden = true; return; }
     const y = S.meta.years[1], b = S.beats[S.beats.length - 1], e = eiaAt("co2", y), r = rel(b.co2, e);
@@ -518,10 +530,12 @@
       `<div class="f-n">${fmt(b.co2)}<small> Mt CO2</small></div>` +
       `<div class="f-d"><span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "the same as" : pct(r) + " vs"}</span> EIA's reference (${fmt(e)} Mt)</div>` +
       `<div class="f-f">${fmt(passes)} passes of the real loop, 2027 to 2050, every one recorded. ${badge(keyGrade("co2"))}</div>` +
+      whyLines(b, y).map((t) => `<div class="f-w">${t}</div>`).join("") +
       `<button class="btn ghost small" type="button" id="finale-x">Close</button>`;
     f.hidden = false;
     $("finale-x").addEventListener("click", () => (f.hidden = true));
-    $("say").innerHTML = `<b>${y}, settled.</b> Every year's loop agreed; the line under the counter and in the panel is each year's settled CO2.`;
+    const n = S.meta.years[1] - S.meta.years[0] + 1;
+    $("say").innerHTML = `<b>${y}, settled.</b> ${agreed === n ? "Every year's loop passed EIA's convergence test." : `${agreed} of ${n} years passed EIA's convergence test on the last pass; the rest moved on as NEMS does.`} The line under the counter is each year's settled CO2.`;
   }
   function buttons() {
     $("play").textContent = S.playing ? "Pause" : S.pos >= S.beats.length - 1 ? "Replay" : "Play";
