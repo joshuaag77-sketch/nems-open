@@ -4,16 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Watch the Model Think</title>
-<meta name="description" content="Pull a lever and watch an open rebuild of EIA's energy model pass prices and quantities between its modules, pass by pass, until it agrees. Every moving number is one the model produced.">
-<link rel="stylesheet" href="think.css?v=3">
+<meta name="description" content="Pull a lever and watch an open rebuild of EIA's energy model pass prices and quantities between its modules, pass by pass, until it agrees. Every number shown is one the model produced.">
+<link rel="stylesheet" href="think.css?v=11">
 <script defer src="site.js"></script>
-<script defer src="think.js?v=6"></script>
+<script defer src="think.js?v=13"></script>
 </head>
 <body>
 <header class="hd">
-  <div>
+  <div class="hd-t">
     <h1>Watch the model think</h1>
-    <p>Pick a story or push one lever. The shock enters at its module, then the model's real loop passes prices and quantities back and forth until every module agrees.</p>
+    <p>A shock enters one module. Then the real loop passes prices and quantities back and forth until every module agrees.</p>
   </div>
   <nav class="hd-links" aria-label="Related views">
     <a class="btn ghost" id="to2050" href="2050.html">Your 2050</a>
@@ -23,34 +23,44 @@
 
 <section class="controls" aria-label="Scenario">
   <div id="stories" class="chips" role="group" aria-label="Stories"></div>
-  <label class="sel">One lever, pushed to the edge
+  <label class="sel"><span>One lever, pushed to the edge</span>
     <select id="lever"><option value="">Choose a lever</option></select>
   </label>
 </section>
 
 <main class="grid">
   <section class="stage-wrap">
+    <div id="headline" class="headline" aria-live="polite"></div>
     <div id="stage" class="stage">
       <canvas id="cv" aria-hidden="true"></canvas>
-      <div id="hero" class="hero" hidden></div>
+      <div id="labels" class="labels"></div>
+      <div id="econ" class="econ" title="The loop here uses EIA's own published economy (GDP, floorspace, industry output); the economy module is not in this view.">Economy <b>EIA's path, not modeled here</b></div>
+      <div id="co2box" class="co2box"></div>
     </div>
-    <div class="bar">
-      <button id="play" class="btn primary" type="button">Play 2035</button>
-      <button id="step" class="btn ghost" type="button">Step</button>
-      <button id="lapse" class="btn ghost" type="button" title="Every year's passes, 2027 to 2050">Time-lapse to 2050</button>
+    <p id="say" class="say" aria-live="polite"></p>
+    <div class="transport">
+      <button id="back" class="btn ghost icon" type="button" aria-label="Previous step">&#9664;</button>
+      <button id="play" class="btn primary" type="button">Play</button>
+      <button id="fwd" class="btn ghost icon" type="button" aria-label="Next step">&#9654;</button>
+      <input id="scrub" class="scrub" type="range" min="0" max="1" value="0" step="1" aria-label="Step in this year's loop">
       <label class="yr">Year <input id="year" type="range" min="2027" max="2050" value="2035" step="1"><output id="year-out">2035</output></label>
+      <button id="lapse" class="btn ghost" type="button" title="Every year's passes, 2027 to 2050, sped up">Time-lapse</button>
     </div>
-    <div id="legend" class="legend"></div>
+    <div class="conv-row">
+      <span class="conv-k">Largest US change at each step, this year</span>
+      <div id="conv" class="conv" aria-label="How much each step moved, shrinking as the loop agrees"></div>
+    </div>
   </section>
 
   <aside class="rail">
     <div class="panel">
-      <div class="panel-hd"><h2>What the loop just did</h2><span id="pass" class="pass"></span></div>
-      <ol id="ticker" class="ticker" aria-live="polite"></ol>
+      <div class="panel-hd"><h2>The loop so far</h2><span id="pass" class="pass"></span></div>
+      <ol id="ticker" class="ticker"></ol>
     </div>
     <div class="panel">
       <div class="panel-hd"><h2>Where it settled, <span id="set-year">2035</span></h2></div>
       <div id="settled" class="settled"></div>
+      <p id="truth" class="truth" hidden></p>
     </div>
     <div class="panel">
       <div class="panel-hd"><h2>US energy CO2, settled each year</h2><span id="co2-grade"></span></div>
@@ -59,9 +69,7 @@
   </aside>
 </main>
 
-<section class="about">
-  <p id="about"></p>
-</section>
+<section class="about"><p id="about"></p><div id="legend" class="legend"></div></section>
 <noscript><p class="panel">This page needs JavaScript.</p></noscript>
 </body>
 </html>

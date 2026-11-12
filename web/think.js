@@ -1,7 +1,8 @@
-// "Watch the model think": the convergence loop of run_model.run, replayed from recorded passes.
-// Data: data/think/manifest.json, meta.json and one file per scenario (scripts/think_runs.py), grades from
-// data/fidelity.json. Every number drawn is one the model handed between modules at that step; particle
-// density shows how big that step's change was (log scale) and carries no number of its own.
+// "Watch the model think": the convergence loop of run_model.run, replayed beat by beat from recorded passes.
+// Data: data/think/manifest.json, meta.json and one file per scenario (scripts/think_runs.py); grades from
+// data/fidelity.json. Every number shown is one the model handed between modules at that step. Values change
+// by rolling from one recorded number to the next, never through numbers the model did not produce. Particle
+// density shows how big a step's change was (log scale) and carries no number of its own.
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -9,24 +10,25 @@
   const fmt = (v, d = 0) => Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  // ---- the modules and what passes between them ---------------------------------------------------
+  // ---- modules, layout, edges ---------------------------------------------------------------------
+  const DEMAND = ["residential", "commercial", "industrial", "transportation"];
+  const SUPPLY = ["electricity", "natural_gas", "coal", "oil"];
   const MODS = {
-    economy: { name: "Economy", side: "fixed", key: null },
-    residential: { name: "Homes", side: "demand", key: "qtsrs" },
-    commercial: { name: "Businesses", side: "demand", key: "qtscm" },
-    industrial: { name: "Industry", side: "demand", key: "qtsin" },
-    transportation: { name: "Vehicles", side: "demand", key: "qtstr" },
-    electricity: { name: "Electricity", side: "supply", key: "pelrs" },
-    natural_gas: { name: "Natural gas", side: "supply", key: "pngrs" },
-    oil: { name: "Oil and refining", side: "supply", key: "pmgtr" },
-    coal: { name: "Coal", side: "supply", key: "pclel" },
-    emissions: { name: "CO2", side: "out", key: "co2" },
+    residential: { name: "Homes", key: "qtsrs" }, commercial: { name: "Businesses", key: "qtscm" },
+    industrial: { name: "Industry", key: "qtsin" }, transportation: { name: "Vehicles", key: "qtstr" },
+    electricity: { name: "Electricity", key: "pelrs", what: "power price paid by homes" },
+    natural_gas: { name: "Natural gas", key: "pngrs", what: "gas price paid by homes" },
+    coal: { name: "Coal", key: "pclel", what: "coal price at power plants" },
+    oil: { name: "Oil and refining", key: "pmgtr", what: "gasoline price" },
   };
-  const LAYOUT = {   // [x, y] on the stage, wide and tall
-    wide: { economy: [0.5, 0.1], residential: [0.15, 0.24], commercial: [0.12, 0.47], industrial: [0.15, 0.7], transportation: [0.3, 0.87],
-      electricity: [0.85, 0.24], natural_gas: [0.88, 0.47], oil: [0.85, 0.7], coal: [0.7, 0.87], emissions: [0.5, 0.6] },
-    tall: { economy: [0.5, 0.06], residential: [0.21, 0.2], commercial: [0.21, 0.4], industrial: [0.21, 0.6], transportation: [0.21, 0.8],
-      electricity: [0.79, 0.2], natural_gas: [0.79, 0.4], oil: [0.79, 0.6], coal: [0.79, 0.8], emissions: [0.5, 0.93] },
+  // Demand on one side, supply on the other; quantities travel on one trunk, prices come back on another.
+  const LAYOUTS = {
+    wide: { flow: "h", demand: { xs: [0.2, 0.2, 0.2, 0.2], ys: [0.17, 0.39, 0.61, 0.83], side: "left" },
+      supply: { xs: [0.8, 0.8, 0.8, 0.8], ys: [0.17, 0.39, 0.61, 0.83], side: "right" },
+      q: [[0.38, 0.41], [0.62, 0.41]], p: [[0.62, 0.59], [0.38, 0.59]], bulge: [-1, 0] },
+    tall: { flow: "v", demand: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.21, 0.21, 0.21, 0.21], side: "above" },
+      supply: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.6, 0.6, 0.6, 0.6], side: "below" },
+      q: [[0.43, 0.33], [0.43, 0.47]], p: [[0.57, 0.47], [0.57, 0.33]], bulge: [0, -1] },
   };
   // [from, to, recorded key, "q" quantity or "p" price]
   const EDGES = [
@@ -34,230 +36,207 @@
     ["commercial", "electricity", "qelcm", "q"], ["commercial", "natural_gas", "qngcm", "q"], ["commercial", "oil", "qtpcm", "q"],
     ["industrial", "electricity", "qelin", "q"], ["industrial", "natural_gas", "qngin", "q"], ["industrial", "oil", "qtpin", "q"],
     ["transportation", "electricity", "qeltr", "q"], ["transportation", "oil", "qmgtr", "q"],
-    ["electricity", "natural_gas", "qngel", "q"], ["electricity", "coal", "qclel", "q"], ["electricity", "oil", "qtpel", "q"],
     ["electricity", "residential", "pelrs", "p"], ["electricity", "commercial", "pelcm", "p"], ["electricity", "industrial", "pelin", "p"], ["electricity", "transportation", "peltr", "p"],
-    ["natural_gas", "residential", "pngrs", "p"], ["natural_gas", "commercial", "pngcm", "p"], ["natural_gas", "industrial", "pngin", "p"], ["natural_gas", "electricity", "pngel", "p"],
+    ["natural_gas", "residential", "pngrs", "p"], ["natural_gas", "commercial", "pngcm", "p"], ["natural_gas", "industrial", "pngin", "p"],
     ["oil", "residential", "ptprs", "p"], ["oil", "commercial", "ptpcm", "p"], ["oil", "industrial", "ptpin", "p"], ["oil", "transportation", "pmgtr", "p"],
-    ["coal", "electricity", "pclel", "p"],
-    ["electricity", "emissions", "co2", "c"], ["natural_gas", "emissions", "co2", "c"], ["oil", "emissions", "co2", "c"], ["coal", "emissions", "co2", "c"],
+    // inside supply: power plants burn gas, coal and oil, and pay for them
+    ["electricity", "natural_gas", "qngel", "qi"], ["electricity", "coal", "qclel", "qi"], ["electricity", "oil", "qtpel", "qi"],
+    ["natural_gas", "electricity", "pngel", "pi"], ["coal", "electricity", "pclel", "pi"],
   ];
-  const STATIC_EDGES = [["economy", "residential"], ["economy", "commercial"], ["economy", "industrial"], ["economy", "transportation"]];
-  const COL = { q: [87, 199, 255], p: [255, 181, 71], c: [255, 107, 107] };
-  const LEVER_NAMES = { carbon_price: (v) => `carbon price $${v} a ton`, ev_2035: (v) => `EV sales ${Math.round(v * 100)}% of new cars in 2035`,
-    load_growth: (v) => `${fmt(v)} TWh of new load by 2050`, building_code: (v) => `building codes ${Math.round(v * 100)}% tighter`,
-    appliance_standard: (v) => `appliances ${Math.round(v * 100)}% better`, coal_retirement: (v) => `${Math.round(v * 100)}% of coal closed by 2035`,
-    renewable_cost: (v) => (v < 0 ? "EIA's low wind and solar cost case" : "EIA's high wind and solar cost case"),
-    gas_supply: (v) => (v > 0 ? "EIA's plentiful gas case" : "EIA's scarce gas case"), oil_price: (v) => `oil at ${v} x EIA's price`,
-    nuclear: (v) => `nuclear at ${v} x EIA's output` };
-
-  const SHORT = { carbon_price: (v) => `Carbon $${v}/t`, ev_2035: (v) => `EVs ${Math.round(v * 100)}%`, load_growth: (v) => `+${fmt(v)} TWh load`,
-    building_code: (v) => `Codes +${Math.round(v * 100)}%`, appliance_standard: (v) => `Appliances +${Math.round(v * 100)}%`,
-    coal_retirement: (v) => `Coal ${Math.round(v * 100)}% closed`, renewable_cost: (v) => (v < 0 ? "Cheap wind and solar" : "Pricey wind and solar"),
-    gas_supply: (v) => (v > 0 ? "Plentiful gas" : "Scarce gas"), oil_price: (v) => `Oil x${v}`, nuclear: (v) => `Nuclear x${v}` };
+  const COL = { q: [87, 199, 255], p: [255, 181, 71] };
+  const colOf = (t) => COL[t[0]];
+  const SHORT = { carbon_price: (v) => `Carbon $${v}/t`, ev_2035: (v) => `EVs ${Math.round(v * 100)}% of new cars`, load_growth: (v) => `+${fmt(v)} TWh of load`,
+    building_code: (v) => `Codes ${Math.round(v * 100)}% tighter`, appliance_standard: (v) => `Appliances ${Math.round(v * 100)}% better`,
+    coal_retirement: (v) => `${Math.round(v * 100)}% of coal closed`, renewable_cost: (v) => (v < 0 ? "Cheap wind and solar" : "Pricey wind and solar"),
+    gas_supply: (v) => (v > 0 ? "Plentiful gas" : "Scarce gas"), oil_price: (v) => `Oil at ${v}x`, nuclear: (v) => `Nuclear at ${v}x` };
 
   // ---- state --------------------------------------------------------------------------------------
-  const S = { meta: null, man: null, fid: null, sc: null, cache: {}, year: 2035, steps: [], k: -1, playing: false, lapse: false, token: 0 };
+  const S = { meta: null, man: null, fid: null, sc: null, cache: {}, year: 2035, beats: [], pos: 0, playing: false, lapse: false, token: 0 };
   const idx = (k) => S.meta.keys.indexOf(k);
   const eiaAt = (k, y) => S.meta.eia[k][y - S.meta.years[0]];
+  const carbon = () => (S.sc && S.sc.levers && S.sc.levers.carbon_price) || 0;
+  const isPrice = (k) => S.meta.vars[k].kind === "p";
+  const carbonNote = (k) => (carbon() && isPrice(k) ? `incl. $${carbon()}/t carbon` : "");
 
-  // ---- grades (data/fidelity.json): a module's grade in this run, a number's as its weakest piece ---
+  // ---- grades -------------------------------------------------------------------------------------
   const RANK = { match: 3, within: 2, stand: 1 };
   function modGrade(m) {
-    if (m === "economy") return { grade: "fixed", label: "EIA's path", why: "Not modeled in this view: the loop uses EIA's own published economy." };
     const ported = (S.sc && S.sc.ported) || [];
     const part = ["residential", "commercial", "transportation"].includes(m) ? (ported.includes(m) ? `port:${m}` : "stand:demand_stub")
-      : m === "industrial" ? "stand:demand_stub" : { electricity: "stand:electricity", natural_gas: "stand:natural_gas", oil: "stand:oil", coal: "stand:coal", emissions: "stand:emissions" }[m];
+      : m === "industrial" ? "stand:demand_stub" : m === "emissions" ? "stand:emissions"
+      : { electricity: "stand:electricity", natural_gas: "stand:natural_gas", oil: "stand:oil", coal: "stand:coal" }[m];
     const p = S.fid.parts[part];
-    return { grade: p.grade, label: p.grade === "match" ? "ported" : p.label, why: `${p.name}: ${p.summary}`, part };
+    return { grade: p.grade, label: p.grade === "match" ? "matches EIA" : p.label, why: `${p.name}: ${p.summary}` };
   }
   function keyGrade(key) {
-    const mods = key === "co2" ? Object.keys(MODS).filter((m) => m !== "economy") : [S.meta.vars[key].module];
+    const mods = key === "co2" ? [...DEMAND, ...SUPPLY, "emissions"] : [S.meta.vars[key].module];
     let w = null;
     for (const m of mods) { const g = modGrade(m); if (!w || RANK[g.grade] < RANK[w.grade]) w = g; }
     return w;
   }
-  const badge = (g) => `<span class="g g-${g.grade}" title="${esc(g.why)}">${esc(g.grade === "match" ? "matches EIA" : g.label)}</span>`;
+  const badge = (g) => `<span class="g g-${g.grade}" title="${esc(g.why)}">${esc(g.label)}</span>`;
 
-  // ---- the stage ----------------------------------------------------------------------------------
+  // ---- geometry -----------------------------------------------------------------------------------
   const cv = $("cv"), ctx = cv.getContext("2d");
-  const G = { w: 0, h: 0, dpr: 1, pos: {}, R: 26, tall: false, parts: [], rings: [], edgeHeat: new Map(), labels: [], vals: {}, flash: {} };
-  const sprite = (() => {
+  const G = { w: 0, h: 0, dpr: 1, L: null, pos: {}, R: 22, paths: new Map(), trunks: {}, parts: [], heat: new Map(), nodeHeat: {}, rings: [] };
+  function layout() {
+    G.w = $("stage").clientWidth; G.h = $("stage").clientHeight; G.dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (!G.w || !G.h) return;
+    cv.width = Math.round(G.w * G.dpr); cv.height = Math.round(G.h * G.dpr);
+    G.L = LAYOUTS[G.w < 640 || G.h > G.w * 1.05 ? "tall" : "wide"];
+    G.R = Math.max(13, Math.min(24, Math.min(G.w, G.h) * 0.04));
+    DEMAND.forEach((m, i) => (G.pos[m] = [G.L.demand.xs[i] * G.w, G.L.demand.ys[i] * G.h]));
+    SUPPLY.forEach((m, i) => (G.pos[m] = [G.L.supply.xs[i] * G.w, G.L.supply.ys[i] * G.h]));
+    const P = (a) => [a[0] * G.w, a[1] * G.h];
+    G.trunks = { q: [P(G.L.q[0]), P(G.L.q[1])], p: [P(G.L.p[0]), P(G.L.p[1])] };
+    G.paths = new Map(EDGES.map((e) => [e, buildPath(e)]));
+    for (const k in bodies) delete bodies[k];
+    placeLabels();
+    if (S.beats.length) apply(S.pos, false);
+  }
+  const quad = (a, c, b, n) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n, u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]; });
+  function buildPath(e) {
+    const a = G.pos[e[0]], b = G.pos[e[1]], h = G.L.flow === "h";
+    let pts;
+    if (e[3] === "qi" || e[3] === "pi") {   // between supply modules: a short arc off the column
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], k = (e[3] === "qi" ? 1 : 1.9) * Math.min(G.w, G.h) * 0.045;
+      pts = quad(a, [mid[0] + G.L.bulge[0] * k, mid[1] + G.L.bulge[1] * k], b, 24);
+    } else {
+      const [A, B] = G.trunks[e[3]];
+      const c1 = h ? [A[0], a[1]] : [a[0], A[1]], c2 = h ? [B[0], b[1]] : [b[0], B[1]];
+      pts = [...quad(a, c1, A, 18), ...quad(A, [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], B, 10).slice(1), ...quad(B, c2, b, 18).slice(1)];
+    }
+    const len = [0];
+    for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    return { pts, len, total: len[len.length - 1] };
+  }
+  function along(p, t) {
+    const d = t * p.total; let lo = 0, hi = p.len.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (p.len[m] < d) lo = m; else hi = m; }
+    const f = (d - p.len[lo]) / ((p.len[hi] - p.len[lo]) || 1);
+    return [p.pts[lo][0] + f * (p.pts[hi][0] - p.pts[lo][0]), p.pts[lo][1] + f * (p.pts[hi][1] - p.pts[lo][1])];
+  }
+
+  // ---- sprites ------------------------------------------------------------------------------------
+  const glow = (() => {
     const c = document.createElement("canvas"); c.width = c.height = 64;
     const g = c.getContext("2d"), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(0.25, "rgba(255,255,255,.55)"); r.addColorStop(1, "rgba(255,255,255,0)");
+    r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(0.22, "rgba(255,255,255,.6)"); r.addColorStop(1, "rgba(255,255,255,0)");
     g.fillStyle = r; g.fillRect(0, 0, 64, 64); return c;
   })();
-  const tinted = {};
-  function tint(type) {
-    if (tinted[type]) return tinted[type];
+  const tints = {};
+  function tint(rgb) {
+    const k = rgb.join(",");
+    if (tints[k]) return tints[k];
     const c = document.createElement("canvas"); c.width = c.height = 64;
-    const g = c.getContext("2d"); g.drawImage(sprite, 0, 0); g.globalCompositeOperation = "source-in";
-    g.fillStyle = `rgb(${COL[type].join(",")})`; g.fillRect(0, 0, 64, 64);
-    return (tinted[type] = c);
+    const g = c.getContext("2d"); g.drawImage(glow, 0, 0); g.globalCompositeOperation = "source-in"; g.fillStyle = `rgb(${k})`; g.fillRect(0, 0, 64, 64);
+    return (tints[k] = c);
+  }
+  const bodies = {};
+  function body(grade) {
+    const key = `${grade}:${G.R}:${G.dpr}`;
+    if (bodies[key]) return bodies[key];
+    const R = G.R, size = Math.ceil((2 * R + 6) * G.dpr), c = document.createElement("canvas"); c.width = c.height = size;
+    const g = c.getContext("2d"); g.scale(G.dpr, G.dpr); const x = size / G.dpr / 2;
+    g.beginPath(); g.arc(x, x, R, 0, 6.2832);
+    if (grade === "match") {
+      const rg = g.createRadialGradient(x - R * 0.3, x - R * 0.3, R * 0.1, x, x, R);
+      rg.addColorStop(0, "#9ef7d8"); rg.addColorStop(1, "#11916a"); g.fillStyle = rg; g.fill(); g.strokeStyle = "#d4fff1"; g.lineWidth = 1.5; g.stroke();
+    } else {
+      g.fillStyle = "#120f0a"; g.fill(); g.setLineDash([5, 4]); g.strokeStyle = "#E8A33D"; g.lineWidth = 2; g.stroke();
+    }
+    return (bodies[key] = c);
   }
 
-  function layout() {
-    const r = $("stage").getBoundingClientRect();
-    G.w = r.width; G.h = r.height; G.dpr = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = Math.round(G.w * G.dpr); cv.height = Math.round(G.h * G.dpr);
-    G.tall = G.h > G.w * 1.05;
-    const L = LAYOUT[G.tall ? "tall" : "wide"];
-    for (const m in MODS) G.pos[m] = [L[m][0] * G.w, L[m][1] * G.h];
-    G.R = Math.max(16, Math.min(30, Math.min(G.w, G.h) * 0.045));
+  // ---- drawing ------------------------------------------------------------------------------------
+  function strokePath(c, pts, from = 0, to = pts.length) {
+    c.beginPath(); c.moveTo(pts[from][0], pts[from][1]);
+    for (let i = from + 1; i < to; i++) c.lineTo(pts[i][0], pts[i][1]);
+    c.stroke();
   }
-  // A quadratic curve from a to b, bowed to one side so a price and a quantity between the same two modules do not overlap.
-  function curve(a, b, type) {
-    const [x1, y1] = G.pos[a], [x2, y2] = G.pos[b], mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, bow = (type === "p" ? -1 : 1) * Math.min(90, len * 0.16);
-    return [x1, y1, mx - (dy / len) * bow, my + (dx / len) * bow, x2, y2];
-  }
-  const at = (c, t) => { const u = 1 - t; return [u * u * c[0] + 2 * u * t * c[2] + t * t * c[4], u * u * c[1] + 2 * u * t * c[3] + t * t * c[5]]; };
-
-  // How big a step's change looks: log scale, 0.01% faint, 100% full.
-  const mag = (rel) => Math.min(1, Math.log10(1 + Math.abs(rel) * 1e4) / 4);
-
   function draw(now) {
     const c = ctx;
     c.setTransform(G.dpr, 0, 0, G.dpr, 0, 0);
     c.clearRect(0, 0, G.w, G.h);
-    // economy feeds demand: EIA's fixed path, drawn dotted and never animated
-    c.setLineDash([2, 5]); c.strokeStyle = "rgba(140,138,130,.25)"; c.lineWidth = 1;
-    for (const [a, b] of STATIC_EDGES) { const k = curve(a, b, "q"); c.beginPath(); c.moveTo(k[0], k[1]); c.quadraticCurveTo(k[2], k[3], k[4], k[5]); c.stroke(); }
-    c.setLineDash([]);
-    // edges, brighter while their value is moving
-    for (const e of EDGES) {
-      const k = curve(e[0], e[1], e[3]), heat = G.edgeHeat.get(e) || 0, col = COL[e[3]];
-      c.strokeStyle = `rgba(${col.join(",")},${0.06 + 0.55 * heat})`; c.lineWidth = 1 + 2.5 * heat;
-      c.beginPath(); c.moveTo(k[0], k[1]); c.quadraticCurveTo(k[2], k[3], k[4], k[5]); c.stroke();
+    if (!G.L) return;
+    c.lineCap = "round"; c.lineJoin = "round";
+    // trunks: one road each way, as bright as the busiest edge on it
+    for (const t of ["q", "p"]) {
+      let h = 0; for (const [e, v] of G.heat) if (e[3] === t) h = Math.max(h, v);
+      const [A, B] = G.trunks[t];
+      c.strokeStyle = `rgba(${COL[t].join(",")},${0.08 + 0.5 * h})`; c.lineWidth = 3 + 7 * h;
+      c.beginPath(); c.moveTo(A[0], A[1]); c.lineTo(B[0], B[1]); c.stroke();
     }
-    // particles
+    // branches
+    for (const [e, p] of G.paths) {
+      const h = G.heat.get(e) || 0;
+      c.strokeStyle = `rgba(${colOf(e[3]).join(",")},${0.06 + 0.6 * h})`; c.lineWidth = 1 + 2.5 * h;
+      if (e[3].length === 2) strokePath(c, p.pts);
+      else { strokePath(c, p.pts, 0, 19); strokePath(c, p.pts, p.pts.length - 19); }
+    }
+    // particles, glow on particles only
     c.globalCompositeOperation = "lighter";
-    G.parts = G.parts.filter((p) => now < p.t0 + p.dur);
-    for (const p of G.parts) {
-      const t = (now - p.t0) / p.dur; if (t < 0) continue;
-      const img = tint(p.type);
-      for (let tail = 0; tail < 2; tail++) {
-        const tt = t - tail * 0.035; if (tt < 0) break;
-        const [x, y] = at(p.curve, tt), s = p.size * (1 - tail * 0.3);
-        c.globalAlpha = p.alpha * (1 - tail * 0.4) * Math.sin(Math.PI * Math.min(1, t * 1.05));
+    G.parts = G.parts.filter((q) => now < q.t0 + q.dur);
+    for (const q of G.parts) {
+      const t = (now - q.t0) / q.dur; if (t < 0) continue;
+      const img = tint(colOf(q.type)), fade = Math.sin(Math.PI * Math.min(1, t));
+      for (let k = 0; k < 2; k++) {
+        const tt = t - k * 0.03; if (tt < 0) break;
+        const [x, y] = along(q.path, tt), s = q.size * (1 - 0.3 * k);
+        c.globalAlpha = q.alpha * fade * (1 - 0.45 * k);
         c.drawImage(img, x - s / 2, y - s / 2, s, s);
       }
     }
-    c.globalAlpha = 1;
-    // shock and settle rings
+    // node glow when something reached it this beat
+    for (const m in G.pos) {
+      const h = G.nodeHeat[m] || 0; if (h < 0.02) continue;
+      const [x, y] = G.pos[m], s = G.R * (3 + 2.5 * h);
+      c.globalAlpha = 0.25 + 0.55 * h; c.drawImage(tint(modGrade(m).grade === "match" ? [79, 227, 176] : [232, 163, 61]), x - s / 2, y - s / 2, s, s);
+    }
     G.rings = G.rings.filter((r) => now < r.t0 + r.dur);
     for (const r of G.rings) {
       const t = (now - r.t0) / r.dur; if (t < 0) continue;
       const [x, y] = G.pos[r.m];
-      c.strokeStyle = `rgba(${r.col.join(",")},${(1 - t) * r.a})`; c.lineWidth = r.w * (1 - t) + 0.5;
+      c.globalAlpha = (1 - t) * r.a; c.strokeStyle = `rgb(${r.col.join(",")})`; c.lineWidth = 3 * (1 - t) + 0.5;
       c.beginPath(); c.arc(x, y, G.R + t * r.grow, 0, 6.2832); c.stroke();
     }
-    c.globalCompositeOperation = "source-over";
-    // nodes
-    for (const m in MODS) drawNode(m, now);
-    // the biggest changes of this step, as numbers on their edges, placed where they do not collide
-    c.font = "600 11px system-ui,sans-serif"; c.textAlign = "center";
-    const boxes = [];
-    for (const l of G.labels) {
-      const t = (now - l.t0) / l.dur; if (t < 0 || t > 1) continue;
-      const k = curve(l.e[0], l.e[1], l.e[3]), w = c.measureText(l.text).width + 10;
-      let spot = null;
-      for (const tt of [0.5, 0.36, 0.64, 0.26, 0.74]) {
-        const [x, y] = at(k, tt), b = [x - w / 2, y - 9, w, 17];
-        if (!boxes.some((o) => b[0] < o[0] + o[2] && o[0] < b[0] + b[2] && b[1] < o[1] + o[3] && o[1] < b[1] + b[3])) { spot = b; break; }
-      }
-      if (!spot) continue;   // no room: the ticker still has it
-      boxes.push(spot);
-      c.globalAlpha = Math.min(1, 4 * t, 4 * (1 - t));
-      c.fillStyle = "rgba(7,9,13,.88)"; c.fillRect(spot[0], spot[1], spot[2], spot[3]);
-      c.fillStyle = `rgb(${COL[l.e[3]].join(",")})`; c.fillText(l.text, spot[0] + w / 2, spot[1] + 12.5);
-    }
-    c.globalAlpha = 1;
-    // fade edge heat
-    for (const [e, h] of G.edgeHeat) G.edgeHeat.set(e, h * 0.985);
-  }
-
-  function drawNode(m, now) {
-    const c = ctx, [x, y] = G.pos[m], R = G.R, g = S.fid ? modGrade(m) : { grade: "fixed" };
-    const fl = G.flash[m] ? Math.max(0, 1 - (now - G.flash[m]) / 900) : 0;
-    // glow
-    c.globalCompositeOperation = "lighter";
-    const glowCol = g.grade === "match" ? [79, 227, 176] : g.grade === "fixed" ? [110, 108, 102] : [232, 163, 61];
-    c.globalAlpha = 0.18 + 0.5 * fl;
-    const gs = R * (3.2 + 1.5 * fl); c.drawImage(tintRGB(glowCol), x - gs / 2, y - gs / 2, gs, gs);
     c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
-    // body: ported solid, stand-in hollow and dashed, EIA's fixed path dotted grey
-    const body = nodeSprite(g.grade, R);
-    c.drawImage(body, x - body.width / G.dpr / 2, y - body.height / G.dpr / 2, body.width / G.dpr, body.height / G.dpr);
-    // text
-    c.textAlign = "center";
-    c.font = `600 ${G.tall ? 12 : 13}px system-ui,sans-serif`; c.fillStyle = "#ece9e1";
-    c.fillText(MODS[m].name, x, y + R + 15);
-    const v = G.vals[m];
-    if (v) {
-      c.font = `500 ${G.tall ? 11 : 12}px system-ui,sans-serif`; c.fillStyle = "#a9a69d";
-      c.fillText(v.text, x, y + R + 30);
-      if (v.vs) { c.fillStyle = v.vsCol; c.fillText(v.vs, x, y + R + 44); }
-    } else if (m === "economy") {
-      c.font = "500 11px system-ui,sans-serif"; c.fillStyle = "#77756e"; c.fillText("EIA's path, not modeled here", x, y + R + 30);
+    for (const m in G.pos) {
+      const b = body(modGrade(m).grade), s = b.width / G.dpr, [x, y] = G.pos[m];
+      c.drawImage(b, x - s / 2, y - s / 2, s, s);
     }
-    c.font = "600 9.5px system-ui,sans-serif"; c.fillStyle = g.grade === "match" ? "#04342C" : g.grade === "fixed" ? "#8a8880" : "#E8A33D";
-    c.fillText(g.grade === "match" ? "PORTED" : g.grade === "fixed" ? "FIXED" : "STAND-IN", x, y + 3.5);
   }
-  // Node bodies drawn once per size: ported solid, stand-in hollow and dashed, EIA's fixed path dotted grey.
-  const bodies = {};
-  function nodeSprite(grade, R) {
-    const key = `${grade}:${R}:${G.dpr}`;
-    if (bodies[key]) return bodies[key];
-    const size = Math.ceil((2 * R + 6) * G.dpr), cvs = document.createElement("canvas"); cvs.width = cvs.height = size;
-    const c = cvs.getContext("2d"); c.scale(G.dpr, G.dpr);
-    const x = size / G.dpr / 2, y = x;
-    c.beginPath(); c.arc(x, y, R, 0, 6.2832);
-    if (grade === "match") {
-      const rg = c.createRadialGradient(x - R * 0.3, y - R * 0.3, R * 0.1, x, y, R);
-      rg.addColorStop(0, "#8ff5d2"); rg.addColorStop(1, "#139a70"); c.fillStyle = rg; c.fill();
-      c.strokeStyle = "#c9fff0"; c.lineWidth = 1.5; c.stroke();
-    } else if (grade === "fixed") {
-      c.fillStyle = "#0d0f13"; c.fill(); c.setLineDash([2, 4]); c.strokeStyle = "#77756e"; c.lineWidth = 1.5; c.stroke();
-    } else {
-      c.fillStyle = "rgba(232,163,61,.08)"; c.fill(); c.setLineDash([5, 4]); c.strokeStyle = "#E8A33D"; c.lineWidth = 1.8; c.stroke();
-    }
-    return (bodies[key] = cvs);
-  }
-  const rgbSprites = {};
-  function tintRGB(col) {
-    const key = col.join(",");
-    if (rgbSprites[key]) return rgbSprites[key];
-    const c = document.createElement("canvas"); c.width = c.height = 64;
-    const g = c.getContext("2d"); g.drawImage(sprite, 0, 0); g.globalCompositeOperation = "source-in";
-    g.fillStyle = `rgb(${key})`; g.fillRect(0, 0, 64, 64);
-    return (rgbSprites[key] = c);
-  }
-
-  let rafOn = false;
-  // draw time, smoothed, for checking the 60 fps budget from the console: window.__think.drawMs
-  window.__think = { drawMs: 0, parts: 0 };
+  window.__think = { drawMs: 0, parts: 0 };   // draw cost, smoothed, for checking the 60 fps budget
   function loop(now) {
     const t = performance.now(); draw(now);
     window.__think.drawMs = 0.9 * window.__think.drawMs + 0.1 * (performance.now() - t); window.__think.parts = G.parts.length;
     requestAnimationFrame(loop);
   }
 
-  // ---- one scenario-year as recorded steps --------------------------------------------------------
-  // Each step holds every key's value after that demand or supply step; `prev` is what the modules saw
-  // before it (EIA's own value before the first step of the year, the shock's baseline).
-  function stepsFor(y) {
-    const raw = S.sc.steps.filter((s) => s.y === y && s.c === Math.max(...S.sc.steps.filter((t) => t.y === y).map((t) => t.c)));
-    const keys = S.meta.keys;
-    let prev = keys.map((k) => eiaAt(k, y));
-    return raw.map((s, n) => {
-      const cur = s.v.map((v, i) => (v === null ? prev[i] : v));
-      const st = { ...s, n, cur, prev, first: n === 0 };
-      prev = cur; return st;
-    });
+  // ---- labels (HTML: crisp text, no glow) ---------------------------------------------------------
+  function placeLabels() {
+    const box = $("labels"); box.innerHTML = "";
+    for (const m of [...DEMAND, ...SUPPLY]) {
+      const side = DEMAND.includes(m) ? G.L.demand.side : G.L.supply.side, [x, y] = G.pos[m], R = G.R;
+      const el = document.createElement("div"); el.className = `lab ${side}`; el.dataset.m = m;
+      const g = S.fid && S.sc ? modGrade(m) : { grade: "stand", why: "" };
+      el.innerHTML = `<span class="nm">${MODS[m].name}</span><span class="bd ${g.grade === "match" ? "match" : "stand"}" title="${esc(g.why)}">${g.grade === "match" ? "PORTED" : "STAND-IN"}</span>` +
+        `<span class="val" title="${esc(MODS[m].what || "all energy used, US")}"><span></span></span><span class="vs"></span><span class="note"></span>`;
+      if (side === "left") Object.assign(el.style, { right: `${G.w - (x - R - 10)}px`, top: `${y}px`, transform: "translateY(-50%)" });
+      if (side === "right") Object.assign(el.style, { left: `${x + R + 10}px`, top: `${y}px`, transform: "translateY(-50%)" });
+      if (side === "above") Object.assign(el.style, { left: `${x}px`, bottom: `${G.h - (y - R - 6)}px`, transform: "translateX(-50%)" });
+      if (side === "below") Object.assign(el.style, { left: `${x}px`, top: `${y + R + 6}px`, transform: "translateX(-50%)" });
+      box.appendChild(el);
+    }
   }
-  const rel = (a, b) => (Math.abs(b) > 1e-9 ? (a - b) / Math.abs(b) : 0);
-  const pct = (r, d = 1) => `${r >= 0 ? "+" : "-"}${fmt(Math.abs(r * 100), Math.abs(r) < 0.001 ? 2 : d)}%`;
+  function roll(holder, text, animate) {
+    const cur = holder.querySelector("span:not(.out)");
+    if (cur && cur.textContent === text) return;
+    if (!animate || REDUCED || !cur || !cur.textContent) { holder.innerHTML = `<span>${esc(text)}</span>`; return; }
+    cur.classList.add("out"); setTimeout(() => cur.remove(), 520);
+    const n = document.createElement("span"); n.className = "in"; n.textContent = text; holder.appendChild(n);
+    void n.offsetWidth; setTimeout(() => n.classList.remove("in"), 16);   // a timer, not animation frames: hidden tabs skip frames
+  }
   function valueText(key, v) {
     const u = S.meta.vars[key].unit;
     if (u === "quads") return `${fmt(v, 2)} quads`;
@@ -266,209 +245,245 @@
     if (u === "$/MMBtu") return `$${fmt(v, 2)}/MMBtu`;
     return `${fmt(v, 1)} ${u}`;
   }
-  function setNodeValues(st, y) {
-    for (const m in MODS) {
-      const key = MODS[m].key; if (!key) continue;
-      const v = st.cur[idx(key)], e = eiaAt(key, y), r = rel(v, e);
-      G.vals[m] = { text: valueText(key, v), vs: Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`, vsCol: Math.abs(r) < 0.0005 ? "#77756e" : r > 0 ? "#ff9b85" : "#7fe0bf" };
+  const rel = (a, b) => (Math.abs(b) > 1e-9 ? (a - b) / Math.abs(b) : 0);
+  const pct = (r) => `${r >= 0 ? "+" : "-"}${fmt(Math.abs(r * 100), Math.abs(r) < 0.001 ? 2 : Math.abs(r) < 0.1 ? 1 : 0)}%`;
+  function paintLabels(vals, active, animate) {
+    for (const el of $("labels").children) {
+      const m = el.dataset.m, key = MODS[m].key, v = vals[idx(key)], e = eiaAt(key, S.year), r = rel(v, e);
+      roll(el.querySelector(".val"), valueText(key, v), animate);
+      const vs = el.querySelector(".vs");
+      vs.textContent = Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`;
+      vs.className = `vs ${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}`;
+      el.querySelector(".note").textContent = carbonNote(key) && G.L.flow === "v" ? "incl. carbon" : carbonNote(key);
+      el.classList.toggle("dim", !!active && !active.has(m));
     }
   }
 
-  // Play one step: particles along every edge whose value changed at this step, in the direction it travels.
-  function playStep(st, dur, quiet) {
-    const now = performance.now(), keys = S.meta.keys;
-    const moved = [];
-    for (const e of EDGES) {
-      const i = idx(e[2]), r = rel(st.cur[i], st.prev[i]);
-      if (Math.abs(r) < 1e-6) continue;
-      // demand steps move quantities; supply steps move prices, power-plant fuel and CO2
-      const isDemandKey = e[3] === "q" && S.meta.vars[e[2]].module !== "electricity";
-      if ((st.s === "d") !== isDemandKey) continue;
-      moved.push([e, r]);
-      const m = mag(r);
-      G.edgeHeat.set(e, Math.max(G.edgeHeat.get(e) || 0, m));
-      if (REDUCED) continue;
-      const room = Math.max(0, 700 - G.parts.length);   // a ceiling on live particles keeps the frame rate
-      const n = Math.min(room, Math.round((quiet ? 1 : 3) + (quiet ? 12 : 34) * m)), k = curve(e[0], e[1], e[3]);
-      for (let p = 0; p < n; p++) G.parts.push({ curve: k, type: e[3], t0: now + Math.random() * dur * 0.55, dur: dur * (0.45 + Math.random() * 0.2),
-        size: 7 + 11 * m * Math.random() + 3, alpha: 0.35 + 0.55 * m });
+  // ---- the timeline: shock, every recorded step, settled ------------------------------------------
+  function build(y) {
+    const raw = S.sc.steps.filter((s) => s.y === y);
+    const cyc = Math.max(...raw.map((s) => s.c)), keys = S.meta.keys;
+    const eia = keys.map((k) => eiaAt(k, y));
+    let prev = eia, co2 = eia[idx("co2")];
+    const beats = [{ type: "shock", vals: eia, co2, co2src: "eia" }];
+    raw.filter((s) => s.c === cyc).forEach((s, n) => {
+      const cur = s.v.map((v, i) => (v === null ? prev[i] : v));
+      if (s.s === "s") co2 = cur[idx("co2")];
+      // what moved at this step, against what the modules saw before it (EIA's own values before the first)
+      const moved = [];
+      keys.forEach((k, i) => {
+        if (k === "co2" && s.s === "d") return;
+        const r = rel(cur[i], prev[i]);
+        if (Math.abs(r) > 1e-7) moved.push([k, r]);
+      });
+      moved.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+      beats.push({ type: "step", st: s, first: n === 0, vals: cur, prev, moved, co2, co2src: s.s === "s" ? "run" : beats[beats.length - 1].co2src });
+      prev = cur;
+    });
+    const last = beats[beats.length - 1];
+    beats.push({ type: "settle", vals: last.vals, co2: last.co2, co2src: "run", st: last.st });
+    return beats;
+  }
+  const mag = (r) => Math.min(1, Math.log10(1 + Math.abs(r) * 1e4) / 4);   // 0.01% faint, 100% full
+  function sayStep(b, short) {
+    const s = b.st, top = b.moved.filter(([k]) => k !== "co2").slice(0, short ? 2 : 3);
+    const items = top.map(([k, r]) => {
+      const v = S.meta.vars[k], cn = carbonNote(k);
+      return `${esc(v.label)} <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span>${cn ? ` <small>(${cn})</small>` : ""}`;
+    });
+    const co2m = b.moved.find(([k]) => k === "co2");
+    if (co2m && s.s === "s") items.push(`US CO2 <span class="${co2m[1] > 0 ? "up" : "dn"}">${pct(co2m[1])}</span>`);
+    const against = b.first ? "vs EIA" : s.s === "d" ? "vs last pass" : "vs the prices they saw";
+    const head = s.s === "d" ? (b.first ? `Demand answers EIA's ${S.year} prices with the levers in` : "Demand answers the new prices")
+      : (s.i === 1 ? "Supply prices that demand" : "Supply re-prices");
+    return items.length ? `<b>${head}</b> (${against}): ${items.join(", ")}.` : `<b>${head}</b>: nothing moved more than 0.00001%.`;
+  }
+  function narrate(b) {
+    if (b.type === "shock") {
+      const lev = Object.entries(S.sc.levers || {}), where = (S.sc.entered || []).map((m) => (MODS[m] || { name: m }).name);
+      return lev.length ? `<b>${S.year}.</b> ${esc(lev.map(([k, v]) => (SHORT[k] ? SHORT[k](v) : k)).join(" · "))} enters at <b>${esc(where.join(", "))}</b>.`
+        : `<b>${S.year}, no shock.</b> The loop at EIA's own settings. Watch how little moves.`;
     }
-    // the destination modules light up with the size of what reached them
-    const hit = {};
-    for (const [e, r] of moved) hit[e[1]] = Math.max(hit[e[1]] || 0, mag(r));
-    for (const m in hit) {
-      G.flash[m] = now + dur * 0.45;
-      if (!REDUCED && hit[m] > 0.15) G.rings.push({ m, t0: now + dur * 0.45, dur: 900, grow: 30 * hit[m] + 8, w: 2.5, a: 0.8 * hit[m], col: st.s === "d" ? COL.q : COL.p });
-    }
-    // numbers on the five biggest
-    const top = moved.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).filter((x, i, a) => a.findIndex((y) => y[0][2] === x[0][2]) === i).slice(0, quiet ? 0 : 5);
-    G.labels = top.map(([e, r]) => ({ e, text: `${S.meta.vars[e[2]].label} ${pct(r)}`, t0: now + dur * 0.2, dur: dur * 0.95 }));
-    return moved;
+    if (b.type === "step") return sayStep(b);
+    const s = b.st, r = rel(b.co2, eiaAt("co2", S.year));
+    return (s.ok ? `<b>Agreed after ${s.i} passes.</b> The last pass moved prices at most ${pct(s.dp).slice(1)}, inside EIA's tolerance. `
+      : `<b>Stopped after ${s.i} passes</b> without passing EIA's test (last price change ${pct(s.dp).slice(1)}); NEMS moves on the same way. `) +
+      `US CO2 ${fmt(b.co2)} Mt, <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span> vs EIA.`;
+  }
+  function headline(b) {
+    if (b.type === "shock") return `<span class="tag shock">Shock</span>${esc(S.sc.label)} <span>${esc(S.year)}</span>`;
+    if (b.type === "settle") return `<span class="tag settle">Settled</span>${esc(S.sc.label)} <span>${S.year}, after ${b.st.i} passes</span>`;
+    return `<span class="tag pass">Pass ${b.st.i} · ${b.st.s === "d" ? "demand" : "supply"}</span>${b.st.s === "d" ? "Quantities go to supply" : "Prices go back to demand"} <span>${S.year}</span>`;
   }
 
-  // ---- the narration: the real values of this step, plainly ----------------------------------------
-  function narrate(st, moved, y) {
-    const top = [];
-    const seen = new Set();
-    for (const [e, r] of moved.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))) {
-      if (seen.has(e[2])) continue; seen.add(e[2]);
-      const v = S.meta.vars[e[2]];
-      top.push(`${esc(v.label)} <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span>`);
-      if (top.length === 3) break;
+  // ---- applying a beat ----------------------------------------------------------------------------
+  function apply(i, animate, quick) {
+    const b = S.beats[i]; if (!b) return;
+    S.pos = i; $("scrub").value = i;
+    G.heat = new Map(); G.nodeHeat = {};
+    let active = null;
+    if (b.type === "step") {
+      active = new Set();
+      const isDemandStep = b.st.s === "d";
+      for (const e of EDGES) {
+        const r = rel(b.vals[idx(e[2])], b.prev[idx(e[2])]);
+        if (Math.abs(r) < 1e-7) continue;
+        const demandKey = e[3] === "q";   // demand steps move what demand uses; supply steps move prices and power-plant fuel
+        if (isDemandStep !== demandKey) continue;
+        const m = mag(r);
+        G.heat.set(e, m); active.add(e[0]); active.add(e[1]);
+        G.nodeHeat[e[1]] = Math.max(G.nodeHeat[e[1]] || 0, m);
+        if (animate && !REDUCED) spawn(e, m, quick ? 380 : 2000, quick);
+      }
+    } else if (b.type === "shock" && animate && !REDUCED) {
+      for (const m of S.sc.entered || []) if (G.pos[m]) for (let n = 0; n < 3; n++)
+        G.rings.push({ m, t0: performance.now() + n * 300, dur: 1600, grow: Math.min(G.w, G.h) * 0.2, a: 0.9, col: [255, 107, 107] });
+      for (const m of S.sc.entered || []) G.nodeHeat[m] = 1;
+    } else if (b.type === "settle" && animate && !REDUCED && !quick) {
+      for (const m in G.pos) G.rings.push({ m, t0: performance.now(), dur: 1500, grow: 34, a: 0.55, col: [79, 227, 176] });
     }
-    const pass = st.i;
-    let head, cls;
-    if (st.s === "d") {
-      head = st.first ? `<b>Pass 1, demand.</b> The four demand modules answer EIA's ${y} prices with the levers in place (vs EIA):`
-        : `<b>Pass ${pass}, demand.</b> Homes, businesses, industry and vehicles answer the new prices (vs what they used last pass):`;
-      cls = "q";
+    paintLabels(b.vals, active, animate);
+    paintCO2box(b, animate);
+    if (!quick) {
+      $("headline").innerHTML = headline(b);
+      const say = $("say"); say.innerHTML = narrate(b); if (animate) { say.classList.remove("fresh"); void say.offsetWidth; say.classList.add("fresh"); }
+      paintTicker();
     } else {
-      head = `<b>Pass ${pass}, supply.</b> Electricity, gas, oil and coal price that demand (vs the prices it saw):`;
-      cls = "p";
+      $("headline").innerHTML = `<span class="tag pass">Time-lapse</span>${esc(S.sc.label)} <span>${S.year}, pass ${b.st ? b.st.i : ""}</span>`;
     }
-    add(top.length ? `${head} ${top.join(", ")}.` : `${head} nothing moved more than 0.0001%.`, cls);
+    $("pass").textContent = b.type === "step" ? `${S.year}, pass ${b.st.i} ${b.st.s === "d" ? "demand" : "supply"}` : `${S.year}`;
+    paintConv();
   }
-  function add(html, cls) {
-    const li = document.createElement("li"); li.className = cls || ""; li.innerHTML = html;
-    const t = $("ticker"); t.insertBefore(li, t.firstChild);
-    while (t.children.length > 7) t.lastChild.remove();
+  function spawn(e, m, dur, quick) {
+    const path = G.paths.get(e), now = performance.now(), room = Math.max(0, 650 - G.parts.length);
+    const n = Math.min(room, Math.round((quick ? 1 : 3) + (quick ? 8 : 30) * m));
+    for (let k = 0; k < n; k++) G.parts.push({ path, type: e[3], t0: now + Math.random() * dur * 0.5, dur: Math.max(300, dur * (0.5 + 0.15 * Math.random())),
+      size: 6 + 10 * m * Math.random() + 3, alpha: 0.35 + 0.6 * m });
   }
-
-  // ---- the settled year ---------------------------------------------------------------------------
-  const SETTLED = [["co2", "US energy CO2"], ["pelrs", "Power price, homes"], ["pngrs", "Gas price, homes"], ["pmgtr", "Gasoline"],
-    ["qtsrs", "Homes, all energy"], ["qtstr", "Vehicles, all energy"]];
-  function paintSettled(y) {
-    const st = stepsFor(y), last = st[st.length - 1];
-    $("set-year").textContent = y;
-    $("settled").innerHTML = SETTLED.map(([k, label]) => {
-      const v = last.cur[idx(k)], e = eiaAt(k, y), r = rel(v, e);
-      return `<div class="st"><div class="k">${label}</div><div class="v">${valueText(k, v).replace(/ (quads|Mt)$/, " <small>$1</small>")}</div>` +
-        `<div class="d">${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA (${valueText(k, e)})`}</div>${badge(keyGrade(k))}</div>`;
+  function paintCO2box(b, animate) {
+    const box = $("co2box");
+    if (!box.firstChild) box.innerHTML = `<div class="k">US energy CO2</div><div class="n"><span></span></div><div class="d"></div>`;
+    roll(box.querySelector(".n"), `${fmt(b.co2)} Mt`, animate);
+    const r = rel(b.co2, eiaAt("co2", S.year));
+    box.querySelector(".d").innerHTML = b.co2src === "eia" ? "EIA's, before the loop runs" : `${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`} ${badge(keyGrade("co2"))}`;
+  }
+  function paintTicker() {
+    const items = S.beats.slice(0, S.pos + 1).map((b, i) => {
+      const cls = b.type === "shock" ? "shock" : b.type === "settle" ? "ok" : b.st.s === "d" ? "q" : "p";
+      const tag = b.type === "step" ? `<b>Pass ${b.st.i}, ${b.st.s === "d" ? "demand" : "supply"}.</b> ` : "";
+      return `<li class="${cls}${i === S.pos ? " now" : ""}">${tag}${b.type === "step" ? sayStep(b, true) : narrate(b)}</li>`;
+    });
+    $("ticker").innerHTML = items.reverse().join("");
+  }
+  function paintConv() {
+    const steps = S.beats.filter((b) => b.type === "step");
+    $("conv").innerHTML = steps.map((b, k) => {
+      const big = b.moved[0] ? Math.abs(b.moved[0][1]) : 0, i = S.beats.indexOf(b);
+      const h = Math.max(2, 34 * mag(big));
+      return `<i class="${b.st.s}${i === S.pos ? " on" : i < S.pos ? " done" : ""}" data-i="${i}" style="height:${h}px" ` +
+        `title="Pass ${b.st.i} ${b.st.s === "d" ? "demand" : "supply"}: largest change ${pct(big).slice(1)} (${esc(b.moved[0] ? S.meta.vars[b.moved[0][0]].label : "none")})"></i>`;
     }).join("");
   }
+
+  // ---- settled panel and CO2 by year --------------------------------------------------------------
+  const SETTLED = [["co2", "US energy CO2"], ["pelrs", "Power price, homes"], ["pngrs", "Gas price, homes"], ["pmgtr", "Gasoline"],
+    ["qtsrs", "Homes, all energy"], ["qtstr", "Vehicles, all energy"]];
+  function paintSettled() {
+    const y = S.year, b = S.beats[S.beats.length - 1], v = (k) => b.vals[idx(k)];
+    $("set-year").textContent = y;
+    $("settled").innerHTML = SETTLED.map(([k, label]) => {
+      const x = v(k), e = eiaAt(k, y), r = rel(x, e), cn = carbonNote(k);
+      return `<div class="st"><div class="k">${label}</div><div class="v">${valueText(k, x).replace(/ (quads|Mt)$/, " <small>$1</small>")}</div>` +
+        `<div class="d">${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA (${valueText(k, e)})`}</div>${cn ? `<div class="c">${cn}</div>` : ""}${badge(keyGrade(k))}</div>`;
+    }).join("");
+    // The stand-in's power price: say plainly how little of a carbon price it passes through.
+    const t = $("truth");
+    if (carbon()) {
+      const dg = v("pngel") - eiaAt("pngel", y), dp = v("pelrs") - eiaAt("pelrs", y);
+      t.hidden = false;
+      t.innerHTML = `<b>Stand-in limit, power price.</b> The electricity stand-in adds carbon only at the power sector's average CO2 per kWh, and its fitted price curve barely follows fuel costs (elasticity 0.001 to the gas price). ` +
+        `Here gas for power plants rose $${fmt(dg, 2)}/MMBtu (incl. carbon). For scale: if gas-fired plants set the price, that alone would add about ${fmt((dg * 6.4) / 10, 1)}¢/kWh at a 6,400 Btu/kWh heat rate (our assumption); ` +
+        `the stand-in moved the home power price ${dp >= 0 ? "+" : ""}${fmt(dp, 1)}¢. EIA's own electricity model is not ported yet.`;
+    } else t.hidden = true;
+  }
   function paintCO2(upTo) {
-    const svg = $("co2"), W = svg.clientWidth || 320, H = svg.clientHeight || 120, [y0, y1] = S.meta.years;
-    const ys = []; for (let y = y0; y <= y1; y++) ys.push(y);
+    const svg = $("co2"), W = svg.clientWidth || 300, H = svg.clientHeight || 110, [y0, y1] = S.meta.years, ys = [];
+    for (let y = y0; y <= y1; y++) ys.push(y);
     const mine = ys.map((y) => { const st = S.sc.steps.filter((s) => s.y === y && s.s === "s"); return st.length ? st[st.length - 1].v[idx("co2")] : null; });
-    const eia = ys.map((y) => eiaAt("co2", y));
-    const all = [...eia, ...mine.filter((v) => v !== null)], lo = Math.min(...all) * 0.97, hi = Math.max(...all) * 1.02;
-    const X = (y) => 30 + ((y - y0) / (y1 - y0)) * (W - 38), Y = (v) => 8 + (1 - (v - lo) / (hi - lo)) * (H - 26);
+    const eia = ys.map((y) => eiaAt("co2", y)), all = [...eia, ...mine.filter((v) => v !== null)];
+    const lo = Math.min(...all) * 0.97, hi = Math.max(...all) * 1.02;
+    const X = (y) => 32 + ((y - y0) / (y1 - y0)) * (W - 40), Y = (v) => 8 + (1 - (v - lo) / (hi - lo)) * (H - 26);
     const line = (arr, lim) => arr.map((v, i) => (v === null || ys[i] > lim ? null : `${X(ys[i])},${Y(v)}`)).filter(Boolean).join(" ");
-    const cur = upTo || S.year;
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     svg.innerHTML = `<polyline points="${line(eia, y1)}" fill="none" stroke="#8a8880" stroke-dasharray="4 3" stroke-width="1.4"/>` +
       `<polyline points="${line(mine, upTo || y1)}" fill="none" stroke="#4FE3B0" stroke-width="2.2"/>` +
-      `<line x1="${X(cur)}" x2="${X(cur)}" y1="6" y2="${H - 16}" stroke="rgba(255,255,255,.18)"/>` +
+      `<line x1="${X(upTo || S.year)}" x2="${X(upTo || S.year)}" y1="6" y2="${H - 16}" stroke="rgba(255,255,255,.2)"/>` +
       `<text x="0" y="${Y(hi) + 8}">${fmt(hi)}</text><text x="0" y="${Y(lo)}">${fmt(lo)}</text>` +
       `<text x="${X(y0)}" y="${H - 2}" text-anchor="middle">${y0}</text><text x="${X(y1)}" y="${H - 2}" text-anchor="end">${y1}</text>` +
       `<text x="${W - 4}" y="14" text-anchor="end" style="fill:#4FE3B0">this run</text><text x="${W - 4}" y="26" text-anchor="end">EIA, dashed</text>`;
     $("co2-grade").innerHTML = badge(keyGrade("co2"));
   }
 
-  // ---- playing ------------------------------------------------------------------------------------
+  // ---- transport ----------------------------------------------------------------------------------
+  const BEAT = { shock: 2800, step: 2400, settle: 2600 };
   const wait = (ms, token) => new Promise((ok) => setTimeout(() => ok(token === S.token), ms));
-  async function playYear(y, opts = {}) {
-    const token = opts.token ?? ++S.token;
-    const quiet = !!opts.quiet, dur = quiet ? 420 : REDUCED ? 1500 : 1600;
-    const st = stepsFor(y);
-    if (!quiet) { $("ticker").innerHTML = ""; G.labels = []; }
-    if (!quiet && st.length) await shock(st, y, token);
-    for (const s of st) {
-      if (token !== S.token) return false;
-      const moved = playStep(s, dur, quiet);
-      setNodeValues(s, y);
-      $("pass").textContent = `${y}, pass ${s.i}${s.s === "d" ? " demand" : " supply"}`;
-      if (!quiet) narrate(s, moved, y);
-      if (!(await wait(dur, token))) return false;
-    }
-    const last = st[st.length - 1];
-    if (!quiet && last) {
-      const passes = last.i;
-      add(last.ok ? `<b>Agreed after ${passes} passes.</b> Every price and quantity moved less than EIA's tolerance on the last pass (largest price change ${pct(last.dp, 2).replace("+", "")}).`
-        : `<b>Stopped after ${passes} passes</b> without passing EIA's test (largest price change ${pct(last.dp, 2).replace("+", "")}); NEMS moves on the same way.`, "ok");
-      for (const m in MODS) if (m !== "economy" && !REDUCED) G.rings.push({ m, t0: performance.now(), dur: 1400, grow: 40, w: 2, a: 0.5, col: [79, 227, 176] });
-      hero(`Settled for ${y}`, `${fmt(last.cur[idx("co2")])} Mt CO2, ${pct(rel(last.cur[idx("co2")], eiaAt("co2", y)))} vs EIA`, 2600);
-    }
-    paintSettled(y); paintCO2(opts.upTo);
-    return true;
-  }
-  async function shock(st, y, token) {
-    const lev = Object.entries(S.sc.levers || {});
-    const words = lev.length ? lev.map(([k, v]) => LEVER_NAMES[k] ? LEVER_NAMES[k](v) : k).join(", ") : "no lever: EIA's own settings";
-    const where = (S.sc.entered || []).map((m) => MODS[m].name).join(", ");
-    add(`<b>${y}. The shock:</b> ${esc(words)}${where ? `, entering at ${esc(where)}` : ""}.`, "shock");
-    const short = lev.map(([k, v]) => (SHORT[k] ? SHORT[k](v) : k)).join(" · ");
-    const n = (S.sc.entered || []).length;
-    hero(lev.length ? "The shock enters" : "No shock: EIA's settings", lev.length ? `${short}${n ? `, into ${n === 1 ? MODS[S.sc.entered[0]].name : `${n} modules`}` : ""}` : "Watch how little moves", 1700);
-    if (!REDUCED) for (const m of S.sc.entered || []) {
-      G.flash[m] = performance.now();
-      for (let n = 0; n < 3; n++) G.rings.push({ m, t0: performance.now() + n * 260, dur: 1500, grow: Math.min(G.w, G.h) * 0.22, w: 4, a: 0.9, col: COL.c });
-    }
-    await wait(REDUCED ? 900 : 1800, token);
-  }
-  function hero(big, small, ms) {
-    const h = $("hero");
-    h.hidden = false; h.classList.remove("fade");
-    h.innerHTML = `<b>${esc(big)}</b><span>${esc(small)}</span>`;
-    clearTimeout(hero.t); hero.t = setTimeout(() => h.classList.add("fade"), ms);
-  }
-
   async function play() {
-    S.playing = true; setButtons();
-    await playYear(S.year);
-    S.playing = false; setButtons();
-  }
-  async function stepOnce() {
-    // one recorded step at a time, for reading
-    const st = stepsFor(S.year);
-    if (S.k < 0) { $("ticker").innerHTML = ""; S.k = 0; add(`<b>${S.year}, stepping.</b> Press Step for each demand or supply answer.`, "shock"); }
-    if (S.k >= st.length) { S.k = -1; paintSettled(S.year); return; }
-    const s = st[S.k++];
-    const moved = playStep(s, 1600, false); setNodeValues(s, S.year); narrate(s, moved, S.year);
-    $("pass").textContent = `${S.year}, pass ${s.i}${s.s === "d" ? " demand" : " supply"}`;
-  }
-  async function lapse() {
-    const token = ++S.token; S.lapse = true; setButtons();
-    $("ticker").innerHTML = ""; add("<b>Time-lapse.</b> Every year's real passes, 2027 to 2050, sped up. The CO2 line fills in as each year settles.", "shock");
-    for (let y = S.meta.years[0]; y <= S.meta.years[1]; y++) {
-      S.year = y; $("year").value = y; $("year-out").textContent = y; $("play").textContent = `Play ${y}`;
-      if (!(await playYear(y, { quiet: true, token, upTo: y }))) break;
+    if (S.playing) { pause(); return; }
+    const token = ++S.token; S.playing = true; buttons();
+    if (S.pos >= S.beats.length - 1) S.pos = -1;
+    for (let i = S.pos + 1; i < S.beats.length; i++) {
+      apply(i, true);
+      if (!(await wait(BEAT[S.beats[i].type] * (REDUCED ? 1.15 : 1), token))) return;
     }
-    if (token === S.token) add(`<b>2050 reached.</b> ${fmt(S.sc.steps.filter((s) => s.s === "s").length)} supply passes in all, recorded from the run.`, "ok");
-    S.lapse = false; setButtons();
+    S.playing = false; buttons();
   }
-  function stop() { S.token++; S.playing = false; S.lapse = false; S.k = -1; G.parts = []; G.labels = []; setButtons(); }
-  function setButtons() {
-    $("play").disabled = S.playing || S.lapse; $("step").disabled = S.playing || S.lapse; $("lapse").textContent = S.lapse ? "Stop" : "Time-lapse to 2050";
+  function pause() { S.token++; S.playing = false; S.lapse = false; buttons(); }
+  function go(i, animate) { pause(); apply(Math.max(0, Math.min(S.beats.length - 1, i)), animate); }
+  async function lapse() {
+    if (S.lapse) { pause(); return; }
+    pause(); const token = ++S.token; S.lapse = true; buttons();
+    for (let y = S.meta.years[0]; y <= S.meta.years[1]; y++) {
+      setYear(y, false);
+      for (let i = 1; i < S.beats.length - 1; i++) { apply(i, true, true); if (!(await wait(360, token))) return; }
+      paintCO2(y);
+    }
+    S.lapse = false; apply(S.beats.length - 1, true); buttons();
+  }
+  function buttons() {
+    $("play").textContent = S.playing ? "Pause" : S.pos >= S.beats.length - 1 ? "Replay" : "Play";
+    $("lapse").textContent = S.lapse ? "Stop" : "Time-lapse";
+  }
+  function setYear(y, show = true) {
+    S.year = y; $("year").value = y; $("year-out").textContent = y;
+    S.beats = build(y); $("scrub").max = S.beats.length - 1;
+    paintSettled(); if (!S.lapse) paintCO2(); links(); writeHash();
+    if (show) apply(S.beats.length - 1, false);
+    buttons();
   }
 
-  // ---- scenarios ----------------------------------------------------------------------------------
-  async function pick(id) {
-    stop();
+  // ---- scenarios, links, legend -------------------------------------------------------------------
+  async function pick(id, autoplay) {
+    pause();
     if (!S.cache[id]) S.cache[id] = await fetch(`data/think/${id}.json`).then((r) => r.json());
     S.sc = S.cache[id];
     for (const b of document.querySelectorAll(".chip")) b.setAttribute("aria-pressed", String(b.dataset.id === id));
-    if (S.sc.kind === "lever") $("lever").value = id; else $("lever").value = "";
-    G.vals = {}; const st = stepsFor(S.year); if (st.length) setNodeValues(st[st.length - 1], S.year);
-    paintSettled(S.year); paintCO2(); links(); legend(); writeHash();
-    $("ticker").innerHTML = "";
-    add(`<b>${esc(S.sc.label)}.</b> ${esc(S.sc.desc)} Press Play to watch ${S.year} converge.`, "");
-    if (S.sc.fast) add(`<b>Trial file:</b> every sector ran on the stub, not EIA's ported code.${S.sc.left_out && S.sc.left_out.length ? ` Left out: ${S.sc.left_out.join(", ")}.` : ""}`, "shock");
+    $("lever").value = S.sc.kind === "lever" ? id : "";
+    placeLabels(); legend();
+    setYear(S.year, !autoplay);
+    if (autoplay) { apply(0, false); S.pos = -1; play(); }
   }
   function links() {
-    const lev = S.sc.levers || {};
-    const h = Object.entries(lev).map(([k, v]) => `${k}=${v}`);
-    const story = { reference: "eia", fast: "fast", ai: "ai", gas: "gas", nuke: "nuke" }[S.sc.id];
-    $("to2050").href = `2050.html#${[...h, `y=${S.year}`, ...(story ? [`s=${story}`] : [])].join("&")}`;
+    const lev = S.sc.levers || {}, story = { reference: "eia", fast: "fast", ai: "ai", gas: "gas", nuke: "nuke" }[S.sc.id];
+    $("to2050").href = `2050.html#${[...Object.entries(lev).map(([k, v]) => `${k}=${v}`), `y=${S.year}`, ...(story ? [`s=${story}`] : [])].join("&")}`;
     $("toEngine").href = `engine3d.html#a=yours&y=${S.year}&yours=${encodeURIComponent(Object.entries(lev).map(([k, v]) => `${k}:${v}`).join(","))}`;
   }
   function legend() {
     const p = (S.sc.ported || []).map((m) => MODS[m].name).join(", ");
     $("legend").innerHTML = `<span><i style="background:rgb(${COL.q})"></i>quantities, demand to supply</span>` +
-      `<span><i style="background:rgb(${COL.p})"></i>prices, supply to demand</span><span><i style="background:rgb(${COL.c})"></i>CO2</span>` +
-      `<span><b class="dot" style="background:#2fc795"></b>ported from EIA's code${p ? ` (${p})` : ""}</span>` +
-      `<span><b class="dot" style="border:1.5px dashed #E8A33D"></b>stand-in</span><span><b class="dot" style="border:1.5px dotted #77756e"></b>EIA's fixed path</span>` +
-      `<span>Particle density: how big that step's change was (log scale). Numbers are the model's.</span>`;
+      `<span><i style="background:rgb(${COL.p})"></i>prices, supply to demand</span>` +
+      `<span>Solid green: ported from EIA's code${p ? ` (${p})` : ""}. Dashed amber: stand-in fitted to EIA's runs.</span>` +
+      `<span>Particle density: how big that step's change was (log scale). Numbers are the model's.</span>` +
+      (S.sc.fast ? `<span style="color:#E8A33D">Trial file: every sector ran on the stub.</span>` : "");
   }
   function writeHash() { history.replaceState(null, "", `#s=${S.sc.id}&y=${S.year}`); }
 
@@ -478,30 +493,31 @@
     const stories = man.scenarios.filter((s) => s.kind === "story"), levers = man.scenarios.filter((s) => s.kind === "lever");
     $("stories").innerHTML = stories.map((s) => `<button class="chip" type="button" data-id="${s.id}" aria-pressed="false" title="${esc(s.desc)}">${esc(s.label)}</button>`).join("");
     $("lever").innerHTML = `<option value="">${levers.length ? "Choose a lever" : "Lever runs still computing"}</option>` + levers.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
-    $("stories").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (b) pick(b.dataset.id); });
-    $("lever").addEventListener("change", (e) => { if (e.target.value) pick(e.target.value); });
-    $("year").addEventListener("input", (e) => {
-      stop(); S.year = +e.target.value; $("year-out").textContent = S.year; $("play").textContent = `Play ${S.year}`;
-      G.vals = {}; const st = stepsFor(S.year); if (st.length) setNodeValues(st[st.length - 1], S.year);
-      paintSettled(S.year); paintCO2(); links(); writeHash();
-    });
+    $("stories").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (b) pick(b.dataset.id, !REDUCED); });
+    $("lever").addEventListener("change", (e) => { if (e.target.value) pick(e.target.value, !REDUCED); });
+    $("year").addEventListener("input", (e) => { pause(); setYear(+e.target.value); });
     $("play").addEventListener("click", play);
-    $("step").addEventListener("click", stepOnce);
-    $("lapse").addEventListener("click", () => (S.lapse ? stop() : lapse()));
-    $("about").textContent = `${meta.about} ${REDUCED ? "Reduced motion is on: no particles, the same numbers. " : ""}` +
-      "Ported modules run EIA's own Fortran logic in Python, checked against EIA's code; stand-ins are fitted to EIA's published runs. The economy is EIA's published path in this view.";
+    $("back").addEventListener("click", () => go(S.pos - 1, false));
+    $("fwd").addEventListener("click", () => go(S.pos + 1, true));
+    $("scrub").addEventListener("input", (e) => go(+e.target.value, false));
+    $("conv").addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) go(+b.dataset.i, true); });
+    $("lapse").addEventListener("click", lapse);
+    addEventListener("keydown", (e) => {
+      if (e.target.matches("input,select")) return;
+      if (e.key === " ") { e.preventDefault(); play(); } else if (e.key === "ArrowRight") go(S.pos + 1, true); else if (e.key === "ArrowLeft") go(S.pos - 1, false);
+    });
+    $("about").textContent = `${meta.about} Ported modules run EIA's own logic in Python, checked against EIA's code; stand-ins are fitted to EIA's published runs. ` +
+      `Delivered prices include the carbon price when there is one. ${REDUCED ? "Reduced motion is on: no particles, the same numbers. " : ""}Space plays or pauses; arrow keys step.`;
+    new ResizeObserver(() => layout()).observe($("stage"));
     layout();
-    let rt = 0; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(layout, 120); });
-    if (!rafOn) { rafOn = true; requestAnimationFrame(loop); }
-    const q = new URLSearchParams(location.hash.slice(1));
-    const y = +q.get("y"); if (y >= meta.years[0] && y <= meta.years[1]) { S.year = y; $("year").value = y; $("year-out").textContent = y; $("play").textContent = `Play ${y}`; }
+    requestAnimationFrame(loop);
+    const q = new URLSearchParams(location.hash.slice(1)), y = +q.get("y");
+    if (y >= meta.years[0] && y <= meta.years[1]) S.year = y;
     const want = man.scenarios.find((s) => s.id === q.get("s")) || man.scenarios.find((s) => s.id === "fast") || man.scenarios[0];
-    await pick(want.id);
-    // the hero moment: play once on arrival, unless the visitor asked for less motion
-    if (!REDUCED) setTimeout(() => { if (!S.playing && !S.lapse) play(); }, 700);
+    await pick(want.id, !REDUCED);   // the hero: play the chosen year once on arrival, unless less motion was asked for
   }
   addEventListener("DOMContentLoaded", () => main().catch((e) => {
     console.error(e);
-    document.querySelector(".stage").insertAdjacentHTML("beforeend", `<p style="position:absolute;inset:auto 16px 16px;color:#E8A33D">The recorded runs did not load (${esc(e.message)}). Serve the web folder and run scripts/think_runs.py.</p>`);
+    $("say").textContent = `The recorded runs did not load (${e.message}). Serve the web folder and run scripts/think_runs.py.`;
   }));
 })();
