@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Watch the Model Think</title>
 <meta name="description" content="Pull a lever and watch an open rebuild of EIA's energy model pass prices and quantities between its modules, pass by pass, until it agrees. Every number shown is one the model produced.">
-<link rel="stylesheet" href="think.css?v=34">
-<script defer src="site.js"></script>
-<script defer src="think.js?v=35"></script>
+<link rel="stylesheet" href="think.css?v=41">
+<script defer src="site.js?v=11"></script>
+<script defer src="think.js?v=42"></script>
 </head>
 <body>
 <header class="hd">
   <div class="hd-t">
     <h1>Watch the model think</h1>
-    <p>A shock enters one module. Then the real loop passes prices and quantities back and forth until every module agrees.</p>
+    <p>Each year the model goes back and forth: buyers say how much energy they want at today's prices, sellers set prices for that demand, until neither side changes much.</p>
   </div>
   <nav class="hd-links" aria-label="Related views">
     <a class="btn ghost" id="to2050" href="2050.html">Your 2050</a>
@@ -21,6 +21,7 @@
   </nav>
 </header>
 
+<div class="dots-row"><div id="dots"></div></div>
 <section class="controls" aria-label="Scenario">
   <div id="stories" class="chips" role="group" aria-label="Stories"></div>
   <label class="sel"><span>One lever, pushed to the edge</span>
@@ -45,17 +46,18 @@
       <button id="fwd" class="btn ghost icon" type="button" aria-label="Next step">&#9654;</button>
       <input id="scrub" class="scrub" type="range" min="0" max="1" value="0" step="1" aria-label="Step in this year's loop">
       <label class="yr">Year <input id="year" type="range" min="2027" max="2050" value="2035" step="1"><output id="year-out">2035</output></label>
-      <button id="lapse" class="btn ghost" type="button" title="Every year's passes, 2027 to 2050, sped up">Time-lapse</button>
+      <button id="lapse" class="btn ghost" type="button" title="Every year, 2027 to 2050, sped up">Time-lapse</button>
+      <button id="details" class="btn ghost" type="button" aria-pressed="false">Details</button>
     </div>
     <div class="conv-row">
-      <span class="conv-k">Largest US change at each step, this year</span>
+      <span class="conv-k">How much each round changed things, this year</span>
       <div id="conv" class="conv" aria-label="How much each step moved, shrinking as the loop agrees"></div>
     </div>
   </section>
 
   <aside class="rail">
     <div class="panel">
-      <div class="panel-hd"><h2>The loop so far</h2><span id="pass" class="pass"></span></div>
+      <div class="panel-hd"><h2>Round by round</h2><span id="pass" class="pass"></span></div>
       <ol id="ticker" class="ticker"></ol>
     </div>
     <div class="panel">

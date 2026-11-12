@@ -34,7 +34,7 @@
   const YOURS_ARG = early.get("yours");
   if (YOURS_ARG !== null && window.UX2050) {
     try {
-      const emu = await load("data/ux2050/emulator.json");
+      const emu = await load("data/ux2050/emulator.json?v=2");
       const x = UX2050.decode(emu, YOURS_ARG), real = UX2050.loadReal(x);
       const o = real ? real.result : UX2050.emulate(emu, x);
       const SECT = [["residential", "rs"], ["commercial", "cm"], ["industrial", "in"], ["transportation", "tr"]];

@@ -74,7 +74,7 @@
     for (const m of mods) { const g = modGrade(m); if (!w || RANK[g.grade] < RANK[w.grade]) w = g; }
     return w;
   }
-  const badge = (g) => `<span class="g g-${g.grade}" title="${esc(g.why)}">${esc(g.label)}</span>`;
+  const badge = (g) => NEMSDot.dot(g.grade, g.why);   // site.js: green EIA's own code, amber our estimate
 
   // ---- geometry -----------------------------------------------------------------------------------
   const cv = $("cv"), ctx = cv.getContext("2d");
@@ -222,8 +222,7 @@
       const side = DEMAND.includes(m) ? G.L.demand.side : G.L.supply.side, [x, y] = G.pos[m], R = G.R;
       const el = document.createElement("div"); el.className = `lab ${side}`; el.dataset.m = m;
       const g = S.fid && S.sc ? modGrade(m) : { grade: "stand", why: "" };
-      el.innerHTML = `<span class="nm">${MODS[m].name}</span><span class="bd ${g.grade === "match" ? "match" : "stand"}" title="${esc(g.why)}">${g.grade === "match" ? "PORTED" : "STAND-IN"}</span>` +
-        `<span class="val" title="${esc(MODS[m].what || "all energy used, US")}"><span></span></span><span class="vs"></span><span class="note"></span>`;
+      el.innerHTML = `<span class="nm">${MODS[m].name}${NEMSDot.dot(g.grade, g.why)}</span><span class="val"><span></span></span><span class="note"></span>`;
       if (side === "left") Object.assign(el.style, { right: `${G.w - (x - R - 10)}px`, top: `${y}px`, transform: "translateY(-50%)" });
       if (side === "right") Object.assign(el.style, { left: `${x + R + 10}px`, top: `${y}px`, transform: "translateY(-50%)" });
       if (side === "above") Object.assign(el.style, { left: `${x}px`, bottom: `${G.h - (y - R - 6)}px`, transform: "translateX(-50%)" });
@@ -256,14 +255,18 @@
   }
   const rel = (a, b) => (Math.abs(b) > 1e-9 ? (a - b) / Math.abs(b) : 0);
   const pct = (r) => `${r >= 0 ? "+" : "-"}${fmt(Math.abs(r * 100), Math.abs(r) < 0.001 ? 2 : Math.abs(r) < 0.1 ? 1 : 0)}%`;
+  // What each module's one number is about, in plain words.
+  const WHAT = { residential: "energy use", commercial: "energy use", industrial: "energy use", transportation: "energy use",
+    electricity: "power price", natural_gas: "gas price", coal: "coal price", oil: "gasoline price" };
   function paintLabels(vals, active, animate) {
     for (const el of $("labels").children) {
       const m = el.dataset.m, key = MODS[m].key, v = vals[idx(key)], e = eiaAt(key, S.year), r = rel(v, e);
-      roll(el.querySelector(".val"), valueText(key, v), animate);
-      const vs = el.querySelector(".vs");
-      vs.textContent = Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`;
-      vs.className = `vs ${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}`;
-      el.querySelector(".note").textContent = carbonNote(key) && G.L.flow === "v" ? "incl. carbon" : carbonNote(key);
+      const holder = el.querySelector(".val");
+      const word = G.L.flow === "v" ? (DEMAND.includes(m) ? "use" : "price") : WHAT[m];   // phones: short words
+      roll(holder, Math.abs(r) < 0.0005 ? `${word}: same` : `${word} ${pct(r)}`, animate);
+      holder.className = `val ${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}`;
+      holder.title = `${MODS[m].what || "All energy used, US"}: ${valueText(key, v)} in ${S.year}; EIA's forecast ${valueText(key, e)}${carbonNote(key) ? ` (${carbonNote(key)})` : ""}.`;
+      el.querySelector(".note").textContent = carbonNote(key) ? (G.L.flow === "v" ? "incl. carbon" : "includes carbon price") : "";
       el.classList.toggle("dim", !!active && !active.has(m));
     }
   }
@@ -298,31 +301,32 @@
     const s = b.st, top = b.moved.filter(([k]) => k !== "co2").slice(0, short ? 2 : 3);
     const items = top.map(([k, r]) => {
       const v = S.meta.vars[k], cn = carbonNote(k);
-      return `${esc(v.label)} <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span>${cn ? ` <small>(${cn})</small>` : ""}`;
+      return `${esc(v.label.toLowerCase().replace(/^(\w)/, (c) => c.toUpperCase()))} <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span>${cn ? ` <small>(includes the carbon price)</small>` : ""}`;
     });
     const co2m = b.moved.find(([k]) => k === "co2");
-    if (co2m && s.s === "s") items.push(`US CO2 <span class="${co2m[1] > 0 ? "up" : "dn"}">${pct(co2m[1])}</span>`);
-    const against = b.first ? "vs EIA" : s.s === "d" ? "vs last pass" : "vs the prices they saw";
-    const head = s.s === "d" ? (b.first ? `Demand answers EIA's ${S.year} prices with the levers in` : "Demand answers the new prices")
-      : (s.i === 1 ? "Supply prices that demand" : "Supply re-prices");
-    return items.length ? `<b>${head}</b> (${against}): ${items.join(", ")}.` : `<b>${head}</b>: nothing moved more than 0.00001%.`;
+    if (co2m && s.s === "s") items.push(`CO2 <span class="${co2m[1] > 0 ? "up" : "dn"}">${pct(co2m[1])}</span>`);
+    const head = s.s === "d"
+      ? (b.first ? `Round 1. Homes, businesses, factories and vehicles decide how much energy to buy at EIA's ${S.year} prices, with your policy in place.` : `Round ${s.i}. Buyers react to the new prices.`)
+      : (s.i === 1 ? "Power plants and fuel suppliers set prices for that much demand." : `Round ${s.i}. Prices adjust again, by less.`);
+    const against = b.first ? "Biggest changes from EIA's forecast" : s.s === "d" ? "Biggest changes from last round" : "Biggest changes";
+    return items.length ? `<b>${head}</b> ${against}: ${items.join(", ")}.` : `<b>${head}</b> Almost nothing changes.`;
   }
   function narrate(b) {
     if (b.type === "shock") {
       const lev = Object.entries(S.sc.levers || {}), where = (S.sc.entered || []).map((m) => (MODS[m] || { name: m }).name);
-      return lev.length ? `<b>${S.year}.</b> ${esc(lev.map(([k, v]) => (SHORT[k] ? SHORT[k](v) : k)).join(" · "))} enters at <b>${esc(where.join(", "))}</b>.`
-        : `<b>${S.year}, no shock.</b> The loop at EIA's own settings. Watch how little moves.`;
+      return lev.length ? `<b>${S.year}.</b> Your policy (${esc(lev.map(([k, v]) => (SHORT[k] ? SHORT[k](v) : k)).join(" · "))}) hits <b>${esc(where.join(", "))}</b> first.`
+        : `<b>${S.year}, no policy.</b> This is EIA's own forecast. Watch how little changes.`;
     }
     if (b.type === "step") return sayStep(b);
     const s = b.st, r = rel(b.co2, eiaAt("co2", S.year));
-    return (s.ok ? `<b>Agreed after ${s.i} passes.</b> The last pass moved prices at most ${pct(s.dp).slice(1)}, inside EIA's tolerance. `
-      : `<b>Stopped after ${s.i} passes</b> without passing EIA's test (last price change ${pct(s.dp).slice(1)}); NEMS moves on the same way. `) +
-      `US CO2 ${fmt(b.co2)} Mt, <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span> vs EIA.`;
+    return (s.ok ? `<b>Buyers and sellers agree.</b> In the last round prices moved less than ${pct(s.dp).slice(1)}, small enough by EIA's rule, so the model moves on to the next year. `
+      : `<b>The model stops after ${s.i} rounds</b>, as EIA's does, though prices still moved ${pct(s.dp).slice(1)} in the last one. `) +
+      `CO2 ends ${Math.abs(r) < 0.0005 ? "the same as" : `<span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span> vs`} EIA's forecast.`;
   }
   function headline(b) {
-    if (b.type === "shock") return `<span class="tag shock">Shock</span>${esc(S.sc.label)} <span>${esc(S.year)}</span>`;
-    if (b.type === "settle") return `<span class="tag settle">Settled</span>${esc(S.sc.label)} <span>${S.year}, after ${b.st.i} passes</span>`;
-    return `<span class="tag pass">Pass ${b.st.i} · ${b.st.s === "d" ? "demand" : "supply"}</span>${b.st.s === "d" ? "Quantities go to supply" : "Prices go back to demand"} <span>${S.year}</span>`;
+    if (b.type === "shock") return `<span class="tag shock">Your policy</span>${esc(S.sc.label)} <span>${esc(S.year)}</span>`;
+    if (b.type === "settle") return `<span class="tag settle">${b.st.ok ? "Agreed" : "Done"}</span>${esc(S.sc.label)} <span>${S.year}, after ${b.st.i} rounds</span>`;
+    return `<span class="tag pass">Round ${b.st.i} · ${b.st.s === "d" ? "buyers" : "sellers"}</span>${b.st.s === "d" ? "Buyers say how much energy they want" : "Sellers set prices"} <span>${S.year}</span>`;
   }
 
   // ---- applying a beat ----------------------------------------------------------------------------
@@ -372,14 +376,14 @@
   // The hero number: US energy CO2 as the loop has it at this step, EIA's own figure as a ghost beside it.
   function paintCO2box(b, animate) {
     const box = $("co2box");
-    if (!box.firstChild) box.innerHTML = `<div class="k"></div><div class="row"><div class="n"><span></span></div><div class="ghost"></div></div><div class="u">million tons a year</div><div class="d"></div><svg class="sp" viewBox="0 0 240 40" aria-hidden="true"></svg>`;
+    if (!box.firstChild) box.innerHTML = `<div class="k"></div><div class="row"><div class="n"><span></span></div><div class="ghost"></div></div><div class="u" title="Million metric tons of CO2 from US energy use this year. Car comparison: the difference from EIA's forecast over 4.6 tons, what the EPA says a typical passenger car emits in a year.">million tons of CO2 this year</div><div class="d"></div><svg class="sp" viewBox="0 0 240 40" aria-hidden="true"></svg>`;
     const e = eiaAt("co2", S.year), r = rel(b.co2, e);
     box.querySelector(".k").textContent = `US energy CO2, ${S.year}`;
     roll(box.querySelector(".n"), fmt(b.co2), animate);
     box.querySelector(".ghost").innerHTML = `EIA<br>${fmt(e)}`;
     box.querySelector(".sp").innerHTML = spark(S.lapse ? S.year : S.meta.years[1]);
     box.querySelector(".d").innerHTML = b.co2src === "eia" ? "EIA's number, before the loop runs" :
-      `<span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`}</span> ${badge(keyGrade("co2"))}`;
+      `<span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "same as EIA's forecast" : `${pct(r)} vs EIA, like ${fmt(Math.abs(b.co2 - e) / 4.6)} million cars ${b.co2 > e ? "added" : "off the road"}`}</span>${badge(keyGrade("co2"))}`;
   }
   // Settled CO2 by year for the sparkline under the counter, up to the year being shown.
   function spark(upTo) {
@@ -528,7 +532,8 @@
     const y = S.meta.years[1], b = S.beats[S.beats.length - 1], e = eiaAt("co2", y), r = rel(b.co2, e);
     f.innerHTML = `<div class="f-y">${y}</div><div class="f-s">${esc(S.sc.label)}</div>` +
       `<div class="f-n">${fmt(b.co2)}<small> Mt CO2</small></div>` +
-      `<div class="f-d"><span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "the same as" : pct(r) + " vs"}</span> EIA's reference (${fmt(e)} Mt)</div>` +
+      `<div class="f-d"><span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "the same as" : pct(r) + " vs"}</span> EIA's forecast (${fmt(e)} Mt)</div>` +
+      (Math.abs(r) < 0.0005 ? "" : `<div class="f-c">Like ${b.co2 > e ? "adding" : "taking"} ${fmt(Math.abs(b.co2 - e) / 4.6)} million cars ${b.co2 > e ? "to" : "off"} the road for a year (EPA: 4.6 tons of CO2 per car per year).</div>`) +
       `<div class="f-f">${fmt(passes)} passes of the real loop, 2027 to 2050, every one recorded. ${badge(keyGrade("co2"))}</div>` +
       whyLines(b, y).map((t) => `<div class="f-w">${t}</div>`).join("") +
       `<button class="btn ghost small" type="button" id="finale-x">Close</button>`;
@@ -603,10 +608,11 @@
   }
   function legend() {
     const p = (S.sc.ported || []).map((m) => MODS[m].name).join(", ");
-    $("legend").innerHTML = `<span><i style="background:rgb(${COL.q})"></i>quantities, demand to supply</span>` +
-      `<span><i style="background:rgb(${COL.p})"></i>prices, supply to demand</span>` +
-      `<span>Solid green: ported from EIA's code${p ? ` (${p})` : ""}. Dashed amber: stand-in fitted to EIA's runs.</span>` +
-      `<span>Particle density: how big that step's change was (log scale). Numbers are the model's.</span>` +
+    $("dots").innerHTML = NEMSDot.legend();
+    $("legend").innerHTML = `<span><i style="background:rgb(${COL.q})"></i>blue: how much energy buyers want</span>` +
+      `<span><i style="background:rgb(${COL.p})"></i>amber: the prices sellers set</span>` +
+      `<span>Solid green circles: EIA's own code${p ? ` (${p})` : ""}. Dashed amber circles: our estimate, fitted to EIA's runs.</span>` +
+      `<span>More particles: a bigger change at that step. Every number is the model's.</span>` +
       (S.sc.fast ? `<span style="color:#E8A33D">Trial file: every sector ran on the stub.</span>` : "");
   }
   function writeHash() { history.replaceState(null, "", `#s=${S.sc.id}&y=${S.year}`); }
@@ -626,12 +632,18 @@
     $("scrub").addEventListener("input", (e) => go(+e.target.value, false));
     $("conv").addEventListener("click", (e) => { const b = e.target.closest("[data-i]"); if (b) go(+b.dataset.i, true); });
     $("lapse").addEventListener("click", lapse);
+    $("details").addEventListener("click", () => {
+      const on = document.body.classList.toggle("details");
+      $("details").setAttribute("aria-pressed", String(on)); $("details").textContent = on ? "Hide details" : "Details";
+      if (on) { paintCO2(); paintConv(); }
+    });
     addEventListener("keydown", (e) => {
       if (e.target.matches("input,select")) return;
       if (e.key === " ") { e.preventDefault(); play(); } else if (e.key === "ArrowRight") go(S.pos + 1, true); else if (e.key === "ArrowLeft") go(S.pos - 1, false);
     });
-    $("about").textContent = `${meta.about} Ported modules run EIA's own logic in Python, checked against EIA's code; stand-ins are fitted to EIA's published runs. ` +
-      `Delivered prices include the carbon price when there is one. ${REDUCED ? "Reduced motion is on: no particles, the same numbers. " : ""}Space plays or pauses; arrow keys step.`;
+    $("about").innerHTML = `Every number here is one the model produced at that moment of a real run; nothing is filled in between. ` +
+      `Prices include the carbon price when there is one. ${REDUCED ? "Reduced motion is on: no particles, the same numbers. " : ""}Space plays or pauses; arrow keys step.` +
+      `<span class="tech"> Technical: ${esc(meta.about)}</span>`;
     new ResizeObserver(() => layout()).observe($("stage"));
     layout();
     requestAnimationFrame(loop);

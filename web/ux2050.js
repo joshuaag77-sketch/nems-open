@@ -30,7 +30,7 @@
       show: (v) => Math.abs(v - 1) < 1e-9 ? "EIA's output" : `${fmt(v, 2)} x EIA's output by 2040`, ends: ["Half", "+50%"] },
   ];
   const STORIES = [
-    { id: "eia", title: "EIA's reference", desc: "No new policy. EIA's AEO2026 counterfactual baseline, as published.", set: {} },
+    { id: "eia", title: "EIA's reference", desc: "No new policy: EIA's own forecast, as published in its Annual Energy Outlook 2026.", set: {} },
     { id: "fast", title: "Fast clean-up", desc: "A $100 carbon price, 90% EV sales by 2035, coal closed early, cheaper wind and solar, tighter buildings.",
       set: { carbon_price: 100, ev_2035: 0.9, coal_retirement: 0.8, renewable_cost: -1, building_code: 0.2, appliance_standard: 0.2 } },
     { id: "ai", title: "AI boom", desc: "Data centers add 600 TWh a year of demand by 2050, about 13% more electricity than EIA expects. Nothing else changes.",
@@ -65,6 +65,9 @@
     if (key === "elec_sales_twh") return all;
     if (key === "price_electricity") return ["stand:electricity", ...all];
     if (key === "price_gas_home") return ["stand:natural_gas"];
+    if (key === "power_bill_month") return [demandPart("rs", ported), "stand:electricity"];
+    if (key === "heat_bill_month") return [demandPart("rs", ported), "stand:natural_gas", "stand:oil"];
+    if (key === "price_el_home" || key === "home_kwh_month") return key === "price_el_home" ? ["stand:electricity"] : [demandPart("rs", ported)];
     if (key === "price_gasoline" || key === "price_diesel") return ["stand:oil"];
     if (key === "bill") return [demandPart("rs", ported), "stand:electricity", "stand:natural_gas"];
     m = key.match(/^flow_\w+_(rs|cm|in|tr)$/);
@@ -85,16 +88,15 @@
     return g;
   }
   const fmtPct = (p) => (p < 0.1 ? "0.1%" : p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`);
-  function badge(g) {
-    const b = `<span class="g g-${g.grade}" title="${esc(g.why)}">${esc(g.label)}</span>`;
-    return g.emu ? b + `<span class="g g-emu" title="${esc(g.emu)}">${esc(g.emuShort)}</span>` : b;
-  }
-  const DATA_BADGE = () => `<span class="g g-data" title="${esc("Read from EIA's AEO2026 input files (the EMM plant file), not modeled. Units EIA lists as planned appear in their planned year.")}">EIA data</span>`;
+  // One dot per number (site.js): green EIA's own code, amber our estimate, grey EIA's published number.
+  function badge(g) { return NEMSDot.dot(g.grade, `${g.why}${g.emu ? `. Shown as an ${g.emu}` : ""}`); }
+  const DATA_BADGE = () => NEMSDot.dot("data", "From EIA's plant list (AEO2026 input files), not modeled. Plants EIA lists as planned appear in their planned year.");
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   // ---- state --------------------------------------------------------------------------------------
   const S = { emu: null, plants: null, fid: null, x: {}, year: 2035, story: "eia", out: null, src: null,
     real: {}, server: false, key: false, job: null };
+  S.year = 2050;   // the page is about 2050: it opens there
 
   const defaults = () => UX2050.defaults(S.emu);
   const sig = UX2050.sig;
@@ -118,9 +120,8 @@
     const tbl = S.emu.lever_grades[S.src && S.src.kind === "real" ? "real" : "instant"];
     const row = tbl.find((r) => r.name === l.py);
     if (l.realOnly && !(S.src && S.src.kind === "real"))
-      return `<span class="g g-none" title="${esc("The instant estimate leaves this lever out: it edits input tables of EIA's ported residential and commercial routines, which only the real run has. Press Run the real model.")}">real run only</span>`;
-    const cls = row.grade === "ported" ? "match" : row.grade === "own model" ? "within" : "stand";
-    return `<span class="g g-${cls}" title="${esc(row.why + ". Moves: " + row.moves)}">${esc(row.grade)}</span>`;
+      return `<span class="ends" title="${esc("The instant estimate leaves this lever out: it changes EIA's own building code, which only the full run has. Press Run the full model.")}">full run only</span>`;
+    return NEMSDot.dot(row.grade === "ported" ? "match" : "stand", `${row.why}. Moves: ${row.moves}`);
   }
   function buildLevers() {
     $("levers").innerHTML = LEVERS.map((l) => `
@@ -150,7 +151,7 @@
     const n = $("instant-note");
     if (S.src.kind === "emu" && missing.length) {
       n.hidden = false;
-      n.textContent = `The instant estimate leaves out ${missing.map((l) => l.title.toLowerCase()).join(" and ")}. Run the real model to include them.`;
+      n.textContent = `The instant numbers leave out ${missing.map((l) => l.title.toLowerCase()).join(" and ")}. Run the full model to include them.`;
     } else n.hidden = true;
     for (const b of document.querySelectorAll(".story")) b.setAttribute("aria-pressed", String(b.dataset.id === S.story));
     const st = STORIES.find((s) => s.id === S.story);
@@ -166,23 +167,62 @@
       <div class="v">${fmt(value, digits)} <small>${unit}</small></div>
       <div class="d ${dir}">${word}</div><div class="grades">${badge(gradeOf(key, S.src))}</div></div>`;
   }
+  // Household terms first. Each card: the number, what it means in one line, how it compares with EIA's
+  // forecast, the dot, and the basis behind it (a fold-out, so it works on touch screens too).
+  const EPA_T_PER_CAR = 4.6;   // EPA, "Greenhouse Gas Emissions from a Typical Passenger Vehicle": 4.6 t CO2 a year
+  const has = (k) => S.out && S.out[k] && S.emu.eia[k];
+  function card(o) {
+    return `<div class="hh"><div class="k">${o.title} ${o.dot}</div><div class="v">${o.value}</div><div class="m">${o.line}</div>` +
+      `<div class="d ${o.dir}">${o.vs}</div><details class="basis"><summary>How we got this</summary>${o.basis}</details></div>`;
+  }
+  const dirOf = (d, ref) => (Math.abs(d) < 0.005 * Math.abs(ref) ? "" : d > 0 ? "up" : "down");
+  function moneyVs(d, ref, unit, cents) {
+    if (Math.abs(d) < 0.005 * Math.abs(ref)) return "About the same as EIA's forecast";
+    const amt = cents ? `${fmt(Math.abs(d) * 100)}¢` : `$${fmt(Math.abs(d))}`;
+    return `${amt} ${unit} ${d > 0 ? "more" : "less"} than EIA's forecast`;
+  }
+  function paintStats() {
+    const y = S.year, out = [];
+    if (has("power_bill_month")) {
+      const v = at("power_bill_month"), e = eia("power_bill_month");
+      out.push(card({ title: "Home power bill", dot: badge(gradeOf("power_bill_month", S.src)), value: `$${fmt(v)}<small> a month</small>`,
+        line: `A typical home's electricity bill in ${y}.`, vs: moneyVs(v - e, e, "a month"), dir: dirOf(v - e, e),
+        basis: `The average US home's electricity use (about ${fmt(at("home_kwh_month"))} kWh a month, which includes charging an electric car at home, as EIA counts it) times the home power price (${fmt(at("price_el_home"), 1)}¢ per kWh). Both from the model; the number of homes from EIA. 2024 dollars.` }));
+    }
+    { const v = at("price_gasoline"), e = eia("price_gasoline");
+      out.push(card({ title: "Gas at the pump", dot: badge(gradeOf("price_gasoline", S.src)), value: `$${fmt(v, 2)}<small> a gallon</small>`,
+        line: `The average US price of a gallon of gasoline in ${y}.`, vs: moneyVs(v - e, e, "a gallon", true), dir: dirOf(v - e, e),
+        basis: "The model's average US gasoline price, in 2024 dollars, including any carbon price you set." })); }
+    if (has("heat_bill_month")) {
+      const v = at("heat_bill_month"), e = eia("heat_bill_month");
+      out.push(card({ title: "Home heating fuel", dot: badge(gradeOf("heat_bill_month", S.src)), value: `$${fmt(v)}<small> a month</small>`,
+        line: "What a typical home spends on gas, propane and heating oil.", vs: moneyVs(v - e, e, "a month"), dir: dirOf(v - e, e),
+        basis: "The average US home's spending on natural gas, propane, heating oil, kerosene and coal (for heat, hot water and cooking): the model's home use of each fuel times its home price, over EIA's number of homes. 2024 dollars." }));
+    }
+    { const v = at("co2"), e = eia("co2"), d = v - e, cars = Math.abs(d) / EPA_T_PER_CAR;
+      out.push(card({ title: "CO2 from energy", dot: badge(gradeOf("co2", S.src)), value: `${fmt(v / 1000, 2)}<small> billion tons</small>`,
+        line: `All the CO2 from US energy use in ${y}.`, dir: dirOf(d, e),
+        vs: Math.abs(d) < 0.005 * e ? "About the same as EIA's forecast" :
+          `${fmt(Math.abs(d))} million tons ${d > 0 ? "more" : "less"} than EIA's: like ${d > 0 ? "adding" : "taking"} ${fmt(cars)} million cars ${d > 0 ? "to" : "off"} the road for a year`,
+        basis: `The model's CO2 from burning fuel across the US economy. The car comparison divides the difference from EIA's forecast by ${EPA_T_PER_CAR} tons, what the EPA says a typical passenger car emits in a year ("Greenhouse Gas Emissions from a Typical Passenger Vehicle").` }));
+    }
+    $("stats").innerHTML = out.join("");
+    // the model's own units, for experts
+    $("expert-stats").innerHTML =
+      stat("US energy CO2", "co2", at("co2"), "million t", eia("co2"), 0, true) +
+      stat("Power price, all users", "price_electricity", at("price_electricity"), "¢/kWh", eia("price_electricity"), 1, true) +
+      (has("price_el_home") ? stat("Power price, homes", "price_el_home", at("price_el_home"), "¢/kWh", eia("price_el_home"), 1, true) : "") +
+      stat("Gas price, homes", "price_gas_home", at("price_gas_home"), "$/MMBtu", eia("price_gas_home"), 2, true) +
+      stat("Electricity used", "elec_sales_twh", at("elec_sales_twh"), "TWh", eia("elec_sales_twh"), 0, true);
+  }
   // Phones: one line that stays on screen while the levers move (CSS shows it under 860 px).
   function paintMini() {
-    const co2 = at("co2"), bill = at("bill"), dc = co2 - eia("co2"), db = bill - eia("bill");
-    // the same "about the same" rule as the headline cards: under half a percent
-    const sign = (v, ref, f) => (Math.abs(v) < 0.005 * Math.abs(ref) ? "same as EIA" : `${v > 0 ? "+" : "-"}${f(Math.abs(v))} vs EIA`);
+    const co2 = at("co2"), dc = co2 - eia("co2");
+    const pb = has("power_bill_month") ? at("power_bill_month") : null, dpb = pb === null ? 0 : pb - eia("power_bill_month");
     $("minibar").innerHTML = `<span>${S.year}</span>` +
-      `<span>CO2 <b>${fmt(co2)} Mt</b> ${sign(dc, eia("co2"), (v) => fmt(v) + " Mt")} ${badge(gradeOf("co2", S.src))}</span>` +
-      `<span>Bill <b>$${fmt(bill)}</b> ${sign(db, eia("bill"), (v) => "$" + fmt(v))} ${badge(gradeOf("bill", S.src))}</span>` +
+      (pb === null ? "" : `<span>Power bill <b>$${fmt(pb)}</b>/mo ${Math.abs(dpb) < 0.5 ? "" : `(${dpb > 0 ? "+" : "-"}$${fmt(Math.abs(dpb))})`}</span>`) +
+      `<span>CO2 <b>${fmt(co2 / 1000, 2)}</b> bn t ${Math.abs(dc) < 0.005 * eia("co2") ? "" : `(${dc > 0 ? "+" : "-"}${fmt(Math.abs(dc) / EPA_T_PER_CAR)}m cars)`}</span>` +
       `<a href="#map-card" id="mini-go">Map</a>`;
-  }
-
-  function paintStats() {
-    $("stats").innerHTML =
-      stat("US energy CO2", "co2", at("co2"), "million t", eia("co2"), 0, true) +
-      stat("Electricity price", "price_electricity", at("price_electricity"), "¢/kWh", eia("price_electricity"), 1, true) +
-      stat("Gasoline", "price_gasoline", at("price_gasoline"), "$/gal", eia("price_gasoline"), 2, true) +
-      stat("Electricity used", "elec_sales_twh", at("elec_sales_twh"), "TWh", eia("elec_sales_twh"), 0, true);
   }
 
   // ---- the map ------------------------------------------------------------------------------------
@@ -276,14 +316,16 @@
     // model builds later, which are not in EIA's plant file and so have no dot
     const off = Object.keys(POWER_KEY).filter((g) => wanted[g] > served[g] * 1.02)
       .map((g) => `${GROUP_LABEL[g].toLowerCase()} ${fmt(100 * (1 - served[g] / wanted[g]))}%`);
-    $("map-note").innerHTML = `Every dot is a unit in EIA's plant file ${DATA_BADGE()}: ${fmt(S.plants.drawn)} of ${fmt(S.plants.units_in_file)} units (${S.plants.not_drawn.no_coordinates} have no coordinates), appearing and retiring on EIA's schedule. ` +
-      `<b>Plants change how much they run, not whether they exist.</b> Brightness is each plant's own capacity factor scaled so its fuel matches the run's national total ${badge(gradeOf("power_gas", S.src))}; there is no plant-by-plant dispatch. Region borders are approximate (nearest plant).` +
-      (off.length ? ` Output from plants the model builds after EIA's list ends has no dot: ${off.join(", ")} of ${y} output.` : "");
+    $("map-note").innerHTML = `Each dot is a real power plant on EIA's list ${DATA_BADGE()}. Bigger dots are bigger plants; brighter dots run more ${badge(gradeOf("power_gas", S.src))}. ` +
+      `Your levers change how much plants run, not which plants exist.` +
+      `<details class="basis"><summary>More about the map</summary>${fmt(S.plants.drawn)} of ${fmt(S.plants.units_in_file)} units in EIA's plant file (${S.plants.not_drawn.no_coordinates} have no coordinates), appearing and retiring on EIA's schedule. ` +
+      `Brightness is each plant's own capacity factor scaled so its fuel matches the model's national total; there is no plant-by-plant dispatch. The 25 grid regions' borders are approximate (nearest plant).` +
+      (off.length ? ` Output from plants the model builds after EIA's list ends has no dot: ${off.join(", ")} of ${y} output.` : "") + `</details>`;
   }
 
   function legend() {
     $("legend").innerHTML = S.plants.groups.map((g) => `<span><i style="background:${GROUP_COLOR[g]}"></i>${GROUP_LABEL[g]}</span>`).join("") +
-      `<span>size: capacity, brightness: how hard it runs</span>`;
+      "";
   }
 
   function hover(ev) {
@@ -340,20 +382,21 @@
     const keys = g.links.map((l) => l.key);
     let w = gradeOf(keys[0], S.src);
     for (const k of keys) { const gg = gradeOf(k, S.src); if (RANK[gg.grade] < RANK[w.grade]) w = gg; }
-    $("river-grade").innerHTML = badge(w) + ` <span class="g g-none" title="${esc("Each band's own grade is in its hover text. Bands into homes and businesses are ported EIA code in a real run; power plants and fuels are stand-ins.")}">per band on hover</span>`;
+    $("river-grade").innerHTML = badge(w);
   }
 
   // ---- the bill -----------------------------------------------------------------------------------
   function paintBill() {
-    const v = at("bill"), r = eia("bill"), d = v - r;
+    // all home energy (power, gas, propane, heating oil) per month: the yearly bill over twelve
+    const K = "bill", per = 1 / 12, v = at(K) * per, r = eia(K) * per, d = v - r;
     $("bill-now").textContent = `$${fmt(v)}`;
-    $("bill-vs").textContent = Math.abs(d) < 5 ? `About the same as EIA's reference ($${fmt(r)}).` :
-      `$${fmt(Math.abs(d))} ${d > 0 ? "more" : "less"} than EIA's reference ($${fmt(r)}).`;
+    $("bill-vs").textContent = Math.abs(d) < 0.5 ? `About the same as EIA's forecast ($${fmt(r)}).` :
+      `$${fmt(Math.abs(d))} a month ${d > 0 ? "more" : "less"} than EIA's forecast ($${fmt(r)}).`;
     $("bill-grade").innerHTML = badge(gradeOf("bill", S.src));
     const svg = d3.select("#bill-chart"), W = $("bill-chart").clientWidth, H = $("bill-chart").clientHeight;
     svg.attr("viewBox", `0 0 ${W} ${H}`).selectAll("*").remove();
-    const ys = S.emu.years.filter((y) => y >= 2025), a = ys.map((y) => at("bill", y)), b = ys.map((y) => eia("bill", y));
-    const lo = Math.min(...a, ...b), hi = Math.max(...a, ...b), pad = (hi - lo) * 0.15 + 20;
+    const ys = S.emu.years.filter((y) => y >= 2025), a = ys.map((y) => at(K, y) * per), b = ys.map((y) => eia(K, y) * per);
+    const lo = Math.min(...a, ...b), hi = Math.max(...a, ...b), pad = (hi - lo) * 0.15 + 2;
     const x = d3.scaleLinear([2025, 2050], [34, W - 8]), y = d3.scaleLinear([lo - pad, hi + pad], [H - 16, 6]);
     svg.append("g").selectAll("text").data(y.ticks(3)).join("text").attr("x", 0).attr("y", (t) => y(t) + 3).text((t) => `$${fmt(t)}`);
     svg.append("g").selectAll("text").data([2025, 2035, 2050]).join("text").attr("x", (t) => x(t)).attr("y", H - 2).attr("text-anchor", (t) => (t === 2050 ? "end" : "middle")).text((t) => t);
@@ -370,25 +413,25 @@
   function paintMode() {
     const m = $("mode");
     if (S.src.kind === "real") {
-      m.className = "mode mode-real"; m.textContent = "Real model run";
-      m.title = `run_model.run with ${S.src.ported.join(", ")} through EIA's ported routines, supply on the stand-in. Took ${fmt(S.src.job.elapsed_s / 60, 1)} min.`;
+      m.className = "mode mode-real"; m.textContent = "Full model run";
+      m.title = `The full model ran these settings, with EIA's own code for ${S.src.ported.join(", ")}. Took ${fmt(S.src.job.elapsed_s / 60, 1)} minutes.`;
     } else if (S.job) {
-      m.className = "mode mode-busy"; m.textContent = "Instant estimate, real run going";
-      m.title = "The numbers shown are the emulator's until the real run finishes.";
+      m.className = "mode mode-busy"; m.textContent = "Instant numbers, full run going";
+      m.title = "The numbers shown are instant ones until the full run finishes.";
     } else {
-      m.className = "mode mode-emu"; m.textContent = "Instant estimate";
-      m.title = `An emulator fitted to ${S.emu.runs} runs of the fast loop (every sector on a stub, supply on the stand-in). Each number's purple tag gives its error on runs the fit never saw.`;
+      m.className = "mode mode-emu"; m.textContent = "Instant numbers";
+      m.title = `Instant numbers come from a quick fit to ${S.emu.runs} runs of a fast version of the model. Each dot's hover gives how close the fit is.`;
     }
     const btn = $("run"), note = $("run-note");
     if (!S.server) {
       btn.disabled = true;
-      note.innerHTML = "The real model runs on your own computer: <code>python scripts/serve_2050.py</code>, then open this page from it. The preview site shows instant estimates only.";
+      note.innerHTML = "The full model runs on your own computer (<code>python scripts/serve_2050.py</code>). This site shows instant numbers.";
     } else if (S.job) {
-      btn.disabled = true; note.textContent = `Running the real model... ${fmt(S.job.elapsed || 0)} s. EIA's ported residential, commercial and transportation routines run every year to 2050.`;
+      btn.disabled = true; note.textContent = `Running the full model... ${fmt(S.job.elapsed || 0)} s. It works through every year to 2050.`;
     } else if (S.src.kind === "real") {
-      btn.disabled = true; note.textContent = "Showing the real run for these levers. Move a lever to go back to instant estimates.";
+      btn.disabled = true; note.textContent = "Showing the full run for these settings. Move a lever to go back to instant numbers.";
     } else {
-      btn.disabled = false; note.textContent = "Runs EIA's ported residential, commercial and transportation code with these levers, on this computer. Takes several minutes; the page keeps the result for these exact settings.";
+      btn.disabled = false; note.textContent = "Runs the full model, with EIA's own code for homes, businesses and vehicles, on this computer. Takes several minutes.";
     }
   }
   async function startRun() {
@@ -409,101 +452,6 @@
     setTimeout(poll, 2000);
   }
 
-
-  // ---- ask the model ------------------------------------------------------------------------------
-  // POST /api/ask (scripts/serve_2050.py) runs the policy agent. It exists only on the local server and needs a key
-  // there; on static hosting the box says so instead of failing.
-  const EXAMPLES = [
-    "What does a $50 carbon price do to US energy CO2 in 2040?",
-    "How much less petroleum would transportation use in 2040 if 90% of new cars are EVs by 2035?",
-    "If data centers add 600 TWh a year by 2050, what happens to electricity prices?",
-    "What does a $100 carbon price do to a household's energy bill in 2040?",
-  ];
-  const ASK_TIMEOUT_MS = 90000;
-  let askTimer = 0, undo = null;
-  function paintAsk() {
-    const note = $("ask-note");
-    if (!S.checked) { $("ask-q").disabled = $("ask-go").disabled = true; note.textContent = ""; return; }
-    const off = !S.server || !S.key;
-    $("ask-q").disabled = off || S.asking; $("ask-go").disabled = off || S.asking;
-    for (const b of document.querySelectorAll(".ask .story")) b.disabled = off || S.asking;
-    if (!S.server) note.innerHTML = "Asking needs the local server: <code>python scripts/serve_2050.py</code> with ANTHROPIC_API_KEY set, then open this page from it. This copy of the page cannot answer questions.";
-    else if (!S.key) note.innerHTML = "The local server has no ANTHROPIC_API_KEY, so it cannot answer questions. Set it and restart <code>python scripts/serve_2050.py</code>.";
-    else if (!S.asking) note.textContent = "Answers use only numbers the model produced, each with its module and grade. Policy starts in 2027; the US as a whole.";
-  }
-  const clampLever = (l, v) => Math.min(l.hi, Math.max(l.lo, v));
-  // Text from the model, made safe first (escaped), then **bold**, "- " lists and paragraphs, then [n] marks as links.
-  function mdSafe(text) {
-    const inline = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[(\d+)\]/g, '<sup><a href="#src-$1">[$1]</a></sup>');
-    return String(text).split(/\n{2,}/).map((blk) => {
-      const lines = blk.split("\n");
-      if (lines.every((l) => /^\s*[-*]\s+/.test(l))) return "<ul>" + lines.map((l) => `<li>${inline(l.replace(/^\s*[-*]\s+/, ""))}</li>`).join("") + "</ul>";
-      if (lines.every((l) => /^\s*\d+[.)]\s+/.test(l))) return "<ol>" + lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("") + "</ol>";
-      return `<p>${inline(blk.replace(/^#{1,6}\s+/, "")).replace(/\n/g, "<br>")}</p>`;
-    }).join("");
-  }
-  const gradeClass = (g) => (g === "stand" || g === "within" ? g : g === "reference" || g === "setting" ? "data" : "match");
-  function paintChip() {
-    const el = $("ask-chip"); if (!el) return;
-    if (!undo) { el.hidden = true; return; }
-    el.hidden = false;
-    el.innerHTML = `<span>The model set these levers: ${undo.applied.map(esc).join("; ")}.${undo.others ? " Your other levers are still set, so the page may differ from the answer." : ""}</span><button type="button" class="btn ghost" id="ask-undo">Undo</button>`;
-    $("ask-undo").addEventListener("click", () => { S.x = undo.before; S.story = undo.story; undo = null; update(); paintChip(); });
-  }
-  function showAnswer(a) {
-    const out = $("ask-out"); out.hidden = false;
-    if (a.error && !a.body) { out.innerHTML = `<p class="ask-err">${esc(a.message || "The server could not answer.")}</p>`; return; }
-    let h = `<div id="ask-chip" class="ask-chip" hidden></div><div class="ask-body">${mdSafe(a.body)}`;
-    if (a.outside && a.outside.length) h += `<p class="ask-outside"><b>Not from the model:</b> ${a.outside.map(esc).join(" ")}</p>`;
-    h += "</div>";
-    if (a.sources && a.sources.length)
-      h += `<details class="ask-src-box"><summary>Sources (${a.sources.length})</summary><ul class="ask-src">${a.sources.map((s) =>
-        `<li id="src-${s.markers[0]}"><span class="g g-${gradeClass(s.grade)}" title="${esc(s.grade_label)}">${esc(s.grade_label)}</span><span class="sl">${esc(s.line)}</span></li>`).join("")}</ul></details>`;
-    if (a.basis) h += `<p class="ask-basis">${esc(a.basis)}</p>`;
-    out.innerHTML = h; paintChip();
-    out.onclick = (e) => {   // a [n] mark opens the Sources list at that line (and leaves the page's address alone)
-      const a = e.target.closest('a[href^="#src-"]'); if (!a) return;
-      e.preventDefault(); const box = out.querySelector(".ask-src-box"); if (box) box.open = true;
-      const li = out.querySelector(a.getAttribute("href")); if (li) li.scrollIntoView({ block: "nearest" });
-    };
-  }
-  function applyLevers(apply) {
-    const before = { ...S.x }, story = S.story, applied = [], x = { ...S.x };
-    for (const [k, v] of Object.entries(apply || {})) {
-      const l = LEVERS.find((t) => t.key === k); if (!l) continue;
-      x[k] = clampLever(l, +v); applied.push(`${l.title} ${l.show(x[k], S.emu.levers.ev_2035.off).replace(" (EIA)", "")}`);
-    }
-    if (!applied.length) { undo = null; return; }
-    const d = defaults(), set = new Set(Object.keys(apply));
-    const others = LEVERS.some((l) => !set.has(l.key) && Math.abs(before[l.key] - d[l.key]) > 1e-9);
-    S.x = x; S.story = null; undo = { before, story, applied, others }; update();
-  }
-  async function ask(q) {
-    q = q.trim(); if (!q || S.asking) return;
-    $("ask-q").value = q; S.asking = true; paintAsk();
-    const out = $("ask-out"), t0 = Date.now(); out.hidden = false; undo = null;
-    const tick = () => { out.innerHTML = `<p class="fine"><span class="spin"></span>The model is working on it: ${Math.round((Date.now() - t0) / 1000)} s. It runs scenarios and checks every number, usually 20 to 60 seconds.</p>`; };
-    tick(); askTimer = setInterval(tick, 1000);
-    const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ASK_TIMEOUT_MS);
-    let a;
-    try {
-      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }), signal: ctl.signal });
-      try { a = await res.json(); } catch (e) { a = { error: "bad_reply", message: "The server sent something the page could not read." }; }
-      if (!res.ok) a = { error: a.error || "failed", message: a.message || "The server could not answer." };
-    } catch (e) {
-      a = { error: "network", message: e.name === "AbortError" ? "That took longer than 90 seconds, so the page stopped waiting. Try a simpler question." : "The local server did not respond. Is scripts/serve_2050.py still running?" };
-    }
-    clearTimeout(to); clearInterval(askTimer); S.asking = false;
-    showAnswer(a);
-    if (!a.error && a.apply) { applyLevers(a.apply); paintChip(); }
-    paintAsk();
-  }
-  function buildAsk() {
-    $("ask-ex").innerHTML = EXAMPLES.map((q) => `<button class="story" type="button">${esc(q)}</button>`).join("");
-    $("ask-ex").addEventListener("click", (e) => { const b = e.target.closest(".story"); if (b) ask(b.textContent); });
-    $("ask-form").addEventListener("submit", (e) => { e.preventDefault(); ask($("ask-q").value); });
-    paintAsk();
-  }
 
   // ---- address, update ----------------------------------------------------------------------------
   function writeHash() {
@@ -531,7 +479,7 @@
     for (const el of document.querySelectorAll(".yr")) el.textContent = S.year;
     $("map-year").textContent = S.year; $("year").value = S.year;
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => { drawPlants(); paintRiver(); paintBill(); });
+    raf = requestAnimationFrame(() => { drawPlants(); if ($("more").open) { paintRiver(); paintBill(); } });   // the fold draws when opened
     writeHash();
     // "How did it get that?": the engine opens on this scenario (engine3d.js reads `yours`)
     const enc = UX2050.encode(S.emu, S.x);
@@ -539,13 +487,14 @@
   }
 
   async function main() {
-    const [emu, plants, fid] = await Promise.all(["data/ux2050/emulator.json", "data/ux2050/plants.json", "data/fidelity.json"]
+    const [emu, plants, fid] = await Promise.all(["data/ux2050/emulator.json?v=2", "data/ux2050/plants.json", "data/fidelity.json"]
       .map((u) => fetch(u).then((r) => r.json())));
     Object.assign(S, { emu, plants, fid });
     await loadGeo();
-    buildLevers(); legend(); buildAsk(); readHash();
+    buildLevers(); legend(); readHash();
     layoutMap(); update();
     $("year").addEventListener("input", (e) => { S.year = +e.target.value; update(); });
+    $("more").addEventListener("toggle", () => { if ($("more").open) { paintRiver(); paintBill(); } });
     $("map").addEventListener("mousemove", hover);
     $("map").addEventListener("click", hover);   // touch screens have no hover: a tap shows the same card
     if (innerWidth < 860) $("lever-box").open = false;   // phones: stories first, the ten sliders one tap away
@@ -564,6 +513,37 @@
     paintMode();
   }
   // The real model needs scripts/serve_2050.py; the static preview has no /api, so the button explains instead.
+  const GUIDE = [
+    { el: () => document.querySelector(".stats"), t: "This is EIA's forecast for 2050",
+      b: "These start as the U.S. Energy Information Administration's own projections: a typical home's bills, gas at the pump, and America's CO2. The map shows every power plant." },
+    { el: () => document.querySelector(".levers"), t: "Pull a lever or pick a story",
+      b: "Try a carbon price, more electric cars, or a data-center boom. Every number updates at once." },
+    { el: () => document.querySelector(".stats"), t: "See what changed and how sure we are",
+      b: "Each number says how it compares with EIA's forecast. The dot says how sure: green is EIA's own code, amber is our estimate, grey is EIA's published number." },
+  ];
+  function guide(force) {
+    let seen = false;
+    try { seen = localStorage.getItem("nems.guide.2050") === "done"; } catch (e) { /* storage blocked: show it */ }
+    if (seen && !force) return;
+    const box = $("guide"); let i = 0, lit = null;
+    const done = () => { box.hidden = true; if (lit) lit.classList.remove("guide-on"); try { localStorage.setItem("nems.guide.2050", "done"); } catch (e) { /* not kept */ } };
+    const show = () => {
+      if (lit) lit.classList.remove("guide-on");
+      const g = GUIDE[i]; lit = g.el(); if (lit) { lit.classList.add("guide-on"); const top = lit.getBoundingClientRect().top + scrollY - 56; scrollTo({ top: Math.max(0, top), behavior: "smooth" }); }
+      box.innerHTML = `<div class="gs">Step ${i + 1} of ${GUIDE.length}</div><h3>${g.t}</h3><p>${g.b}</p>` +
+        `<div class="gb"><button type="button" class="btn ghost" data-a="skip">Skip</button>${i ? '<button type="button" class="btn ghost" data-a="back">Back</button>' : ""}` +
+        `<button type="button" class="btn primary" data-a="next">${i === GUIDE.length - 1 ? "Got it" : "Next"}</button></div>`;
+      box.hidden = false; box.querySelector('[data-a="next"]').focus({ preventScroll: true });
+    };
+    box.onclick = (e) => {
+      const a = e.target.dataset.a; if (!a) return;
+      if (a === "skip" || (a === "next" && i === GUIDE.length - 1)) done();
+      else { i += a === "next" ? 1 : -1; show(); }
+    };
+    box.onkeydown = (e) => { if (e.key === "Escape") done(); };
+    show();
+  }
+
   async function checkServer() {
     try {
       const h = await Promise.race([fetch("/api/health", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 2500))]);
@@ -572,9 +552,8 @@
     } catch (e) { S.server = false; S.key = false; }
     S.checked = true;
     if (S.out) paintMode();
-    paintAsk();
   }
-  addEventListener("DOMContentLoaded", () => main().then(checkServer).catch((e) => {
+  addEventListener("DOMContentLoaded", () => main().then(() => { $("dots").innerHTML = NEMSDot.legend(); $("guide-again").onclick = () => guide(true); guide(false); }).then(checkServer).catch((e) => {
     document.querySelector(".center").insertAdjacentHTML("afterbegin", `<p class="notice">The page could not load its data: ${esc(e.message)}. It needs a web server (python scripts/serve_2050.py).</p>`);
     console.error(e);
   }));
