@@ -25,7 +25,7 @@
   const LAYOUTS = {
     wide: { flow: "h", demand: { xs: [0.2, 0.2, 0.2, 0.2], ys: [0.17, 0.39, 0.61, 0.83], side: "left" },
       supply: { xs: [0.8, 0.8, 0.8, 0.8], ys: [0.17, 0.39, 0.61, 0.83], side: "right" },
-      q: [[0.38, 0.35], [0.62, 0.35]], p: [[0.62, 0.65], [0.38, 0.65]], bulge: [-1, 0] },
+      q: [[0.38, 0.29], [0.62, 0.29]], p: [[0.62, 0.71], [0.38, 0.71]], bulge: [-1, 0] },
     tall: { flow: "v", demand: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.21, 0.21, 0.21, 0.21], side: "above" },
       supply: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.52, 0.52, 0.52, 0.52], side: "below" },
       q: [[0.43, 0.32], [0.43, 0.43]], p: [[0.57, 0.43], [0.57, 0.32]], bulge: [0, -1] },
@@ -51,7 +51,7 @@
     gas_supply: (v) => (v > 0 ? "Plentiful gas" : "Scarce gas"), oil_price: (v) => `Oil at ${v}x`, nuclear: (v) => `Nuclear at ${v}x` };
 
   // ---- state --------------------------------------------------------------------------------------
-  const S = { meta: null, man: null, fid: null, sc: null, cache: {}, year: 2035, beats: [], pos: 0, playing: false, lapse: false, token: 0 };
+  const S = { meta: null, man: null, fid: null, sc: null, cache: {}, year: 2035, beats: [], pos: 0, playing: false, lapse: false, token: 0, lapseLog: [] };
   const idx = (k) => S.meta.keys.indexOf(k);
   const eiaAt = (k, y) => S.meta.eia[k][y - S.meta.years[0]];
   const carbon = () => (S.sc && S.sc.levers && S.sc.levers.carbon_price) || 0;
@@ -92,7 +92,9 @@
     G.paths = new Map(EDGES.map((e) => [e, buildPath(e)]));
     for (const k in bodies) delete bodies[k];
     placeLabels();
-    if (S.beats.length) apply(S.pos, false);
+    if (!S.beats.length) return;
+    if (S.lapse) { const b = S.beats[S.beats.length - 1]; paintLabels(b.vals, null, false); paintCO2box(b, false); }   // keep the time-lapse's own text
+    else apply(S.pos, false);
   }
   const quad = (a, c, b, n) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n, u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]; });
   function buildPath(e) {
@@ -229,13 +231,20 @@
       box.appendChild(el);
     }
   }
+  // A value changes by rolling: the old number slides up and out, the new one in from below. The new span
+  // is visible by default and a timer cancels both animations, so a browser that skips frames still ends
+  // on the new number, never on a blank.
   function roll(holder, text, animate) {
-    const cur = holder.querySelector("span:not(.out)");
+    const cur = [...holder.children].filter((c) => !c.dataset.out).pop();
     if (cur && cur.textContent === text) return;
-    if (!animate || REDUCED || !cur || !cur.textContent) { holder.innerHTML = `<span>${esc(text)}</span>`; return; }
-    cur.classList.add("out"); setTimeout(() => cur.remove(), 520);
-    const n = document.createElement("span"); n.className = "in"; n.textContent = text; holder.appendChild(n);
-    void n.offsetWidth; setTimeout(() => n.classList.remove("in"), 16);   // a timer, not animation frames: hidden tabs skip frames
+    if (!animate || REDUCED || !cur || !cur.textContent || !holder.animate) { holder.innerHTML = `<span>${esc(text)}</span>`; return; }
+    for (const c of [...holder.children]) if (c !== cur) c.remove();
+    cur.dataset.out = "1";
+    const n = document.createElement("span"); n.textContent = text; holder.appendChild(n);
+    const opt = { duration: 480, easing: "cubic-bezier(.2,.7,.2,1)" };
+    const a1 = cur.animate([{ transform: "translateY(0)", opacity: 1 }, { transform: "translateY(-100%)", opacity: 0 }], { ...opt, fill: "forwards" });
+    const a2 = n.animate([{ transform: "translateY(100%)", opacity: 0 }, { transform: "translateY(0)", opacity: 1 }], opt);
+    setTimeout(() => { a1.cancel(); a2.cancel(); cur.remove(); }, 560);
   }
   function valueText(key, v) {
     const u = S.meta.vars[key].unit;
@@ -346,7 +355,7 @@
     paintCO2box(b, animate);
     if (!quick) {
       $("headline").innerHTML = headline(b);
-      const say = $("say"); say.innerHTML = narrate(b); if (animate) { say.classList.remove("fresh"); void say.offsetWidth; say.classList.add("fresh"); }
+      const say = $("say"); say.innerHTML = narrate(b); if (animate && !REDUCED && say.animate) { const an = say.animate([{ opacity: 0, transform: "translateY(5px)" }, { opacity: 1, transform: "none" }], 450); setTimeout(() => an.cancel(), 500); }
       paintTicker();
     } else {
       $("headline").innerHTML = `<span class="tag pass">Time-lapse</span>${esc(S.sc.label)} <span>${S.year}, pass ${b.st ? b.st.i : ""}</span>`;
@@ -363,13 +372,28 @@
   // The hero number: US energy CO2 as the loop has it at this step, EIA's own figure as a ghost beside it.
   function paintCO2box(b, animate) {
     const box = $("co2box");
-    if (!box.firstChild) box.innerHTML = `<div class="k"></div><div class="row"><div class="n"><span></span></div><div class="ghost"></div></div><div class="u">million tons a year</div><div class="d"></div>`;
+    if (!box.firstChild) box.innerHTML = `<div class="k"></div><div class="row"><div class="n"><span></span></div><div class="ghost"></div></div><div class="u">million tons a year</div><div class="d"></div><svg class="sp" viewBox="0 0 240 40" aria-hidden="true"></svg>`;
     const e = eiaAt("co2", S.year), r = rel(b.co2, e);
     box.querySelector(".k").textContent = `US energy CO2, ${S.year}`;
     roll(box.querySelector(".n"), fmt(b.co2), animate);
     box.querySelector(".ghost").innerHTML = `EIA<br>${fmt(e)}`;
+    box.querySelector(".sp").innerHTML = spark(S.lapse ? S.year : S.meta.years[1]);
     box.querySelector(".d").innerHTML = b.co2src === "eia" ? "EIA's number, before the loop runs" :
       `<span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`}</span> ${badge(keyGrade("co2"))}`;
+  }
+  // Settled CO2 by year for the sparkline under the counter, up to the year being shown.
+  function spark(upTo) {
+    const [y0, y1] = S.meta.years, ys = [];
+    for (let y = y0; y <= y1; y++) ys.push(y);
+    const mine = ys.map((y) => { const st = S.sc.steps.filter((s) => s.y === y && s.s === "s"); return st.length ? st[st.length - 1].v[idx("co2")] : null; });
+    const eia = ys.map((y) => eiaAt("co2", y)), all = [...eia, ...mine.filter((v) => v !== null)];
+    const lo = Math.min(...all), hi = Math.max(...all), X = (y) => 4 + ((y - y0) / (y1 - y0)) * 232, Y = (v) => 4 + (1 - (v - lo) / (hi - lo || 1)) * 32;
+    const pts = (arr, lim) => arr.map((v, i) => (v === null || ys[i] > lim ? null : `${X(ys[i]).toFixed(1)},${Y(v).toFixed(1)}`)).filter(Boolean).join(" ");
+    const cur = Math.min(upTo, y1), cv = mine[ys.indexOf(cur)];
+    return `<polyline points="${pts(eia, y1)}" fill="none" stroke="rgba(236,233,225,.35)" stroke-dasharray="3 3" stroke-width="1.2"/>` +
+      `<polyline points="${pts(mine, cur)}" fill="none" stroke="#4FE3B0" stroke-width="2"/>` +
+      (cv !== null && cv !== undefined ? `<circle cx="${X(cur)}" cy="${Y(cv)}" r="3" fill="#4FE3B0"/>` : "") +
+      `<text x="4" y="39" fill="rgba(236,233,225,.45)" font-size="9">${y0}</text><text x="236" y="39" text-anchor="end" fill="rgba(236,233,225,.45)" font-size="9">${y1}</text>`;
   }
   function paintTicker() {
     const items = S.beats.slice(0, S.pos + 1).map((b, i) => {
@@ -453,6 +477,7 @@
     if (S.lapse) { pause(); return; }
     pause(); const token = ++S.token; S.lapse = true; buttons();
     let prev = null, passes = 0;
+    S.lapseLog = [];
     for (let y = S.meta.years[0]; y <= S.meta.years[1]; y++) {
       setYear(y, false);
       const b = S.beats[S.beats.length - 1];
@@ -475,8 +500,11 @@
       const m = mag(r); G.heat.set(e, m); G.nodeHeat[e[1]] = Math.max(G.nodeHeat[e[1]] || 0, m * 0.6);
       if (!REDUCED) spawn(e, m, 560, true);
     }
-    paintLabels(b.vals, null, true); paintCO2box(b, true);
+    paintLabels(b.vals, null, false); paintCO2box(b, false);
     const r = rel(b.co2, eiaAt("co2", S.year));
+    S.lapseLog.unshift(`<li class="ok"><b>${S.year}.</b> US CO2 ${fmt(b.co2)} Mt, <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span> vs EIA; agreed after ${b.st.i} passes.</li>`);
+    const older = S.lapseLog.slice(3);
+    $("ticker").innerHTML = S.lapseLog.slice(0, 3).join("") + (older.length ? `<li class="older"><details><summary>${older.length} earlier year${older.length > 1 ? "s" : ""}</summary><ol class="ticker">${older.join("")}</ol></details></li>` : "");
     $("headline").innerHTML = `<span class="tag pass">Time-lapse</span>${esc(S.sc.label)} <span>${S.year}, settled after ${b.st.i} passes</span>`;
     $("say").innerHTML = `<b>${S.year}.</b> US CO2 ${fmt(b.co2)} Mt, <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span> vs EIA. Edges show what moved since ${S.year - 1}.`;
     $("pass").textContent = `${S.year}`;
@@ -493,7 +521,7 @@
       `<button class="btn ghost small" type="button" id="finale-x">Close</button>`;
     f.hidden = false;
     $("finale-x").addEventListener("click", () => (f.hidden = true));
-    $("say").innerHTML = `<b>${y}, settled.</b> Every year's loop agreed; the line beside the stage is each year's settled CO2.`;
+    $("say").innerHTML = `<b>${y}, settled.</b> Every year's loop agreed; the line under the counter and in the panel is each year's settled CO2.`;
   }
   function buttons() {
     $("play").textContent = S.playing ? "Pause" : S.pos >= S.beats.length - 1 ? "Replay" : "Play";
@@ -596,7 +624,8 @@
     const q = new URLSearchParams(location.hash.slice(1)), y = +q.get("y");
     if (y >= meta.years[0] && y <= meta.years[1]) S.year = y;
     const want = man.scenarios.find((s) => s.id === q.get("s")) || man.scenarios.find((s) => s.id === "fast") || man.scenarios[0];
-    await pick(want.id, !REDUCED);   // the hero: play the chosen year once on arrival, unless less motion was asked for
+    // the hero: a first visit plays the pulse, the year and the finale; a deep link opens settled, ready to play
+    await pick(want.id, !REDUCED && !location.hash.slice(1));
   }
   addEventListener("DOMContentLoaded", () => main().catch((e) => {
     console.error(e);
