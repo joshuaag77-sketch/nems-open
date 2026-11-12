@@ -123,13 +123,17 @@
       return `<span class="ends" title="${esc("The instant estimate leaves this lever out: it changes EIA's own building code, which only the full run has. Press Run the full model.")}">full run only</span>`;
     return NEMSDot.dot(row.grade === "ported" ? "match" : "stand", `${row.why}. Moves: ${row.moves}`);
   }
+  const MAIN_LEVERS = ["carbon_price", "ev_2035", "load_growth", "renewable_cost"];   // the most used; the rest fold away
   function buildLevers() {
-    $("levers").innerHTML = LEVERS.map((l) => `
+    const one = (l) => `
       <div class="lever${l.realOnly ? " real-only" : ""}" data-k="${l.key}">
-        <div class="lever-top"><label for="lv-${l.key}">${l.title}</label><output id="lv-${l.key}-out"></output></div>
+        <div class="lever-top"><label for="lv-${l.key}">${l.title}<span id="lv-${l.key}-g" class="lg"></span></label><output id="lv-${l.key}-out"></output></div>
         <input id="lv-${l.key}" type="range" min="${l.lo}" max="${l.hi}" step="${l.step}">
-        <div class="lever-foot"><span class="ends">${l.ends[0]}</span><span id="lv-${l.key}-g"></span><span class="ends">${l.ends[1]}</span></div>
-      </div>`).join("");
+        <div class="lever-foot"><span class="ends">${l.ends[0]}</span><span class="ends">${l.ends[1]}</span></div>
+      </div>`;
+    const rest = LEVERS.filter((l) => !MAIN_LEVERS.includes(l.key));
+    $("levers").innerHTML = LEVERS.filter((l) => MAIN_LEVERS.includes(l.key)).map(one).join("") +
+      `<details id="more-levers" class="more-levers"><summary>More levers <span id="more-count"></span></summary>${rest.map(one).join("")}</details>`;
     for (const l of LEVERS) {
       $(`lv-${l.key}`).addEventListener("input", (e) => { S.x[l.key] = +e.target.value; S.story = null; update(); });
     }
@@ -156,6 +160,8 @@
     for (const b of document.querySelectorAll(".story")) b.setAttribute("aria-pressed", String(b.dataset.id === S.story));
     const st = STORIES.find((s) => s.id === S.story);
     $("story-desc").textContent = st ? st.desc : "Your own mix.";
+    const d = defaults(), set = LEVERS.filter((l) => !MAIN_LEVERS.includes(l.key) && Math.abs(S.x[l.key] - d[l.key]) > 1e-9).length;
+    $("more-count").textContent = `(${LEVERS.length - MAIN_LEVERS.length}${set ? `, ${set} changed` : ""})`;
   }
 
   // ---- headline numbers ---------------------------------------------------------------------------
@@ -185,17 +191,17 @@
     const y = S.year, out = [];
     if (has("power_bill_month")) {
       const v = at("power_bill_month"), e = eia("power_bill_month");
-      out.push(card({ title: "Home power bill", dot: badge(gradeOf("power_bill_month", S.src)), value: `$${fmt(v)}<small> a month</small>`,
+      out.push(card({ title: "Home power bill", dot: badge(gradeOf("power_bill_month", S.src)), value: `$${fmt(v)}<small title="2024 dollars: future prices adjusted for inflation, so they compare with what things cost today"> a month, today's dollars</small>`,
         line: `A typical home's electricity bill in ${y}.`, vs: moneyVs(v - e, e, "a month"), dir: dirOf(v - e, e),
         basis: `The average US home's electricity use (about ${fmt(at("home_kwh_month"))} kWh a month, which includes charging an electric car at home, as EIA counts it) times the home power price (${fmt(at("price_el_home"), 1)}¢ per kWh). Both from the model; the number of homes from EIA. 2024 dollars.` }));
     }
     { const v = at("price_gasoline"), e = eia("price_gasoline");
-      out.push(card({ title: "Gas at the pump", dot: badge(gradeOf("price_gasoline", S.src)), value: `$${fmt(v, 2)}<small> a gallon</small>`,
+      out.push(card({ title: "Gas at the pump", dot: badge(gradeOf("price_gasoline", S.src)), value: `$${fmt(v, 2)}<small title="2024 dollars: future prices adjusted for inflation, so they compare with what things cost today"> a gallon, today's dollars</small>`,
         line: `The average US price of a gallon of gasoline in ${y}.`, vs: moneyVs(v - e, e, "a gallon", true), dir: dirOf(v - e, e),
         basis: "The model's average US gasoline price, in 2024 dollars, including any carbon price you set." })); }
     if (has("heat_bill_month")) {
       const v = at("heat_bill_month"), e = eia("heat_bill_month");
-      out.push(card({ title: "Home heating fuel", dot: badge(gradeOf("heat_bill_month", S.src)), value: `$${fmt(v)}<small> a month</small>`,
+      out.push(card({ title: "Home heating fuel", dot: badge(gradeOf("heat_bill_month", S.src)), value: `$${fmt(v)}<small title="2024 dollars: future prices adjusted for inflation, so they compare with what things cost today"> a month, today's dollars</small>`,
         line: "What a typical home spends on gas, propane and heating oil.", vs: moneyVs(v - e, e, "a month"), dir: dirOf(v - e, e),
         basis: "The average US home's spending on natural gas, propane, heating oil, kerosene and coal (for heat, hot water and cooking): the model's home use of each fuel times its home price, over EIA's number of homes. 2024 dollars." }));
     }
@@ -518,7 +524,7 @@
       b: "These start as the U.S. Energy Information Administration's own projections: a typical home's bills, gas at the pump, and America's CO2. The map shows every power plant." },
     { el: () => document.querySelector(".levers"), t: "Pull a lever or pick a story",
       b: "Try a carbon price, more electric cars, or a data-center boom. Every number updates at once." },
-    { el: () => document.querySelector(".stats"), t: "See what changed and how sure we are",
+    { el: () => document.querySelector("#stats .hh"), t: "See what changed and how sure we are",
       b: "Each number says how it compares with EIA's forecast. The dot says how sure: green is EIA's own code, amber is our estimate, grey is EIA's published number." },
   ];
   function guide(force) {
@@ -529,11 +535,26 @@
     const done = () => { box.hidden = true; if (lit) lit.classList.remove("guide-on"); try { localStorage.setItem("nems.guide.2050", "done"); } catch (e) { /* not kept */ } };
     const show = () => {
       if (lit) lit.classList.remove("guide-on");
-      const g = GUIDE[i]; lit = g.el(); if (lit) { lit.classList.add("guide-on"); const top = lit.getBoundingClientRect().top + scrollY - 56; scrollTo({ top: Math.max(0, top), behavior: "smooth" }); }
+      const g = GUIDE[i]; lit = g.el();
+      if (lit) {
+        lit.classList.add("guide-on");
+        // scroll only if the target is not already in view, so the page opens at the top
+        const r = lit.getBoundingClientRect();
+        if (r.top < 56 || r.top > innerHeight * 0.6) scrollTo({ top: Math.max(0, r.top + scrollY - 70), behavior: "smooth" });
+      }
       box.innerHTML = `<div class="gs">Step ${i + 1} of ${GUIDE.length}</div><h3>${g.t}</h3><p>${g.b}</p>` +
         `<div class="gb"><button type="button" class="btn ghost" data-a="skip">Skip</button>${i ? '<button type="button" class="btn ghost" data-a="back">Back</button>' : ""}` +
         `<button type="button" class="btn primary" data-a="next">${i === GUIDE.length - 1 ? "Got it" : "Next"}</button></div>`;
       box.hidden = false; box.querySelector('[data-a="next"]').focus({ preventScroll: true });
+      // wide screens: the card sits beside what it points at, so each step visibly moves
+      box.classList.remove("side");
+      if (lit && innerWidth >= 1000) {
+        const r = lit.getBoundingClientRect(), w = box.offsetWidth;
+        box.classList.add("side");
+        const left = r.right + 18 + w < innerWidth ? r.right + 18 : Math.max(12, r.left);
+        const top = r.right + 18 + w < innerWidth ? Math.max(70, r.top) : Math.min(innerHeight - box.offsetHeight - 12, r.bottom + 14);
+        Object.assign(box.style, { left: `${left}px`, top: `${top}px` });
+      } else Object.assign(box.style, { left: "", top: "" });
     };
     box.onclick = (e) => {
       const a = e.target.dataset.a; if (!a) return;
@@ -541,6 +562,7 @@
       else { i += a === "next" ? 1 : -1; show(); }
     };
     box.onkeydown = (e) => { if (e.key === "Escape") done(); };
+    scrollTo(0, 0);
     show();
   }
 
