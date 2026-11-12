@@ -91,7 +91,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
-        macro: str | None = None, ogs: str = "standin") -> RunResult:
+        macro: str | None = None, ogs: str = "standin", record=None) -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
@@ -100,7 +100,13 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     relax=False is IRELAX = 0 (tests only, no relaxation). base: replace the baseline case's arrays
     (prices, quantities, Brent, macro) with these, e.g. a blend of EIA's cases (nems_open.uncertainty).
     macro: None keeps EIA's economy; "frbus" runs the economy module (nems_open.macro.drive) each cycle and feeds
-    GDP, floorspace and industry output to demand; cycle 1 sees the oil price only, so use cycles >= 2."""
+    GDP, floorspace and industry output to demand; cycle 1 sees the oil price only, so use cycles >= 2.
+    record: None, or a function called twice per iteration with what the loop just passed between
+    modules: record("demand", ...) after demand answered (q updated, prices as demand saw them) and
+    record("supply", ...) after supply answered (prices and power-sector fuel updated, plus co2, the
+    convergence test and its worst change). Keyword arguments: cycle, year, itr, fcrl, j, prices, q, and
+    for "supply" also co2, converged, dp, dq, worst. The arrays are the loop's own, live: copy what you keep.
+    It reads only; the run is the same with or without it (scripts/think_runs.py uses it)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
@@ -190,6 +196,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     dq, _ = worst_change(within, q_old, col)
                     for k, v in col.items():
                         q[k][:, j] = v
+                    if record is not None:
+                        record("demand", cycle=cycle, year=year, itr=itr, fcrl=ctl.fcrl, j=j, prices=prices, q=q)
                     # Supply: prices and power-sector fuel use out, tested against what it saw.
                     s, fuel = solve_supply(j, itr, ctl.fcrl, tested and relax)
                     old = {k: prices[k][:, j].copy() for k in prices}
@@ -208,6 +216,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     for k, v in fuel.items():
                         q[k][:, j] = v
                     ctest = tested and not bad
+                    if record is not None:
+                        record("supply", cycle=cycle, year=year, itr=itr, fcrl=ctl.fcrl, j=j, prices=prices, q=q,
+                               co2=s.co2, converged=ctest, dp=dp, dq=dq, worst=worst)
                     passes.append(Pass(year, itr, dp, worst, dq, routines, ctest, ctl.fcrl, sorted(bad), cycle))
                     if verbose:
                         print(f"cycle {cycle} {year} itr {itr} fcrl {ctl.fcrl}: max dP/P {dp:.2e} ({worst}), "

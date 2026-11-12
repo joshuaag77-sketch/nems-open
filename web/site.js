@@ -2,6 +2,7 @@
 (function () {
   const PAGES = [
     ["2050.html", "Your 2050"],
+    ["think.html", "Watch it think"],
     ["engine3d.html", "Engine"],
     ["index.html", "Policy demo"],
     ["scoreboard.html", "Scoreboard"],
