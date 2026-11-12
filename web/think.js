@@ -25,10 +25,10 @@
   const LAYOUTS = {
     wide: { flow: "h", demand: { xs: [0.2, 0.2, 0.2, 0.2], ys: [0.17, 0.39, 0.61, 0.83], side: "left" },
       supply: { xs: [0.8, 0.8, 0.8, 0.8], ys: [0.17, 0.39, 0.61, 0.83], side: "right" },
-      q: [[0.38, 0.41], [0.62, 0.41]], p: [[0.62, 0.59], [0.38, 0.59]], bulge: [-1, 0] },
+      q: [[0.38, 0.35], [0.62, 0.35]], p: [[0.62, 0.65], [0.38, 0.65]], bulge: [-1, 0] },
     tall: { flow: "v", demand: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.21, 0.21, 0.21, 0.21], side: "above" },
-      supply: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.6, 0.6, 0.6, 0.6], side: "below" },
-      q: [[0.43, 0.33], [0.43, 0.47]], p: [[0.57, 0.47], [0.57, 0.33]], bulge: [0, -1] },
+      supply: { xs: [0.13, 0.38, 0.62, 0.87], ys: [0.52, 0.52, 0.52, 0.52], side: "below" },
+      q: [[0.43, 0.32], [0.43, 0.43]], p: [[0.57, 0.43], [0.57, 0.32]], bulge: [0, -1] },
   };
   // [from, to, recorded key, "q" quantity or "p" price]
   const EDGES = [
@@ -360,12 +360,16 @@
     for (let k = 0; k < n; k++) G.parts.push({ path, type: e[3], t0: now + Math.random() * dur * 0.5, dur: Math.max(300, dur * (0.5 + 0.15 * Math.random())),
       size: 6 + 10 * m * Math.random() + 3, alpha: 0.35 + 0.6 * m });
   }
+  // The hero number: US energy CO2 as the loop has it at this step, EIA's own figure as a ghost beside it.
   function paintCO2box(b, animate) {
     const box = $("co2box");
-    if (!box.firstChild) box.innerHTML = `<div class="k">US energy CO2</div><div class="n"><span></span></div><div class="d"></div>`;
-    roll(box.querySelector(".n"), `${fmt(b.co2)} Mt`, animate);
-    const r = rel(b.co2, eiaAt("co2", S.year));
-    box.querySelector(".d").innerHTML = b.co2src === "eia" ? "EIA's, before the loop runs" : `${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`} ${badge(keyGrade("co2"))}`;
+    if (!box.firstChild) box.innerHTML = `<div class="k"></div><div class="row"><div class="n"><span></span></div><div class="ghost"></div></div><div class="u">million tons a year</div><div class="d"></div>`;
+    const e = eiaAt("co2", S.year), r = rel(b.co2, e);
+    box.querySelector(".k").textContent = `US energy CO2, ${S.year}`;
+    roll(box.querySelector(".n"), fmt(b.co2), animate);
+    box.querySelector(".ghost").innerHTML = `EIA<br>${fmt(e)}`;
+    box.querySelector(".d").innerHTML = b.co2src === "eia" ? "EIA's number, before the loop runs" :
+      `<span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "same as EIA" : `${pct(r)} vs EIA`}</span> ${badge(keyGrade("co2"))}`;
   }
   function paintTicker() {
     const items = S.beats.slice(0, S.pos + 1).map((b, i) => {
@@ -373,7 +377,12 @@
       const tag = b.type === "step" ? `<b>Pass ${b.st.i}, ${b.st.s === "d" ? "demand" : "supply"}.</b> ` : "";
       return `<li class="${cls}${i === S.pos ? " now" : ""}">${tag}${b.type === "step" ? sayStep(b, true) : narrate(b)}</li>`;
     });
-    $("ticker").innerHTML = items.reverse().join("");
+    items.reverse();
+    const keep = 3, older = items.slice(keep);
+    $("ticker").innerHTML = items.slice(0, keep).join("") + (older.length ?
+      `<li class="older"><details${S.histOpen ? " open" : ""}><summary>${older.length} earlier step${older.length > 1 ? "s" : ""}</summary><ol class="ticker">${older.join("")}</ol></details></li>` : "");
+    const d = $("ticker").querySelector("details");
+    if (d) d.addEventListener("toggle", () => { S.histOpen = d.open; });
   }
   function paintConv() {
     const steps = S.beats.filter((b) => b.type === "step");
@@ -433,21 +442,58 @@
     if (S.pos >= S.beats.length - 1) S.pos = -1;
     for (let i = S.pos + 1; i < S.beats.length; i++) {
       apply(i, true);
-      if (!(await wait(BEAT[S.beats[i].type] * (REDUCED ? 1.15 : 1), token))) return;
+      if (!(await wait(BEAT[S.beats[i].type] * (REDUCED ? 1.15 : 1), token))) return false;
     }
     S.playing = false; buttons();
+    return true;
   }
-  function pause() { S.token++; S.playing = false; S.lapse = false; buttons(); }
+  function pause() { S.token++; S.playing = false; S.lapse = false; finale(false); buttons(); }
   function go(i, animate) { pause(); apply(Math.max(0, Math.min(S.beats.length - 1, i)), animate); }
   async function lapse() {
     if (S.lapse) { pause(); return; }
     pause(); const token = ++S.token; S.lapse = true; buttons();
+    let prev = null, passes = 0;
     for (let y = S.meta.years[0]; y <= S.meta.years[1]; y++) {
       setYear(y, false);
-      for (let i = 1; i < S.beats.length - 1; i++) { apply(i, true, true); if (!(await wait(360, token))) return; }
+      const b = S.beats[S.beats.length - 1];
+      passes += b.st.i;
+      yearBeat(b, prev);
       paintCO2(y);
+      prev = b.vals;
+      if (!(await wait(REDUCED ? 900 : 600, token))) return;
     }
-    S.lapse = false; apply(S.beats.length - 1, true); buttons();
+    S.lapse = false; S.pos = S.beats.length - 1; buttons();
+    finale(true, passes);
+  }
+  // A year in the time-lapse: where the loop settled, with each edge lit by how much its value moved
+  // since the year before (both recorded, settled values).
+  function yearBeat(b, prev) {
+    G.heat = new Map(); G.nodeHeat = {};
+    if (prev) for (const e of EDGES) {
+      const r = rel(b.vals[idx(e[2])], prev[idx(e[2])]);
+      if (Math.abs(r) < 1e-6) continue;
+      const m = mag(r); G.heat.set(e, m); G.nodeHeat[e[1]] = Math.max(G.nodeHeat[e[1]] || 0, m * 0.6);
+      if (!REDUCED) spawn(e, m, 560, true);
+    }
+    paintLabels(b.vals, null, true); paintCO2box(b, true);
+    const r = rel(b.co2, eiaAt("co2", S.year));
+    $("headline").innerHTML = `<span class="tag pass">Time-lapse</span>${esc(S.sc.label)} <span>${S.year}, settled after ${b.st.i} passes</span>`;
+    $("say").innerHTML = `<b>${S.year}.</b> US CO2 ${fmt(b.co2)} Mt, <span class="${r > 0 ? "up" : "dn"}">${pct(r)}</span> vs EIA. Edges show what moved since ${S.year - 1}.`;
+    $("pass").textContent = `${S.year}`;
+    $("scrub").value = S.beats.length - 1;
+  }
+  function finale(on, passes) {
+    const f = $("finale");
+    if (!on) { f.hidden = true; return; }
+    const y = S.meta.years[1], b = S.beats[S.beats.length - 1], e = eiaAt("co2", y), r = rel(b.co2, e);
+    f.innerHTML = `<div class="f-y">${y}</div><div class="f-s">${esc(S.sc.label)}</div>` +
+      `<div class="f-n">${fmt(b.co2)}<small> Mt CO2</small></div>` +
+      `<div class="f-d"><span class="${Math.abs(r) < 0.0005 ? "" : r > 0 ? "up" : "dn"}">${Math.abs(r) < 0.0005 ? "the same as" : pct(r) + " vs"}</span> EIA's reference (${fmt(e)} Mt)</div>` +
+      `<div class="f-f">${fmt(passes)} passes of the real loop, 2027 to 2050, every one recorded. ${badge(keyGrade("co2"))}</div>` +
+      `<button class="btn ghost small" type="button" id="finale-x">Close</button>`;
+    f.hidden = false;
+    $("finale-x").addEventListener("click", () => (f.hidden = true));
+    $("say").innerHTML = `<b>${y}, settled.</b> Every year's loop agreed; the line beside the stage is each year's settled CO2.`;
   }
   function buttons() {
     $("play").textContent = S.playing ? "Pause" : S.pos >= S.beats.length - 1 ? "Replay" : "Play";
@@ -462,7 +508,33 @@
   }
 
   // ---- scenarios, links, legend -------------------------------------------------------------------
-  async function pick(id, autoplay) {
+  function pulse(fromEl, mods) {
+    if (REDUCED || !fromEl || !mods.length || !G.L) return Promise.resolve();
+    const a = fromEl.getBoundingClientRect(), st = $("stage").getBoundingClientRect();
+    const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2;
+    return Promise.all(mods.filter((m) => G.pos[m]).map((m, k) => new Promise((ok) => {
+      const [nx, ny] = G.pos[m], x1 = st.left + nx, y1 = st.top + ny;
+      const dot = document.createElement("div"); dot.className = "spark"; document.body.appendChild(dot);
+      dot.style.left = `${x0}px`; dot.style.top = `${y0}px`;
+      const lift = Math.min(y0, y1) - 60;   // an arc, not a straight line
+      const anim = dot.animate([
+        { transform: "translate(-50%,-50%) scale(.6)", opacity: 0 },
+        { transform: `translate(calc(-50% + ${(x1 - x0) * 0.45}px), calc(-50% + ${lift - y0}px)) scale(1.3)`, opacity: 1, offset: 0.45 },
+        { transform: `translate(calc(-50% + ${x1 - x0}px), calc(-50% + ${y1 - y0}px)) scale(.8)`, opacity: 1 },
+      ], { duration: 1150, delay: k * 90, easing: "cubic-bezier(.45,0,.2,1)", fill: "forwards" });
+      let done = false;
+      const land = () => {
+        if (done) return; done = true;
+        dot.remove();
+        for (let n = 0; n < 2; n++) G.rings.push({ m, t0: performance.now() + n * 220, dur: 1200, grow: Math.min(G.w, G.h) * 0.16, a: 0.95, col: [255, 107, 107] });
+        G.nodeHeat[m] = 1; ok();
+      };
+      anim.onfinish = land;
+      setTimeout(land, 1150 + k * 90 + 250);   // a background tab may never finish the animation; the story goes on
+    })));
+  }
+
+  async function pick(id, autoplay, fromEl) {
     pause();
     if (!S.cache[id]) S.cache[id] = await fetch(`data/think/${id}.json`).then((r) => r.json());
     S.sc = S.cache[id];
@@ -470,7 +542,17 @@
     $("lever").value = S.sc.kind === "lever" ? id : "";
     placeLabels(); legend();
     setYear(S.year, !autoplay);
-    if (autoplay) { apply(0, false); S.pos = -1; play(); }
+    if (autoplay) {
+      apply(0, false);
+      const token = S.token;
+      $("stage").scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
+      await pulse(fromEl || document.querySelector(`.chip[data-id="${id}"]`) || $("lever"), S.sc.entered || []);
+      if (token !== S.token) return;
+      S.pos = -1;
+      // the year, pass by pass; then the finale: every year to 2050
+      if (!(await play())) return;
+      if (await wait(1400, S.token)) lapse();
+    }
   }
   function links() {
     const lev = S.sc.levers || {}, story = { reference: "eia", fast: "fast", ai: "ai", gas: "gas", nuke: "nuke" }[S.sc.id];
@@ -493,8 +575,8 @@
     const stories = man.scenarios.filter((s) => s.kind === "story"), levers = man.scenarios.filter((s) => s.kind === "lever");
     $("stories").innerHTML = stories.map((s) => `<button class="chip" type="button" data-id="${s.id}" aria-pressed="false" title="${esc(s.desc)}">${esc(s.label)}</button>`).join("");
     $("lever").innerHTML = `<option value="">${levers.length ? "Choose a lever" : "Lever runs still computing"}</option>` + levers.map((s) => `<option value="${s.id}">${esc(s.label)}</option>`).join("");
-    $("stories").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (b) pick(b.dataset.id, !REDUCED); });
-    $("lever").addEventListener("change", (e) => { if (e.target.value) pick(e.target.value, !REDUCED); });
+    $("stories").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (b) pick(b.dataset.id, !REDUCED, b); });
+    $("lever").addEventListener("change", (e) => { if (e.target.value) pick(e.target.value, !REDUCED, e.target); });
     $("year").addEventListener("input", (e) => { pause(); setYear(+e.target.value); });
     $("play").addEventListener("click", play);
     $("back").addEventListener("click", () => go(S.pos - 1, false));

@@ -49,12 +49,31 @@ h2{font-size:13px;color:var(--ink2);font-weight:500}
 .lab .note{font-size:10.5px;color:var(--p)}
 .econ{position:absolute;left:14px;top:10px;font-size:12px;color:var(--ink3);border:1px dotted #5d5b55;border-radius:6px;padding:3px 8px}
 .econ b{font-weight:500;color:#9a978f}
-.co2box{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);text-align:center;pointer-events:none}
-.co2box .k{font-size:12px;color:var(--ink3);letter-spacing:.04em;text-transform:uppercase}
-.co2box .n{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;position:relative;height:30px;overflow:hidden;min-width:150px}
+.co2box{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none}
+.co2box .k{font-size:12px;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase}
+.co2box .row{display:flex;align-items:center;justify-content:center;gap:14px}
+.co2box .n{font-size:clamp(38px,4.6vw,64px);font-weight:750;letter-spacing:-.02em;font-variant-numeric:tabular-nums;position:relative;height:1.12em;overflow:hidden;min-width:3.6em;line-height:1.1}
 .co2box .n span{position:absolute;left:0;right:0;transition:transform .5s cubic-bezier(.2,.7,.2,1),opacity .5s ease}
 .co2box .n span.in{transform:translateY(100%);opacity:0}.co2box .n span.out{transform:translateY(-100%);opacity:0}
-.co2box .d{font-size:12px;color:var(--ink2)}
+.co2box .ghost{font-size:13px;line-height:1.2;color:rgba(236,233,225,.32);text-align:left;font-variant-numeric:tabular-nums;border-left:1px solid rgba(236,233,225,.18);padding-left:10px}
+.co2box .u{font-size:12px;color:var(--ink3);margin-top:-2px}
+.co2box .d{font-size:13px;color:var(--ink2);margin-top:3px}
+.co2box .d .up{color:#ff9b85}.co2box .d .dn{color:#7fe0bf}
+.finale{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;text-align:center;padding:22px 30px 18px;border-radius:16px;min-width:min(420px,86%);
+  background:radial-gradient(120% 120% at 50% 0%,rgba(20,40,34,.96),rgba(8,11,15,.96));border:1px solid rgba(79,227,176,.35);box-shadow:0 20px 80px rgba(0,0,0,.6),0 0 60px rgba(79,227,176,.12)}
+.finale .f-y{font-size:13px;letter-spacing:.14em;color:#7fe0bf;font-weight:700}
+.finale .f-s{font-size:15px;color:var(--ink2);margin-top:2px}
+.finale .f-n{font-size:clamp(40px,5.4vw,72px);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:6px}
+.finale .f-n small{font-size:.32em;font-weight:500;color:var(--ink2);letter-spacing:0}
+.finale .f-d{font-size:17px;margin-top:2px}.finale .f-d .up{color:#ff9b85}.finale .f-d .dn{color:#7fe0bf}
+.finale .f-f{font-size:12px;color:var(--ink3);margin-top:10px}
+.finale .btn{margin-top:10px;font-size:12px;padding:4px 10px}
+.finale[hidden]{display:none}
+.spark{position:fixed;width:18px;height:18px;border-radius:50%;pointer-events:none;z-index:60;
+  background:radial-gradient(circle,#fff 0%,#ff8b80 35%,rgba(255,107,107,0) 70%);box-shadow:0 0 24px 8px rgba(255,107,107,.55)}
+.ticker li.older{border:0;padding:0}
+.ticker details summary{cursor:pointer;font-size:12.5px;color:var(--ink3);padding:2px 0 2px 13px}
+.ticker details .ticker{margin-top:6px;max-height:none}
 .say{margin:10px 2px 6px;min-height:52px;font-size:18px;line-height:1.4;color:var(--ink);text-align:center;text-wrap:balance}
 .say b{font-weight:650}.say .up{color:#ff9b85}.say .dn{color:#7fe0bf}
 .say.fresh{animation:say .5s ease}
@@ -111,5 +130,5 @@ h2{font-size:13px;color:var(--ink2);font-weight:500}
   .rail{display:flex}
   .econ{display:none}
   .lab .nm{font-size:12px}.lab .val{font-size:11.5px;min-width:70px;height:15px}.lab .vs{font-size:11px}
-  .co2box .n{font-size:19px;height:25px}
+  .co2box{top:auto;bottom:10px;transform:translateX(-50%)}.co2box .n{font-size:34px}.co2box .ghost{font-size:11px}
 }
