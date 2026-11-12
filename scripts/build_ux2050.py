@@ -110,6 +110,13 @@ def outputs(prices: dict, q: dict, co2: dict, base: dict, homes: np.ndarray) -> 
         out[f"price_{name}"] = np.asarray(prices[v][US, J], dtype=np.float64) * k * per
     spend = sum(np.asarray(prices[f"MPBLK/p{f}rs"][US, J]) * g(f"QBLK/q{f}rs") for f in RES_FUELS)
     out["bill"] = spend * k / homes[J]   # trillion Btu x $/MMBtu = $ million, over millions of homes
+    # Household terms, per average US home (EIA's housing units), per month, 2024 dollars. EIA counts EV
+    # charging at home as home electricity, so the power bill includes it.
+    pel = np.asarray(prices["MPBLK/pelrs"][US, J], dtype=np.float64)
+    out["power_bill_month"] = pel * g("QBLK/qelrs") * k / homes[J] / 12
+    out["heat_bill_month"] = sum(np.asarray(prices[f"MPBLK/p{f}rs"][US, J]) * g(f"QBLK/q{f}rs") for f in RES_FUELS if f != "el") * k / homes[J] / 12
+    out["price_el_home"] = pel * k * MMBTU_PER_KWH * 100                                   # cents per kWh
+    out["home_kwh_month"] = g("QBLK/qelrs") * 1e12 / 3412 / (homes[J] * 1e6) / 12        # trillion Btu to kWh per home
     for s in SECTORS:
         for src, f in SOURCES.items():
             out[f"flow_{src}_{s}"] = g(f"QBLK/q{f}{s}") / 1000

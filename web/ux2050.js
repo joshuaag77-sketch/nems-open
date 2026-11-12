@@ -487,7 +487,7 @@
   }
 
   async function main() {
-    const [emu, plants, fid] = await Promise.all(["data/ux2050/emulator.json", "data/ux2050/plants.json", "data/fidelity.json"]
+    const [emu, plants, fid] = await Promise.all(["data/ux2050/emulator.json?v=2", "data/ux2050/plants.json", "data/fidelity.json"]
       .map((u) => fetch(u).then((r) => r.json())));
     Object.assign(S, { emu, plants, fid });
     await loadGeo();
