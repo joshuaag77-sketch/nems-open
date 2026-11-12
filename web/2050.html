@@ -4,41 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your America in 2050</title>
-<meta name="description" content="Move ten plain levers and see America's power plants, energy flows and household energy bill to 2050, from an open rebuild of EIA's energy model. Every number carries how far to trust it.">
-<link rel="stylesheet" href="ux2050.css?v=4">
+<meta name="description" content="EIA's forecast for America in 2050, and what changes when you pull a lever: a typical home's bills, gas at the pump and CO2, from an open rebuild of EIA's energy model.">
+<link rel="stylesheet" href="ux2050.css?v=12">
 <script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
-<script defer src="site.js"></script>
+<script defer src="site.js?v=11"></script>
 <script defer src="ux2050_model.js?v=2"></script>
-<script defer src="ux2050.js?v=4"></script>
+<script defer src="ux2050.js?v=11"></script>
 </head>
 <body>
 <header class="hd">
   <div class="hd-title">
     <h1>Your America in 2050</h1>
-    <p>Pull the levers. An open rebuild of EIA's energy model shows what changes, and how far to trust each number.</p>
+    <p>EIA's forecast for 2050, and what changes when you pull a lever.</p>
   </div>
   <div class="hd-mode">
-    <span id="mode" class="mode mode-emu" title="">Instant estimate</span>
-    <a class="btn ghost" id="how" href="engine3d.html">How did it get that?</a>
+    <span id="mode" class="mode mode-emu" title="">Instant numbers</span>
+    <a class="btn ghost" href="ask.html">Ask a question</a>
+    <button id="guide-again" class="btn ghost" type="button">Guide</button>
   </div>
 </header>
+<div class="dots-row"><div id="dots"></div></div>
 
 <main class="grid">
-    <section class="panel ask" id="ask" aria-label="Ask the model">
-      <form id="ask-form" class="ask-form" autocomplete="off">
-        <label for="ask-q"><h2>Ask the model</h2></label>
-        <div class="ask-row">
-          <input id="ask-q" type="text" maxlength="600" placeholder="e.g. What does a $50 carbon price do to CO2 in 2040?">
-          <button id="ask-go" class="btn primary" type="submit">Ask</button>
-        </div>
-      </form>
-      <div id="ask-ex" class="story-row"></div>
-      <p id="ask-note" class="fine"></p>
-      <div id="ask-out" class="ask-out" aria-live="polite" hidden></div>
-    </section>
-
   <aside class="panel levers" aria-label="Levers">
     <section class="stories" aria-label="Story cards">
       <h2>Start from a story</h2>
@@ -50,7 +39,7 @@
     </details>
     <section class="run">
       <p id="instant-note" class="notice" hidden></p>
-      <button id="run" class="btn primary" type="button" disabled>Run the real model</button>
+      <button id="run" class="btn primary" type="button" disabled>Run the full model</button>
       <p id="run-note" class="fine"></p>
     </section>
   </aside>
@@ -58,9 +47,9 @@
   <section class="center">
     <div id="stats" class="stats" aria-live="polite"></div>
 
-    <div class="panel map-card">
+    <div class="panel map-card" id="map-card">
       <div class="card-hd">
-        <h2>Power plants in <span id="map-year">2035</span></h2>
+        <h2>America's power plants in <span id="map-year">2050</span></h2>
         <div id="legend" class="legend"></div>
       </div>
       <div id="map" class="map" role="img" aria-label="Map of US power plants by fuel">
@@ -70,29 +59,36 @@
       </div>
       <div class="timebar">
         <button id="play" class="btn ghost small" type="button" aria-label="Play years">Play</button>
-        <input id="year" type="range" min="2027" max="2050" step="1" value="2035" aria-label="Year">
+        <input id="year" type="range" min="2027" max="2050" step="1" value="2050" aria-label="Year">
         <span class="yr-ends">2027</span><span class="yr-ends right">2050</span>
       </div>
-      <p class="fine" id="map-note"></p>
+      <div class="fine" id="map-note"></div>
     </div>
 
-    <div class="lower">
-      <div class="panel">
-        <div class="card-hd"><h2>Where America's energy goes, <span class="yr">2035</span></h2><span id="river-grade"></span></div>
-        <svg id="river" class="river" role="img" aria-label="Energy flow from sources to uses"></svg>
-        <p class="fine">Quadrillion Btu. Width is energy. Sources on the left, the power sector in the middle, homes, businesses, factories and vehicles on the right. "Losses" is energy burned in power plants that never reaches a plug.</p>
+    <details class="panel more" id="more">
+      <summary><h2>More detail</h2><span class="fine">Where the energy goes, the home bill over time, and the model's own units</span></summary>
+      <div class="lower">
+        <div>
+          <div class="card-hd"><h3>Where America's energy goes, <span class="yr">2050</span></h3><span id="river-grade"></span></div>
+          <svg id="river" class="river" role="img" aria-label="Energy flow from sources to uses"></svg>
+          <p class="fine">Width is energy (quadrillion Btu, the model's unit). Fuels on the left, power plants in the middle, homes, businesses, industry and vehicles on the right. "Losses" is energy burned in power plants that never reaches a plug.</p>
+        </div>
+        <div class="bill">
+          <div class="card-hd"><h3>All home energy, per month</h3><span id="bill-grade"></span></div>
+          <div class="bill-big"><span id="bill-now">$0</span><span class="bill-unit">a month in <span class="yr">2050</span></span></div>
+          <div id="bill-vs" class="bill-vs"></div>
+          <svg id="bill-chart" class="bill-chart" role="img" aria-label="Home energy bill by year, this scenario against EIA"></svg>
+          <p class="fine">Power, gas, propane and heating oil for an average US home, not gasoline. 2024 dollars. EIA does not publish this number: it is the model's home fuel use times home prices, over EIA's number of homes.</p>
+        </div>
       </div>
-      <div class="panel bill">
-        <div class="card-hd"><h2>Your household energy bill</h2><span id="bill-grade"></span></div>
-        <div class="bill-big"><span id="bill-now">$0</span><span class="bill-unit">a year in <span class="yr">2035</span></span></div>
-        <div id="bill-vs" class="bill-vs"></div>
-        <svg id="bill-chart" class="bill-chart" role="img" aria-label="Household energy bill by year, this scenario against EIA"></svg>
-        <p class="fine">Home energy only: electricity, gas, propane, heating oil. Not gasoline. 2024 dollars per household, averaged over the US. EIA does not report this number; it is home fuel use times home prices over households, from EIA's reference for the comparison.</p>
-      </div>
-    </div>
+      <h3 class="ex-h">The model's own units</h3>
+      <div id="expert-stats" class="stats expert"></div>
+      <p class="fine"><a id="how" href="engine3d.html">See these settings inside the engine</a> (for experts).</p>
+    </details>
   </section>
 </main>
 <div id="minibar" class="minibar" aria-live="polite"></div>
+<div id="guide" class="guide" role="dialog" aria-label="Guide" hidden></div>
 <noscript><p class="panel">This page needs JavaScript.</p></noscript>
 </body>
 </html>

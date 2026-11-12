@@ -133,3 +133,23 @@ h2{font-size:13px;color:var(--ink2);font-weight:500}
   .lab .nm{font-size:12px}.lab .val{font-size:11.5px;min-width:70px;height:15px}.lab .vs{font-size:11px}
   .co2box{top:auto;bottom:8px;transform:translateX(-50%)}.co2box .n{font-size:44px}.co2box .ghost{font-size:12px}.co2box .sp{width:180px;height:30px;margin-top:2px}
 }
+
+/* simplify: one column until Details is on; one number per module */
+.grid{grid-template-columns:minmax(0,1fr)}
+.rail,.conv-row,.about .legend{display:none}
+body.details .grid{grid-template-columns:minmax(0,1fr) 340px}
+body.details .rail{display:flex}
+body.details .conv-row{display:flex}
+body.details .about .legend{display:flex}
+#details[aria-pressed="true"]{border-color:var(--port);color:var(--port)}
+.dots-row{padding:0 16px 2px}
+.lab .nm{display:flex;align-items:center;gap:0}
+.lab .val{min-width:120px;font-size:13.5px;color:var(--ink2)}
+.lab .val.up{color:#ff9b85}.lab .val.dn{color:#7fe0bf}
+.lab .note{font-size:10.5px;color:var(--ink3)}
+.finale .f-c{font-size:13px;color:var(--ink2);margin-top:4px}
+.co2box .u{cursor:help}
+@media (max-width:1100px){body.details .grid{grid-template-columns:1fr}body.details .rail{display:grid}}
+@media (max-width:640px){.dots-row{padding:0 12px 2px}.lab .val{min-width:76px;font-size:11.5px}body.details .rail{display:flex}}
+.about .tech{display:none}
+body.details .about .tech{display:inline}
