@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watch the Model Think</title>
+<meta name="description" content="Pull a lever and watch an open rebuild of EIA's energy model pass prices and quantities between its modules, pass by pass, until it agrees. Every moving number is one the model produced.">
+<link rel="stylesheet" href="think.css?v=3">
+<script defer src="site.js"></script>
+<script defer src="think.js?v=6"></script>
+</head>
+<body>
+<header class="hd">
+  <div>
+    <h1>Watch the model think</h1>
+    <p>Pick a story or push one lever. The shock enters at its module, then the model's real loop passes prices and quantities back and forth until every module agrees.</p>
+  </div>
+  <nav class="hd-links" aria-label="Related views">
+    <a class="btn ghost" id="to2050" href="2050.html">Your 2050</a>
+    <a class="btn ghost" id="toEngine" href="engine3d.html">Inside the engine</a>
+  </nav>
+</header>
+
+<section class="controls" aria-label="Scenario">
+  <div id="stories" class="chips" role="group" aria-label="Stories"></div>
+  <label class="sel">One lever, pushed to the edge
+    <select id="lever"><option value="">Choose a lever</option></select>
+  </label>
+</section>
+
+<main class="grid">
+  <section class="stage-wrap">
+    <div id="stage" class="stage">
+      <canvas id="cv" aria-hidden="true"></canvas>
+      <div id="hero" class="hero" hidden></div>
+    </div>
+    <div class="bar">
+      <button id="play" class="btn primary" type="button">Play 2035</button>
+      <button id="step" class="btn ghost" type="button">Step</button>
+      <button id="lapse" class="btn ghost" type="button" title="Every year's passes, 2027 to 2050">Time-lapse to 2050</button>
+      <label class="yr">Year <input id="year" type="range" min="2027" max="2050" value="2035" step="1"><output id="year-out">2035</output></label>
+    </div>
+    <div id="legend" class="legend"></div>
+  </section>
+
+  <aside class="rail">
+    <div class="panel">
+      <div class="panel-hd"><h2>What the loop just did</h2><span id="pass" class="pass"></span></div>
+      <ol id="ticker" class="ticker" aria-live="polite"></ol>
+    </div>
+    <div class="panel">
+      <div class="panel-hd"><h2>Where it settled, <span id="set-year">2035</span></h2></div>
+      <div id="settled" class="settled"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-hd"><h2>US energy CO2, settled each year</h2><span id="co2-grade"></span></div>
+      <svg id="co2" class="co2" role="img" aria-label="CO2 by year, this scenario against EIA"></svg>
+    </div>
+  </aside>
+</main>
+
+<section class="about">
+  <p id="about"></p>
+</section>
+<noscript><p class="panel">This page needs JavaScript.</p></noscript>
+</body>
+</html>
