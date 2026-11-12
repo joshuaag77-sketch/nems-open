@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your America in 2050</title>
 <meta name="description" content="Move ten plain levers and see America's power plants, energy flows and household energy bill to 2050, from an open rebuild of EIA's energy model. Every number carries how far to trust it.">
-<link rel="stylesheet" href="ux2050.css?v=2">
+<link rel="stylesheet" href="ux2050.css?v=3">
 <script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js"></script>
 <script defer src="site.js"></script>
 <script defer src="ux2050_model.js?v=2"></script>
-<script defer src="ux2050.js?v=2"></script>
+<script defer src="ux2050.js?v=3"></script>
 </head>
 <body>
 <header class="hd">
@@ -43,6 +43,19 @@
   </aside>
 
   <section class="center">
+    <section class="panel ask" aria-label="Ask the model">
+      <form id="ask-form" class="ask-form" autocomplete="off">
+        <label for="ask-q"><h2>Ask the model</h2></label>
+        <div class="ask-row">
+          <input id="ask-q" type="text" maxlength="600" placeholder="e.g. What does a $50 carbon price do to CO2 in 2040?">
+          <button id="ask-go" class="btn primary" type="submit">Ask</button>
+        </div>
+      </form>
+      <div id="ask-ex" class="story-row"></div>
+      <p id="ask-note" class="fine"></p>
+      <div id="ask-out" class="ask-out" aria-live="polite" hidden></div>
+    </section>
+
     <div id="stats" class="stats" aria-live="polite"></div>
 
     <div class="panel map-card">

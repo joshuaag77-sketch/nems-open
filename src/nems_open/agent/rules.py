@@ -134,6 +134,26 @@ def _stray_numbers(text: str, allowed: set) -> list[str]:
     return out
 
 
+def short_variable(variable: str) -> str:
+    """The name part of a variable description: 'RunResult.co2_total: fuel use times ...' -> 'RunResult.co2_total'."""
+    return variable.split(":", 1)[0].strip()
+
+
+def short_what(what: str) -> str:
+    """Drop the scenario id from 'US energy CO2, 2040, scenario c50_...' (it is the page's job to show the levers)."""
+    return what.split(", scenario ", 1)[0]
+
+
+def source_line(c: "Claim") -> str:
+    """One short line per source: what, value, module(s) once each, variable name, grade."""
+    cit = c.citation
+    what = short_what(cit.get("what", ""))
+    if what and c.field != "value":
+        what += f" ({c.field.replace('_', ' ')})"
+    head = f"[{c.marker}] {what} = {c.text}." if what else f"[{c.marker}] {c.text}."
+    return f"{head} Module: {cit['module']}. Variable: {short_variable(cit['variable'])}. Grade: {cit['grade_label']}."
+
+
 def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[str]]:
     """Validate a submit_answer input against the stored results. Returns (rendered, problems)."""
     problems = []
@@ -205,9 +225,7 @@ def check(submission: dict, box, question: str) -> tuple[Rendered | None, list[s
 
     text = PLACEHOLDER.sub(fill, prose)
     text = text.replace("%%", "%")
-    notes = [f"[{c.marker}] {c.citation['what'] if 'what' in c.citation else ''} = {c.text}. "
-             f"Module: {c.citation['module']}. Variable: {c.citation['variable']}. Grade: {c.citation['grade_label']}."
-             for c in order]
+    notes = [source_line(c) for c in order]
     stand = [c for c in order if c.citation["grade"] in ("stand", "within")]
     out = text.rstrip()
     if notes:

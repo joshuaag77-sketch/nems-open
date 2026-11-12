@@ -94,7 +94,7 @@
 
   // ---- state --------------------------------------------------------------------------------------
   const S = { emu: null, plants: null, fid: null, x: {}, year: 2035, story: "eia", out: null, src: null,
-    real: {}, server: false, job: null };
+    real: {}, server: false, key: false, job: null };
 
   const defaults = () => UX2050.defaults(S.emu);
   const sig = UX2050.sig;
@@ -409,6 +409,66 @@
     setTimeout(poll, 2000);
   }
 
+
+  // ---- ask the model ------------------------------------------------------------------------------
+  // POST /api/ask (scripts/serve_2050.py) runs the policy agent. It exists only on the local server and needs a key
+  // there; on static hosting the box says so instead of failing.
+  const EXAMPLES = [
+    "What does a $50 carbon price do to US energy CO2 in 2040?",
+    "How much would 90% EV sales by 2035 cut gasoline demand?",
+    "What would a $100 carbon price do to my household energy bill in 2040?",
+    "How far can I trust the carbon price numbers?",
+  ];
+  function paintAsk() {
+    const note = $("ask-note"), off = !S.server || !S.key;
+    if (!S.checked) { $("ask-q").disabled = $("ask-go").disabled = true; note.textContent = ""; return; }
+    $("ask-q").disabled = off || S.asking; $("ask-go").disabled = off || S.asking;
+    for (const b of document.querySelectorAll(".ask .story")) b.disabled = off || S.asking;
+    if (!S.server) note.innerHTML = "Asking needs the local server: <code>python scripts/serve_2050.py</code> with ANTHROPIC_API_KEY set, then open this page from it. This copy of the page cannot answer questions.";
+    else if (!S.key) note.innerHTML = "The local server has no ANTHROPIC_API_KEY, so it cannot answer questions. Set it and restart <code>python scripts/serve_2050.py</code>.";
+    else note.textContent = S.asking ? "Working on it. The model runs scenarios and checks every number, usually under a minute." : "Answers use only numbers the model produced, each with its module and grade. Starts from 2027; the US as a whole.";
+  }
+  const clampLever = (l, v) => Math.min(l.hi, Math.max(l.lo, v));
+  function showAnswer(a) {
+    const out = $("ask-out"); out.hidden = false;
+    if (a.error && !a.body) { out.innerHTML = `<p class="ask-err">${esc(a.message || a.error)}</p>`; return; }
+    const body = esc(a.body).replace(/\[(\d+)\]/g, (m, n) => `<sup><a href="#src-${n}">[${n}]</a></sup>`);
+    let h = `<p class="ask-body">${body}</p>`;
+    if (a.applied && a.applied.length) h += `<p class="ask-set">Levers set to the scenario it ran: ${a.applied.map(esc).join("; ")}. The map and numbers below show it.</p>`;
+    if (a.unmapped && a.unmapped.length) h += `<p class="ask-set">Not set on this page: ${a.unmapped.map(esc).join("; ")}.</p>`;
+    if (a.sources && a.sources.length)
+      h += `<ul class="ask-src">${a.sources.map((s) => `<li id="src-${s.n}"><span class="g g-${s.grade === "stand" || s.grade === "within" ? s.grade : s.grade === "reference" || s.grade === "setting" ? "data" : "match"}" title="${esc(s.grade_label)}">${esc(s.grade_label)}</span><span class="sl" title="${esc(s.line)}">${esc(s.line)}</span></li>`).join("")}</ul>`;
+    if (a.basis) h += `<p class="ask-basis">${esc(a.basis)}</p>`;
+    out.innerHTML = h;
+  }
+  async function ask(q) {
+    q = q.trim(); if (!q || S.asking) return;
+    $("ask-q").value = q; S.asking = true; paintAsk();
+    const out = $("ask-out"); out.hidden = false; out.innerHTML = `<p class="fine">Asking...</p>`;
+    let a;
+    try {
+      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+      a = await res.json();
+      if (!res.ok) a = { error: a.error || "failed", message: a.message || "The server could not answer." };
+    } catch (e) { a = { error: "network", message: "The local server did not respond. Is scripts/serve_2050.py still running?" }; }
+    S.asking = false;
+    if (!a.error && a.apply) {
+      const x = defaults(), applied = [];
+      for (const [k, v] of Object.entries(a.apply)) {
+        const l = LEVERS.find((t) => t.key === k); if (!l) continue;
+        x[k] = clampLever(l, +v); applied.push(`${l.title} ${l.show(x[k], S.emu.levers.ev_2035.off).replace(" (EIA)", "")}`);
+      }
+      if (applied.length) { S.x = x; S.story = null; a.applied = applied; update(); }
+    }
+    showAnswer(a); paintAsk();
+  }
+  function buildAsk() {
+    $("ask-ex").innerHTML = EXAMPLES.map((q) => `<button class="story" type="button">${esc(q)}</button>`).join("");
+    $("ask-ex").addEventListener("click", (e) => { const b = e.target.closest(".story"); if (b) ask(b.textContent); });
+    $("ask-form").addEventListener("submit", (e) => { e.preventDefault(); ask($("ask-q").value); });
+    paintAsk();
+  }
+
   // ---- address, update ----------------------------------------------------------------------------
   function writeHash() {
     const d = defaults(), parts = LEVERS.filter((l) => Math.abs(S.x[l.key] - d[l.key]) > 1e-9).map((l) => `${l.key}=${+(+S.x[l.key]).toFixed(3)}`);
@@ -447,7 +507,7 @@
       .map((u) => fetch(u).then((r) => r.json())));
     Object.assign(S, { emu, plants, fid });
     await loadGeo();
-    buildLevers(); legend(); readHash();
+    buildLevers(); legend(); buildAsk(); readHash();
     layoutMap(); update();
     $("year").addEventListener("input", (e) => { S.year = +e.target.value; update(); });
     $("map").addEventListener("mousemove", hover);
@@ -471,9 +531,12 @@
   async function checkServer() {
     try {
       const h = await Promise.race([fetch("/api/health", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 2500))]);
-      S.server = h.ok && (await h.json()).ok === true;
-    } catch (e) { S.server = false; }
+      const hj = await h.json();
+      S.server = h.ok && hj.ok === true; S.key = S.server && hj.ask === true;
+    } catch (e) { S.server = false; S.key = false; }
+    S.checked = true;
     if (S.out) paintMode();
+    paintAsk();
   }
   addEventListener("DOMContentLoaded", () => main().then(checkServer).catch((e) => {
     document.querySelector(".center").insertAdjacentHTML("afterbegin", `<p class="notice">The page could not load its data: ${esc(e.message)}. It needs a web server (python scripts/serve_2050.py).</p>`);

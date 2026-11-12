@@ -20,6 +20,11 @@ SETTING = {"module": "Policy levers (run_model.Policy)", "variable": "a setting 
            "grade": "setting", "grade_label": "model setting"}
 
 
+def module_names(desc: dict) -> str:
+    """The module names behind a measure, each once, in order (four sectors share one stub name)."""
+    return ", ".join(dict.fromkeys(p["name"] for p in desc["modules"]))
+
+
 def _tool(name, description, properties, required=None):
     return {"name": name, "description": description, "strict": True,
             "input_schema": {"type": "object", "properties": properties, "required": required or list(properties),
@@ -158,7 +163,7 @@ class Toolbox:
         numbers = {"value": v, "reference": ref, "difference": d,
                    "difference_pct": (d / ref * 100.0) if ref else 0.0}
         desc = K.describe(m)
-        cites = {"*": {"module": ", ".join(p["name"] for p in desc["modules"]), "variable": m.variable,
+        cites = {"*": {"module": module_names(desc), "variable": m.variable,
                        "grade": desc["grade"], "grade_label": desc["grade_label"],
                        "weakest_module": desc["weakest_module"], "what": f"{m.label}, {year}, scenario {scenario_id}",
                        "unit": m.unit},
@@ -175,7 +180,7 @@ class Toolbox:
         m = K.MEASURES[measure]
         desc = K.describe(m)
         numbers = {"gap_vs_eia_pct": desc["gap_vs_eia_pct"]} if desc["gap_vs_eia_pct"] is not None else {}
-        cites = {"*": {"module": ", ".join(p["name"] for p in desc["modules"]), "variable": m.variable,
+        cites = {"*": {"module": module_names(desc), "variable": m.variable,
                        "grade": desc["grade"], "grade_label": desc["grade_label"],
                        "weakest_module": desc["weakest_module"], "what": f"how {m.label} is produced", "unit": "%"}}
         rid = self._store("trace_number", numbers, cites, digits=2)

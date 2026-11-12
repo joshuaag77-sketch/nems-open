@@ -53,6 +53,7 @@ class AgentAnswer:
     input_tokens: int = 0
     output_tokens: int = 0
     error: str = ""
+    runs: list = field(default_factory=list)    # lever settings of every scenario the question ran, in order
 
 
 def make_client():
@@ -143,6 +144,7 @@ class PolicyAgent:
                                 **({"is_error": True} if is_error else {})})
             if done is not None:
                 out.text, out.declined, out.stand_in, out.claims = done.text, done.declined, done.stand_in, done.claims
+                out.runs = list(box.runs)
                 return out
             if repairs > MAX_REPAIRS:
                 out.error = "answer rejected too many times"
