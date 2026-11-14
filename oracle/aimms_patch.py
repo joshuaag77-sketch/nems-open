@@ -117,7 +117,6 @@ Model Main_wrapper {
     Procedure run_ecp {
         Body: {
             read from file "../../ecp/request.txt";
-            ensure_mappings;
             ec::api_curcalyr := req_year;
             ec::api_curitr := req_itr;
             ec::File_Call;
@@ -126,7 +125,6 @@ Model Main_wrapper {
     Procedure run_efd {
         Body: {
             read from file "../../efd/request.txt";
-            ensure_mappings;
             ed::api_curcalyr := req_year;
             ed::api_curitr := req_itr;
             ed::File_Call;
@@ -135,19 +133,9 @@ Model Main_wrapper {
     Procedure run_rest {
         Body: {
             read from file "../../rest/request.txt";
-            ensure_mappings;
             re::api_curcalyr := req_year;
             re::api_curitr := req_itr;
             re::File_Call;
-        }
-    }
-    Procedure ensure_mappings {
-        Body: {
-            ! The libraries name their DEX mappings relative to the running project (this wrapper), where EIA's own
-            ! projects keep them generated; generate them here once.
-            if not FileExists("Mappings/Generated/Output_Report-generation-CSV.xml") then
-                dex::GenerateDatasetMappings;
-            endif;
         }
     }
     Procedure MainTermination {
@@ -189,6 +177,15 @@ def prepare(run: Path) -> None:
     (w / "wrapper.aimms").write_text(WRAPPER_REFS)
     (w / "MainProject" / "Project.xml").write_text(WRAPPER_PROJECT)
     (w / "MainProject" / "wrapper.ams").write_text(WRAPPER_MODEL)
+    # NEMS runs the libraries under its endpoint project (main/aimms_endpoint): its project options (listing width
+    # 400, so OutToNEMS headers stay on one line; compatibility settings) and its generated DEX mappings, which the
+    # libraries name relative to the running project, apply here the same way.
+    endpoint = UPSTREAM / "main" / "aimms_endpoint"
+    (w / "MainProject" / "Settings").mkdir(exist_ok=True)
+    shutil.copy(endpoint / "MainProject" / "Settings" / "Options.txt", w / "MainProject" / "Settings" / "Options.txt")
+    if (w / "Mappings").exists():
+        shutil.rmtree(w / "Mappings")
+    shutil.copytree(endpoint / "Mappings", w / "Mappings")
 
 
 if __name__ == "__main__":
