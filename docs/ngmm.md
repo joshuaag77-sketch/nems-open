@@ -68,6 +68,58 @@ centres cycle 2's curve, and runs once more at the end for production):
 The market's expected production in the high-demand run (43,254 Bcf) sits within 0.7% of HSM's own answer
 on those prices, so the fitted response and HSM agree where they meet.
 
+## EIA's real NGMM (ogs="aimms")
+
+`src/nems_open/ngmm/aimms.py` runs EIA's own NGMM (AIMMS 25.5.7.1, academic licence) headless, with no
+Fortran and no web service. NEMS hands NGMM one text file per year (ngputvars.txt, 118 arrays) and reads one
+back (nggetvars.txt), so we write the input file from the restart and the loop, and read the output as
+NEMS's filer.f does. The library gets one extra entry point, NGMM_File_Call (EIA's NGMM_MainExecution_API
+without the request read); a wrapper project keeps one AIMMS process open and serves year requests from a
+file, so NGMM keeps its year-to-year state in memory as it does in NEMS. ng_runval.txt and ngsteo.txt are
+written the way EIA's Python writes them; the wrapper uses EIA's endpoint project settings.
+
+    python -m nems_open.ngmm.aimms 2024 2050     # reference: NGMM on cb2026's final inputs (3 min)
+    run_model.run(ogs="aimms")                   # NGMM inside the loop
+
+Speed: 10.9 s for 2024 (first-year initialisation), about 1.4 s a year after; a full run adds about 5.5 min
+of NGMM time (330 s, three solves and a reporting call a year).
+
+Reference, NGMM once per year on cb2026's final inputs, against EIA's restart:
+
+| | 2025-2026 | 2030 | 2035 | 2040 | 2045 | 2050 |
+|---|---|---|---|---|---|---|
+| Henry Hub | 0.0% | +4.4% | +2.9% | +4.1% | +4.9% | +3.0% |
+| residential | 0.0% | +0.9% | +0.8% | +1.0% | +0.8% | +0.6% |
+| industrial | 0.0% | +3.3% | +2.5% | +3.4% | +3.6% | +2.7% |
+| power | -0.8% | +1.9% | +1.3% | +2.3% | +3.4% | +2.9% |
+| dry production (ngscrv_q) | 0.0% | -0.1% | -0.1% | +0.2% | +0.2% | +0.2% |
+
+EIA's restart is the end of several iterations and five cycles; this is one pass, which likely explains
+the 3-5% gap from 2027. In run_model each price is scaled by EIA's value over this reference
+(calibrate=True), so the baseline is EIA's and a run's moves are NGMM's.
+
+Full loop (ported residential and commercial, ogs="aimms"):
+
+| run | 2050 Henry Hub | residential | industrial | power | US gas use | minutes |
+|---|---|---|---|---|---|---|
+| reference | 1.907 (EIA 1.907) | 0.0% | 0.0% | -0.1% | 0.0% | 8.0 |
+| load_growth 1000 TWh | +10.6% | +2.0% | +8.4% | +11.0% | +2.3% | 7.8 |
+
+With one cycle HSM's expected production stays at cb2026's, so supply has no long-run response: the
+real NGMM then answers the shock about three times as hard as the stand-in, and its higher price cuts the
+extra gas use from +5.9% to +2.3%. With cycles=2, HSM runs between cycles on NGMM's own wellhead prices
+and its expected production (OGSMOUT ogenagprd, ogadgprd, ogprcoak, ogshaleng, ogngplprd, cnenagprd,
+cnadgprd) feeds NGMM in cycle 2, as in NEMS:
+
+| run, ogs="aimms", cycles=2 | 2030 HH | 2040 HH | 2050 HH | residential | industrial | power | US gas use | minutes |
+|---|---|---|---|---|---|---|---|---|
+| reference (EIA 1.835, 2.164, 1.907) | 1.837 | 2.180 | 1.909 | 0.0% | 0.0% | 0.0% | 0.0% | 16 |
+| load_growth 1000 TWh | 1.869 | 2.209 | 1.960 (+2.8%) | +0.4% | +1.9% | +3.5% | +5.4% | 16 |
+
+Closing the supply loop takes the 2050 Henry Hub move from +10.6% to +2.8%: in line with EIA's own high
+electricity demand case (+3.1% on +4.5% gas use) and with the stand-in (+3.2% on +5.9%). This is the
+recommended setting for gas: EIA's market model and EIA's supply model, both on the loop's demand.
+
 ## Limits
 
 - National: one curve, not NGMM's state network. Regional basis and pipeline constraints stay as in
