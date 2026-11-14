@@ -51,28 +51,27 @@
   // ---- grades -------------------------------------------------------------------------------------
   const RANK = { match: 3, within: 2, stand: 1 };
   const SECTOR_PART = { rs: "residential", cm: "commercial", in: "industrial", tr: "transportation" };
-  const SUPPLY = ["stand:electricity", "stand:natural_gas", "stand:oil", "stand:coal", "stand:emissions"];
-  function demandPart(sector, ported) {
-    const name = SECTOR_PART[sector];
-    return ported.includes(name) ? `port:${name}` : "stand:demand_stub";
-  }
+  const P = (module, ported) => NEMSGrade.part(S.fid, module, ported || []);   // site.js: resolved from data
+  function demandPart(sector, ported) { return P(SECTOR_PART[sector], ported); }
   function partsFor(key, ported) {
+    const SUPPLY = ["electricity", "natural_gas", "oil", "coal", "emissions"].map((m) => P(m, ported));
+    const EL = P("electricity", ported), PEL = P("electricity:price", ported), NG = P("natural_gas", ported), OIL = P("oil", ported);
     const all = ["rs", "cm", "in", "tr"].map((s) => demandPart(s, ported));
     if (key === "co2") return [...all, ...SUPPLY];
-    if (key === "co2_el") return [...all, "stand:electricity", "stand:natural_gas", "stand:coal", "stand:emissions"];
+    if (key === "co2_el") return [...all, EL, NG, P("coal", ported), P("emissions", ported)];
     let m = key.match(/^co2_(rs|cm|in|tr)$/);
-    if (m) return [demandPart(m[1], ported), "stand:emissions"];
+    if (m) return [demandPart(m[1], ported), P("emissions", ported)];
     if (key === "elec_sales_twh") return all;
-    if (key === "price_electricity") return ["stand:electricity", ...all];
-    if (key === "price_gas_home") return ["stand:natural_gas"];
-    if (key === "power_bill_month") return [demandPart("rs", ported), "stand:electricity"];
-    if (key === "heat_bill_month") return [demandPart("rs", ported), "stand:natural_gas", "stand:oil"];
-    if (key === "price_el_home" || key === "home_kwh_month") return key === "price_el_home" ? ["stand:electricity"] : [demandPart("rs", ported)];
-    if (key === "price_gasoline" || key === "price_diesel") return ["stand:oil"];
-    if (key === "bill") return [demandPart("rs", ported), "stand:electricity", "stand:natural_gas"];
+    if (key === "price_electricity") return [PEL, ...all];
+    if (key === "price_gas_home") return [NG];
+    if (key === "power_bill_month") return [demandPart("rs", ported), PEL];
+    if (key === "heat_bill_month") return [demandPart("rs", ported), NG, OIL];
+    if (key === "price_el_home" || key === "home_kwh_month") return key === "price_el_home" ? [PEL] : [demandPart("rs", ported)];
+    if (key === "price_gasoline" || key === "price_diesel") return [OIL];
+    if (key === "bill") return [demandPart("rs", ported), PEL, NG];
     m = key.match(/^flow_\w+_(rs|cm|in|tr)$/);
     if (m) return [demandPart(m[1], ported)];
-    return ["stand:electricity"];   // power-sector flows, losses, generation by fuel
+    return [EL];   // power-sector flows, losses, generation by fuel
   }
   // A number's grade: the weakest piece behind it (as scripts/fidelity.py does), plus the emulator's own error.
   function gradeOf(key, src) {

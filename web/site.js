@@ -46,6 +46,22 @@ body.fixed-page:not(.flat) .site-foot{display:none}
     dot: (grade, why) => { const k = norm(grade); return `<span class="gd ${k}" role="img" aria-label="${esc(WORDS[k])}" title="${esc(WORDS[k] + (why ? ". " + why : ""))}"></span>`; },
     legend: () => `<div class="gd-legend"><span><span class="gd match"></span>EIA's own code</span><span><span class="gd stand"></span>Our estimate</span><span><span class="gd data"></span>EIA's published number</span><span>Hover or tap a dot for the detail.</span></div>`,
   };
+  // The part behind an engine piece in a run, from fidelity.json's registry (src/nems_open/ports.json): its port when
+  // the run ported it and the port is graded, our own model when the run used the LP, else the stand-in. A module that
+  // lands later flips here from data alone: no page names a port.
+  const FALLBACK = { residential: "stand:demand_stub", commercial: "stand:demand_stub", industrial: "stand:demand_stub",
+    transportation: "stand:demand_stub", electricity: "stand:electricity", "electricity:price": "stand:electricity",
+    natural_gas: "stand:natural_gas", oil: "stand:oil", coal: "stand:coal", emissions: "stand:emissions" };
+  window.NEMSGrade = {
+    part: (fid, module, ported, elec) => {
+      const r = fid && fid.registry && fid.registry[module];
+      if (!r) return FALLBACK[module] || "stand:demand_stub";
+      const on = (ported || []).some((p) => p === module || `port:${p}` === r.port);
+      if (r.port && on && fid.parts[r.port]) return r.port;
+      if (r.own && elec === "lp" && fid.parts[r.own]) return r.own;
+      return r.fallback;
+    },
+  };
   // Touch screens have no hover: a tap on a dot shows its detail in a small card; a tap elsewhere closes it.
   let tip = null;
   document.addEventListener("click", (e) => {

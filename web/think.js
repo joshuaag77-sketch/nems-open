@@ -62,9 +62,7 @@
   const RANK = { match: 3, within: 2, stand: 1 };
   function modGrade(m) {
     const ported = (S.sc && S.sc.ported) || [];
-    const part = ["residential", "commercial", "transportation"].includes(m) ? (ported.includes(m) ? `port:${m}` : "stand:demand_stub")
-      : m === "industrial" ? "stand:demand_stub" : m === "emissions" ? "stand:emissions"
-      : { electricity: "stand:electricity", natural_gas: "stand:natural_gas", oil: "stand:oil", coal: "stand:coal" }[m];
+    const part = NEMSGrade.part(S.fid, m, ported, S.sc && S.sc.elec);   // site.js: resolved from fidelity.json's registry
     const p = S.fid.parts[part];
     return { grade: p.grade, label: p.grade === "match" ? "matches EIA" : p.label, why: `${p.name}: ${p.summary}` };
   }
