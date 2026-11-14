@@ -64,18 +64,38 @@ if [ "$MOD" = emm ]; then
   $PY -I "$ORACLE/hooks.py" "$U" util.f90 emm
   $PY -I "$ORACLE/wk1_subset.py" "$U/source/nemswk1.f" wk1_raw.f
   $PY -I "$ORACLE/patch_intel.py" wk1_raw.f wk1_subset.f90
+  # AIMMS-coupled variant (NEMS_ORACLE_AIMMS=1): EIA's own AIMMS interface (uaimms.f) replaces the stubs, ECP
+  # runs, and each year's solve goes to Windows aimms.exe through run_aimms.sh (docs/aimms_needs.md).
+  AIMMS_OBJS=""; STUBS="$ORACLE/emm_stubs.f90"
+  if [ "${NEMS_ORACLE_AIMMS:-0}" = 1 ]; then
+    $PY -I "$ORACLE/patch_intel.py" "$U/source/uaimms.f" uaimms.f90
+    $PY -I "$ORACLE/aimms_fortran.py" uaimms.f90
+    sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
+    STUBS=emm_stubs_aimms.f90
+    gfortran $FLAGS -c "$ORACLE/aimms_intel.f90"
+    AIMMS_OBJS="aimms_intel.o uaimms.o"
+  fi
   # Modules first: udat.f holds two that uldsm.f and util.f use.
   gfortran $FLAGS -c "$ORACLE/emm_modules.f90" ecp_row_col.f90 efd_row_col.f90 udat.f90 uesql.f90
   # The big files compile in parallel.
   for s in util uldsm uefp uefd uecp unugs udaf ucape uread ephrts; do gfortran $FLAGS -c $s.f90 & done; wait
-  gfortran $FLAGS -c wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$ORACLE/stubs.f90" "$ORACLE/emm_stubs.f90" load_restart.f90 \
+  if [ -n "$AIMMS_OBJS" ]; then gfortran $FLAGS -c uaimms.f90; fi
+  gfortran $FLAGS -c wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$ORACLE/stubs.f90" "$STUBS" load_restart.f90 \
     oracle_state.f90 "$ORACLE/efd_standin.f90" "$ORACLE/driver_emm.f90"
   rm -f "$WORK/run_emm/oracle$EXE"
   gfortran -o "$WORK/run_emm/oracle$EXE" driver_emm.o efd_standin.o oracle_state.o load_restart.o \
     $(for s in $SRCS; do echo $s.o; done) ephrts.o uesql.o emm_modules.o ecp_row_col.o efd_row_col.o \
-    wk1_subset.o readrng_stub.o stubs.o emm_stubs.o \
+    wk1_subset.o readrng_stub.o stubs.o "$(basename "$STUBS" .f90).o" $AIMMS_OBJS \
     $SQLITE_OBJS $SQLITE_LIBS 2>&1 | grep -v "drectve" || true
   test -f "$WORK/run_emm/oracle$EXE"
+  if [ "${NEMS_ORACLE_AIMMS:-0}" = 1 ]; then
+    # AIMMS's folders live on the Windows disk, where aimms.exe can reach them; the run folder links to them.
+    AIMMS_RUN="${AIMMS_RUN:-/mnt/c/Users/joshu/dev/oracle-cache/aimms_run}"
+    $PY -I "$ORACLE/aimms_patch.py" "$AIMMS_RUN"
+    for d in ecp efd rest coal ngas hmm main; do rm -rf "$WORK/run_emm/$d"; ln -s "$AIMMS_RUN/$d" "$WORK/run_emm/$d"; done
+    tr -d '\r' < "$ORACLE/run_aimms.sh" > "$WORK/run_emm/run_aimms.sh"
+    echo "AIMMS folders linked from $AIMMS_RUN"
+  fi
   echo "built $WORK/run_emm/oracle$EXE"
   exit 0
 fi

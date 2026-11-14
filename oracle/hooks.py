@@ -1128,7 +1128,10 @@ def instrument_emm(util_path: Path):
     """Swap the solves in util.f90, and wrap each target's call in its own file
     (uldsm.f90 for LDSM routines), all in the build folder."""
     texts = {"util": util_path.read_text(encoding="latin-1")}
-    for pat, repl in EMM_SWAPS:
+    swaps = EMM_SWAPS
+    if os.environ.get("NEMS_ORACLE_AIMMS") == "1":    # ECP runs for real, solved by AIMMS (oracle/run_aimms.sh)
+        swaps = [s for s in EMM_SWAPS if "ELECP" not in s[0]]
+    for pat, repl in swaps:
         texts["util"], k = re.subn(pat, repl, texts["util"], count=1, flags=re.I | re.M)
         assert k == 1, pat
     for tg in map(as_dict, CFG["targets"]):
