@@ -48,3 +48,15 @@ Per `docs/coal_plan.md`: the coal LP's inputs and solution by supply curve, dema
 1. Install AIMMS, open `ecp.ams` and `efd.ams`, note the AIMMS version they need (the project files name it).
 2. In the WSL EMM oracle, swap the ECP skip and the EFD stand-in (`oracle/hooks.py`) for the real setup code up to the composite-file write; run 2025 only; feed AIMMS; compare the EFD solution's regional prices with our dispatch LP.
 3. Then the full 2025 to 2050 export above, under `HEAVY.lock`.
+
+## Status 2026-11-13
+- AIMMS 25.5.7.1 x64 VS2022 (EIA's AEO2026 build) is installed installation-free in `%LOCALAPPDATA%\AIMMS\IFA\Aimms\25.5.7.1-x64-VS2022`, academic license active. A headless LP solves: `aimms.exe -R<Procedure> "<project>.aimms" --hidden` (EIA's own invocation, `models/main/aimms_wrapper.py`). A project needs `MainProject\Project.xml`, or AIMMS stops on a hidden error dialog and exits 0 having done nothing. AimmsCmd.exe opens projects but did not run procedures from piped stdin. The IDE asks for .NET 3.5; headless runs do not need it.
+- How the data moves, read from the code: each year the Fortran writes ECP's whole input as `ecp/composite_YYYY.txt` (`uaimms.f` AIMMS_ECP: AIMMS_OutTxt_ecp plus AIMMS_Transfer_Out_ecp), then starts AIMMS through `models/main/aimms_endpoint` (a DEX web service, procedures `run_ecp`, `run_efd`). `ecp.ams` MainExecution reads that file, computes every LP coefficient itself, solves with CPLEX 22.1 and writes the solution back (`WriteToNEMS`). EFD works the same way with `efd/composite_YYYY_II.txt`.
+- So EPGCAP, EPGFOM, EPIRCCR and the rest are inside the composite files; the license is what lets us also solve with them.
+
+## Plan for the reference run (the AIMMS oracle)
+1. Build the EMM oracle under WSL for the first time (`oracle/build_wsl.sh emm`; needs `libsqlite3-dev`, and `oracle/csqlite.c` is untested).
+2. Compile the real `uaimms.f`, `ecp_row_col.f90` and `efd_row_col.f90` in place of `oracle/emm_stubs.f90`'s AIMMS stubs, with gfortran shims for Intel's `ifcore`/`ifport` (commitqq, timef, sleepqq).
+3. Un-skip `ELECP` and `ELEFD` (`oracle/hooks.py` EMM_SWAPS). Replace the endpoint call in AIMMS_ECP and AIMMS_EFD with a handshake: the Fortran writes the composite file on `/mnt/c`, runs Windows `aimms.exe -Rrun_ecp` (WSL can start Windows programs), waits for the solution files, and reads them back with the existing AIMMS_Transfer_In routines.
+4. Run 2025 only and compare EFD's regional prices and ECP's builds with the restart; then 2025 to 2050 and export the arrays above as one npz per year.
+EFD has to run for real, not as the stand-in: ECP's retirement groups come from EFD's per-plant revenues of the year before.
