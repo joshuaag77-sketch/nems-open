@@ -36,7 +36,35 @@ FILE_CALL = """	Procedure File_Call {{
 			 Onerror err do
 			   ErrorHandler(err);
 			endblock;
+			! Showreel: read-only copy of the solved program's statistics, after the solve (run_aimms.sh logs it).
+			block
+			  sr_rows := {mod}_WithoutSafety.NumberOfConstraints;
+			  sr_cols := {mod}_WithoutSafety.NumberOfVariables;
+			  sr_nonzeros := {mod}_WithoutSafety.NumberOfNonzeros;
+			  sr_objective := {mod}_WithoutSafety.Objective;
+			  sr_seconds := {mod}_WithoutSafety.SolutionTime;
+			  sr_iterations := {mod}_WithoutSafety.Iterations;
+			  sr_status := formatstring("%e", {mod}_WithoutSafety.ProgramStatus);
+			  sr_solver_status := formatstring("%e", {mod}_WithoutSafety.SolverStatus);
+			  sr_safety_status := formatstring("%e", {mod}_WithSafety.ProgramStatus);
+			  write sr_rows, sr_cols, sr_nonzeros, sr_objective, sr_seconds, sr_iterations, sr_status, sr_solver_status,
+			        sr_safety_status to file "../../{low}/showreel_stats.txt";
+			 Onerror err2 do
+			   errh::MarkAsHandled(err2);
+			endblock;
 			write done to file "../../{low}/done.txt";
+		}}
+		Parameter sr_rows;
+		Parameter sr_cols;
+		Parameter sr_nonzeros;
+		Parameter sr_objective;
+		Parameter sr_seconds;
+		Parameter sr_iterations;
+		StringParameter sr_status;
+		StringParameter sr_solver_status;
+		StringParameter sr_safety_status;
+		ElementParameter err2 {{
+			Range: errh::PendingErrors;
 		}}
 	}}
 """

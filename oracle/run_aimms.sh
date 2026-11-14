@@ -15,11 +15,15 @@ case "$MOD" in ecp|efd) ;; *) echo "run_aimms.sh: module '$MOD' not wired" >&2; 
 AIMMS="${AIMMS_EXE:-/mnt/c/Users/joshu/AppData/Local/AIMMS/IFA/Aimms/25.5.7.1-x64-VS2022/Bin/aimms.exe}"
 WRAPPER_WIN="$(wslpath -w "$(readlink -f main)/wrapper/wrapper.aimms")"
 printf 'req_year := %s ;\nreq_itr := %s ;\n' "$YEAR" "$ITR" > "$MOD/request.txt"
-rm -f "$MOD/done.txt"
+rm -f "$MOD/done.txt" "$MOD/showreel_stats.txt"
 echo "run_aimms.sh: $MOD $YEAR iteration $ITR"
 t0=$(date +%s)
 "$AIMMS" "-Rrun_$MOD" "$WRAPPER_WIN" --hidden
 t1=$(date +%s)
+# Showreel (oracle/aimms_showreel.py): one JSON line per solve plus logs; read-only, never fails the run.
+SHOWREEL_PY="${SHOWREEL_PY:-/mnt/c/Users/joshu/dev/nems-open-elec/oracle/aimms_showreel.py}"
+RESULT=failed; [ -f "$MOD/done.txt" ] && RESULT=ok
+python3 "$SHOWREEL_PY" "$MOD" "$YEAR" "$ITR" "$((t1 - t0))" "$RESULT" || echo "run_aimms.sh: showreel record skipped" >&2
 if [ -f "$MOD/done.txt" ]; then
   echo "run_aimms.sh: $MOD $YEAR done in $((t1 - t0)) s"
   [ -s "$MOD/log/aimmsRunOnly.err" ] && { echo "run_aimms.sh: AIMMS reported errors:"; head -5 "$MOD/log/aimmsRunOnly.err"; }
