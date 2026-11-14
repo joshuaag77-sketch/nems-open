@@ -105,10 +105,20 @@ Full loop (ported residential and commercial, ogs="aimms"):
 | reference | 1.907 (EIA 1.907) | 0.0% | 0.0% | -0.1% | 0.0% | 8.0 |
 | load_growth 1000 TWh | +10.6% | +2.0% | +8.4% | +11.0% | +2.3% | 7.8 |
 
-EIA's real market model answers the same demand shock about three times as hard as the stand-in (+3.2%
-with HSM). In this mode HSM's expected production stays at cb2026's, so supply has no long-run response
-and the price move is an upper bound; NGMM's own higher price also cuts the shock's gas use from +5.9% to
-+2.3%. Next: HSM between cycles feeding NGMM's expected production (OGSMOUT ogenagprd) to close that loop.
+With one cycle HSM's expected production stays at cb2026's, so supply has no long-run response: the
+real NGMM then answers the shock about three times as hard as the stand-in, and its higher price cuts the
+extra gas use from +5.9% to +2.3%. With cycles=2, HSM runs between cycles on NGMM's own wellhead prices
+and its expected production (OGSMOUT ogenagprd, ogadgprd, ogprcoak, ogshaleng, ogngplprd, cnenagprd,
+cnadgprd) feeds NGMM in cycle 2, as in NEMS:
+
+| run, ogs="aimms", cycles=2 | 2030 HH | 2040 HH | 2050 HH | residential | industrial | power | US gas use | minutes |
+|---|---|---|---|---|---|---|---|---|
+| reference (EIA 1.835, 2.164, 1.907) | 1.837 | 2.180 | 1.909 | 0.0% | 0.0% | 0.0% | 0.0% | 16 |
+| load_growth 1000 TWh | 1.869 | 2.209 | 1.960 (+2.8%) | +0.4% | +1.9% | +3.5% | +5.4% | 16 |
+
+Closing the supply loop takes the 2050 Henry Hub move from +10.6% to +2.8%: in line with EIA's own high
+electricity demand case (+3.1% on +4.5% gas use) and with the stand-in (+3.2% on +5.9%). This is the
+recommended setting for gas: EIA's market model and EIA's supply model, both on the loop's demand.
 
 ## Limits
 
