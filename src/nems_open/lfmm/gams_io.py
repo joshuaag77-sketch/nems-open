@@ -71,6 +71,8 @@ def labels(dim: str) -> list[str]:
     """Labels of one dimension; a number n stands for an unnamed dimension Mn."""
     if dim.isdigit():
         n = int(dim)
+        if n > FMAXDIMS:   # FILER numbers dimensions longer than FMaxDims plainly: M102 is "001" .. "102"
+            return [f"{k:0{_width(n)}d}" for k in range(1, n + 1)]
         return [f"{k:0{_width(n)}d}_M{n}" for k in range(1, n + 1)]
     return dim_labels()[dim]
 
@@ -167,6 +169,47 @@ def write_gdx(payload_path: Path, gdx_path: Path) -> None:
     m.write(str(gdx_path))
 
 
+def read_gdx(gdx_path: Path, out_path: Path, names=None) -> None:
+    """Run under the GAMS venv's Python: parameters of a GDX file (all, or `names`) to a pickle of
+    {name: {label tuple: value}}, for the project Python to read (read_outputs)."""
+    import pickle
+    import gams.transfer as gt
+    m = gt.Container(str(gdx_path), system_directory=str(GAMS_SYSDIR))
+    out = {}
+    for name, sym in m.data.items():
+        if names and name.upper() not in {n.upper() for n in names}:
+            continue
+        if not isinstance(sym, gt.Parameter):
+            continue
+        r = sym.records
+        if r is None:
+            out[name.upper()] = {}
+        elif sym.dimension == 0:
+            out[name.upper()] = {(): float(r.iloc[0, -1])}
+        else:
+            out[name.upper()] = {tuple(str(x) for x in row[:-1]): float(row[-1]) for row in r.itertuples(index=False)}
+    with open(out_path, "wb") as f:
+        pickle.dump(out, f)
+
+
+def read_outputs(gdx_path: Path, names=None) -> dict:
+    """LFMM's output GDX (LFMM_to_NEMS.gdx) as {name: {label tuple: value}}, through the GAMS venv."""
+    import os
+    import pickle
+    import subprocess
+    import tempfile
+    from nems_open.paths import REPO_ROOT
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "out.pkl"
+        args = [str(GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", "read", str(gdx_path), str(out)] + list(names or [])
+        subprocess.run(args, check=True, env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
+        with open(out, "rb") as f:
+            return pickle.load(f)
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "write":
         write_gdx(Path(sys.argv[2]), Path(sys.argv[3]))
+    elif sys.argv[1] == "read":
+        read_gdx(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4:] or None)
+

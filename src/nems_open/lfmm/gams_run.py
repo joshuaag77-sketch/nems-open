@@ -81,6 +81,29 @@ def gams(run: Path, action: str = "", timeout: float = 7200) -> int:
     return subprocess.run(args, cwd=run, timeout=timeout).returncode
 
 
+STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx", "LFMM_p1.gdx", "LFMM_to_NEMS.gdx")
+
+
+def sequence(run: Path, years, arrays: dict, timeout: float = 7200) -> dict[int, int]:
+    """Years in order in one run folder, as NEMS calls LFMM: each year reads what earlier years left
+    (PriorBuilds in LFMM_Builds.gdx, GrossCapacity.gdx, Grossdumfact.gdx). Starts from no state.
+    Each year's LFMM_to_NEMS.gdx is kept as LFMM_to_NEMS_<year>.gdx. Returns {year: gams return code}."""
+    run = Path(run)
+    years = list(years)
+    prepare(run, years[0], arrays)
+    for f in STATE:
+        (run / f).unlink(missing_ok=True)
+    out = {}
+    for y in years:
+        prepare(run, y, arrays, fresh=False)
+        out[y] = gams(run, timeout=timeout)
+        if (run / "LFMM_to_NEMS.gdx").exists():
+            shutil.copy(run / "LFMM_to_NEMS.gdx", run / f"LFMM_to_NEMS_{y}.gdx")
+        shutil.copy(run / "LFMM.log", run / f"LFMM_{y}.log")
+        print(y, "rc", out[y], flush=True)
+    return out
+
+
 def restart_arrays(case: str = "cb2026") -> dict:
     """Every array NEM_TO_LFMM1.gdx and the side files need, from a restart file, keyed "BLOCK/NAME"."""
     import numpy as np
@@ -94,5 +117,8 @@ def restart_arrays(case: str = "cb2026") -> dict:
 
 if __name__ == "__main__":
     run, year = Path(sys.argv[1]), int(sys.argv[2])
+    if len(sys.argv) > 3 and sys.argv[3].isdigit():   # <run> <first year> <last year>: years in sequence
+        print(sequence(run, range(year, int(sys.argv[3]) + 1), restart_arrays()))
+        sys.exit(0)
     prepare(run, year, restart_arrays())
     print("gams rc", gams(run, "c" if "compile" in sys.argv[3:] else ""))
