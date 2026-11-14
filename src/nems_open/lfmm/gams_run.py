@@ -124,8 +124,43 @@ def sequence(run: Path, years, arrays: dict, timeout: float = 7200) -> dict[int,
         if (run / "LFMM_to_NEMS.gdx").exists():
             shutil.copy(run / "LFMM_to_NEMS.gdx", run / f"LFMM_to_NEMS_{y}.gdx")
         shutil.copy(run / "LFMM.log", run / f"LFMM_{y}.log")
+        save_state(run, y)
+        clean_dumps(run)
         print(y, "rc", out[y], flush=True)
     return out
+
+
+CARRY = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx")   # what one year leaves for the next
+
+
+def save_state(run: Path, year: int) -> Path:
+    """Copy what `year` left for later years to run/state/<year>/, so a coupled run can start the year after."""
+    d = Path(run) / "state" / str(year)
+    d.mkdir(parents=True, exist_ok=True)
+    for f in CARRY:
+        if (Path(run) / f).exists():
+            shutil.copy(Path(run) / f, d / f)
+    return d
+
+
+def load_state(run: Path, source: Path, year: int) -> None:
+    """Put the state `source`'s sequence left after `year` into `run` (none before 2010: LFMM starts empty)."""
+    for f in STATE:
+        (Path(run) / f).unlink(missing_ok=True)
+    d = Path(source) / "state" / str(year)
+    if not d.exists():
+        raise FileNotFoundError(f"no LFMM state for {year} in {source}: run the sequence first "
+                                f"(python -m nems_open.lfmm.gams_run {source} 2010 {year})")
+    for f in CARRY:
+        if (d / f).exists():
+            shutil.copy(d / f, Path(run) / f)
+
+
+def clean_dumps(run: Path) -> None:
+    """LFMM's per-year GDX dumps (LFMM_p<year>*.gdx, about 120 MB a year): not needed after the solve."""
+    for f in Path(run).glob("LFMM_p[12]*.gdx"):
+        if f.name != "LFMM_p1.gdx":
+            f.unlink(missing_ok=True)
 
 
 def restart_arrays(case: str = "cb2026") -> dict:

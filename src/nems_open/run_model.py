@@ -123,6 +123,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     "standin" runs the fitted LFMM stand-in (nems_open/lfmm, docs/lfmm_plan.md) each iteration: refinery
     fuel use (QBLK q*rf, folded into industrial use) from the loop's product demand, Brent and gas price,
     and gasoline, diesel, jet and residual prices in place of the supply stand-in's. Off by default.
+    "gams" runs EIA's real LFMM (GAMS, HiGHS in WSL; nems_open/lfmm/gams_couple.py) on each year's first and final
+    iteration, calibrated to EIA's baseline, for every liquid fuel price and refinery fuel; needs the reference
+    sequence (python -m nems_open.lfmm.gams_run <reference folder> 2010 2050).
     coal: None keeps coal prices on the supply stand-in's curves; "aimms" runs EIA's real coal model (coal.ams)
     in AIMMS once per iteration on the loop's coal use and fuel prices, and its delivered coal prices replace
     the stand-in's (nems_open/coal/aimms_couple.py; needs AIMMS and, once, its cb2026 reference run)."""
@@ -130,8 +133,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
-    if lfmm not in (None, "standin"):
-        raise ValueError("lfmm must be None or 'standin'")
+    if lfmm not in (None, "standin", "gams"):
+        raise ValueError("lfmm must be None, 'standin' or 'gams'")
+    if lfmm == "gams" and baseline != "cb2026":
+        raise ValueError("lfmm='gams' runs EIA's LFMM on cb2026's inputs, so the baseline must be cb2026")
     if coal not in (None, "aimms"):
         raise ValueError("coal must be None or 'aimms'")
     if coal == "aimms" and baseline != "cb2026":
@@ -199,8 +204,11 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             from nems_open.snapshot import Snapshot
             efp = EfpPrices(Snapshot(), start_year)
         routines = demand.routines + ["supply stand-in" if lp is None else "supply stand-in + dispatch LP"]
+        if lfmm == "gams":   # EIA's LFMM in GAMS (nems_open/lfmm/gams_couple.py), fresh from the reference each cycle
+            from nems_open.lfmm.gams_couple import LfmmGams
+            lf = LfmmGams(start_year, base, cycle=cycle)
         if lf is not None:
-            routines.append("LFMM stand-in")
+            routines.append("LFMM stand-in" if lfmm == "standin" else "LFMM (EIA, GAMS)")
         if efp is not None:
             routines.append("EFP retail prices")
         before = {k: v[:, years].copy() for k, v in {**prices, **q}.items()}
@@ -249,7 +257,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     q_old = {k: v[:, j].copy() for k, v in q.items()}
                     col = demand.solve_year(year, prices, itr)
                     if lf is not None:   # refinery fuel from this demand, folded into industrial use before the test
-                        r_lf = lf.solve_year(j, q, col, float(brent_path[j]), float(prices["MPBLK/pngin"][US, j]))
+                        if lfmm == "gams":
+                            r_lf = lf.solve_year(j, q, col, prices, itr, ctl.fcrl)
+                        else:
+                            r_lf = lf.solve_year(j, q, col, float(brent_path[j]), float(prices["MPBLK/pngin"][US, j]))
                         col = {**col, **r_lf.industry, **r_lf.refinery}
                         lf_prices = r_lf.prices
                     if tested and relax:
@@ -383,7 +394,7 @@ def main(argv=None) -> None:
                          "with EIA's HSM between cycles and at the end (hsm, about 9 min per HSM run); or EIA's real NGMM in AIMMS (aimms)")
     ap.add_argument("--coal", choices=("aimms",), default=None,
                     help="coal prices from EIA's coal model run in AIMMS (nems_open/coal/aimms_couple.py)")
-    ap.add_argument("--lfmm", choices=("standin",), default=None,
+    ap.add_argument("--lfmm", choices=("standin", "gams"), default=None,
                     help="refining: the fitted LFMM stand-in for product prices and refinery fuel (docs/lfmm_plan.md)")
     ap.add_argument("--ind", choices=("oracle", "ported"), default="oracle",
                     help="with industrial in --ported: EIA's fixed industrial fuel use, or the ported year loop")

@@ -28,7 +28,15 @@ from nems_open.paths import UPSTREAM
 LFMM_INPUT = Path(UPSTREAM) / "models" / "lfmm" / "input"
 E85_STEPS = 55
 MNUMCR, MNUMYR, MNXYR, MNUMPR = 11, 61, 91, 10
-SCEDES_DEFAULTS = {"AEOLSTYR": 2050, "LCFSOPT": 0, "AB32SW": 1, "CO2PLFMM": 1, "CRUDEXP": 0, "LEGIRA": 1}
+SCEDES_KEYS = ("AEOLSTYR", "LCFSOPT", "AB32SW", "CO2PLFMM", "CRUDEXP", "LEGIRA")
+
+
+def scedes_switches(scenario: str | None = None) -> dict:
+    """The run switches refine.f passes in E85.gdx, from the scenario's scedes file (cb2026: AEOLSTYR 2050, LCFSOPT 1,
+    AB32SW 1, CO2PLFMM 0, CRUDEXP 1, LEGIRA 1). CRUDEXP=0 would let LFMM export crude only to Canada."""
+    from nems_open import scedes
+    opts = scedes.options(scenario) if scenario else scedes.options()
+    return {k: int(opts[k]) for k in SCEDES_KEYS}
 
 
 def _blocks(path: Path) -> list[list[str]]:
@@ -82,7 +90,7 @@ def _ffvshr(fc0, fc1, fc2, fc3, fc4, region, eth_price, mg_price, avail):
 
 def e85(arrays: dict, year: int, scedes: dict | None = None) -> dict:
     """E85.gdx's contents for one call (current year `year`), as numpy arrays in Fortran index order."""
-    sc = {**SCEDES_DEFAULTS, **(scedes or {})}
+    sc = {**scedes_switches(), **(scedes or {})}
     r = rfinvest()
     a = {k.upper(): np.asarray(v, dtype=np.float64) for k, v in arrays.items()}
     g = lambda name: a[name]
