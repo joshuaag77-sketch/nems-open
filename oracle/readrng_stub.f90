@@ -24,6 +24,14 @@ subroutine readrngxlsx(funit_in, sheet)
   read(u, *) n
   do i = 1, n
     read(u, *) nm, c1, r1, c2, r2, nv
+    ! Excel's own hidden names (_xlnm._FilterDatabase, _xlnm.Print_Area): no EIA code asks for them, and the
+    ! autofilter one copies a whole table (aimecp.xlsx ecpTransfer: 24,388 cells), which overflows the string buffer.
+    if (nm(1:5) == '_XLNM') then
+      do j = 1, nv
+        read(u, '(a)') line
+      enddo
+      cycle
+    endif
     icount = icount + 1
     rngname(icount) = nm
     rngdim(icount, 1) = c1
