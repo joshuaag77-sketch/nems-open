@@ -55,11 +55,16 @@ fi
 UPSTREAM_REAL="$(unix_path "${NEMS_UPSTREAM:-$REPO/nems-upstream}")"
 [ -d "$UPSTREAM_REAL/source" ] || { echo "no EIA checkout at $UPSTREAM_REAL (a Windows junction may not show up in WSL: pass NEMS_UPSTREAM=<real folder>)" >&2; exit 1; }
 
-export NEMS_ORACLE_WORK="${NEMS_ORACLE_WORK:-$HOME/nems-oracle}"
+# The AIMMS-coupled EMM oracle (NEMS_ORACLE_AIMMS=1) is a different program from the plain EMM oracle: it keeps its
+# own work folder and dump cache, so its dumps never shadow the plain EMM dumps other code reads from oracle-cache/emm.
+AIMMS_SUFFIX=""
+[ "${NEMS_ORACLE_AIMMS:-0}" = 1 ] && AIMMS_SUFFIX="-aimms"
+export NEMS_ORACLE_WORK="${NEMS_ORACLE_WORK:-$HOME/nems-oracle$AIMMS_SUFFIX}"
 mkdir -p "$NEMS_ORACLE_WORK"
 if [ -z "${NEMS_ORACLE_DIR:-}" ]; then
   WINHOME="$(cmd.exe /c "echo %USERPROFILE%" 2>/dev/null | tr -d '\r' || true)"
   if [ -n "$WINHOME" ]; then NEMS_ORACLE_DIR="$(wslpath -u "$WINHOME")/dev/oracle-cache"; else NEMS_ORACLE_DIR="$HOME/dev/oracle-cache"; fi
+  [ -n "$AIMMS_SUFFIX" ] && NEMS_ORACLE_DIR="$NEMS_ORACLE_DIR/aimms"
 fi
 export NEMS_ORACLE_DIR="$(unix_path "$NEMS_ORACLE_DIR")"
 export PYTHON=python3
