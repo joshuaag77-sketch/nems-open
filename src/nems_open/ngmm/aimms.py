@@ -39,6 +39,14 @@ RUN_DIR = Path(os.environ.get("NEMS_NGMM_RUN", Path.home() / "dev" / "oracle-cac
 SRC = Path(UPSTREAM) / "models" / "ngas"
 
 FILE_CALL_NAME = "NGMM_File_Call"
+SHOWREEL = Path(os.environ.get("NEMS_SHOWREEL", Path.home() / "dev" / "aimms-showreel"))
+SAMPLE_YEAR = 2035   # the year whose request and response files the showreel keeps
+QPS = ("MaxConsumerProducerSurplus", "STEOQP")
+STATS_AMS = "\n".join(
+    f"""			_show := FormatString("{qp} %n %n %n %e %e %n %n %n %e", {qp}.NumberOfConstraints, {qp}.NumberOfVariables,
+			    {qp}.NumberOfNonzeros, {qp}.ProgramStatus, {qp}.SolverStatus, {qp}.Objective, {qp}.SolutionTime,
+			    {qp}.SolverCalls, CurrentSolver('QP'));
+			write _show to file "../../ngas/solve_stats_{qp}.txt";""" for qp in QPS)
 WRAPPER_REFS = """<?xml version="1.0"?>
 <References AIMMS_Version="25.5.7.1 (x64)">
 	<MainProject Path="MainProject" />
@@ -111,6 +119,11 @@ def add_file_call(ams: Path) -> None:
     b = proc.index("\n", b) + 1
     proc = proc[:a] + "! nems-open: no DEX request; the caller set curcalyr, curitr and ncrl.\n" + proc[b:]
     proc = re.sub(r"\n\t\tdex::ServiceName:[^\n]*", "", proc)
+    # Showreel: after NGMM has sent its results and before done.txt, write the QPs' sizes and solve facts.
+    # Reads suffixes only, so results are unchanged.
+    anchor = "MNUMYR_complete := 1;"
+    proc = proc.replace(anchor, STATS_AMS + "\n\t\t\t" + anchor, 1)
+    proc = proc.replace("\t\tStringParameter _sp_input;", "\t\tStringParameter _sp_input;\n\t\tStringParameter _show;", 1)
     text = text[:end] + proc + text[end:]
     text = text.replace("NGMM_MainExecution_API, ncrl", f"NGMM_MainExecution_API, {FILE_CALL_NAME}, ncrl", 1)
     ams.write_text(text, encoding="utf-8")
@@ -293,11 +306,38 @@ def restart_arrays(path) -> dict:
 
 # --- the process ------------------------------------------------------------------------------------
 
+def parse_stats(text: str) -> dict | None:
+    """One QP's facts from `_show := "MaxConsumerProducerSurplus rows cols nonzeros 'Status' 'SolverStatus' obj secs calls 'CPLEX 22.1'";`."""
+    m = re.search(r'"([^"]*)"', text)
+    cells = re.findall(r"'[^']*'|\S+", m.group(1)) if m else []
+    if len(cells) < 9:
+        return None
+    num = lambda x: float(x) if re.fullmatch(r"[-+.\deE]+", x) else None
+    return {"rows": num(cells[1]), "columns": num(cells[2]), "nonzeros": num(cells[3]), "status": cells[4].strip("'"),
+            "solver_status": cells[5].strip("'"), "objective": num(cells[6]), "solver_seconds": num(cells[7]),
+            "solver_calls": num(cells[8]), "solver": " ".join(c.strip("'") for c in cells[9:]) or None}
+
+
+def headline(out: dict, year: int) -> dict:
+    """Five numbers a reader can follow, from one NGMM response (1987 dollars; Bcf)."""
+    j = year - 1990
+    val = lambda name, shape, idx: float(to_array(out[name], shape)[idx]) if name in out else None
+    return {"henry_hub_1987usd_mmbtu": val("NGTDMREP_OGHHPRNG", (61,), j),
+            "wellhead_l48_1987usd_mcf": val("NGTDMREP_OGWPRNG", (14, 61), (13, j)),
+            "power_gas_us_1987usd_mmbtu": val("MPBLK_PNGEL", (11, 61), (10, j)),
+            "residential_gas_us_1987usd_mmbtu": val("MPBLK_PNGRS", (11, 61), (10, j)),
+            "dry_production_bcf": val("NGTDMREP_NGSCRV_Q", (61,), j),
+            "lng_exports_bcf": val("NGTDMREP_NGEXPVOL", (4, 61), (2, j))}
+
+
 class Ngmm:
     """One AIMMS process serving NGMM calls (single process: RAM is the limit on this machine)."""
 
-    def __init__(self, run: Path = RUN_DIR, fresh: bool = True, timeout: float = 900):
+    def __init__(self, run: Path = RUN_DIR, fresh: bool = True, timeout: float = 900, showreel: Path | None = SHOWREEL):
         self.run = Path(run)
+        self.showreel = Path(showreel) if showreel else None
+        self.run_id = time.strftime("%Y%m%d-%H%M%S")
+        self._calls = {}   # QP -> its SolverCalls count at the last record, to tell whether this call solved it
         if fresh or not (self.run / "ngas").exists():
             prepare(self.run)
         self.timeout = timeout
@@ -326,7 +366,45 @@ class Ngmm:
             if time.time() - t > self.timeout:
                 raise TimeoutError(f"NGMM {year} itr {itr} took over {self.timeout} s")
             time.sleep(0.2)
-        return read_outputs(self.run, year, itr), time.time() - t
+        seconds = time.time() - t
+        out = read_outputs(self.run, year, itr)
+        if self.showreel is not None:
+            try:
+                self._record(year, itr, ncrl, fcrl, cycle, seconds, out)
+            except Exception as e:   # the showreel never stops a run
+                print(f"showreel: {e}", file=sys.stderr)
+        return out, seconds
+
+    def _stats(self) -> dict:
+        """{QP: facts} from the lines NGMM_File_Call writes (AIMMS writes `_show := "...";`)."""
+        out = {}
+        for qp in QPS:
+            f = self.ng / f"solve_stats_{qp}.txt"
+            if f.exists():
+                out[qp] = parse_stats(f.read_text(encoding="utf-8-sig", errors="replace"))
+        return {k: v for k, v in out.items() if v}
+
+    def _record(self, year, itr, ncrl, fcrl, cycle, seconds, out):
+        import json
+        self.showreel.mkdir(parents=True, exist_ok=True)
+        stats = self._stats()
+        solved = {qp: st for qp, st in stats.items() if st["solver_calls"] != self._calls.get(qp)}
+        for qp, st in stats.items():
+            self._calls[qp] = st["solver_calls"]
+        qp, st = next(iter(solved.items()), (None, {}))
+        line = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"), "run": self.run_id, "module": "NGMM",
+                "year": year, "cycle": cycle, "iteration": itr, "reporting_call": bool(ncrl), "fcrl": fcrl,
+                "program": qp, "rows": st.get("rows"), "columns": st.get("columns"), "nonzeros": st.get("nonzeros"),
+                "solver": st.get("solver"), "solve_seconds": st.get("solver_seconds"), "call_seconds": round(seconds, 3),
+                "objective": st.get("objective"), "status": st.get("status") if qp else ("no solve" if ncrl else "unknown"),
+                "solver_status": st.get("solver_status"), "headline": headline(out, year)}
+        with open(self.showreel / "ngmm.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(line) + "\n")
+        sample = self.showreel / "ngmm-sample"
+        if year == SAMPLE_YEAR and itr == 1 and not ncrl and not (sample / f"request_{year}_{itr:02d}.txt").exists():
+            sample.mkdir(exist_ok=True)
+            shutil.copy(self.ng / "toAIMMS" / f"GlobalDataToAimms_{year}_{itr:02d}.txt", sample / f"request_{year}_{itr:02d}.txt")
+            shutil.copy(self.ng / "fromAIMMS" / f"GlobalDataToNEMS_{year}_{itr:02d}.txt", sample / f"response_{year}_{itr:02d}.txt")
 
     def close(self):
         if self.proc.poll() is None:
@@ -335,6 +413,15 @@ class Ngmm:
                 self.proc.wait(60)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+        if self.showreel is not None:   # this AIMMS session's raw logs, next to the JSON lines
+            logs = self.showreel / "ngmm-logs" / self.run_id
+            logs.mkdir(parents=True, exist_ok=True)
+            w = self.run / "main" / "wrapper"
+            for f, name in ((w / "log" / "aimms.err", "aimms.err"), (w / "log" / "messages.log", "messages.log"),
+                            (w / "log" / "wrapper.lis", "wrapper.lis"), (w / "NGATTENTION.txt", "NGATTENTION.txt"),
+                            (self.ng / "ng_status.txt", "ng_status.txt"), (self.run / "aimms_stdout.txt", "aimms_stdout.txt")):
+                if f.exists():
+                    shutil.copy(f, logs / name)
 
 
 def reference(first: int = 2024, last: int = 2050, case: str = "cb2026") -> dict:
@@ -375,12 +462,13 @@ class AimmsGas:
     EIA's and a run's moves are NGMM's."""
 
     def __init__(self, start_year: int = 2027, case: str = "cb2026", calibrate: bool = True, run: Path = RUN_DIR,
-                 expected: dict | None = None):
+                 expected: dict | None = None, cycle: int = 1):
         """expected: HSM's expected production arrays ("ogsmout/ogenagprd", ...) to use from start_year on,
         in place of cb2026's (see hsm_expected)."""
         from nems_open.supply_standin.data import restart_path
         self.base = restart_arrays(restart_path(case))
         self.start = start_year
+        self.cycle = cycle
         self.expected = {k.lower(): np.asarray(v, dtype=np.float64) for k, v in (expected or {}).items()}
         z = np.load(restart_path(case), allow_pickle=False)
         names = {k.lower(): k for k in z.files}
@@ -423,7 +511,7 @@ class AimmsGas:
             raise
 
     def _call(self, year, itr, arrays, ncrl=0, fcrl=0):
-        o, sec = self.ngmm.call(year, itr, arrays, ncrl=ncrl, fcrl=fcrl)
+        o, sec = self.ngmm.call(year, itr, arrays, ncrl=ncrl, fcrl=fcrl, cycle=self.cycle)
         self.seconds += sec
         self.year, self.itr = year, itr
         if ncrl:
