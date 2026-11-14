@@ -18,7 +18,8 @@ from nems_open.snapshot import Snapshot
 
 TOLERANCE = 0.05
 FLOOR_GW = 0.5
-YEARS = (2027, 2030, 2035)
+YEARS = (2027, 2030, 2035, 2050)
+NATIONAL_YEAR = 2050          # national totals by fuel must be inside TOLERANCE in this year
 # fuel group -> (restart groups, model groups)
 FUELS = {
     "coal": (("coal", "coal_ccs"), ("coal", "coal_ccs")),
@@ -37,7 +38,9 @@ def model_capacity(results, year: int, groups) -> np.ndarray:
 
 
 def compare(snapshot, results, years=YEARS) -> dict:
-    """{(fuel, year): (model (25,), eia (25,))} in GW."""
+    """{(fuel, year): (model (25,), eia (25,))} in GW, for the years the results cover."""
+    have = {r.year for r in results}
+    years = [y for y in years if y in have]
     out = {}
     for fuel, (_, mg) in FUELS.items():
         for y in years:
@@ -88,10 +91,42 @@ def worst(cmp: dict, year: int, n: int = 10) -> str:
     return "\n".join(f"{fuel} region {r}: model {m:.1f}, EIA {e:.1f}" for _, fuel, r, m, e in rows[:n])
 
 
+def national(cmp: dict, year: int = NATIONAL_YEAR) -> str:
+    """National total by fuel in `year`, model against EIA, and whether it is inside TOLERANCE."""
+    if not any(y == year for _, y in cmp):
+        return ""
+    rows = [f"National totals {year} (inside {TOLERANCE:.0%}?):"]
+    for fuel in FUELS:
+        m, e = (a.sum() for a in cmp[(fuel, year)])
+        ok = abs(m - e) <= max(TOLERANCE * abs(e), FLOOR_GW)
+        rows.append(f"{fuel}: {m:.0f} / {e:.0f} GW ({m / e - 1:+.0%}) {'inside' if ok else 'MISS'}")
+    return "\n".join(rows)
+
+
+def reserve_prices(snapshot, results, years=YEARS) -> str:
+    """The capacity LP's reserve-margin dual against EIA's RMAVG (UECPOUT/rmavg, 1987$/kW-year, the average
+    reserve price ECP paid), the one ECP dual that reaches the restart. Median over regions and correlation."""
+    rm = snapshot["UECPOUT/rmavg"]
+    rows = ["Reserve price, 1987$/kW-year (model / EIA RMAVG): median over regions, correlation across regions"]
+    for r in results:
+        if r.year not in years or r.reserve_price is None:
+            continue
+        eia = rm[r.year - 1990, :NUM_EMM]
+        c = np.corrcoef(r.reserve_price, eia)[0, 1] if np.std(r.reserve_price) > 0 else float("nan")
+        rows.append(f"{r.year}: {np.median(r.reserve_price):.1f} / {np.median(eia):.1f}, r = {c:.2f}")
+    return "\n".join(rows)
+
+
 def main(cache: str, out: str | None = None):
     results = pickle.load(open(cache, "rb"))
     cmp = compare(Snapshot(), results)
-    text = table(cmp) + "\n\nLargest gaps in 2035:\n" + worst(cmp, 2035)
+    last = max(y for _, y in cmp)
+    text = table(cmp) + f"\n\nLargest gaps in {last}:\n" + worst(cmp, last)
+    nat = national(cmp)
+    if nat:
+        text += "\n\n" + nat
+    if getattr(results[0], "reserve_price", None) is not None:
+        text += "\n\n" + reserve_prices(Snapshot(), results)
     print(text)
     if out:
         open(out, "w").write(text + "\n")
