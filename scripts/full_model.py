@@ -46,7 +46,7 @@ SWITCHES = {
     "lfmm": "standin",          # the refining stand-in
     "ind": "ported",            # the ported industrial year loop (with "industrial" in ported)
     "elec_cap": "lp",           # capacity planning, when it lands
-    "coal": "port",             # coal market, when it lands
+    "coal": "aimms",             # EIA's coal model (AIMMS)
 }
 CYCLES = 2
 
@@ -74,6 +74,13 @@ def preflight(switches: dict, ported=()) -> list[str]:
         from nems_open import run_demand
         if run_demand.IndustrialSector.oracle_out() is None:
             missing.append("industrial oracle output (oracle-cache/ind/out)")
+        from nems_open import oracle_state
+        if not oracle_state.available("ys_in", FIRST - 1990 + 1, "ind"):
+            missing.append(f"industrial 'ys_in' state dump for {FIRST} (set NEMS_ORACLE_OUT_IND; looked in {oracle_state.out_dir('ind')})")
+    if switches.get("coal") == "aimms":
+        from nems_open.coal import aimms_couple
+        if not aimms_couple.RUN_DIR.exists():
+            missing.append(f"coal AIMMS run folder ({aimms_couple.RUN_DIR})")
     return missing
 
 
