@@ -40,10 +40,13 @@ def patch(run: Path) -> None:
     prep = run / "LFprep.gms"
     t = prep.read_text(encoding="latin-1")
     t = t.replace("\n$call GDXXRW", "\n*nems-open: no GDXXRW; file written by side_files.py\n*$call GDXXRW")
+    # forward slashes, so the same folder runs under GAMS on Linux (WSL) and Windows
+    t = t.replace("%DirPath%\\input\\", "%DirPath%input/").replace("$set DirPath '.\\'", "$set DirPath './'")
     prep.write_text(t, encoding="latin-1")
     shell = run / "LFshell.gms"
     t = shell.read_text(encoding="latin-1")
     t = t.replace("\n$set   LPsolver  Xpress", "\n*nems-open: open-source LP solver\n$set   LPsolver  HiGHS", 1)
+    t = t.replace('$set DirPath ".\\"', '$set DirPath "./"')
     shell.write_text(t, encoding="latin-1")
 
 
@@ -72,13 +75,30 @@ def prepare(run: Path, year: int, arrays: dict, itr: int = 1, fcrl: int = 0, ncr
     return run
 
 
-def gams(run: Path, action: str = "", timeout: float = 7200) -> int:
-    """`gams LFshell.gms` in the run folder (action "c" compiles only), EIA's own arguments plus the licence."""
-    args = [str(GAMS_EXE), "LFshell.gms", "lo=2", "lf=LFMM.log", "o=LFshell.lst", "al=1", "errmsg=1",
-            f"license={LICENCE}"]
+WSL_GAMS = "/root/gams-venv/lib/python3.14/site-packages/gamspy_base/gams"
+
+
+def _wsl_path(p: Path) -> str:
+    p = Path(p).resolve()
+    return f"/mnt/{p.drive[0].lower()}{p.as_posix()[2:]}"
+
+
+def gams(run: Path, action: str = "", timeout: float = 7200, wsl: bool | None = None) -> int:
+    """`gams LFshell.gms` in the run folder (action "c" compiles only), EIA's own arguments plus the licence.
+
+    On this Windows machine Smart App Control blocks GAMS's unsigned option library (joatdclib64.dll), which every
+    solver link loads, so solves run with GAMS's Linux build in WSL (Ubuntu, GAMSPy in /root/gams-venv, same licence
+    file read in place). wsl=None picks WSL unless NEMS_GAMS_WSL=0."""
+    if wsl is None:
+        wsl = os.environ.get("NEMS_GAMS_WSL", "1") != "0"
+    opts = ["LFshell.gms", "lo=2", "lf=LFMM.log", "o=LFshell.lst", "al=1", "errmsg=1"]
     if action:
-        args.append(f"a={action}")
-    return subprocess.run(args, cwd=run, timeout=timeout).returncode
+        opts.append(f"a={action}")
+    if wsl:
+        cmd = f"cd '{_wsl_path(run)}' && {WSL_GAMS} {' '.join(opts)} license='{_wsl_path(LICENCE)}'"
+        env = {**os.environ, "MSYS_NO_PATHCONV": "1"}
+        return subprocess.run(["wsl.exe", "-d", "Ubuntu", "--", "bash", "-c", cmd], timeout=timeout, env=env).returncode
+    return subprocess.run([str(GAMS_EXE), *opts, f"license={LICENCE}"], cwd=run, timeout=timeout).returncode
 
 
 STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx", "LFMM_p1.gdx", "LFMM_to_NEMS.gdx")
@@ -96,6 +116,7 @@ def sequence(run: Path, years, arrays: dict, timeout: float = 7200) -> dict[int,
     out = {}
     for y in years:
         prepare(run, y, arrays, fresh=False)
+        (run / "LFMM.log").unlink(missing_ok=True)   # GAMS appends to the log file
         out[y] = gams(run, timeout=timeout)
         if (run / "LFMM_to_NEMS.gdx").exists():
             shutil.copy(run / "LFMM_to_NEMS.gdx", run / f"LFMM_to_NEMS_{y}.gdx")
