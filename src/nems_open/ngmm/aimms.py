@@ -177,6 +177,10 @@ def prepare(run: Path = RUN_DIR, scenario: str = "cb2026") -> Path:
     (w / "wrapper.aimms").write_text(WRAPPER_REFS)
     (w / "MainProject" / "Project.xml").write_text(WRAPPER_PROJECT)
     (w / "MainProject" / "wrapper.ams").write_text(WRAPPER_MODEL)
+    # EIA's endpoint project settings: the user colours NGMM's report procedures name, and its compatibility
+    # options (rounding_compatibility Aimms_3_7, Case_compatibility Aimms_4_80), so NGMM runs as in NEMS.
+    shutil.copytree(Path(UPSTREAM) / "models" / "main" / "aimms_endpoint" / "MainProject" / "Settings",
+                    w / "MainProject" / "Settings", dirs_exist_ok=True)
     return run
 
 
