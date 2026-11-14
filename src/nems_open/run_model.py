@@ -64,6 +64,7 @@ class RunResult:
     unserved_twh: np.ndarray | None = None   # (61,) load the LP's fixed fleet could not meet, elec="lp"
     curtailed_twh: np.ndarray | None = None  # (61,) flexible load the LP cut, elec="lp"
     ogsm: dict | None = None                 # EIA's HSM output arrays (ogngprd, ogcoprd, ognowell, ...), ogs="hsm"
+    capacity: dict | None = None             # year -> capacity.YearResult (builds, retirements, capacity), elec_cap="lp"
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -91,7 +92,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
-        macro: str | None = None, ogs: str = "standin", record=None) -> RunResult:
+        macro: str | None = None, ogs: str = "standin", record=None, elec_cap: str = "eia") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
@@ -106,9 +107,16 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     record("supply", ...) after supply answered (prices and power-sector fuel updated, plus co2, the
     convergence test and its worst change). Keyword arguments: cycle, year, itr, fcrl, j, prices, q, and
     for "supply" also co2, converged, dp, dq, worst. The arrays are the loop's own, live: copy what you keep.
-    It reads only; the run is the same with or without it (scripts/think_runs.py uses it)."""
+    It reads only; the run is the same with or without it (scripts/think_runs.py uses it).
+    elec_cap: "eia" keeps EIA's capacity path (cb2026) under the dispatch LP; "lp" builds and retires plants
+    with the capacity expansion LP each year (nems_open.emm.capacity, about 2 minutes a year; needs elec="lp").
+    Not the default until its scorecard passes (docs/capacity.md)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
+    if elec_cap not in ("eia", "lp"):
+        raise ValueError("elec_cap must be 'eia' or 'lp'")
+    if elec_cap == "lp" and elec != "lp":
+        raise ValueError("elec_cap='lp' needs elec='lp' (the capacity LP feeds the dispatch LP)")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
     if ogs not in ("standin", "hsm"):
@@ -135,7 +143,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     wholesale = wholesale_us = generation = unserved = curtailed = None
     if elec == "lp":
         from nems_open.emm.couple import ElectricityLP
-        lp = ElectricityLP(supply, capacity_scale=levers.capacity_scale(policy), added_load=policy.added_load)
+        lp = ElectricityLP(supply, capacity_scale=levers.capacity_scale(policy), added_load=policy.added_load,
+                           capacity=elec_cap, start_year=start_year)
         unserved, curtailed = np.full(61, np.nan), np.full(61, np.nan)
         wholesale = np.full((25, 61), np.nan)
         wholesale_us = np.full(61, np.nan)
@@ -252,7 +261,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         ratio = lambda a, b: np.divide(a, b, out=np.ones(61), where=b > 0)
         hsm = couple.production(ratio(prices["MPBLK/pngel"][US], base["MPBLK/pngel"][US]),
                                 ratio(oil, base["INTOUT/brent_price"]) if oil is not None else None)
-    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm)
+    cap_results = dict(lp.capacity_path.results) if lp is not None and lp.capacity_path is not None else None
+    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm, cap_results)
 
 
 def main(argv=None) -> None:
@@ -275,6 +285,8 @@ def main(argv=None) -> None:
                     help="sectors to run through EIA's ported modules (none: every sector on the stub)")
     ap.add_argument("--elec", choices=("standin", "lp"), default="standin",
                     help="power sector: the stand-in, or the dispatch LP (docs/dispatch.md)")
+    ap.add_argument("--elec-cap", choices=("eia", "lp"), default="eia",
+                    help="capacity under --elec lp: EIA's path, or the capacity expansion LP (docs/capacity.md)")
     ap.add_argument("--elec-price", choices=("standin", "efp"), default=None,
                     help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py); "
                          "default efp with --elec lp on cb2026, else the stand-in")
@@ -295,7 +307,7 @@ def main(argv=None) -> None:
         commercial = CommercialLevers(shell_improvement=a.shell_code, shell_start_year=a.shell_year, standards=tuple(stds))
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
-    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs,
+    r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs, elec_cap=a.elec_cap,
             maxitr=a.maxitr, cycles=a.cycles, macro=a.macro)
     print(r.report())
     for name, v in levers.LEVERS.items():

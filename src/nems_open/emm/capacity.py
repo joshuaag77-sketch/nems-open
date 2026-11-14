@@ -555,43 +555,78 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     return out
 
 
+# Capacity-LP groups folded into the dispatch model's groups. Steam in the restart already holds EIA's coal-to-gas
+# conversions (prefix ng), so converted coal joins steam.
+TO_DISPATCH = {"gas_cc_new": "gas_cc", "gas_ct_new": "gas_ct", "gas_conv": "steam"}
+
+
+def dispatch_capacity(capacity: dict) -> dict:
+    """A year's capacity (STATE_GROUPS) in the dispatch model's groups (dispatch.GROUPS), GW by region."""
+    out = {g: np.zeros(NUM_R) for g in dispatch.GROUPS}
+    for g, v in capacity.items():
+        out[TO_DISPATCH.get(g, g)] = out[TO_DISPATCH.get(g, g)] + v
+    return out
+
+
+class CapacityPath:
+    """The myopic loop, one year at a time, so a caller (run_model) can hand each year its own demand and prices.
+
+    groups=True builds ECP's retirement groups each year from the year before's prices (the first year's come
+    from a dispatch-only solve of that year) and tracks which plant-file units the LP has retired, so the
+    cheapest-to-lose units go first.
+    """
+
+    def __init__(self, snapshot, first: int = START_YEAR, solver: str = "highs", groups: bool = True):
+        self.snapshot, self.solver, self.groups = snapshot, solver, groups
+        self.cap = initial_capacity(snapshot, first - 1)
+        self.next_year = first
+        u = plants.load_units()
+        self.alive = np.ones(len(u.summer_mw))
+        self.price = None
+        self.results: dict[int, YearResult] = {}
+
+    def step(self, year: int, case=None) -> YearResult:
+        """Solve `year` (the next one in order). `case` overrides the reference run's dispatch case (net load,
+        fuel and carbon prices); without it the year runs on the reference case."""
+        if year in self.results:
+            return self.results[year]
+        if year != self.next_year:
+            raise ValueError(f"capacity path is at {self.next_year}, asked for {year}")
+        snap, u = self.snapshot, plants.load_units()
+        case = case if case is not None else dispatch.build_case(snap, year, "none")
+        grp = None
+        if self.groups:
+            if self.price is None:
+                self.price = solve_year(snap, year, self.cap, self.solver, decide=False, case=case).price
+            hours = np.broadcast_to((case.weights * BLOCK_HOURS)[:, None], self.price.shape[1:]).ravel()
+            flat = self.price.reshape(NUM_R, -1)
+            grp = {g: retire_groups.build(year, g, self.alive, unit_costs(case, g), flat, hours, 1.0 - case.avail[g][0])
+                   for g in RETIRABLE}
+        res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case)
+        if not res.status.startswith("ok"):
+            raise RuntimeError(f"{year}: {res.status}")
+        if self.groups:
+            for g in RETIRABLE:
+                self.alive = retire_groups.retire_units(self.alive, grp[g], res.group_share[g])
+            on = np.isin(u.efd_type, dispatch.EXISTING_TYPES["coal"]) & plants.online(year) & (u.retire_year >= 9999)
+            base = np.zeros(NUM_R)
+            np.add.at(base, u.region[on] - 1, u.summer_mw[on] * self.alive[on] / 1000.0)
+            self.alive = retire_groups.take_pro_rata(self.alive, on, res.retrofit + res.converted + res.rule_retire, base)
+        self.price = res.price
+        self.cap = res.capacity
+        self.results[year] = res
+        self.next_year = year + 1
+        return res
+
+
 def run(snapshot, first: int = START_YEAR, last: int = 2035, solver: str = "highs", groups: bool = True,
         log=None) -> list:
-    """The myopic loop. Returns one YearResult per year.
-
-    groups=True builds ECP's retirement groups each year from the year before's prices (the first year's
-    come from a dispatch-only solve of that year) and tracks which plant-file units the LP has retired, so
-    the cheapest-to-lose units go first.
-    """
-    cap = initial_capacity(snapshot, first - 1)
-    u = plants.load_units()
-    alive = np.ones(len(u.summer_mw))
-    coal_units = np.isin(u.efd_type, dispatch.EXISTING_TYPES["coal"])
+    """The myopic loop on the reference run's demand and prices. Returns one YearResult per year."""
+    path = CapacityPath(snapshot, first, solver, groups)
     results = []
-    price = None
     for yr in range(first, last + 1):
-        case = dispatch.build_case(snapshot, yr, "none")
-        grp = None
-        if groups:
-            if price is None:
-                price = solve_year(snapshot, yr, cap, solver, decide=False, case=case).price
-            hours = np.broadcast_to((case.weights * BLOCK_HOURS)[:, None], price.shape[1:]).ravel()
-            flat = price.reshape(NUM_R, -1)
-            grp = {g: retire_groups.build(yr, g, alive, unit_costs(case, g), flat, hours, 1.0 - case.avail[g][0])
-                   for g in RETIRABLE}
-        res = solve_year(snapshot, yr, cap, solver, groups=grp, case=case)
-        if not res.status.startswith("ok"):
-            raise RuntimeError(f"{yr}: {res.status}")
-        if groups:
-            for g in RETIRABLE:
-                alive = retire_groups.retire_units(alive, grp[g], res.group_share[g])
-            on = coal_units & plants.online(yr) & (u.retire_year >= 9999)
-            base = np.zeros(NUM_R)
-            np.add.at(base, u.region[on] - 1, u.summer_mw[on] * alive[on] / 1000.0)
-            alive = retire_groups.take_pro_rata(alive, on, res.retrofit + res.converted + res.rule_retire, base)
-        price = res.price
+        res = path.step(yr)
         results.append(res)
-        cap = res.capacity
         if log:
             log(res)
     return results

@@ -6,8 +6,11 @@ carbon price, and returns what the rest of NEMS needs from the power sector: fue
 and the wholesale marginal cost of energy. Retail electricity prices still come from the stand-in
 until EFP is ported.
 
-Capacity is fixed at the reference case's path (cb2026). Only dispatch responds, so a carbon price
-moves coal to gas and shifts fuel use, but it does not build or retire plants.
+Capacity follows the reference case's path (cb2026) by default. Only dispatch responds, so a carbon price
+moves coal to gas and shifts fuel use, but it does not build or retire plants. With capacity="lp" each
+year's fleet comes from the capacity expansion LP (nems_open.emm.capacity.CapacityPath), solved once per year
+on the loop's own electricity demand, fuel prices and carbon price, so plants are built and retired in
+response to them.
 """
 
 from dataclasses import dataclass, replace
@@ -50,7 +53,8 @@ def _census_of_region() -> np.ndarray:
 
 
 class ElectricityLP:
-    def __init__(self, supply, hours_per_block: int = 3, capacity_scale=None, added_load=None):
+    def __init__(self, supply, hours_per_block: int = 3, capacity_scale=None, added_load=None,
+                 capacity: str = "eia", start_year: int = 2027):
         if supply.baseline != "cb2026":
             raise ValueError("elec='lp' takes its capacity from the cb2026 reference run, so the baseline must be cb2026")
         self.supply = supply
@@ -62,6 +66,12 @@ class ElectricityLP:
         self._cases = {}
         self._census = _census_of_region()
         self.last: dict[int, LPResult] = {}
+        if capacity not in ("eia", "lp"):
+            raise ValueError("capacity must be 'eia' or 'lp'")
+        self.capacity_path = None
+        if capacity == "lp":
+            from nems_open.emm.capacity import CapacityPath
+            self.capacity_path = CapacityPath(self.snapshot, start_year)
 
     def case(self, year: int) -> dispatch.DispatchCase:
         """The year's fixed inputs (capacity, heat rates, profiles, links), built once."""
@@ -94,7 +104,10 @@ class ElectricityLP:
             extra = {"flat_twh": np.maximum(net - demand.net_load_twh(self.snapshot, year, sales=q0), 0.0),
                      "flex_share": self.added_load.flex_share}
         scale = self.capacity_scale(year) if self.capacity_scale else {}
-        capacity = {g: v * scale.get(g, 1.0) for g, v in case0.capacity.items()}
+        fleet = case0.capacity
+        if self.capacity_path is not None:
+            fleet = self.capacity_fleet(year, net, prices, j, cp87)
+        capacity = {g: v * scale.get(g, 1.0) for g, v in fleet.items()}
         case = replace(case0, capacity=capacity, net_load_twh=net, price=self._scaled_prices(case0, prices, j),
                        carbon_price=float(cp87), **extra)
         res = dispatch.solve(case)
@@ -123,6 +136,16 @@ class ElectricityLP:
                        res.generation_twh, res.fuel_tbtu, co2_total, float(res.unserved_twh.sum()), float(res.curtailed_twh.sum()))
         self.last[year] = out
         return out
+
+    def capacity_fleet(self, year: int, net: np.ndarray, prices: dict, j: int, cp87: float) -> dict:
+        """The capacity LP's fleet for `year`, in dispatch groups. Solved once per year, the first time the loop
+        asks, on that pass's demand, fuel prices and carbon price; later passes reuse it (ECP runs on iteration 1)."""
+        from nems_open.emm import capacity as cap
+        if year not in self.capacity_path.results:
+            full = dispatch.build_case(self.snapshot, year, "none")
+            full = replace(full, net_load_twh=net, price=self._scaled_prices(full, prices, j), carbon_price=float(cp87))
+            self.capacity_path.step(year, full)
+        return cap.dispatch_capacity(self.capacity_path.results[year].capacity)
 
     @staticmethod
     def _spread(current: np.ndarray, base: np.ndarray, j: int, us_total: float) -> np.ndarray:
