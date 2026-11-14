@@ -137,7 +137,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if ogs in ("ngmm", "hsm"):
         from nems_open.ngmm import GasMarket
         market = GasMarket(baseline, base=base)
-    aimms_gas = None
+    aimms_gas = expected = None
     within, between = Settings.load("conv"), Settings.load("icnv")
     prices = {k: v.copy() for k, v in base.items() if k.startswith("MPBLK/")}
     q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
@@ -163,7 +163,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         demand = DemandAdapter(base, policy, start_year, ported, macro=path)
         if ogs == "aimms":   # EIA's NGMM in AIMMS (nems_open/ngmm/aimms.py), one process per cycle
             from nems_open.ngmm.aimms import AimmsGas
-            market = aimms_gas = AimmsGas(start_year)
+            market = aimms_gas = AimmsGas(start_year, expected=expected)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -264,6 +264,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             demand.close()  # stops the ported sectors' worker processes
             if aimms_gas is not None:
                 aimms_gas.close()
+        if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production
+            from nems_open.ngmm.aimms import hsm_expected
+            expected = hsm_expected(aimms_gas.wellhead_ratio(), _oil_ratio(oil, base))
         if ogs == "hsm" and cycle < cycles:   # HSM on this cycle's wellhead prices sets next cycle's expected production
             from nems_open.ogsm import couple
             market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base)), market.P)
@@ -274,7 +277,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                         d[k][:, years] = before[k] + between.relax[k] * (d[k][:, years] - before[k])
     hsm = gas = None
     if aimms_gas is not None:
-        gas = {"henry_hub": aimms_gas.henry_hub.copy(), "ngmm_seconds": aimms_gas.seconds}
+        gas = {"henry_hub": aimms_gas.henry_hub.copy(), "ngmm_seconds": aimms_gas.seconds,
+               "wellhead_ratio": aimms_gas.wellhead_ratio(), "hsm": expected is not None}
     elif market is not None:
         gas = {k: v.copy() for k, v in market.clear(q["QBLK/qngas"][US]).items()}
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)

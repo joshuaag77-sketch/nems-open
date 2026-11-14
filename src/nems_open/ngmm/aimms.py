@@ -374,15 +374,21 @@ class AimmsGas:
     over NGMM's own on cb2026's inputs (reference.pkl from `python -m nems_open.ngmm.aimms`), so the baseline is
     EIA's and a run's moves are NGMM's."""
 
-    def __init__(self, start_year: int = 2027, case: str = "cb2026", calibrate: bool = True, run: Path = RUN_DIR):
+    def __init__(self, start_year: int = 2027, case: str = "cb2026", calibrate: bool = True, run: Path = RUN_DIR,
+                 expected: dict | None = None):
+        """expected: HSM's expected production arrays ("ogsmout/ogenagprd", ...) to use from start_year on,
+        in place of cb2026's (see hsm_expected)."""
         from nems_open.supply_standin.data import restart_path
         self.base = restart_arrays(restart_path(case))
+        self.start = start_year
+        self.expected = {k.lower(): np.asarray(v, dtype=np.float64) for k, v in (expected or {}).items()}
         z = np.load(restart_path(case), allow_pickle=False)
         names = {k.lower(): k for k in z.files}
         self.eia = {k: z[names[k.lower()]].astype(np.float64) for k in PRICE_OUT}
         self.eia_hh = z[names["ngtdmrep/oghhprng"]].astype(np.float64)
         self.factor = {k: np.ones((11, 61)) for k in PRICE_OUT}
         self.hh_factor = np.ones(61)
+        self.wellhead_ref = z[names["ngtdmrep/ogwprng"]].astype(np.float64)[13].copy()   # NGMM's own on cb2026, below
         if calibrate:
             ref = run / "reference.pkl"
             if not ref.exists():
@@ -400,9 +406,12 @@ class AimmsGas:
                 if "NGTDMREP_OGHHPRNG" in o:
                     mine = to_array(o["NGTDMREP_OGHHPRNG"], (61,))[j]
                     self.hh_factor[j] = self.eia_hh[j] / mine if mine > 0 else 1.0
+                if "NGTDMREP_OGWPRNG" in o:
+                    self.wellhead_ref[j] = to_array(o["NGTDMREP_OGWPRNG"], (14, 61))[13, j]
         self.ngmm = Ngmm(run, fresh=True)
         self.out = {k: v.copy() for k, v in self.eia.items()}
         self.henry_hub = self.eia_hh.copy()
+        self.wellhead = self.wellhead_ref.copy()   # NGMM's lower-48 average wellhead price, uncalibrated
         self.year, self.itr, self.seconds = None, 0, 0.0
         try:
             for y in range(2024, start_year):
@@ -426,6 +435,8 @@ class AimmsGas:
                 self.out[k][:, j] = to_array(o[name], (11, 61))[:, j] * self.factor[k][:, j]
         if "NGTDMREP_OGHHPRNG" in o:
             self.henry_hub[j] = to_array(o["NGTDMREP_OGHHPRNG"], (61,))[j] * self.hh_factor[j]
+        if "NGTDMREP_OGWPRNG" in o:
+            self.wellhead[j] = to_array(o["NGTDMREP_OGWPRNG"], (14, 61))[13, j]
 
     def begin(self, year: int, itr: int, q: dict, prices: dict, fcrl: int = 0):
         j = year - 1990
@@ -438,6 +449,8 @@ class AimmsGas:
             key = k.lower()
             if key in arrays and np.shape(arrays[key]) == np.shape(v):
                 arrays[key] = np.asarray(v, dtype=np.float64)
+        if year >= self.start:
+            arrays.update(self.expected)
         b, now = self.base["qblk/qngel"][10, j], q["QBLK/qngel"][10, j]
         if b > 0:   # the power sector's seasonal gas burn by EMM region, scaled to the loop's
             s = self.base["uefdout/sqngelgr"].copy()
@@ -453,8 +466,29 @@ class AimmsGas:
         self._call(year, self.itr + 1, getattr(self, "last", None) or self.base, ncrl=1, fcrl=1)
         self.last = None
 
+    def wellhead_ratio(self) -> np.ndarray:
+        """This run's wellhead prices over NGMM's own on cb2026's inputs (61,): what HSM is handed."""
+        return np.divide(self.wellhead, self.wellhead_ref, out=np.ones(61), where=self.wellhead_ref > 0)
+
     def close(self):
         self.ngmm.close()
+
+
+EXPECTED = ("ogenagprd", "ogadgprd", "ogprcoak", "ogshaleng", "ogngplprd", "cnenagprd", "cnadgprd")
+
+
+def hsm_expected(gas_ratio, oil_ratio=None, case: str = "cb2026") -> dict:
+    """HSM's expected production on prices moved by the ratios, as NGMM reads it (OGSMOUT arrays): cb2026's
+    restart values times HSM's run over HSM's own cb2026 run, so HSM's small reproduction error cancels."""
+    from nems_open.ogsm import couple
+    from nems_open.supply_standin.data import restart_path
+    run, ref = couple.production(gas_ratio, oil_ratio), couple.production(None, None)
+    z = np.load(restart_path(case), allow_pickle=False)
+    out = {}
+    for k in EXPECTED:
+        base = z["OGSMOUT/" + k].astype(np.float64)
+        out["ogsmout/" + k] = base * np.divide(run[k], ref[k], out=np.ones_like(base), where=np.asarray(ref[k]) != 0)
+    return out
 
 
 HEADLINE = ("NGTDMREP_OGHHPRNG", "MPBLK_PNGRS", "MPBLK_PNGCM", "MPBLK_PNGIN", "MPBLK_PNGEL", "MPBLK_PNGTR",
