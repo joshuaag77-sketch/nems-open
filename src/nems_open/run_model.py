@@ -11,7 +11,10 @@ again ends the year. At most MAXITR iterations plus that final one (cb2026: 2 + 
 cycles > 1 repeats the whole run, relaxing every year between cycles by EIA's intercycle
 factors, as NEMS's NRUNS does (cb2026 runs 5).
 
-Supply is the stand-in (docs/supply_standin.md). With elec="lp" the power sector comes from the
+Supply is the stand-in (docs/supply_standin.md). With ogs="ngmm" or "hsm" gas prices come from the gas
+market instead (nems_open/ngmm, docs/ngmm.md): NGMM's supply curve around expected production, cleared
+on the loop's gas use each iteration; with "hsm" EIA's HSM sets that expected production between cycles
+(cycles >= 2) and reports production at the end. With elec="lp" the power sector comes from the
 dispatch LP instead (docs/dispatch.md): electricity sales in; fuel use, power CO2 and the wholesale
 marginal cost out, with the carbon price in plant costs. Retail electricity prices come from
 EIA's ported pricing model (emm/retail.py: LDSM and EFP on the loop's electricity sales) by
@@ -64,6 +67,8 @@ class RunResult:
     unserved_twh: np.ndarray | None = None   # (61,) load the LP's fixed fleet could not meet, elec="lp"
     curtailed_twh: np.ndarray | None = None  # (61,) flexible load the LP cut, elec="lp"
     ogsm: dict | None = None                 # EIA's HSM output arrays (ogngprd, ogcoprd, ognowell, ...), ogs="hsm"
+    gas: dict | None = None                  # gas market by year (61,): henry_hub, wellhead (1987 $), production,
+                                             # expected, exports (Bcf); ogs="ngmm" or "hsm"
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -111,8 +116,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
-    if ogs not in ("standin", "hsm"):
-        raise ValueError("ogs must be 'standin' or 'hsm'")
+    if ogs not in ("standin", "ngmm", "hsm"):
+        raise ValueError("ogs must be 'standin', 'ngmm' or 'hsm'")
     if ogs == "hsm" and baseline != "cb2026":
         raise ValueError("ogs='hsm' starts from the cb2026 restart, so the baseline must be cb2026")
     if elec_price is None:
@@ -126,6 +131,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     base = supply.base
     carbon = policy.carbon()
     oil, shifts = levers.brent(policy, base), levers.supply_shifts(policy, supply)
+    market = None
+    if ogs in ("ngmm", "hsm"):
+        from nems_open.ngmm import GasMarket
+        market = GasMarket(baseline, base=base)
     within, between = Settings.load("conv"), Settings.load("icnv")
     prices = {k: v.copy() for k, v in base.items() if k.startswith("MPBLK/")}
     q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
@@ -163,7 +172,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             """The supply side on the loop's current demand and prices; returns the result and
             the power-sector fuel use it priced (the LP's, relaxed as EIA relaxes EMM's outputs)."""
             if lp is None:
-                s = supply.solve(q, oil, carbon, shifts=shifts)
+                s = supply.solve(q, oil, carbon, shifts=shifts, gas=market)
                 fuel = {k: v[:, j] for k, v in s.power_fuel.items()}
             else:
                 r = lp.solve(FIRST_YEAR + j, q, prices, float(cp87[j]))
@@ -175,7 +184,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                         pf[k][:, j] = v
                 else:
                     pf = r.power_fuel
-                s = supply.solve(q, oil, carbon, power_fuel=pf, co2_el=r.co2_el, shifts=shifts)
+                s = supply.solve(q, oil, carbon, power_fuel=pf, co2_el=r.co2_el, shifts=shifts, gas=market)
             if efp is not None:   # retail electricity prices from EFP on this iteration's sales
                 for k, v in efp.price_pass(FIRST_YEAR + j, q, itr, fcrl).items():
                     s.prices[k][:, j] = v
@@ -225,6 +234,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                               f"max dQ/Q {dq:.2e}, failing {sorted(bad)[:4]}")
                     ctl.done(ctest)
                 stable[year] = ctl.stable
+                if market is not None:   # next year's curve centres on this year's wellhead price
+                    market.settle(j)
                 for k, v in s.totals.items():   # SUMQAS: all-sector totals
                     q[k][:, j] = v[:, j]
                 if lp is not None:
@@ -241,18 +252,28 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 demand.end_year()
         finally:
             demand.close()  # stops the ported sectors' worker processes
+        if ogs == "hsm" and cycle < cycles:   # HSM on this cycle's wellhead prices sets next cycle's expected production
+            from nems_open.ogsm import couple
+            market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base)), market.P)
         if cycle < cycles and relax:   # IRELAX = 2: relax every year between cycles
             for d in (prices, q):
                 for k in d:
                     if k in between.relax:
                         d[k][:, years] = before[k] + between.relax[k] * (d[k][:, years] - before[k])
-    hsm = None
+    hsm = gas = None
+    if market is not None:
+        gas = {k: v.copy() for k, v in market.clear(q["QBLK/qngas"][US]).items()}
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)
         from nems_open.ogsm import couple
-        ratio = lambda a, b: np.divide(a, b, out=np.ones(61), where=b > 0)
-        hsm = couple.production(ratio(prices["MPBLK/pngel"][US], base["MPBLK/pngel"][US]),
-                                ratio(oil, base["INTOUT/brent_price"]) if oil is not None else None)
-    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm)
+        hsm = couple.production(market.wellhead_ratio(), _oil_ratio(oil, base))
+    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm, gas)
+
+
+def _oil_ratio(oil, base):
+    if oil is None:
+        return None
+    b = base["INTOUT/brent_price"]
+    return np.divide(oil, b, out=np.ones(61), where=b > 0)
 
 
 def main(argv=None) -> None:
@@ -278,8 +299,9 @@ def main(argv=None) -> None:
     ap.add_argument("--elec-price", choices=("standin", "efp"), default=None,
                     help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py); "
                          "default efp with --elec lp on cb2026, else the stand-in")
-    ap.add_argument("--ogs", choices=("standin", "hsm"), default="standin",
-                    help="oil and gas production: none (stand-in), or EIA's HSM on the run's prices (9 min extra)")
+    ap.add_argument("--ogs", choices=("standin", "ngmm", "hsm"), default="standin",
+                    help="gas prices and production: the stand-in's curves; the gas market (ngmm); or the gas market "
+                         "with EIA's HSM between cycles and at the end (hsm, about 9 min per HSM run)")
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
     ap.add_argument("--macro", choices=("frbus",), default=None,
                     help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
@@ -302,6 +324,10 @@ def main(argv=None) -> None:
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
             grade, why = levers.fidelity(name, tuple(a.ported), a.elec)
             print(f"{levers.label(name, tuple(a.ported), a.elec)}: {grade}. {why}")
+    if r.gas is not None:
+        j = a.end - FIRST_YEAR
+        print(f"\nGas market {a.end}: Henry Hub {r.gas['henry_hub'][j]:.2f} 1987 $/MMBtu, wellhead {r.gas['wellhead'][j]:.2f}, "
+              f"dry production {r.gas['production'][j]:.0f} Bcf (expected {r.gas['expected'][j]:.0f}), exports {r.gas['exports'][j]:.0f}")
     if r.ogsm is not None:
         j = a.end - FIRST_YEAR
         print(f"\nHSM {a.end}: dry gas {r.ogsm['ogngprd'][j]:.0f} (ogngprd), crude {r.ogsm['ogcoprd'][j]:.1f} (ogcoprd), wells {r.ogsm['ognowell'][j]:.0f}")

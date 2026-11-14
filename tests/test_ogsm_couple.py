@@ -47,7 +47,9 @@ def test_run_model_passes_run_prices_to_hsm(monkeypatch):
     r = run_model.run(Policy(carbon_price=100, start_year=START), START, END, ported=(), ogs="hsm")
     assert r.ogsm is not None
     assert seen["gas"].shape == (61,)
-    assert seen["gas"][START - 1990] > 1.0       # a carbon price raises the gas price to power plants
+    # HSM gets the gas market's wellhead price: a carbon price moves gas use, so it moves the wellhead price
+    assert abs(seen["gas"][START - 1990] - 1.0) > 1e-4
+    assert r.gas is not None
     assert np.allclose(seen["gas"][: START - 1990], 1.0)   # years before the run keep the baseline
 
 
