@@ -162,7 +162,7 @@ def write_gdx(payload_path: Path, gdx_path: Path) -> None:
         gt.Parameter(m, name, records=v)
     for name, (dims, rows, text) in p["params"].items():
         df = pd.DataFrame(rows, columns=[f"d{k}" for k in range(len(dims))] + ["value"]) if rows else None
-        gt.Parameter(m, name, domain=dims, records=df, description=(text or "")[:255])
+        gt.Parameter(m, name, domain=dims, records=df, description=(text or "")[:255])   # "*" = universe
     m.write(str(gdx_path))
 
 
