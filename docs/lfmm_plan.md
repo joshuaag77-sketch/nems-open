@@ -119,6 +119,46 @@ run of `lfshell.gms` on GDX dumped from the cb2026 restart. The cheaper check, a
 EIA's own cb2026 outputs in the restart file (LFMMOUT, PMMOUT, MPBLK), which the stand-in already
 reproduces exactly.
 
+## Running EIA's LFMM: licences and readers (checked 2026-11-14)
+
+**Free GAMS licences.** The Community licence (academic, 12 months) caps LP at 5,000 rows and 5,000 columns; LFMM's LP
+(about 100 variable families and 136 equation families over refining regions, refinery types, processes and modes,
+crudes, sources and supply steps, streams, census divisions and three periods, `lfmodel.gms`) is far above that, though
+its exact size is unmeasured (it comes from the sets in `lfminset.gdx`). The demo licence is smaller still. Since
+June 2026 GAMS offers a free **Personal licence** that, per GAMS, supersedes the Community licence and has no model-size
+limit, for individual, non-commercial use by students, researchers and hobbyists, with open-source solvers only (HiGHS,
+SCIP, IPOPT, SHOT; no CPLEX, Xpress or Gurobi). A free academic GAMSPy licence (institutional email) adds some commercial
+solvers. Full academic GAMS is discounted, not free. Penn's software licensing office lists no GAMS site licence
+(listings cover MATLAB, Mathematica, Stata, SPSS, Esri); ask licenses@upenn.edu before paying for anything. Sources:
+gams.com/free-licenses, forum.gams.com "Availability of the New GAMS Personal License", gams.com UG_License,
+osl.isc.upenn.edu.
+
+So lfshell.gms fits the free Personal licence, not the Community or demo ones. Signing up and installing GAMS is
+Josh's step. One catch: EIA solves LFMM with Xpress (`$set LPsolver Xpress` in lfshell.gms; a CPLEX option file is
+kept). The Personal licence would solve it with HiGHS (one line). Product prices are LP duals, so where the LP is
+degenerate HiGHS can return different prices than Xpress; that needs a check against cb2026, as coal and gas had.
+
+**Reading EIA's GDX files.** The GDX files are GDX version 7 from GAMS 43.2, uncompressed (element names are plain
+text). Tried in a throwaway environment: `gamsapi[transfer]` 54.7.0 from PyPI installs, but the wheel carries only the
+Python wrapper (`gams.core.gdx`); the GDX library itself (`gdxcclib64.dll`) comes with a GAMS installation, so
+gams.transfer and gdxpds cannot read GDX here until GAMS is installed. Reading needs no licence. Without GAMS there are
+two open routes: build GAMS's MIT-licensed GDX library from its GitHub source (GAMS-dev/gdx), or write a small
+pure-Python reader for uncompressed GDX v7 against that source.
+
+**Smallest slice for product prices.** Prices are not a slice: LFMM sets each product's price from the dual of its
+census-division demand row (`RecipeDemands.m(CenDiv, product, Period)` divided by the GDP deflator, lfreport.gms
+915-945), then adds margins and policy adjustments (AB 32 in the Pacific). Refining is joint production, so one
+gasoline or diesel price needs the whole refinery LP for the current period: crude supply and transport, processes
+and modes, recipe and specification blending, transport to census divisions, product trade, and the RFS block
+(RIN costs move gasoline and diesel prices). What can be left out for a first translation: the three-period
+look-ahead (current period only), LCFS, CFP and WACFS (state programs, separable blocks), CO2 for EOR, coal and
+biomass to liquids. Still weeks of work, most of it the data layer (lfprep.gms, 320 KB, builds the coefficients).
+
+**Recommendation.** Fastest path to EIA's real refining model in the loop, the way coal and gas went: Josh signs up for
+the free GAMS Personal licence and installs GAMS; then `run(lfmm="gams")` writes LFMM's per-year GDX input from the
+loop (gams.transfer, now able to load the GDX library), runs lfshell.gms with HiGHS, and reads prices and refinery fuel
+back. Check HiGHS against cb2026 first. The HiGHS translation stays the open fallback, as for coal.
+
 ## Full port, later
 
 1. GDX reader. GAMS publishes its GDX library as open source; a small reader (or a one-time
