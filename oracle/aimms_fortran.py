@@ -61,6 +61,10 @@ def ecp_pass(path: Path) -> None:
     # !dsiret (EPO$COAL) writes 2 + 26 items with "i4,i5,23f5.1": format reversion puts a REAL under i4. Room for all.
     text, j = re.subn(r"(format\(1h ,'!dsiret',i4,i5,)23(f5\.1\))", lambda m: m.group(1) + "99" + m.group(2), text, flags=re.I)
     k += j
+    # "(1h,'!ccsout3 ',...": a one-character Hollerith (a comma) then a string with no separator. Intel reads it,
+    # gfortran wants the comma between descriptors.
+    text, j = re.subn(r"\(1h,'", "(1h,,'", text, flags=re.I)
+    k += j
     path.write_text(text, encoding="latin-1")
     print(f"aimms_fortran.py --ecp: {path.name}: {k} tagged debug format(s) with F edits as G edits")
 
