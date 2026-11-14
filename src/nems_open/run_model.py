@@ -180,7 +180,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         demand = DemandAdapter(base, policy, start_year, ported, macro=path, ind=ind)
         if ogs == "aimms":   # EIA's NGMM in AIMMS (nems_open/ngmm/aimms.py), one process per cycle
             from nems_open.ngmm.aimms import AimmsGas
-            market = aimms_gas = AimmsGas(start_year, expected=expected)
+            market = aimms_gas = AimmsGas(start_year, expected=expected, cycle=cycle)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
