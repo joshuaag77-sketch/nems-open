@@ -42,3 +42,15 @@ def test_a_no_policy_run_lands_near_eia_where_it_runs_eias_numbers(stub_table):
     by = {r["key"]: r for r in stub_table["rows"]}
     assert abs(by["energy"]["gap_pct"][2030]) < 1.0      # 2030 is past the run: EIA's own quantities
     assert by["co2"]["worst_gap_pct"] is not None
+
+
+def test_watch_mode_narrates_each_pass_and_each_settled_year():
+    lines = []
+    rec = fm.Narrator((), 1, lines.append)
+    try:
+        run_model.run(None, 2027, 2028, "cb2026", ported=(), record=rec)
+    except FileNotFoundError as e:
+        pytest.skip(f"reference data missing: {e}")
+    text = "\n".join(lines)
+    assert "2027" in text and "2028" in text and "asked for" in text and "cents/kWh" in text
+    assert "settled in" in text or "not settled yet" in text

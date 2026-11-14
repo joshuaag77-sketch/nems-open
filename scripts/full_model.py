@@ -3,11 +3,13 @@
     python scripts/full_model.py                 # runs it (about an hour; hold HEAVY.lock), writes web/data/full_model.json
     python scripts/full_model.py --plan          # prints what would run, runs nothing
     python scripts/full_model.py --from out.npz  # rebuilds the table from a saved run, no model run
+    python scripts/full_model.py --watch         # the same run, narrated live year by year (a demo)
+    python scripts/full_model.py --watch --years 2027 2030   # a short demo
 
 One run of run_model.run, 2027-2050, on cb2026 with no new policy, so every gap is the model's own distance from
 EIA, not a policy effect. Switches come from SWITCHES below: each is used only if run_model.run takes that keyword,
 so a module that lands later (ngmm, elec_cap, coal, ...) joins the run once its switch exists, with no edit here.
-Sectors come from ported_sectors(): industrial joins when run_demand.IndustrialSector says its year loop is ported.
+Sectors come from ported_sectors(): industrial joins (with ind="ported") once run_model.run takes the ind switch.
 
 Headline numbers, each by year against EIA's published arrays in the cb2026 restart file: total energy use, CO2,
 power generation by fuel, Henry Hub, Brent, gasoline and diesel prices, electricity price, home gas price, the
@@ -43,6 +45,7 @@ SWITCHES = {
     "macro": "frbus",           # the economy module (needs cycles >= 2)
     "ogs": "hsm",               # EIA's oil and gas supply (HSM)
     "lfmm": "standin",          # the refining stand-in
+    "ind": "ported",            # the ported industrial year loop (with "industrial" in ported)
     "ngmm": "port",             # natural gas markets, when it lands
     "elec_cap": "lp",           # capacity planning, when it lands
     "coal": "port",             # coal market, when it lands
@@ -51,9 +54,9 @@ CYCLES = 2
 
 
 def ported_sectors() -> tuple[str, ...]:
-    from nems_open import run_demand
+    from nems_open import run_model
     out = ["residential", "commercial", "transportation"]
-    if getattr(run_demand.IndustrialSector, "year_loop_ported", False):
+    if "ind" in inspect.signature(run_model.run).parameters:
         out.append("industrial")
     return tuple(out)
 
@@ -158,13 +161,64 @@ def model_numbers(r) -> dict:
                    {"henry_hub": getattr(r, "henry_hub", None), "brent": getattr(r, "brent", None)})
 
 
+# ---- watch it run ---------------------------------------------------------------------------------
+
+SECTOR_WORDS = {"residential": "homes", "commercial": "businesses", "transportation": "vehicles", "industrial": "factories"}
+
+
+class Narrator:
+    """run_model.run's record hook, in plain words: one line per pass, one per settled year. Reads only."""
+
+    def __init__(self, ported, cycles: int, out=print):
+        self.who = ", ".join(SECTOR_WORDS[s] for s in ported) or "every sector (on fitted curves)"
+        self.cycles, self.out, self.t0, self.year, self.passes = cycles, out, time.time(), None, 0
+        from nems_open.supply_standin.data import load_case
+        import build_ux2050 as ux
+        self.k, self.ux = ux.to_2024(load_case("cb2026")), ux
+
+    def __call__(self, kind, cycle, year, itr, j, prices, q, **kw):
+        if (cycle, year) != self.year:
+            self.year, self.passes, self.settled = (cycle, year), 0, False
+            head = f"Round {cycle} of {self.cycles}, " if self.cycles > 1 else ""
+            self.out(f"\n{head}{year}  ({(time.time() - self.t0) / 60:.1f} min in)")
+        if kind == "demand":
+            quads = float(q["QBLK/qtsas"][US, j]) / 1000
+            self.out(f"  pass {itr}: {self.who} asked for {quads:.1f} quadrillion Btu at last pass's prices")
+            return
+        self.passes += 1
+        k, P = self.k, lambda v: float(prices[v][US, j])
+        el = P("MPBLK/pelas") * k * self.ux.MMBTU_PER_KWH * 100
+        gas, mg = P("MPBLK/pngel") * k, P("MPBLK/pmgtr") * k * 0.1205
+        co2 = kw.get("co2")
+        co2 = sum(float(v[US, j]) for v in co2.values()) if isinstance(co2, dict) else None
+        line = (f"  pass {itr}: power plants and fuel markets answered: electricity {el:.1f} cents/kWh, "
+                f"gas to power plants ${gas:.2f}/MMBtu, gasoline ${mg:.2f}/gal"
+                + (f", CO2 {co2:,.0f} million t" if co2 is not None else ""))
+        self.out(line)
+        if kw.get("converged"):
+            if not self.settled:
+                self.out(f"  {year} settled in {self.passes} passes: buyers and sellers agree")
+            else:
+                self.out("  still agreed on the check pass")
+            self.settled = True
+        elif not kw.get("dp"):
+            self.out("  first answer; the next pass checks whether it holds")
+        else:
+            what = str(kw.get("worst", "a price")).replace("MPBLK/p", "price ").replace("QBLK/q", "use of ")
+            self.out(f"  not settled yet: {what} still moved {100 * kw['dp']:.1f}%")
+
+
 # ---- run ------------------------------------------------------------------------------------------
 
-def run() -> tuple[object, dict, float]:
+def run(first: int = FIRST, last: int = LAST, watch: bool = False) -> tuple[object, dict, float]:
     from nems_open import run_model
     p = plan()
     t0 = time.time()
-    r = run_model.run(None, FIRST, LAST, "cb2026", tuple(p["ported"]), cycles=CYCLES, **p["switches"])
+    rec = Narrator(p["ported"], CYCLES, lambda s: print(s, flush=True)) if watch else None
+    if watch:
+        print(f"The whole model, {first}-{last}, EIA's reference settings. On: {', '.join(f'{k}={v}' for k, v in p['switches'].items())}. "
+              f"EIA's own code runs {Narrator(p['ported'], CYCLES).who}.", flush=True)
+    r = run_model.run(None, first, last, "cb2026", tuple(p["ported"]), cycles=CYCLES, record=rec, **p["switches"])
     return r, p, (time.time() - t0) / 60
 
 
@@ -199,6 +253,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--plan", action="store_true", help="print the switches and sectors, run nothing")
     ap.add_argument("--from", dest="src", type=Path, help="rebuild the table from a saved run (.npz)")
+    ap.add_argument("--watch", action="store_true", help="narrate the run live, year by year and pass by pass")
+    ap.add_argument("--years", type=int, nargs=2, metavar=("FIRST", "LAST"), help="a shorter run (a demo); no table")
     ap.add_argument("--save", type=Path, default=ROOT / "data" / "full_model_run.npz", help="where to keep the run")
     a = ap.parse_args(argv)
     p = plan()
@@ -208,7 +264,11 @@ def main(argv=None) -> int:
     if a.src:
         r, minutes = load_run(a.src), None
     else:
-        r, p, minutes = run()
+        first, last = a.years or (FIRST, LAST)
+        r, p, minutes = run(first, last, a.watch)
+        if a.years:                                   # a demo span: the table needs the whole 2027-2050
+            print(f"done in {minutes:.1f} min")
+            return 0
         a.save.parent.mkdir(parents=True, exist_ok=True)
         save_run(r, a.save)
     t = table(r, p, minutes)
