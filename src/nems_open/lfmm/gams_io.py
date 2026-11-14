@@ -29,6 +29,7 @@ from nems_open.paths import INPUT, UPSTREAM
 
 LFMM_DIR = Path(UPSTREAM) / "models" / "lfmm"
 FMAXDIMS = 101          # includes/fdict: FMaxDims
+LABEL_LEN = 25          # FDimStrs is CHARACTER*25: longer labels are cut ("11_Petrochemical_feedstoc")
 GAMS_SYSDIR = Path.home() / "dev" / "gams-venv" / "Lib" / "site-packages" / "gamspy_base"
 GAMS_PYTHON = Path.home() / "dev" / "gams-venv" / "Scripts" / "python.exe"
 
@@ -60,7 +61,7 @@ def dim_labels() -> dict[str, list[str]]:
             wl = _width(n + first - 1)
             out[d] = [f"{first + k:0{wl}d}_{d}" for k in range(n)]
         elif d in named:
-            out[d] = [f"{k:0{w}d}_{named[d].get(k, '')}" for k in range(1, n + 1)]
+            out[d] = [f"{k:0{w}d}_{named[d].get(k, '')}"[:LABEL_LEN] for k in range(1, n + 1)]
         else:
             out[d] = [f"{k:0{w}d}_{d}" for k in range(1, n + 1)]
     return out
