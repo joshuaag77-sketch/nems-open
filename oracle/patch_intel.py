@@ -159,6 +159,8 @@ RULES = [
     (re.compile(r"^(\s*)INTEGER\s+(\w+)\s*\*\s*(\d)\s*$", re.I | re.M), r"\1INTEGER*\3 \2"),
     # Intel's portability module. Its one routine we need, CALLSYS, is in stubs.f90.
     (re.compile(r"^\s*use\s+dfport\s*$", re.I | re.M), ""),
+    # include 'coalemm.' (uecp.f): Windows drops a trailing dot from a file name, Linux does not.
+    (re.compile(r"^(\s*include\s+'[\w]+)\.'", re.I | re.M), r"\1'"),
     # Intel's list-directed READ accepts "1.000" for an INTEGER; gfortran stops.
     # kgentk.txt stores census division and niche counts that way.
     (re.compile(r"READ\s*\(INFILE,\s*\*\)\s*iDiv,\s*iNiche", re.I),

@@ -1,8 +1,8 @@
 ! Stand-ins for routines EMM's Fortran calls that live outside the files the
 ! oracle compiles.
 !
-! Copied from EIA (same code): CENSUS and ISTATE (nemsfunct.f), UNITUNOPENED
-! (arraycode.f).
+! Copied from EIA (same code): CENSUS and ISTATE (nemsfunct.f), UNITUNOPENED and
+! MREPLACE (arraycode.f; MREPLACE is used by uaimms.f in the AIMMS-coupled build).
 ! Timers (MPTIM2, MPTIM3): return 0; they only feed timing reports.
 ! RTOSTRING: only asked for AIMMSLOC, the AIMMS install folder. Returns blank.
 ! The rest is EMM's AIMMS interface (uaimms.f) and the LP solution readers. With
@@ -73,6 +73,28 @@ end
       CHARACTER*(*) RTONAME, RTOVALUE
       RTOVALUE = ' '
       END
+
+       subroutine Mreplace(string,finds,repls)
+       implicit none
+       character*(*) string, finds, repls
+       character*255 temp
+       integer L,LF,LR,I,leng
+       l=len(string)
+       lf=len(finds)
+       lr=len(repls)
+       i=1
+10     continue
+         if(string(i:i+LF-1).eq.finds) then
+           temp=string(i+Lf:)
+           string(i:i+LR-1)=repls
+           string(i+LR:)=trim(temp)
+           l=len(string)
+           i=i+LR-1
+         endif
+         i=i+1
+       if(i.le.L-LF+1) goto 10
+       return
+       end subroutine Mreplace
 
       SUBROUTINE STUB_HIT(NAME)
       CHARACTER*(*) NAME

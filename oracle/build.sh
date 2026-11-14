@@ -72,15 +72,15 @@ if [ "$MOD" = emm ]; then
     $PY -I "$ORACLE/aimms_fortran.py" uaimms.f90
     sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
     STUBS=emm_stubs_aimms.f90
-    gfortran $FLAGS -c "$ORACLE/aimms_intel.f90"
-    AIMMS_OBJS="aimms_intel.o uaimms.o"
+    AIMMS_OBJS="uaimms.o"   # Intel ifcore/ifport stand-ins are already in emm_modules.f90
   fi
   # Modules first: udat.f holds two that uldsm.f and util.f use.
   gfortran $FLAGS -c "$ORACLE/emm_modules.f90" ecp_row_col.f90 efd_row_col.f90 udat.f90 uesql.f90
   # The big files compile in parallel.
   for s in util uldsm uefp uefd uecp unugs udaf ucape uread ephrts; do gfortran $FLAGS -c $s.f90 & done; wait
   if [ -n "$AIMMS_OBJS" ]; then gfortran $FLAGS -c uaimms.f90; fi
-  gfortran $FLAGS -c wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$ORACLE/stubs.f90" "$STUBS" load_restart.f90 \
+  gfortran $FLAGS -cpp -c "$ORACLE/stubs.f90"     # preprocessed since the industrial build (POSUNIT)
+  gfortran $FLAGS -c wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$STUBS" load_restart.f90 \
     oracle_state.f90 "$ORACLE/efd_standin.f90" "$ORACLE/driver_emm.f90"
   rm -f "$WORK/run_emm/oracle$EXE"
   gfortran -o "$WORK/run_emm/oracle$EXE" driver_emm.o efd_standin.o oracle_state.o load_restart.o \
