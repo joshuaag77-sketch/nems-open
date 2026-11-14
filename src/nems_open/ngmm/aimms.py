@@ -209,10 +209,12 @@ def domains() -> dict[str, list[str]]:
 def composite(name: str, dims: list[str], arr: np.ndarray) -> str:
     """One AIMMS composite table, every element (zeros included: the file is read in merge mode)."""
     arr = np.asarray(arr, dtype=np.float64)
-    lines = ["COMPOSITE TABLE:", "  " + "  ".join(dims) + "  " + name]
-    for idx in np.ndindex(arr.shape):
-        lines.append("  " + "  ".join(str(i + 1) for i in idx) + f"  {arr[idx]:.17g}")
-    return "\n".join(lines) + "\n;\n"
+    rows = [[str(i + 1) for i in idx] + [f"{arr[idx]:.17g}"] for idx in np.ndindex(arr.shape)]
+    head = list(dims) + [name]
+    # AIMMS reads composite tables by column position: every entry must end where its header ends.
+    width = [max([len(h)] + [len(r[c]) for r in rows]) for c, h in enumerate(head)]
+    fmt = lambda cells: " " + " ".join(x.rjust(w) for x, w in zip(cells, width))
+    return "COMPOSITE TABLE:\n" + "\n".join([fmt(head)] + [fmt(r) for r in rows]) + "\n;\n"
 
 
 def write_inputs(run: Path, arrays: dict, year: int, itr: int, ncrl: int = 0, fcrl: int = 0, cycle: int = 1) -> Path:

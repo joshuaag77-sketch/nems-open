@@ -1,4 +1,5 @@
 """The driver for EIA's real NGMM (nems_open.ngmm.aimms): the parts that need no AIMMS."""
+import re
 import shutil
 
 import numpy as np
@@ -50,6 +51,11 @@ def test_inputs_file_round_numbers(tmp_path):
     p = aimms.write_inputs(tmp_path, arrays, 2030, 1)
     assert p.name == "GlobalDataToAimms_2030_01.txt"
     text = p.read_text()
-    assert "  M1  NCNTRL_CURIYR\n  1  41\n;" in text
-    assert "  MNUMCR  MNUMYR  MPBLK_PNGEL\n  1  1  1.5\n  1  2  1.5\n  2  1  1.5\n  2  2  1.5\n;" in text
+    assert " M1 NCNTRL_CURIYR\n  1            41\n;" in text
+    assert " MNUMCR MNUMYR MPBLK_PNGEL\n      1      1         1.5\n" in text
     assert "NGTDMREP_OGPRRNG" in text
+    for block in text.split("COMPOSITE TABLE:\n")[1:]:   # AIMMS reads by position: entries end under their headers
+        lines = block.split("\n;")[0].split("\n")
+        ends = [m.end() for m in re.finditer(r"\S+", lines[0])]
+        for line in lines[1:]:
+            assert [m.end() for m in re.finditer(r"\S+", line)] == ends, line
