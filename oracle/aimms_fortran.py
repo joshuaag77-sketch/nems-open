@@ -49,15 +49,7 @@ def ecp_pass(path: Path) -> None:
     """Debug writes in uecp.f / uefd.f (FORMATs tagged 1X,"NAME",...) that print INTEGER items under F edits: Intel
     writes them, gfortran stops. Their F edits become G edits, which take both. Only those debug lines change."""
     text = path.read_text(encoding="latin-1")
-    tagged = re.compile(r'^(\s*\d+\s+FORMAT\(\s*1X\s*,\s*"[A-Za-z0-9_$]+".*)$', re.I | re.M)
     k = 0
-    def g(m):
-        nonlocal k
-        new = re.sub(r"(?<![A-Za-z0-9_])F(\d+)\.(\d+)",            # G needs at least one digit after the point
-                     lambda f: f"G{f.group(1)}.{max(int(f.group(2)), 1)}", m.group(1))
-        k += new != m.group(1)
-        return new
-    text = tagged.sub(g, text)
     # !dsiret (EPO$COAL) writes 2 + 26 items with "i4,i5,23f5.1": format reversion puts a REAL under i4. Room for all.
     text, j = re.subn(r"(format\(1h ,'!dsiret',i4,i5,)23(f5\.1\))", lambda m: m.group(1) + "99" + m.group(2), text, flags=re.I)
     k += j
@@ -65,6 +57,16 @@ def ecp_pass(path: Path) -> None:
     # gfortran wants the comma between descriptors.
     text, j = re.subn(r"\(1h,'", "(1h,,'", text, flags=re.I)
     k += j
+    # Tagged: 1X,"NAME",...  or  1x,'!name ',...  or  1h ,'!name',...  (EIA's debug lines start with a label).
+    tagged = re.compile(r"""^(\s*\d+\s+FORMAT\(\s*(?:1X\s*,|1H\s?,|1H,,)\s*(?:"[A-Za-z0-9_$]+"|'![A-Za-z0-9_$ ]+').*)$""",
+                        re.I | re.M)
+    def g(m):
+        nonlocal k
+        new = re.sub(r"(?<![A-Za-z0-9_])F(\d+)\.(\d+)",            # G needs at least one digit after the point
+                     lambda f: f"G{f.group(1)}.{max(int(f.group(2)), 1)}", m.group(1))
+        k += new != m.group(1)
+        return new
+    text = tagged.sub(g, text)
     path.write_text(text, encoding="latin-1")
     print(f"aimms_fortran.py --ecp: {path.name}: {k} tagged debug format(s) with F edits as G edits")
 
