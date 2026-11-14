@@ -33,6 +33,28 @@
     .sort((a, b) => order[a[1].grade] - order[b[1].grade])
     .map(([, p]) => `<tr><td><b>${esc(p.name)}</b></td><td>${pill(p.grade, p.label)}</td><td>${evidence(p)}</td></tr>`).join("");
 
+  // How close is the whole model to EIA: one run with every finished module on (scripts/full_model.py).
+  fetch("data/full_model.json").then((r) => (r.ok ? r.json() : null)).then((W) => {
+    if (!W) return;
+    const pct = (x) => (x === undefined || x === null ? "" : `${x > 0 ? "+" : ""}${x.toFixed(1)}%`);
+    const cls = (x) => (x === undefined || x === null ? "" : Math.abs(x) <= 2 ? "gap-ok" : Math.abs(x) <= 10 ? "gap-mid" : "gap-far");
+    const fmt = (x) => (x === null || x === undefined ? "" : Math.abs(x) >= 100 ? Math.round(x).toLocaleString("en-US") : x.toFixed(2));
+    const yrs = W.shown;
+    const body = W.rows.map((r) => {
+      const cells = yrs.map((y) => r.model === null ? `<td class="num" data-label="${y}: ">${fmt(r.eia && r.eia[y])}</td>`
+        : `<td class="num ${cls(r.gap_pct[y])}" data-label="${y}: " title="Model ${fmt(r.model[y])}, EIA ${fmt(r.eia[y])} ${esc(r.unit)}">${pct(r.gap_pct[y])}</td>`).join("");
+      const worst = r.model === null ? `<td data-label="Worst: "><i>${esc(r.note)}; EIA's value shown</i></td>`
+        : `<td class="num ${cls(r.worst_gap_pct)}" data-label="Worst year: ">${pct(r.worst_gap_pct)}</td>`;
+      return `<tr><td>${esc(r.label)} <span class="fine">${esc(r.unit)}</span></td>${cells}${worst}</tr>`;
+    }).join("");
+    const on = Object.entries(W.switches).map(([k, v]) => `${k}=${v}`).join(", ");
+    el("whole").innerHTML = `<h2>How close is the whole model to EIA?</h2>
+      <p>One run of the whole model with every finished module switched on, on EIA's reference settings, against EIA's AEO2026 reference (cb2026). Each cell is the gap, model over EIA minus one; hover for both values.</p>
+      <div class="tbl"><table class="rt board-t"><thead><tr><th>Number</th>${yrs.map((y) => `<th>${y}</th>`).join("")}<th>Worst year</th></tr></thead><tbody>${body}</tbody></table></div>
+      <p class="fine">Run ${esc(W.generated)}${W.minutes ? `, ${W.minutes} minutes` : ""}; ${W.converged_years} of ${W.years[1] - W.years[0] + 1} years converged. Switches: ${esc(on)}. Sectors on EIA's ported code: ${esc(W.ported.join(", "))}. Not landed yet: ${esc(W.not_landed.join(", ") || "none")}. ${esc(W.method)}</p>`;
+    el("whole").hidden = false;
+  }).catch(() => {});
+
   el("sets").innerHTML = Object.entries(F.sets).map(([name, s]) => {
     const rows = Object.entries(s.outputs).map(([, o]) => {
       const by = [...new Set(Object.values(o.modules))].map((k) => F.parts[k].name);
