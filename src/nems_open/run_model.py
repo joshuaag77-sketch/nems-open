@@ -71,6 +71,7 @@ class RunResult:
     ogsm: dict | None = None                 # EIA's HSM output arrays (ogngprd, ogcoprd, ognowell, ...), ogs="hsm"
     gas: dict | None = None                  # gas market by year (61,): henry_hub, wellhead (1987 $), production,
                                              # expected, exports (Bcf); ogs="ngmm" or "hsm"
+    coal: dict | None = None                 # coal="aimms": EIA's CMM production by year (COALPROD2 column) and seconds
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -99,7 +100,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
         macro: str | None = None, ogs: str = "standin", record=None, lfmm: str | None = None,
-        ind: str = "oracle") -> RunResult:
+        ind: str = "oracle", coal: str | None = None) -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. ind: with "industrial" in ported, "oracle" supplies EIA's industrial fuel use
     (fixed), "ported" runs the ported industrial year loop (industrial/year.py; needs the industrial oracle's dumps).
@@ -121,13 +122,20 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     lfmm: None keeps refined product prices on the supply stand-in and refinery fuel at the baseline;
     "standin" runs the fitted LFMM stand-in (nems_open/lfmm, docs/lfmm_plan.md) each iteration: refinery
     fuel use (QBLK q*rf, folded into industrial use) from the loop's product demand, Brent and gas price,
-    and gasoline, diesel, jet and residual prices in place of the supply stand-in's. Off by default."""
+    and gasoline, diesel, jet and residual prices in place of the supply stand-in's. Off by default.
+    coal: None keeps coal prices on the supply stand-in's curves; "aimms" runs EIA's real coal model (coal.ams)
+    in AIMMS once per iteration on the loop's coal use and fuel prices, and its delivered coal prices replace
+    the stand-in's (nems_open/coal/aimms_couple.py; needs AIMMS and, once, its cb2026 reference run)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
     if lfmm not in (None, "standin"):
         raise ValueError("lfmm must be None or 'standin'")
+    if coal not in (None, "aimms"):
+        raise ValueError("coal must be None or 'aimms'")
+    if coal == "aimms" and baseline != "cb2026":
+        raise ValueError("coal='aimms' runs EIA's coal model on cb2026's inputs, so the baseline must be cb2026")
     if ogs not in ("standin", "ngmm", "hsm", "aimms"):
         raise ValueError("ogs must be 'standin', 'ngmm', 'hsm' or 'aimms'")
     if ogs == "aimms" and baseline != "cb2026":
@@ -150,6 +158,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         from nems_open.ngmm import GasMarket
         market = GasMarket(baseline, base=base)
     aimms_gas = expected = None
+    aimms_coal = None
     within, between = Settings.load("conv"), Settings.load("icnv")
     prices = {k: v.copy() for k, v in base.items() if k.startswith("MPBLK/")}
     q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
@@ -181,6 +190,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         if ogs == "aimms":   # EIA's NGMM in AIMMS (nems_open/ngmm/aimms.py), one process per cycle
             from nems_open.ngmm.aimms import AimmsGas
             market = aimms_gas = AimmsGas(start_year, expected=expected)
+        if coal == "aimms":   # EIA's coal model in AIMMS (nems_open/coal/aimms_couple.py), one process per cycle
+            from nems_open.coal.aimms_couple import AimmsCoal
+            aimms_coal = AimmsCoal(start_year, cycle=cycle)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -210,6 +222,12 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 else:
                     pf = r.power_fuel
                 s = supply.solve(q, oil, carbon, power_fuel=pf, co2_el=r.co2_el, shifts=shifts, gas=market)
+            if aimms_coal is not None:   # coal prices from EIA's CMM, with the supply side's carbon adders and levers
+                mult = shifts.price if shifts else {}
+                for k, v in aimms_coal.prices().items():
+                    if k in s.prices:
+                        p = v[:, j] * (mult[k][:, j] if k in mult else 1.0)
+                        s.prices[k][:, j] = p + (s.carbon_adders[k][:, j] if k in s.carbon_adders else 0.0)
             if lf_prices:   # refined product prices from the LFMM stand-in, with the supply side's carbon adders and levers
                 mult = shifts.price if shifts else {}
                 for k, v in lf_prices.items():
@@ -243,6 +261,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     if record is not None:
                         record("demand", cycle=cycle, year=year, itr=itr, fcrl=ctl.fcrl, j=j, prices=prices, q=q)
                     # Supply: prices and power-sector fuel use out, tested against what it saw.
+                    if aimms_coal is not None:   # the CMM solves once per iteration on the coal use just settled
+                        aimms_coal.begin(year, itr, q, prices, ctl.fcrl)
                     if aimms_gas is not None:   # NGMM solves once per iteration on the demand just settled
                         aimms_gas.begin(year, itr, q, prices, ctl.fcrl)
                     s, fuel = solve_supply(j, itr, ctl.fcrl, tested and relax)
@@ -293,6 +313,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             demand.close()  # stops the ported sectors' worker processes
             if aimms_gas is not None:
                 aimms_gas.close()
+            if aimms_coal is not None:
+                aimms_coal.close()
         if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production
             from nems_open.ngmm.aimms import hsm_expected
             expected = hsm_expected(aimms_gas.wellhead_ratio(), _oil_ratio(oil, base))
@@ -313,7 +335,11 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)
         from nems_open.ogsm import couple
         hsm = couple.production(market.wellhead_ratio(), _oil_ratio(oil, base))
-    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm, gas)
+    coal_out = None
+    if aimms_coal is not None:
+        coal_out = {"production": aimms_coal.production, "cmm_seconds": aimms_coal.seconds}
+    return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm, gas,
+                     coal_out)
 
 
 def _oil_ratio(oil, base):
@@ -349,6 +375,8 @@ def main(argv=None) -> None:
     ap.add_argument("--ogs", choices=("standin", "ngmm", "hsm", "aimms"), default="standin",
                     help="gas prices and production: the stand-in's curves; the gas market (ngmm); or the gas market "
                          "with EIA's HSM between cycles and at the end (hsm, about 9 min per HSM run); or EIA's real NGMM in AIMMS (aimms)")
+    ap.add_argument("--coal", choices=("aimms",), default=None,
+                    help="coal prices from EIA's coal model run in AIMMS (nems_open/coal/aimms_couple.py)")
     ap.add_argument("--lfmm", choices=("standin",), default=None,
                     help="refining: the fitted LFMM stand-in for product prices and refinery fuel (docs/lfmm_plan.md)")
     ap.add_argument("--ind", choices=("oracle", "ported"), default="oracle",
@@ -370,7 +398,7 @@ def main(argv=None) -> None:
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs,
-            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro, lfmm=a.lfmm, ind=a.ind)
+            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro, lfmm=a.lfmm, ind=a.ind, coal=a.coal)
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:

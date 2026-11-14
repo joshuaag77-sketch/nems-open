@@ -59,6 +59,18 @@ FILE_CALL = """	Procedure File_Call {
 			  endif;
 			  ReadGlobalDataFromNEMS;
 			  MainExecution;
+			  ! what the solve was, for the showreel log (reads the math program's suffixes; changes nothing)
+			  info_rows := PartialLeastCostDomesticCoal.NumberOfConstraints;
+			  info_columns := PartialLeastCostDomesticCoal.NumberOfVariables;
+			  info_nonzeros := PartialLeastCostDomesticCoal.NumberOfNonzeros;
+			  info_objective := PartialLeastCostDomesticCoal.Objective;
+			  info_iterations := PartialLeastCostDomesticCoal.Iterations;
+			  info_solution_time := PartialLeastCostDomesticCoal.SolutionTime;
+			  info_status := PartialLeastCostDomesticCoal.ProgramStatus;
+			  info_solver := CurrentSolver('LP');
+			  write info_rows, info_columns, info_nonzeros, info_objective, info_iterations, info_solution_time,
+			        info_status, info_solver to file "../../coal/solve_info.txt" in replace mode;
+			  if FileExists("../../coal/export.on") then   ! diagnostics only; run_model's calls skip them
 			  sExportFile := "../../coal/export/coal_" + formatstring("%i", ncntrl_curcalyr(1)) + "_"
 			                 + formatstring("%>02i", ncntrl_curitr(1)) + ".txt";
 			  write EXPORT_LIST to file sExportFile in replace mode;
@@ -76,6 +88,7 @@ FILE_CALL = """	Procedure File_Call {
 			                 + formatstring("%>02i", ncntrl_curitr(1)) + ".txt";
 			  write dual_sub, dual_lig, dual_cont_s, dual_cont_u, dual_so2, dual_cap, dual_hg, dual_aci, dual_ind
 			        to file sExportFile in replace mode;
+			  endif;
 			Onerror err do
 			  ErrorHandler(err);
 			endblock;
@@ -83,6 +96,14 @@ FILE_CALL = """	Procedure File_Call {
 			COALResetOptions;
 		}
 		StringParameter sExportFile;
+		Parameter info_rows;
+		Parameter info_columns;
+		Parameter info_nonzeros;
+		Parameter info_objective;
+		Parameter info_iterations;
+		Parameter info_solution_time;
+		ElementParameter info_status { Range: AllSolutionStates; }
+		ElementParameter info_solver { Range: AllSolvers; }
 		Parameter dual_sub { IndexDomain: (DReg,pt2,cyr); }
 		Parameter dual_lig { IndexDomain: (DReg,pt2,cyr); }
 		Parameter dual_cont_s { IndexDomain: (SReg,Sulf,Mtyp,Rank,DReg,cyr); }
@@ -118,7 +139,34 @@ Model Main_wrapper {
     Parameter req_itrs;
     Parameter wr_year;
     Parameter wr_itr;
+    Parameter req_year;
+    Parameter req_itr;
+    Parameter req_quit;
+    Parameter served;
     Procedure MainInitialization;
+    Procedure serve_coal {
+        Body: {
+            ! nems-open: wait for ../../coal/serve.txt, run the CMM once for that year and iteration, repeat;
+            ! req_quit := 1 ends it. One process for a whole run, so the model keeps its lag state as in NEMS.
+            served := 0;
+            while served < 100000 do
+                if FileExists("../../coal/serve.txt") then
+                    req_quit := 0;
+                    read from file "../../coal/serve.txt";
+                    FileDelete("../../coal/serve.txt", 0);
+                    if req_quit = 1 then
+                        break;
+                    endif;
+                    cl::api_curcalyr := req_year;
+                    cl::api_curitr := req_itr;
+                    cl::File_Call;
+                    served += 1;
+                else
+                    Delay(0.1);
+                endif;
+            endwhile;
+        }
+    }
     Procedure MainExecution;
     Procedure run_coal {
         Body: {
@@ -188,8 +236,10 @@ def _table(name: str, dims: list[str], arr: np.ndarray, year: int) -> str | None
     return _aligned(head, rows)
 
 
-def write_input(year: int, itr: int, folder: Path, snapshot: Snapshot | None = None) -> Path:
-    """coal/toAIMMS/GlobalDataToAIMMS_<year>_<itr>.txt from the restart (converged values)."""
+def write_input(year: int, itr: int, folder: Path, snapshot: Snapshot | None = None, arrays: dict | None = None,
+                fcrl: int = 0) -> Path:
+    """coal/toAIMMS/GlobalDataToAIMMS_<year>_<itr>.txt from the restart (converged values), with `arrays`
+    ({"QBLK/QCLEL": array, ...}, upper-case restart keys) in place of the restart's where given."""
     s = snapshot or Snapshot()
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -203,6 +253,10 @@ def write_input(year: int, itr: int, folder: Path, snapshot: Snapshot | None = N
             arr = np.asarray(itr)
         elif t.key == "NCNTRL/CURIYR":
             arr = np.asarray(year - FIRST_NEMS_YEAR + 1)
+        elif t.key == "NCNTRL/FCRL":
+            arr = np.asarray(fcrl)
+        elif arrays and t.key in arrays:
+            arr = arrays[t.key]
         else:
             arr = s[t.key]
         tab = _table(f"{t.block}_{t.name}", _dims(t.variable), arr, year)
@@ -224,9 +278,11 @@ def add_file_call(ams: Path) -> None:
     ams.write_text(text, encoding="utf-8")
 
 
-def prepare(run: Path, mps: bool = False) -> None:
+def prepare(run: Path, mps: bool = False, steo: str = "shipped") -> None:
     """mps: switch on EIA's own debug branch in MainExecution (AIMCLSolvDebug, hard-set to 0 in the shipped
-    model), which writes CPLEX's generated LP as an MPS file at every solve, with the row and column mapping."""
+    model), which writes CPLEX's generated LP as an MPS file at every solve, with the row and column mapping.
+    steo: "shipped" keeps the repo's clsteo.txt (what the checks in docs/coal_aimms.md used); "regenerate" writes it
+    from steovars.csv as NEMS does each run (EXC = 1), not yet checked against cb2026."""
     run = Path(run)
     dst = run / "coal"
     if dst.exists():
@@ -242,6 +298,8 @@ def prepare(run: Path, mps: bool = False) -> None:
             raise SystemExit("AIMCLSolvDebug switch not found where expected")
         ams.write_text(text[:at] + "AIMCLSolvDebug :=1;" + text[at + len(marker):], encoding="utf-8")
     write_runval(run)
+    if steo == "regenerate":   # NEMS regenerates it each run (EXC = 1)
+        (dst / "clsteo.txt").write_text(clsteo_text())
     for sub in ("log", "export", "toAIMMS", "fromAIMMS"):
         (dst / sub).mkdir(exist_ok=True)
     w = run / "main" / "wrapper"
@@ -296,6 +354,7 @@ def main(argv) -> None:
         for i in range(1, itrs + 1):
             write_input(y, i, run / "coal" / "toAIMMS", s)
     request(run, first, last, itrs)
+    (run / "coal" / "export.on").write_text("")
     subprocess.run(command(run), cwd=run / "main" / "wrapper", check=False)
 
 
@@ -361,3 +420,36 @@ def read_export(path: Path) -> dict[str, dict]:
             except ValueError:
                 pass
     return out
+
+
+def clsteo_text() -> str:
+    """coal/clsteo.txt as NEMS writes it before every run when the coal module is on (EXC = 1 in cb2026's scedes):
+    EIA's steo_load.py (steovars_write_to_clsteo) on steovars.csv. The clsteo.txt shipped in the repo is an older
+    STEO vintage (docs/coal_inputs.md); with it the CMM's STEO-year constraints do not fit cb2026's inputs."""
+    import os
+    import shutil as _sh
+    import tempfile
+    from types import SimpleNamespace
+    from nems_open import steo
+    from nems_open.paths import UPSTREAM
+    upstream = Path(UPSTREAM)
+    names, nvars = steo.block_order(upstream / "includes" / "steoblock")
+    other = steo.SteoBlock(names, nvars)
+    pyfiler = SimpleNamespace(ncntrl=SimpleNamespace(exc=1, exg=0), other=other, utils=SimpleNamespace(baseyr=1990))
+    sys.path.insert(0, str(upstream / "models" / "main"))
+    try:
+        import steo_load
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "input").mkdir()
+            (Path(tmp) / "coal").mkdir()
+            for f in ("steovars.csv", "steolist.txt"):
+                _sh.copy(upstream / "input" / f, Path(tmp) / "input" / f)
+            cwd = Path.cwd()
+            os.chdir(tmp)
+            try:
+                steo_load.read_all_steo_vars(None, pyfiler)
+            finally:
+                os.chdir(cwd)
+            return (Path(tmp) / "coal" / "clsteo.txt").read_text()
+    finally:
+        sys.path.remove(str(upstream / "models" / "main"))
