@@ -48,3 +48,14 @@ def test_subbituminous_caps_are_active_somewhere(macro):
     p = electric.power_demand(2030, macro)
     assert p.sub_active.sum() > 20
     assert (p.sdvconct[p.sub_active] < electric.SUB_ACTIVE_MAX).all()
+
+
+@pytest.mark.parametrize("year", [2025, 2030, 2040])
+def test_tier1_bound_matches_what_cmm_wrote_back(macro, year):
+    """TrubndScrubbed + TrubndUnscrubbed against USO2GRP EFD_TIER1_LIM (curve, region, scrub, year)."""
+    from nems_open.coal import supply
+    keys = supply.Chain().keys
+    mine = electric.tier1_bound(year, keys, macro)
+    ref = np.asarray(macro.s["USO2GRP/efd_tier1_lim"], float)[:, :, :, year - 1990].sum(axis=2)
+    assert abs(mine.sum() / ref.sum() - 1) < 0.002
+    assert np.abs(mine - ref).max() < 6.0

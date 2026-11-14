@@ -59,12 +59,16 @@ def demands(year: int, macro: Macro | None = None, data=None) -> Demand:
 
 
 def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=None, rcaf: float | None = None,
-          solver: str = "highs", steo: dict | None = None, tolerance: float = 0.02, power=None) -> dict:
+          solver: str = "highs", steo: dict | None = None, tolerance: float = 0.02, power=None,
+          tier1: np.ndarray | None = None) -> dict:
     """Solve one year. `step` has sc_quan, sc_1_price87 and cap (tons) as from supply.base_year/Chain.year.
     power: an electric.PowerDemand. Given, electricity demand is met per plant type and region and the
     sub-bituminous and lignite diversity caps apply (coal.ams SubbituminousDiversity, LigniteDiversity),
     each with a 999 slack (EIA's has none; the slack is reported and should stay zero); dem.elec is then
-    ignored. Without it, one electricity demand per region as before."""
+    ignored. Without it, one electricity demand per region as before.
+    tier1: electric.tier1_bound, (curves, 16) TBtu. Given, electricity deliveries from a curve to a region
+    above it pay the second-tier premium max(trate3 - trate2, 0) * RCAF per MMBtu (coal.ams
+    TransportationBound*, BalanceScrubUnscrubTier*, MakeSureSecondTierGetsFirstTierPrice)."""
     data = data or inputs.load()
     rcaf = rcaf if rcaf is not None else float(transport.rcaf()["cum"][year - 1990])
     nc, nd = len(keys), len(dem.regions)
@@ -73,6 +77,8 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
     qstep = np.asarray(step["sc_quan"]) * btu[:, None]
 
     trate2, trate1, flag = data.param("trate2"), data.param("trate1"), data.param("coalgroupflag")
+    trate3 = data.param("trate3")
+    tier2 = {}         # (c, d) -> second-tier premium per MMBtu, where positive
     ship = {}          # (sector, c, d, plant type or -1) -> rate per MMBtu
     types = {di: ([t for t in range(power.demand.shape[1]) if power.demand[di, t] > 0] if power is not None else [-1])
              for di in range(len(dem.regions))}
@@ -83,6 +89,9 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             if r is not None and r < 900 and rank != "4P":
                 for t in types[di]:
                     ship[("E", ci, di, t)] = r * rcaf / btu[ci]
+                r3 = trate3.get((sreg, sulf, mtyp, rank, d, "E"))
+                if tier1 is not None and r3 is not None and r3 - r > 0:
+                    tier2[(ci, di)] = (r3 - r) * rcaf / btu[ci]
             for sec in NON_ELEC:
                 if flag.get((d, sec, sreg, sulf, mtyp, rank)) == -1:
                     r = trate1.get((sreg, sulf, mtyp, rank, d, sec), 0.0)
@@ -96,6 +105,7 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
     E = m.add_variables(lower=0, coords=[pd.RangeIndex(nc, name="c")], name="E")
     m.add_constraints(P.sum("s") <= cap_tbtu, name="cap")
 
+    ship_keys = list(ship)
     sec_c, sec_d, sec_t = np.array([i[0] for i in ship]), np.array([i[2] for i in ship]), np.array([i[3] for i in ship])
     cur = np.array([i[1] for i in ship])
     # curve balance: shipments + exports = production
@@ -129,6 +139,20 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
                     m.add_constraints(X.isel(k=cs).sum() - sl <= cap[di, t], name=f"div_{kind}_{di}_{t}")
                     slack_cost = slack_cost + 999.0 * sl
                     slacks[(kind, di, t)] = sl
+    tier_cost = 0
+    if tier1 is not None and tier2:
+        e_idx = np.where(sec_c == "E")[0]
+        cd = [(ship_keys[k][1], ship_keys[k][2]) for k in e_idx]
+        idx2 = np.array([k for k, g in zip(e_idx, cd) if g in tier2])
+        X2 = m.add_variables(lower=0, coords=[pd.Index(idx2, name="k")], name="X2")
+        m.add_constraints(X2 - X.sel(k=idx2) <= 0, name="tier2_le_tier1")
+        prem = xr.DataArray(np.array([tier2[(ship_keys[k][1], ship_keys[k][2])] for k in idx2]), coords=[pd.Index(idx2, name="k")])
+        tier_cost = (X2 * prem).sum()
+        groups: dict = {}
+        for k in idx2:
+            groups.setdefault((ship_keys[k][1], ship_keys[k][2]), []).append(k)
+        for (ci, di), ks in groups.items():
+            m.add_constraints(X.sel(k=ks).sum() - X2.sel(k=ks).sum() <= tier1[ci, di], name=f"trubnd_{ci}_{di}")
     for sec in (() if power is not None else ("E",)) + NON_ELEC:
         target = dem.elec if sec == "E" else dem.other[sec]
         for di in range(nd):
@@ -153,7 +177,7 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             m.add_constraints(prod_mt + hi - lo >= steo[g] * (1 - tolerance), name=f"steo_lo_{g}")
             m.add_constraints(prod_mt + hi - lo <= steo[g] * (1 + tolerance), name=f"steo_hi_{g}")
             stock_cost = stock_cost + cost * (hi + lo)
-    obj = stock_cost + slack_cost + (P * price).sum() + (X * xr.DataArray(np.array(list(ship.values())), coords=[idx])).sum()
+    obj = stock_cost + slack_cost + tier_cost + (P * price).sum() + (X * xr.DataArray(np.array(list(ship.values())), coords=[idx])).sum()
     m.add_objective(obj)
     status, cond = m.solve(solver_name=solver, io_api="lp")
     out = dict(status=status, cond=cond, objective=float(m.objective.value) if status == "ok" else np.nan)

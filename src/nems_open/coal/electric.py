@@ -89,3 +89,33 @@ def power_demand(year: int, macro: Macro | None = None, data=None) -> PowerDeman
         if pu in delivered and 1 <= clrg[u] <= NREG and (pu,) in sprof:
             sdv[clrg[u] - 1, t - 1] += subdiv.get((int(sprof[(pu,)]), year), 0.0) * b
     return PowerDemand(demand, sub_cap, lig_cap, (sdv > 0) & (sdv < SUB_ACTIVE_MAX), sdv)
+
+
+def tier1_bound(year: int, keys: list, macro: Macro | None = None, data=None) -> np.ndarray:
+    """TrubndScrubbed + TrubndUnscrubbed (coal.ams 12921-13042): first-tier electricity transport volume
+    by supply curve and demand region, (len(keys), 16) TBtu. Each unit contributes
+    TranspProfile(Plant_T_Prof(pu_id, curve), year) * EMM_CL_BTUS in its region (EMM_CL_CLRG), if it sits
+    in an active plant group that year. Above it, deliveries pay the second-tier premium. The scrubbed and
+    unscrubbed bounds enter the LP only through their sum (BalanceScrubUnscrubTier1 lets the split float),
+    so only the sum is returned."""
+    macro, data = macro or Macro(), data or inputs.load()
+    s, yi = macro.s, year - 1990
+    names = unit_names(s)
+    n = int(np.asarray(s["COALEMM/num_cmm_units"]))
+    btus = np.asarray(s["COALEMM/emm_cl_btus"], float)[:, yi]
+    ecpt = np.asarray(s["COALEMM/emm_cl_ecpt"])[:, yi].astype(int)
+    clrg = np.asarray(s["COALEMM/emm_cl_clrg"]).astype(int)
+    prof = data.param("transpprofile")
+    curve = {tuple(k[1:]): i for i, k in enumerate(keys)}
+    by_unit: dict = {}
+    for (pu, *ck), tnum in data.param("plant_t_prof").items():
+        if tuple(ck) in curve:
+            by_unit.setdefault(pu, []).append((curve[tuple(ck)], int(tnum)))
+    out = np.zeros((len(keys), NREG))
+    for u in range(n):
+        pu, t, r = names[u], ecpt[u], clrg[u]
+        if not pu or t < 1 or t > NTYPE or not 1 <= r <= NREG:
+            continue
+        for ci, tnum in by_unit.get(pu, ()):
+            out[ci, r - 1] += prof.get((tnum, year), 0.0) * btus[u]
+    return out

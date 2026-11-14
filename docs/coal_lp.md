@@ -15,8 +15,17 @@ sub-bituminous caps only where 0 < Sdvconct_2 < 999. Each cap carries a 999 slac
 few cells in 2029 and 2030 need under 1 TBtu of it, because demand there exceeds both caps with no
 bituminous route. Those cells are left out of the regional electricity price.
 
+Second-tier electricity transport is in (`electric.tier1_bound`, `lp.solve(tier1=...)`): the tier-1 bound
+matches EFD_TIER1_LIM (12,124 vs 12,129 TBtu in 2025, exact in 2040). It changes nothing in cb2026, faithfully:
+the premium is trate3 - trate2, and the shipped trate3 equals trate2 on all 224 electricity routes.
+
+SO2 does not bind in cb2026 either, so it is not ported: SulfpenConstraint is generated only before the
+CSAPR start year (2015), and the regional Copy_SULFPNConstraint allows Tso2_lim_by_clrg2 * 1000 (about
+145,000) against a regional sulfur load in the tens. Their escape variables are commented out of EIA's
+variable set, so they are hard limits when active.
+
 ## What it leaves out (the real model has 125 equation families)
-Second-tier electricity transport and its price rule, contracts, the scrubbed/unscrubbed split and SO2 and mercury, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
+Contracts, mercury and activated carbon, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
 
 ## Substitutions for the AIMMS case-file lag state
 | Quantity | Where the model gets it | What is used here |
@@ -48,8 +57,8 @@ Against the one-demand-per-region LP below: total absolute regional miss falls f
 111 to 51 in 2026, 93 to 82 in 2030, 46 to 16 in 2035, 44 to 31 in 2040. Lignite (4LGN) is within 3 Mt in every year
 (it was 50% high in 2030 and 21 Mt where EIA has 0 in 2035). Worse: 2027 (44 to 95), and from 2027 to 2030
 Interior (3INR) is 30 to 60% high and PRB 15 to 20% low, with the electric price about 20% high. The likely
-cause is the missing scrubbed/unscrubbed split and SO2 cost, which keep high-sulfur Interior coal out of
-unscrubbed plants in EIA's model; that is the next equation family to port.
+cause is contracts (ContractsScrubbed/Unscrubbed: minimum deliveries from named curves to plants); SO2 and
+second-tier transport were checked and do not bind in cb2026 (below). Contracts are the next family to port.
 
 ## Results against cb2026, one electricity demand per region (earlier reduced LP)
 | year | production Mt (model / EIA); by region 1APN, 2APR, 3INR, 4LGN, 5PRB, 6WSR | delivered price 1987$/MMBtu (model / EIA) |

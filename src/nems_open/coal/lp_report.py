@@ -14,8 +14,9 @@ EAST = ("1APN", "2APR", "3INR")
 SECTORS = {"PCLEL": ("E",), "PCLIN": ("I1", "I2", "I3"), "PMCIN": ("C1", "C2"), "PCLRS": ("R1", "R2")}
 
 
-def run(years, steo_years=(2025, 2026), by_type: bool = True):
-    """by_type: electricity demand per plant type with EIA's diversity caps (electric.py); False: one per region."""
+def run(years, steo_years=(2025, 2026), by_type: bool = True, tiers: bool = True):
+    """by_type: electricity demand per plant type with EIA's diversity caps (electric.py); False: one per region.
+    tiers: with by_type, the second-tier electricity transport premium above EIA's tier-1 bound."""
     s = Snapshot()
     ch = supply.Chain()
     btu, keys = ch.c.v["btu"], ch.keys
@@ -29,7 +30,8 @@ def run(years, steo_years=(2025, 2026), by_type: bool = True):
         if y in steo_years:
             bands = dict(Appalachia=st["appalachialimit"][y], Interior=st["interiorlimit"][y], West=st["westlimit"][y])
         power = electric.power_demand(y) if by_type else None
-        r = lp.solve(y, step, btu, keys, dem, steo=bands, power=power)
+        tier1 = electric.tier1_bound(y, keys) if by_type and tiers else None
+        r = lp.solve(y, step, btu, keys, dem, steo=bands, power=power, tier1=tier1)
         if r["status"] != "ok":
             rows.append(dict(year=y, status=r["status"]))
             break
@@ -69,6 +71,6 @@ def table(rows) -> str:
 
 
 if __name__ == "__main__":
-    flat = "--flat" in sys.argv
-    ys = [int(a) for a in sys.argv[1:] if a != "--flat"] or [2025, 2026, 2030, 2035]
-    print(table(run(ys, by_type=not flat)))
+    flags = {a for a in sys.argv[1:] if a.startswith("--")}
+    ys = [int(a) for a in sys.argv[1:] if not a.startswith("--")] or [2025, 2026, 2030, 2035]
+    print(table(run(ys, by_type="--flat" not in flags, tiers="--no-tiers" not in flags)))
