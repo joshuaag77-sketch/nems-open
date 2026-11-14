@@ -29,6 +29,7 @@ button:disabled,input:disabled{opacity:.55;cursor:default}
 .ex{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
 .ex button{font-size:13px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;text-align:left}
 .fine{font-size:13px;color:var(--ink3);margin:10px 0 0}
+.note-top{margin:0 0 12px;color:var(--ink2)}
 code{font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:4px}
 .out{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
 .out p,.out ul,.out ol{margin:0 0 10px}
@@ -49,18 +50,18 @@ code{font-size:12.5px;background:var(--panel2);padding:1px 5px;border-radius:4px
 @media(max-width:520px){form{flex-direction:column}#ask-go{padding:10px}}
 </style>
 <script defer src="site.js?v=12"></script>
-<script defer src="ask.js?v=2"></script>
+<script defer src="ask.js?v=3"></script>
 </head>
 <body>
 <main>
   <h1>Ask the model</h1>
   <p class="lead">Ask a plain question about energy in America to 2050. The model runs the scenario and answers with its own numbers, each one traced to where it came from.</p>
+  <p id="ask-note" class="fine note-top"></p>
   <form id="ask-form" autocomplete="off">
     <input id="ask-q" type="text" maxlength="600" aria-label="Your question" placeholder="e.g. What does a $50 carbon price do to CO2 in 2040?">
     <button id="ask-go" type="submit">Ask</button>
   </form>
   <div id="ask-ex" class="ex" aria-label="Example questions"></div>
-  <p id="ask-note" class="fine"></p>
   <div id="ask-out" class="out" aria-live="polite" hidden></div>
   <div id="legend"></div>
 </main>

@@ -428,6 +428,8 @@
       m.title = `Instant numbers come from a quick fit to ${S.emu.runs} runs of a fast version of the model. Each dot's hover gives how close the fit is.`;
     }
     const btn = $("run"), note = $("run-note");
+    // no real-run server (the hosted site): no run button, no mode pill, no levers only a full run can move
+    document.body.classList.toggle("no-server", !S.server && S.checked);
     if (!S.server) {
       btn.disabled = true;
       note.innerHTML = "The full model runs on your own computer (<code>python scripts/serve_2050.py</code>). This site shows instant numbers.";
@@ -530,6 +532,7 @@
     let seen = false;
     try { seen = localStorage.getItem("nems.guide.2050") === "done"; } catch (e) { /* storage blocked: show it */ }
     if (seen && !force) return;
+    if (!force && innerWidth < 860) return;   // phones open on the title and the numbers; the Guide button is there
     const box = $("guide"); let i = 0, lit = null;
     const done = () => { box.hidden = true; if (lit) lit.classList.remove("guide-on"); try { localStorage.setItem("nems.guide.2050", "done"); } catch (e) { /* not kept */ } };
     const show = () => {

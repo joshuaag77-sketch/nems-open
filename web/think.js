@@ -590,7 +590,7 @@
     if (autoplay) {
       apply(0, false);
       const token = S.token;
-      $("stage").scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
+      if (fromEl) $("stage").scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
       await pulse(fromEl || document.querySelector(`.chip[data-id="${id}"]`) || $("lever"), S.sc.entered || []);
       if (token !== S.token) return;
       S.pos = -1;

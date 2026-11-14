@@ -1,7 +1,7 @@
 // One shared navigation bar, footer and grade dot for every page. Plain DOM, no dependencies.
 (function () {
   // Three places for everyone; the rest lives under "For experts" (experts.html).
-  const PAGES = [["2050.html", "Your 2050"], ["think.html", "Watch it think"], ["ask.html", "Ask"], ["how.html", "How it was built"]];
+  const PAGES = [["2050.html", "Your 2050"], ["think.html", "Watch it think"], ["ask.html", "Ask"], ["how.html", "How it's built"]];
   const EXPERT = ["experts.html", "engine3d.html", "index.html", "scoreboard.html", "datacenter.html", "switches.html", "about.html"];
   const here = (location.pathname.split("/").pop() || "2050.html").toLowerCase().replace(/\.html$/, "") + ".html";
   const css = document.createElement("style");
@@ -22,7 +22,7 @@ body.fixed-page:not(.flat) .site-foot{display:none}
 .gd-legend{display:flex;flex-wrap:wrap;gap:4px 14px;font:12px system-ui,-apple-system,"Segoe UI",sans-serif;color:#a9a79f;align-items:center}
 .gd-legend .gd{margin:0 5px 0 0}
 .gd-tip{position:absolute;z-index:90;background:#0f1419;color:#e8e6df;border:1px solid #3a4351;border-radius:8px;padding:8px 10px;font:12.5px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5)}
-@media(max-width:640px){.site-nav{gap:2px;padding:6px 10px;overflow-x:auto}.site-nav b{display:none}.site-nav a{padding:5px 8px}}`;
+@media(max-width:640px){.site-nav{gap:2px;padding:6px 10px;overflow-x:auto}.site-nav b{display:none}.site-nav a{padding:11px 8px}}`;
   document.head.appendChild(css);
   const nav = document.createElement("nav");
   nav.className = "site-nav";
