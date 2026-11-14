@@ -91,3 +91,19 @@ Export that would settle it: for each year of the reference run, the ECP input a
 
 ### Capacity credit
 ECP computes intermittent credits in `CAP_CREDIT` (`uecp.f` 40065): a net-load-weighted average over the 864 hours (weight = (net load / peak)^5) of each type's capacity factor, or the variance method (z-score `UPINTZ`) where thermal units dominate, stored in `EPIRCCR`. The inputs are the 864-hour system load (`DUCK_SYSTEM_LOAD`) and hourly renewable capacity factors, which are not in the restart either. The model's own method (top 88 hours of net load) is of the same family. Export that would settle it: `EPIRCCR(type, year)` by region from the same AIMMS transfer, which would let me check my credits directly.
+
+## ECP's own inputs rebuilt (2026-11-13, branch emm-capacity3)
+The data wall from emm-retire is down: the inputs it named are built from what EIA's Fortran builds them from.
+- **Retirement groups** (`emm/retire_groups.py`): EPGCAP and EPGFOM as `udat.f` makes them (lines 7395-7480, 10820-10880). Every unit that may retire is ranked by last year's margin, revenue less variable, fixed and emission costs per kW, with revenue from our own LP's energy prices (the reserve payment left out, as `udat.f` does). The national margin range is cut at 5/45/40/10% of the range (not of capacity, as the emm-retire notes said), and each group carries its fixed cost plus its operating-margin shortfall against the region's average. The loop tracks which plant-file units the LP has retired, so the cheapest-to-lose units go first. Age adder fixed: coal 0.0666 $/kW per year of age, gas 0 (`%XTRA Opt 2%`), not 3.74 $/kW for every unit over 30.
+- **Capacity credit** (`emm/capacity_credit.py`): CAP_CREDIT's variance method by region over the 864 typical hours, z = 3.19 (UPINTZ), plus the net peak (EP_NET_PEAK). The wind file's site standard deviation and correlation are not in the checkout; the formula's own cap makes them drop out, which is assumed.
+- **Regional reserve margins** as EP$MRM writes them: EPMRM x peak + net peak per region, dispatchable capacity at full value, firm transfers over links at 75% of capacity.
+- **Cost of capital** from EIA's formula (EPDSCRT, `uefp.f`): 0.6 x AA bond rate x (1 - 0.24) + 0.4 x (10-year Treasury + 5.75% x 1.25), about 7%, from the restart's macro rates; replaces my 6.5%. Combined cycle and coal pay EXTRARISK (3 points on debt and equity, `util.f` 893-902), +2.6 points after tax.
+- **Lead times** (UPCLYR): a type can come online no earlier than 2025 plus its construction years.
+
+Result, 2025 to 2035 (cells inside 5%): **2027 113/175, 2030 82/175, 2035 66/175** (emm-retire: 117/84/65). The reserve price now lands on EIA's: median 31.4 against RMAVG 30.8 $/kW-year in 2030 (24 vs 30 in 2027, 35 vs 30 in 2035; it was 14 with the old discount rate). Steam in 2035 matches (100 vs 101 GW, coal converted at the 2032 rule). Wind in 2027 is inside in all 25 regions.
+
+What still misses, and why it is now a question for the AIMMS reference run rather than a missing input:
+- Coal retires too fast before 2030 (115 vs 153 GW in 2027).
+- No new turbines (156 vs 260 GW in 2035): with the risk premium combined cycle costs about 48 $/kW-year against turbines' 40, but combined cycle also earns enough energy margin to win.
+- No solar or battery builds after the tax credits end (solar 337 GW flat from 2030; EIA keeps building).
+ECP's own LP, solved in AIMMS on the same inputs, shows which of its terms we are missing (docs/aimms_needs.md).
