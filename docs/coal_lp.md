@@ -5,8 +5,18 @@
 ## What the LP contains
 14 supply curves with 11 priced steps and a capacity limit; shipments to the 16 coal demand regions for electric power, residential/commercial (R1, R2), industrial (I1 to I3) and coking (C1, C2) over the feasible routes, at first-tier rates scaled by the RCAF escalator; US exports as fixed amounts from each supply region; STEO production bands for Appalachia, Interior and West in 2025 and 2026 (2% tolerance, stock slack priced 14, 12, 8).
 
+Electricity demand is met per plant type (pt2 = NUTSEC + 14, 38 groups) and demand region, as in EIA's
+DomesticElectricityDemandRequirement, with EIA's SubbituminousDiversity and LigniteDiversity caps
+(`coal/electric.py`, default in `lp_report.run`; `by_type=False` or `--flat` gives the older one-demand-per-region
+LP). The caps are rebuilt from EMM's unit-level coal burn and the plant shares in cmmProfiles.txt and
+match what the CMM wrote back to NEMS (USO2GRP EFD_SB_DVLIM, EFD_LG_DVLIM): exact from 2040, within 4%
+nationally in 2030 and 2035. Lignite caps apply in every cell (0.05 TBtu where no plant burns lignite);
+sub-bituminous caps only where 0 < Sdvconct_2 < 999. Each cap carries a 999 slack (EIA's has none); a
+few cells in 2029 and 2030 need under 1 TBtu of it, because demand there exceeds both caps with no
+bituminous route. Those cells are left out of the regional electricity price.
+
 ## What it leaves out (the real model has 125 equation families)
-Second-tier electricity transport and its price rule, contracts, sub-bituminous and lignite diversity limits, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
+Second-tier electricity transport and its price rule, contracts, the scrubbed/unscrubbed split and SO2 and mercury, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
 
 ## Substitutions for the AIMMS case-file lag state
 | Quantity | Where the model gets it | What is used here |
@@ -17,10 +27,31 @@ Second-tier electricity transport and its price rule, contracts, sub-bituminous 
 | Exports | international network and ICMM match | fixed from the restart: COALPROD2 minus COALPROD, by supply region |
 | Electric demand | Qdutzr less stocks | restart COALEMM/qclclnr summed over plant types; stocks ignored |
 | bsrzr_util | not found in the data | taken as 1 |
+| CMM_CL_BTUs_A / TBTU in Sdvconct_1_A | CMM.mdb Contracts table (not shipped) | 1 for plants with a Plant_T_Prof row in cmmProfiles.txt, else 0 |
 | Tolerance on STEO bands | steo_benchmark_cmm.csv | 2% |
 | STEO limits | clsteo.txt | the shipped file (a different vintage from steovars.csv for 2024 to 2026) |
 
-## Results against cb2026 (model / EIA)
+## Results against cb2026 (model / EIA), plant types and diversity caps (current default)
+| year | production Mt (model / EIA); by region 1APN, 2APR, 3INR, 4LGN, 5PRB, 6WSR | delivered price 1987$/MMBtu (model / EIA) |
+|---|---|---|
+| 2025 | 515 / 510 (93/82, 68/70, 66/77, 30/32, 211/207, 47/42) | PCLEL 1.31/1.05; PCLIN 1.73/1.64; PMCIN 2.29/2.65 |
+| 2026 | 503 / 495 (93/80, 57/74, 74/76, 30/32, 202/196, 47/36) | PCLEL 1.37/1.04; PCLIN 1.74/1.59; PMCIN 2.35/2.65 |
+| 2027 | 482 / 485 (90/70, 54/69, 89/63, 31/31, 185/216, 33/36) | PCLEL 1.22/1.02; PCLIN 1.75/1.55; PMCIN 2.56/2.65 |
+| 2028 | 438 / 441 (78/69, 55/66, 89/54, 29/29, 157/189, 31/32) | PCLEL 1.21/1.01; PCLIN 1.70/1.55; PMCIN 2.54/2.65 |
+| 2029 | 415 / 419 (77/65, 55/68, 89/58, 30/30, 135/169, 31/30) | PCLEL 1.23/1.02; PCLIN 1.69/1.55; PMCIN 2.53/2.65 |
+| 2030 | 397 / 400 (74/69, 55/67, 89/56, 28/28, 120/151, 30/29) | PCLEL 1.24/1.01; PCLIN 1.69/1.54; PMCIN 2.52/2.66 |
+| 2035 | 219 / 221 (66/68, 53/54, 46/39, 0/0, 32/36, 22/24) | PCLEL 1.11/1.03; PCLIN 1.60/1.51; PMCIN 2.49/2.65 |
+| 2040 | 181 / 185 (66/76, 45/47, 44/30, 0/0, 8/8, 19/24) | PCLEL 1.10/1.10; PCLIN 1.62/1.51; PMCIN 2.50/2.64 |
+| 2050 | 132 / 139 (65/70, 35/37, 11/10, 0/0, 4/4, 18/17) | PCLEL 1.02/1.02; PCLIN 1.70/1.50; PMCIN 2.49/2.60 |
+
+Against the one-demand-per-region LP below: total absolute regional miss falls from 110 to 35 Mt in 2025,
+111 to 51 in 2026, 93 to 82 in 2030, 46 to 16 in 2035, 44 to 31 in 2040. Lignite (4LGN) is within 3 Mt in every year
+(it was 50% high in 2030 and 21 Mt where EIA has 0 in 2035). Worse: 2027 (44 to 95), and from 2027 to 2030
+Interior (3INR) is 30 to 60% high and PRB 15 to 20% low, with the electric price about 20% high. The likely
+cause is the missing scrubbed/unscrubbed split and SO2 cost, which keep high-sulfur Interior coal out of
+unscrubbed plants in EIA's model; that is the next equation family to port.
+
+## Results against cb2026, one electricity demand per region (earlier reduced LP)
 | year | production Mt (model / EIA); by region 1APN, 2APR, 3INR, 4LGN, 5PRB, 6WSR | delivered price 1987$/MMBtu (model / EIA) |
 |---|---|---|
 | 2025 | 531 / 510 (93/82, 66/70, 39/77, 47/32, 247/207, 40/42) | PCLEL 1.49/1.05; PCLIN 1.95/1.64; PMCIN 2.12/2.65 |

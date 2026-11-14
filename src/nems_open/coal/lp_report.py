@@ -7,14 +7,15 @@ import sys
 
 import numpy as np
 
-from nems_open.coal import lp, steo, supply
+from nems_open.coal import electric, lp, steo, supply
 from nems_open.snapshot import Snapshot
 
 EAST = ("1APN", "2APR", "3INR")
 SECTORS = {"PCLEL": ("E",), "PCLIN": ("I1", "I2", "I3"), "PMCIN": ("C1", "C2"), "PCLRS": ("R1", "R2")}
 
 
-def run(years, steo_years=(2025, 2026)):
+def run(years, steo_years=(2025, 2026), by_type: bool = True):
+    """by_type: electricity demand per plant type with EIA's diversity caps (electric.py); False: one per region."""
     s = Snapshot()
     ch = supply.Chain()
     btu, keys = ch.c.v["btu"], ch.keys
@@ -27,7 +28,8 @@ def run(years, steo_years=(2025, 2026)):
         bands = None
         if y in steo_years:
             bands = dict(Appalachia=st["appalachialimit"][y], Interior=st["interiorlimit"][y], West=st["westlimit"][y])
-        r = lp.solve(y, step, btu, keys, dem, steo=bands)
+        power = electric.power_demand(y) if by_type else None
+        r = lp.solve(y, step, btu, keys, dem, steo=bands, power=power)
         if r["status"] != "ok":
             rows.append(dict(year=y, status=r["status"]))
             break
@@ -48,6 +50,7 @@ def run(years, steo_years=(2025, 2026)):
                     w = dem.elec[d] if sec == "E" else dem.other[sec][d]
                     num, den = num + v * w, den + w
             out[name] = (num / den if den else np.nan, float(s[f"MPBLK/{name}"][10, yi]))
+        out["slack"] = sum(r.get("slack", {}).values())
         rows.append(out)
     return rows
 
@@ -66,5 +69,6 @@ def table(rows) -> str:
 
 
 if __name__ == "__main__":
-    ys = [int(a) for a in sys.argv[1:]] or [2025, 2026, 2030, 2035]
-    print(table(run(ys)))
+    flat = "--flat" in sys.argv
+    ys = [int(a) for a in sys.argv[1:] if a != "--flat"] or [2025, 2026, 2030, 2035]
+    print(table(run(ys, by_type=not flat)))

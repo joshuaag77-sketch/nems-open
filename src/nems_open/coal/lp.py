@@ -59,8 +59,12 @@ def demands(year: int, macro: Macro | None = None, data=None) -> Demand:
 
 
 def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=None, rcaf: float | None = None,
-          solver: str = "highs", steo: dict | None = None, tolerance: float = 0.02) -> dict:
-    """Solve one year. `step` has sc_quan, sc_1_price87 and cap (tons) as from supply.base_year/Chain.year."""
+          solver: str = "highs", steo: dict | None = None, tolerance: float = 0.02, power=None) -> dict:
+    """Solve one year. `step` has sc_quan, sc_1_price87 and cap (tons) as from supply.base_year/Chain.year.
+    power: an electric.PowerDemand. Given, electricity demand is met per plant type and region and the
+    sub-bituminous and lignite diversity caps apply (coal.ams SubbituminousDiversity, LigniteDiversity),
+    each with a 999 slack (EIA's has none; the slack is reported and should stay zero); dem.elec is then
+    ignored. Without it, one electricity demand per region as before."""
     data = data or inputs.load()
     rcaf = rcaf if rcaf is not None else float(transport.rcaf()["cum"][year - 1990])
     nc, nd = len(keys), len(dem.regions)
@@ -69,18 +73,21 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
     qstep = np.asarray(step["sc_quan"]) * btu[:, None]
 
     trate2, trate1, flag = data.param("trate2"), data.param("trate1"), data.param("coalgroupflag")
-    ship = {}          # (sector, c, d) -> rate per MMBtu
+    ship = {}          # (sector, c, d, plant type or -1) -> rate per MMBtu
+    types = {di: ([t for t in range(power.demand.shape[1]) if power.demand[di, t] > 0] if power is not None else [-1])
+             for di in range(len(dem.regions))}
     for ci, k in enumerate(keys):
         sreg, sulf, mtyp, rank = k[1:]
         for di, d in enumerate(dem.regions):
             r = trate2.get((sreg, sulf, mtyp, rank, d, "E"))
             if r is not None and r < 900 and rank != "4P":
-                ship[("E", ci, di)] = r * rcaf / btu[ci]
+                for t in types[di]:
+                    ship[("E", ci, di, t)] = r * rcaf / btu[ci]
             for sec in NON_ELEC:
                 if flag.get((d, sec, sreg, sulf, mtyp, rank)) == -1:
                     r = trate1.get((sreg, sulf, mtyp, rank, d, sec), 0.0)
                     if r < 900:
-                        ship[(sec, ci, di)] = max(r, 0.0) * rcaf / btu[ci]
+                        ship[(sec, ci, di, -1)] = max(r, 0.0) * rcaf / btu[ci]
 
     m = linopy.Model()
     P = m.add_variables(lower=0, upper=qstep, name="P", coords=[pd.RangeIndex(nc, name="c"), pd.RangeIndex(qstep.shape[1], name="s")])
@@ -89,7 +96,7 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
     E = m.add_variables(lower=0, coords=[pd.RangeIndex(nc, name="c")], name="E")
     m.add_constraints(P.sum("s") <= cap_tbtu, name="cap")
 
-    sec_c, sec_d = np.array([i[0] for i in ship]), np.array([i[2] for i in ship])
+    sec_c, sec_d, sec_t = np.array([i[0] for i in ship]), np.array([i[2] for i in ship]), np.array([i[3] for i in ship])
     cur = np.array([i[1] for i in ship])
     # curve balance: shipments + exports = production
     cons_bal = {}
@@ -104,8 +111,25 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
         avg_btu = btu[sreg_idx[s]].mean()
         m.add_constraints(E.isel(c=sreg_idx[s]).sum() == dem.exports[si] * avg_btu, name=f"exp{si}")
 
-    demand_cons = {}
-    for sec in ("E",) + NON_ELEC:
+    demand_cons, type_cons, slack_cost, slacks = {}, {}, 0, {}
+    if power is not None:
+        rank = np.array([keys[i[1]][4] for i in ship])
+        for di in range(nd):
+            for t in types[di]:
+                sel = np.where((sec_c == "E") & (sec_d == di) & (sec_t == t))[0]
+                if not len(sel):
+                    continue
+                type_cons[(di, t)] = m.add_constraints(X.isel(k=sel).sum() == power.demand[di, t], name=f"dem_E_{di}_{t}")
+                for kind, ranks, cap, on in (("sub", ("2S",), power.sub_cap, power.sub_active[di, t]),
+                                             ("lig", ("3L", "5G"), power.lig_cap, True)):
+                    cs = sel[np.isin(rank[sel], ranks)]
+                    if not on or not len(cs):
+                        continue
+                    sl = m.add_variables(lower=0, name=f"slack_{kind}_{di}_{t}")
+                    m.add_constraints(X.isel(k=cs).sum() - sl <= cap[di, t], name=f"div_{kind}_{di}_{t}")
+                    slack_cost = slack_cost + 999.0 * sl
+                    slacks[(kind, di, t)] = sl
+    for sec in (() if power is not None else ("E",)) + NON_ELEC:
         target = dem.elec if sec == "E" else dem.other[sec]
         for di in range(nd):
             sel = np.where((sec_c == sec) & (sec_d == di))[0]
@@ -129,15 +153,26 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             m.add_constraints(prod_mt + hi - lo >= steo[g] * (1 - tolerance), name=f"steo_lo_{g}")
             m.add_constraints(prod_mt + hi - lo <= steo[g] * (1 + tolerance), name=f"steo_hi_{g}")
             stock_cost = stock_cost + cost * (hi + lo)
-    obj = stock_cost + (P * price).sum() + (X * xr.DataArray(np.array(list(ship.values())), coords=[idx])).sum()
+    obj = stock_cost + slack_cost + (P * price).sum() + (X * xr.DataArray(np.array(list(ship.values())), coords=[idx])).sum()
     m.add_objective(obj)
     status, cond = m.solve(solver_name=solver, io_api="lp")
     out = dict(status=status, cond=cond, objective=float(m.objective.value) if status == "ok" else np.nan)
     if status != "ok":
         return out
     p = P.solution.values
-    x = pd.Series(X.solution.values, index=pd.MultiIndex.from_tuples(list(ship), names=['sec', 'c', 'd']))
+    x = pd.Series(X.solution.values, index=pd.MultiIndex.from_tuples(list(ship), names=['sec', 'c', 'd', 't']))
+    dual = {k: float(c.dual.values) for k, c in demand_cons.items()}
+    if power is not None:   # one electricity price per region: the plant-type duals weighted by demand
+        for di in range(nd):
+            short = {t for (_, d2, t), v in slacks.items() if d2 == di and float(v.solution.values) > 1e-6}
+            # a cell that needed the 999 slack prices at the slack, not at coal: left out of the average
+            w = [(power.demand[di, t], float(type_cons[(di, t)].dual.values)) for t in types[di]
+                 if (di, t) in type_cons and t not in short]
+            if w and sum(a for a, _ in w) > 0:
+                dual[("E", di)] = sum(a * b for a, b in w) / sum(a for a, _ in w)
+        out["dual_type"] = {k: float(c.dual.values) for k, c in type_cons.items()}
+        out["slack"] = {k: float(v.solution.values) for k, v in slacks.items()}
     out.update(production_tbtu=p.sum(axis=1), steps=p, exports=E.solution.values, shipments=x, ship=ship, keys=keys,
-               dual={k: float(c.dual.values) for k, c in demand_cons.items()}, dem=dem,
+               dual=dual, dem=dem,
                production_tons=p.sum(axis=1) / btu)
     return out
