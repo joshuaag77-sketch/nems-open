@@ -84,3 +84,30 @@ def test_ported_with_state_is_kept():
     if not (ResidentialSector.dumped(2030) and CommercialSector.available(2030)):
         pytest.skip("oracle state not dumped")
     assert usable_ported(("residential", "commercial"), 2030) == ("residential", "commercial")
+
+
+ported_dumps = pytest.mark.skipif(
+    not __import__("nems_open.oracle_state", fromlist=["x"]).available("ys_in", 41, "ind"),
+    reason="the industrial oracle's start-of-year state is not dumped")
+slow = pytest.mark.skipif(__import__("os").environ.get("NEMS_SLOW") != "1", reason="set NEMS_SLOW=1")
+
+
+@slow
+@ported_dumps
+@needs_oracle
+@pytest.mark.parametrize("year", [2030, 2031])
+def test_ported_industrial_runs_in_the_runner(year):
+    """ind="ported": the runner's industrial sector runs the ported year loop (2031 starts one year past the 2030 dump)
+    and its US fuel use is the oracle's to 1e-3, with EIA's prices and macro."""
+    runner = DemandRunner(year, sectors=("industrial",), ind="ported")
+    runner.run_year()
+    d = IndustrialSector.oracle_out()
+    j = year - BASEYR
+    bad = {}
+    for k in ("qelin", "qngin", "qclin", "qdsin", "qlgin", "qrsin", "qpfin", "qotin", "qasin", "qbmin", "qpcin", "qmgin"):
+        raw = np.fromfile(d / f"{k}.bin", dtype=np.float32)
+        oracle = raw.reshape((MNUMCR, raw.size // MNUMCR), order="F")[MNUMCR - 1, j]
+        mine = runner.q[k][MNUMCR - 1, j]
+        if abs(mine - oracle) > 1e-3 * max(abs(oracle), 1e-3):
+            bad[k] = (float(mine), float(oracle))
+    assert not bad, bad

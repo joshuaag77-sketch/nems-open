@@ -7,7 +7,8 @@ From the second iteration on, each step is tested on what it changed (1% by EIA'
 with EIA's absolute tolerances) and its outputs are relaxed by EIA's factor per variable
 (most prices 0.5, power-sector fuel use 0.8, end-use quantities 1). Once every step passes,
 one more iteration runs with FCRL = 1 (the final convergence and reporting loop); passing
-again ends the year. At most MAXITR iterations plus that final one (cb2026: 2 + 1).
+again ends the year. At most maxitr iterations plus that final one (default: 20 + 1;
+EIA's cb2026 uses 2 + 1 across five cycles).
 cycles > 1 repeats the whole run, relaxing every year between cycles by EIA's intercycle
 factors, as NEMS's NRUNS does (cb2026 runs 5).
 
@@ -35,6 +36,7 @@ from nems_open.supply_standin import SupplyStandin
 from nems_open.supply_standin.data import FIRST_YEAR, LAST_YEAR, US
 
 PORTED = ("residential", "commercial")  # sectors run through EIA's ported modules by default
+DEFAULT_MAXITR = 20  # one-cycle policy shocks need more passes than cb2026's converged restart
 
 
 @dataclass
@@ -88,15 +90,19 @@ def default_elec_price(elec: str, baseline: str = "cb2026") -> str:
 
 
 def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LAST_YEAR,
-        baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
+        baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = DEFAULT_MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
-        macro: str | None = None, ogs: str = "standin", record=None, lfmm: str | None = None) -> RunResult:
+        macro: str | None = None, ogs: str = "standin", record=None, lfmm: str | None = None,
+        ind: str = "oracle") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
-    baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
+    baseline's prices and quantities. ind: with "industrial" in ported, "oracle" supplies EIA's industrial fuel use
+    (fixed), "ported" runs the ported industrial year loop (industrial/year.py; needs the industrial oracle's dumps).
+    elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
     (about 10 s an iteration, plus a pre-roll from 2021 to start_year); None picks
-    default_elec_price(elec, baseline). maxitr, cycles: NEMS's MAXITR and NRUNS.
+    default_elec_price(elec, baseline). maxitr, cycles: NEMS's MAXITR and NRUNS controls;
+    default to 20 and 1 so new policy shocks have time to settle. maxitr=2 restores cb2026's limit.
     relax=False is IRELAX = 0 (tests only, no relaxation). base: replace the baseline case's arrays
     (prices, quantities, Brent, macro) with these, e.g. a blend of EIA's cases (nems_open.uncertainty).
     macro: None keeps EIA's economy; "frbus" runs the economy module (nems_open.macro.drive) each cycle and feeds
@@ -159,7 +165,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         if macro == "frbus":
             from nems_open.macro.drive import scenario_macro
             path = scenario_macro(base, oil, prices if cycle > 1 else None)
-        demand = DemandAdapter(base, policy, start_year, ported, macro=path)
+        demand = DemandAdapter(base, policy, start_year, ported, macro=path, ind=ind)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -305,7 +311,10 @@ def main(argv=None) -> None:
                     help="oil and gas production: none (stand-in), or EIA's HSM on the run's prices (9 min extra)")
     ap.add_argument("--lfmm", choices=("standin",), default=None,
                     help="refining: the fitted LFMM stand-in for product prices and refinery fuel (docs/lfmm_plan.md)")
-    ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
+    ap.add_argument("--ind", choices=("oracle", "ported"), default="oracle",
+                    help="with industrial in --ported: EIA's fixed industrial fuel use, or the ported year loop")
+    ap.add_argument("--maxitr", type=int, default=DEFAULT_MAXITR,
+                    help=f"iterations per year before the final loop (default: {DEFAULT_MAXITR}; EIA cb2026: {MAXITR})")
     ap.add_argument("--macro", choices=("frbus",), default=None,
                     help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
     ap.add_argument("--cycles", type=int, default=1, help=f"passes over all years, relaxed between (EIA cb2026: {NRUNS})")
@@ -321,7 +330,7 @@ def main(argv=None) -> None:
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs,
-            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro, lfmm=a.lfmm)
+            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro, lfmm=a.lfmm, ind=a.ind)
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
