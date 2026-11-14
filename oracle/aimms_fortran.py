@@ -7,12 +7,47 @@ main\\endpoint_p2_caller.txt and runs Windows aimms.exe on the oracle's wrapper 
 (oracle/aimms_patch.py). Everything else in uaimms.f, including the files it writes for AIMMS and reads back,
 is EIA's code unchanged.
 
-Usage: python aimms_fortran.py uaimms.f90
+Usage: python aimms_fortran.py --pre uaimms.f      (on EIA's source, before patch_intel.py)
+       python aimms_fortran.py uaimms.f90           (after patch_intel.py)
 """
 
 import re
 import sys
 from pathlib import Path
+
+
+def pre_pass(path: Path) -> None:
+    """Intel's variable formats '(...i<nfield>.<nfield>...)' (AIMMS set elements written zero-padded, "01") become
+    format strings built at run time with oracle_vfe.f90, before patch_intel.py turns them into fixed widths or
+    list-directed I/O (which writes "1", a different AIMMS element)."""
+    text = path.read_text(encoding="latin-1")
+    lines = text.split("\n")
+    n = 0
+    sub_start = None
+    need_use = set()
+    for i, line in enumerate(lines):
+        if re.match(r"\s*(integer\s+)?(subroutine|function)\s+\w+", line, re.I) and not line.lstrip().startswith("!"):
+            sub_start = i
+        if "<nfield>" not in line or line.lstrip().startswith("!"):
+            continue
+        def fmt(m):
+            body = m.group(1).replace("i<nfield>.<nfield>", "'//trim(vfe(nfield))//'").replace(
+                "i<nfield>", "'//trim(vfi(nfield))//'")
+            return "'" + body + "'"
+        new = re.sub(r"'(\([^']*<nfield>[^']*\))'", fmt, line)
+        if new != line:
+            lines[i] = new
+            n += 1
+            need_use.add(sub_start)
+    for i in sorted(need_use, reverse=True):
+        lines.insert(i + 1, "      use oracle_vfe")
+    path.write_text("\n".join(lines), encoding="latin-1")
+    print(f"aimms_fortran.py --pre: {n} variable format(s) built at run time, in {len(need_use)} routine(s)")
+
+
+if sys.argv[1] == "--pre":
+    pre_pass(Path(sys.argv[2]))
+    sys.exit(0)
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="latin-1")

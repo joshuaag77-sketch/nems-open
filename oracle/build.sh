@@ -68,11 +68,14 @@ if [ "$MOD" = emm ]; then
   # runs, and each year's solve goes to Windows aimms.exe through run_aimms.sh (docs/aimms_needs.md).
   AIMMS_OBJS=""; STUBS="$ORACLE/emm_stubs.f90"
   if [ "${NEMS_ORACLE_AIMMS:-0}" = 1 ]; then
-    $PY -I "$ORACLE/patch_intel.py" "$U/source/uaimms.f" uaimms.f90
+    cp "$U/source/uaimms.f" uaimms_pre.f
+    $PY -I "$ORACLE/aimms_fortran.py" --pre uaimms_pre.f     # Intel variable formats, before patch_intel.py
+    $PY -I "$ORACLE/patch_intel.py" uaimms_pre.f uaimms.f90
     $PY -I "$ORACLE/aimms_fortran.py" uaimms.f90
     sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
     STUBS=emm_stubs_aimms.f90
-    AIMMS_OBJS="uaimms.o"   # Intel ifcore/ifport stand-ins are already in emm_modules.f90
+    gfortran $FLAGS -c "$ORACLE/oracle_vfe.f90"
+    AIMMS_OBJS="uaimms.o oracle_vfe.o"   # Intel ifcore/ifport stand-ins are already in emm_modules.f90
   fi
   # Modules first: udat.f holds two that uldsm.f and util.f use.
   gfortran $FLAGS -c "$ORACLE/emm_modules.f90" ecp_row_col.f90 efd_row_col.f90 udat.f90 uesql.f90
