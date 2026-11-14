@@ -109,6 +109,16 @@ gasoline falls a further 0.45 1987 $/MMBtu. Every year converges.
 Known gap: the demand side's industrial stub carries the baseline's refinery fuel inside q*in and
 scales it with its own price response; the fold assumes it is the baseline amount.
 
+## Can it be checked with AIMMS?
+
+No. LFMM is GAMS end to end: `refine.f` writes GDX files, calls GAMS on `lfshell.gms`, and reads GDX
+back. No AIMMS project ships in `models/lfmm`. The AIMMS academic licence (used for coal and EMM)
+does not help here. A reference run needs a GAMS licence that can solve an LP this size (the free
+community licence caps model size, likely too small), plus EIA's NEMS-side driver or a standalone
+run of `lfshell.gms` on GDX dumped from the cb2026 restart. The cheaper check, available now, is
+EIA's own cb2026 outputs in the restart file (LFMMOUT, PMMOUT, MPBLK), which the stand-in already
+reproduces exactly.
+
 ## Full port, later
 
 1. GDX reader. GAMS publishes its GDX library as open source; a small reader (or a one-time
