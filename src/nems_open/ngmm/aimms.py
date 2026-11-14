@@ -354,6 +354,109 @@ def reference(first: int = 2024, last: int = 2050, case: str = "cb2026") -> dict
     return {"outputs": out, "seconds": times}
 
 
+# --- inside run_model ---------------------------------------------------------------------------------
+
+PRICE_OUT = ("MPBLK/pgfin", "MPBLK/pgiin", "MPBLK/pngcm", "MPBLK/pngel", "MPBLK/pngin", "MPBLK/pngrs", "MPBLK/pngtr")
+
+
+class AimmsGas:
+    """EIA's NGMM as run_model's gas market (ogs="aimms"). One AIMMS process for the whole run.
+
+    Each loop iteration run_model calls begin(year, itr, q, prices, fcrl) once, with the demand the loop just
+    settled; NGMM solves on cb2026's inputs with the loop's gas use (QBLK q*ng/gf/gi, lease, plant and pipeline
+    fuel, and the power sector's seasonal burn by EMM region scaled to the loop's qngel) and the loop's gas prices.
+    prices() then hands the stand-in NGMM's delivered prices for that year (every other gas price stays on the
+    stand-in's curves). end_year(year) makes NEMS's reporting call, which rolls NGMM's state to the next year.
+    Years from 2024 (NGMM's first) to start_year - 1 run first on cb2026's own inputs.
+
+    calibrate: NGMM run once per year on cb2026's final inputs lands 0 to 5% off EIA's restart (EIA's restart
+    is the end of several iterations and five cycles). With calibrate, each price is multiplied by EIA's value
+    over NGMM's own on cb2026's inputs (reference.pkl from `python -m nems_open.ngmm.aimms`), so the baseline is
+    EIA's and a run's moves are NGMM's."""
+
+    def __init__(self, start_year: int = 2027, case: str = "cb2026", calibrate: bool = True, run: Path = RUN_DIR):
+        from nems_open.supply_standin.data import restart_path
+        self.base = restart_arrays(restart_path(case))
+        z = np.load(restart_path(case), allow_pickle=False)
+        names = {k.lower(): k for k in z.files}
+        self.eia = {k: z[names[k.lower()]].astype(np.float64) for k in PRICE_OUT}
+        self.eia_hh = z[names["ngtdmrep/oghhprng"]].astype(np.float64)
+        self.factor = {k: np.ones((11, 61)) for k in PRICE_OUT}
+        self.hh_factor = np.ones(61)
+        if calibrate:
+            ref = run / "reference.pkl"
+            if not ref.exists():
+                raise FileNotFoundError(f"{ref}: run python -m nems_open.ngmm.aimms first (about 3 min)")
+            import pickle
+            with open(ref, "rb") as f:
+                outs = pickle.load(f)["outputs"]
+            for y, o in outs.items():
+                j = y - 1990
+                for k in PRICE_OUT:
+                    name = k.replace("/", "_").upper()
+                    if name in o:
+                        mine = to_array(o[name], (11, 61))[:, j]
+                        self.factor[k][:, j] = np.divide(self.eia[k][:, j], mine, out=np.ones(11), where=mine > 0)
+                if "NGTDMREP_OGHHPRNG" in o:
+                    mine = to_array(o["NGTDMREP_OGHHPRNG"], (61,))[j]
+                    self.hh_factor[j] = self.eia_hh[j] / mine if mine > 0 else 1.0
+        self.ngmm = Ngmm(run, fresh=True)
+        self.out = {k: v.copy() for k, v in self.eia.items()}
+        self.henry_hub = self.eia_hh.copy()
+        self.year, self.itr, self.seconds = None, 0, 0.0
+        try:
+            for y in range(2024, start_year):
+                self.last = self.base
+                self._call(y, 1, self.base)
+                self.end_year(y)
+        except Exception:
+            self.close()
+            raise
+
+    def _call(self, year, itr, arrays, ncrl=0, fcrl=0):
+        o, sec = self.ngmm.call(year, itr, arrays, ncrl=ncrl, fcrl=fcrl)
+        self.seconds += sec
+        self.year, self.itr = year, itr
+        if ncrl:
+            return
+        j = year - 1990
+        for k in PRICE_OUT:
+            name = k.replace("/", "_").upper()
+            if name in o:
+                self.out[k][:, j] = to_array(o[name], (11, 61))[:, j] * self.factor[k][:, j]
+        if "NGTDMREP_OGHHPRNG" in o:
+            self.henry_hub[j] = to_array(o["NGTDMREP_OGHHPRNG"], (61,))[j] * self.hh_factor[j]
+
+    def begin(self, year: int, itr: int, q: dict, prices: dict, fcrl: int = 0):
+        j = year - 1990
+        arrays = dict(self.base)
+        for k, v in q.items():
+            key = k.lower()
+            if key in arrays and np.shape(arrays[key]) == np.shape(v):
+                arrays[key] = np.asarray(v, dtype=np.float64)
+        for k, v in prices.items():
+            key = k.lower()
+            if key in arrays and np.shape(arrays[key]) == np.shape(v):
+                arrays[key] = np.asarray(v, dtype=np.float64)
+        b, now = self.base["qblk/qngel"][10, j], q["QBLK/qngel"][10, j]
+        if b > 0:   # the power sector's seasonal gas burn by EMM region, scaled to the loop's
+            s = self.base["uefdout/sqngelgr"].copy()
+            s[:, j, :] *= now / b
+            arrays["uefdout/sqngelgr"] = s
+        self.last = arrays
+        self._call(year, itr, arrays, fcrl=fcrl)
+
+    def prices(self, qngas_us=None) -> dict[str, np.ndarray]:
+        return {k: v.copy() for k, v in self.out.items()}
+
+    def end_year(self, year: int):
+        self._call(year, self.itr + 1, getattr(self, "last", None) or self.base, ncrl=1, fcrl=1)
+        self.last = None
+
+    def close(self):
+        self.ngmm.close()
+
+
 HEADLINE = ("NGTDMREP_OGHHPRNG", "MPBLK_PNGRS", "MPBLK_PNGCM", "MPBLK_PNGIN", "MPBLK_PNGEL", "MPBLK_PNGTR",
             "NGTDMREP_NGSCRV_P", "NGTDMREP_NGSCRV_Q")
 

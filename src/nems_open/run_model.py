@@ -116,8 +116,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
-    if ogs not in ("standin", "ngmm", "hsm"):
-        raise ValueError("ogs must be 'standin', 'ngmm' or 'hsm'")
+    if ogs not in ("standin", "ngmm", "hsm", "aimms"):
+        raise ValueError("ogs must be 'standin', 'ngmm', 'hsm' or 'aimms'")
+    if ogs == "aimms" and baseline != "cb2026":
+        raise ValueError("ogs='aimms' runs EIA's NGMM on cb2026's inputs, so the baseline must be cb2026")
     if ogs == "hsm" and baseline != "cb2026":
         raise ValueError("ogs='hsm' starts from the cb2026 restart, so the baseline must be cb2026")
     if elec_price is None:
@@ -135,6 +137,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if ogs in ("ngmm", "hsm"):
         from nems_open.ngmm import GasMarket
         market = GasMarket(baseline, base=base)
+    aimms_gas = None
     within, between = Settings.load("conv"), Settings.load("icnv")
     prices = {k: v.copy() for k, v in base.items() if k.startswith("MPBLK/")}
     q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
@@ -158,6 +161,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             from nems_open.macro.drive import scenario_macro
             path = scenario_macro(base, oil, prices if cycle > 1 else None)
         demand = DemandAdapter(base, policy, start_year, ported, macro=path)
+        if ogs == "aimms":   # EIA's NGMM in AIMMS (nems_open/ngmm/aimms.py), one process per cycle
+            from nems_open.ngmm.aimms import AimmsGas
+            market = aimms_gas = AimmsGas(start_year)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -208,6 +214,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     if record is not None:
                         record("demand", cycle=cycle, year=year, itr=itr, fcrl=ctl.fcrl, j=j, prices=prices, q=q)
                     # Supply: prices and power-sector fuel use out, tested against what it saw.
+                    if aimms_gas is not None:   # NGMM solves once per iteration on the demand just settled
+                        aimms_gas.begin(year, itr, q, prices, ctl.fcrl)
                     s, fuel = solve_supply(j, itr, ctl.fcrl, tested and relax)
                     old = {k: prices[k][:, j].copy() for k in prices}
                     new = {k: s.prices[k][:, j] for k in prices}
@@ -234,7 +242,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                               f"max dQ/Q {dq:.2e}, failing {sorted(bad)[:4]}")
                     ctl.done(ctest)
                 stable[year] = ctl.stable
-                if market is not None:   # next year's curve centres on this year's wellhead price
+                if aimms_gas is not None:   # NEMS's reporting call: NGMM rolls to the next year
+                    aimms_gas.end_year(year)
+                elif market is not None:   # next year's curve centres on this year's wellhead price
                     market.settle(j)
                 for k, v in s.totals.items():   # SUMQAS: all-sector totals
                     q[k][:, j] = v[:, j]
@@ -252,6 +262,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 demand.end_year()
         finally:
             demand.close()  # stops the ported sectors' worker processes
+            if aimms_gas is not None:
+                aimms_gas.close()
         if ogs == "hsm" and cycle < cycles:   # HSM on this cycle's wellhead prices sets next cycle's expected production
             from nems_open.ogsm import couple
             market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base)), market.P)
@@ -261,7 +273,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     if k in between.relax:
                         d[k][:, years] = before[k] + between.relax[k] * (d[k][:, years] - before[k])
     hsm = gas = None
-    if market is not None:
+    if aimms_gas is not None:
+        gas = {"henry_hub": aimms_gas.henry_hub.copy(), "ngmm_seconds": aimms_gas.seconds}
+    elif market is not None:
         gas = {k: v.copy() for k, v in market.clear(q["QBLK/qngas"][US]).items()}
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)
         from nems_open.ogsm import couple
@@ -299,9 +313,9 @@ def main(argv=None) -> None:
     ap.add_argument("--elec-price", choices=("standin", "efp"), default=None,
                     help="retail electricity prices: the stand-in, or EIA's ported EFP (emm/retail.py); "
                          "default efp with --elec lp on cb2026, else the stand-in")
-    ap.add_argument("--ogs", choices=("standin", "ngmm", "hsm"), default="standin",
+    ap.add_argument("--ogs", choices=("standin", "ngmm", "hsm", "aimms"), default="standin",
                     help="gas prices and production: the stand-in's curves; the gas market (ngmm); or the gas market "
-                         "with EIA's HSM between cycles and at the end (hsm, about 9 min per HSM run)")
+                         "with EIA's HSM between cycles and at the end (hsm, about 9 min per HSM run); or EIA's real NGMM in AIMMS (aimms)")
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
     ap.add_argument("--macro", choices=("frbus",), default=None,
                     help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
@@ -324,7 +338,10 @@ def main(argv=None) -> None:
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
             grade, why = levers.fidelity(name, tuple(a.ported), a.elec)
             print(f"{levers.label(name, tuple(a.ported), a.elec)}: {grade}. {why}")
-    if r.gas is not None:
+    if r.gas is not None and "wellhead" not in r.gas:
+        print(f"\nNGMM (AIMMS) {a.end}: Henry Hub {r.gas['henry_hub'][a.end - FIRST_YEAR]:.2f} 1987 $/MMBtu, "
+              f"{r.gas['ngmm_seconds']:.0f} s in NGMM")
+    elif r.gas is not None:
         j = a.end - FIRST_YEAR
         print(f"\nGas market {a.end}: Henry Hub {r.gas['henry_hub'][j]:.2f} 1987 $/MMBtu, wellhead {r.gas['wellhead'][j]:.2f}, "
               f"dry production {r.gas['production'][j]:.0f} Bcf (expected {r.gas['expected'][j]:.0f}), exports {r.gas['exports'][j]:.0f}")
