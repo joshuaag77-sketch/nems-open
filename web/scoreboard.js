@@ -48,10 +48,10 @@
       return `<tr><td>${esc(r.label)} <span class="fine">${esc(r.unit)}</span></td>${cells}${worst}</tr>`;
     }).join("");
     const on = Object.entries(W.switches).map(([k, v]) => `${k}=${v}`).join(", ");
-    el("whole").innerHTML = `<h2>How close is the whole model to EIA?</h2>
+    el("whole").innerHTML = `<h2>How close is the whole model to EIA?${W.cycles_done && W.cycles_done < W.cycles ? ` <span class="fine">(${W.cycles_done} cycle of ${W.cycles})</span>` : ""}</h2>
       <p>One run of the whole model with every finished module switched on, on EIA's reference settings, against EIA's AEO2026 reference (cb2026). Each cell is the gap, model over EIA minus one; hover for both values.</p>
       <div class="tbl"><table class="rt board-t"><thead><tr><th>Number</th>${yrs.map((y) => `<th>${y}</th>`).join("")}<th>Worst year</th></tr></thead><tbody>${body}</tbody></table></div>
-      <p class="fine">Run ${esc(W.generated)}${W.minutes ? `, ${W.minutes} minutes` : ""}; ${W.converged_years} of ${W.years[1] - W.years[0] + 1} years converged. Switches: ${esc(on)}. Sectors on EIA's ported code: ${esc(W.ported.join(", "))}. Not landed yet: ${esc(W.not_landed.join(", ") || "none")}. ${esc(W.method)}</p>`;
+      <p class="fine">Run ${esc(W.generated)}${W.minutes ? `, ${W.minutes} minutes` : ""}${W.cycles_done && W.cycles_done < W.cycles ? `, after ${W.cycles_done} of ${W.cycles} cycles (NEMS repeats the whole span so slow-moving markets catch up; the later cycles had not finished)` : ""}; ${W.converged_years} of ${W.years[1] - W.years[0] + 1} years converged. Switches: ${esc(on)}. Sectors on EIA's ported code: ${esc(W.ported.join(", "))}. Not landed yet: ${esc(W.not_landed.join(", ") || "none")}. ${esc(W.method)}</p>`;
     el("whole").hidden = false;
   }).catch(() => {});
 

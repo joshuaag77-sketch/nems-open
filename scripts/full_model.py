@@ -233,11 +233,36 @@ class Narrator:
 
 # ---- run ------------------------------------------------------------------------------------------
 
-def run(first: int = FIRST, last: int = LAST, watch: bool = False) -> tuple[object, dict, float]:
+class Keeper:
+    """The record hook: narrates (with --watch) and, at the end of each cycle but the last, saves that cycle's run
+    and writes the scoreboard table labeled with the cycles done, so a failure in a later cycle loses nothing."""
+
+    def __init__(self, narrator, p: dict, t0: float, save: Path | None):
+        self.narrator, self.p, self.t0, self.save = narrator, p, t0, save
+
+    def __call__(self, *a, **kw):
+        if self.narrator is not None:
+            self.narrator(*a, **kw)
+
+    def cycle_end(self, cycle, prices, q, co2, generation, henry_hub, stable):
+        from types import SimpleNamespace
+        if self.save is None or cycle >= CYCLES:
+            return
+        r = SimpleNamespace(prices=prices, quantities=q, co2=co2, generation_twh=generation or None,
+                            gas=None if henry_hub is None else {"henry_hub": henry_hub}, stable=stable)
+        self.save.parent.mkdir(parents=True, exist_ok=True)
+        save_run(r, self.save.with_name(f"{self.save.stem}_cycle{cycle}.npz"))
+        minutes = (time.time() - self.t0) / 60
+        OUT.write_text(json.dumps(table(r, self.p, minutes, cycles_done=cycle), indent=1))
+        print(f"\nCycle {cycle} of {CYCLES} saved: {OUT.name} now shows {cycle} cycle ({minutes:.0f} min in)", flush=True)
+
+
+def run(first: int = FIRST, last: int = LAST, watch: bool = False, save: Path | None = None) -> tuple[object, dict, float]:
     from nems_open import run_model
     p = plan()
     t0 = time.time()
-    rec = Narrator(p["ported"], CYCLES, lambda s: print(s, flush=True)) if watch else None
+    narr = Narrator(p["ported"], CYCLES, lambda s: print(s, flush=True)) if watch else None
+    rec = Keeper(narr, p, t0, save if (first, last) == (FIRST, LAST) else None)
     if watch:
         print(f"The whole model, {first}-{last}, EIA's reference settings. On: {', '.join(f'{k}={v}' for k, v in p['switches'].items())}. "
               f"EIA's own code runs {Narrator(p['ported'], CYCLES).who}.", flush=True)
@@ -261,10 +286,11 @@ def load_run(path: Path):
                            stable={int(y): bool(s) for y, s in z["stable"] if y})
 
 
-def table(r, p: dict, minutes: float | None) -> dict:
+def table(r, p: dict, minutes: float | None, cycles_done: int | None = None) -> dict:
     stable = getattr(r, "stable", {}) or {}
     return {"generated": str(date.today()), "case": "cb2026, no new policy", "years": [FIRST, LAST], "shown": list(SHOW),
             "switches": p["switches"], "not_landed": p["not_landed"], "ported": p["ported"], "cycles": p["cycles"],
+            "cycles_done": p["cycles"] if cycles_done is None else cycles_done,
             "minutes": round(minutes, 1) if minutes else None,
             "converged_years": sum(1 for y, s in stable.items() if FIRST <= y <= LAST and s),
             "rows": rows(model_numbers(r), eia_numbers()),
@@ -292,7 +318,7 @@ def main(argv=None) -> int:
         r, minutes = load_run(a.src), None
     else:
         first, last = a.years or (FIRST, LAST)
-        r, p, minutes = run(first, last, a.watch)
+        r, p, minutes = run(first, last, a.watch, a.save)
         if a.years:                                   # a demo span: the table needs the whole 2027-2050
             print(f"done in {minutes:.1f} min")
             return 0

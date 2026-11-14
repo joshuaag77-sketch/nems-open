@@ -315,6 +315,12 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 aimms_gas.close()
             if aimms_coal is not None:
                 aimms_coal.close()
+        if hasattr(record, "cycle_end"):   # optional: a record object can keep each cycle's results (scripts/full_model.py)
+            hub = (aimms_gas.henry_hub.copy() if aimms_gas is not None else
+                   market.clear(q["QBLK/qngas"][US])["henry_hub"] if market is not None else None)
+            record.cycle_end(cycle=cycle, prices={k: v.copy() for k, v in prices.items()},
+                             q={k: v.copy() for k, v in q.items()}, co2={k: v.copy() for k, v in (co2 or {}).items()},
+                             generation={k: v.copy() for k, v in (generation or {}).items()}, henry_hub=hub, stable=dict(stable))
         if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production
             from nems_open.ngmm.aimms import hsm_expected
             expected = hsm_expected(aimms_gas.wellhead_ratio(), _oil_ratio(oil, base))

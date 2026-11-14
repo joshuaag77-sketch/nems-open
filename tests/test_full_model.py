@@ -60,3 +60,19 @@ def test_one_modules_dumps_can_be_pinned_to_another_folder(monkeypatch, tmp_path
     from nems_open import oracle_state
     monkeypatch.setenv("NEMS_ORACLE_OUT_EMM", str(tmp_path))
     assert oracle_state.out_dir("emm") == tmp_path and oracle_state.out_dir("comm") != tmp_path
+
+
+def test_each_cycle_but_the_last_is_saved_and_tabled(monkeypatch, tmp_path):
+    out = tmp_path / "full_model.json"
+    monkeypatch.setattr(fm, "OUT", out)
+    monkeypatch.setattr(fm, "CYCLES", 2)
+    p = {"switches": {}, "not_landed": [], "ported": [], "cycles": 2}
+    keeper = fm.Keeper(None, p, 0.0, tmp_path / "run.npz")
+    try:
+        r = run_model.run(None, 2027, 2028, "cb2026", ported=(), cycles=2, record=keeper)
+    except FileNotFoundError as e:
+        pytest.skip(f"reference data missing: {e}")
+    import json
+    t = json.loads(out.read_text())
+    assert t["cycles_done"] == 1 and (tmp_path / "run_cycle1.npz").exists()
+    assert len(t["rows"]) == 15 and r.prices
