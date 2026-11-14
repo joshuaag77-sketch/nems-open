@@ -59,14 +59,16 @@ def _entries(index_text):
             yield parts[0], parts[1], rank, [(int(parts[3 + 2 * k]), int(parts[4 + 2 * k])) for k in range(rank)]
 
 
-def load(tag: str, year: int, module: str = "comm", run: str | None = None) -> dict:
-    """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name."""
+def load(tag: str, year: int, module: str = "comm", run: str | None = None, only=None) -> dict:
+    """{name: FArray, or a scalar} for one dump, keyed by lowercase Fortran name.
+
+    only: read just these names (the industrial dumps are large and slow to load whole)."""
     base = state_dir(module, run) / tag
     folder = base / str(year)
     if not (folder / "index.txt").exists() and (base / f"{year}.npz").exists():
         with np.load(base / f"{year}.npz") as z:
             return {name: _array(z[name], rank, bounds)
-                    for name, code, rank, bounds in _entries(str(z["__index__"]))}
+                    for name, code, rank, bounds in _entries(str(z["__index__"])) if only is None or name in only}
     text = (folder / "index.txt").read_text(encoding="latin-1")
     return {name: _array(np.fromfile(folder / f"{name}.bin", dtype=np.dtype(code)), rank, bounds)
-            for name, code, rank, bounds in _entries(text)}
+            for name, code, rank, bounds in _entries(text) if only is None or name in only}

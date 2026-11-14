@@ -12,7 +12,7 @@
     }
    ],
    "eia_file_count": 1,
-   "ours_lines": 7802,
+   "ours_lines": 8527,
    "ours_files": [
     "src/nems_open/residential/__init__.py",
     "src/nems_open/residential/appliances.py",
@@ -23,6 +23,8 @@
     "src/nems_open/residential/heating_choice.py",
     "src/nems_open/residential/helpers.py",
     "src/nems_open/residential/housing.py",
+    "src/nems_open/residential/initial_state.py",
+    "src/nems_open/residential/inputs.py",
     "src/nems_open/residential/lighting_misc.py",
     "src/nems_open/residential/reports.py",
     "src/nems_open/residential/resd.py",
@@ -30,7 +32,7 @@
     "src/nems_open/residential/washers.py",
     "src/nems_open/residential/water_cooking.py"
    ],
-   "tests": 388,
+   "tests": 430,
    "test_files": {
     "test_oracle_residential.py": 19,
     "test_residential_appliances.py": 72,
@@ -40,12 +42,16 @@
     "test_residential_heating.py": 16,
     "test_residential_heating_choice.py": 16,
     "test_residential_housing.py": 25,
+    "test_residential_initial_state.py": 5,
     "test_residential_lighting_misc.py": 33,
     "test_residential_reports.py": 2,
     "test_residential_totals.py": 36,
     "test_residential_washers.py": 48,
     "test_residential_water_cooking.py": 48,
-    "test_run_demand.py": 30
+    "test_run_demand.py": 32,
+    "test_run_demand_files.py": 16,
+    "test_run_demand_industrial.py": 11,
+    "test_run_demand_tran.py": 8
    },
    "routines": [
     {
@@ -275,36 +281,50 @@
     }
    ],
    "eia_file_count": 1,
-   "ours_lines": 4804,
+   "ours_lines": 5403,
    "ours_files": [
     "src/nems_open/commercial/__init__.py",
     "src/nems_open/commercial/base_year.py",
+    "src/nems_open/commercial/benchmark_inputs.py",
     "src/nems_open/commercial/benchmarking.py",
     "src/nems_open/commercial/comm.py",
     "src/nems_open/commercial/consumption.py",
     "src/nems_open/commercial/distgen.py",
     "src/nems_open/commercial/distgen_tables.py",
+    "src/nems_open/commercial/first_call.py",
     "src/nems_open/commercial/floorspace.py",
+    "src/nems_open/commercial/initial_state.py",
     "src/nems_open/commercial/inputs.py",
+    "src/nems_open/commercial/kparm.py",
     "src/nems_open/commercial/ktek.py",
+    "src/nems_open/commercial/levers.py",
     "src/nems_open/commercial/report.py",
     "src/nems_open/commercial/service_demand.py",
     "src/nems_open/commercial/technology_choice.py",
     "src/nems_open/commercial/technology_choice_inputs.py"
    ],
-   "tests": 921,
+   "tests": 1101,
    "test_files": {
+    "test_commercial_benchmark_inputs.py": 2,
     "test_commercial_benchmarking.py": 226,
     "test_commercial_consumption.py": 144,
     "test_commercial_distgen.py": 344,
+    "test_commercial_first_call.py": 31,
     "test_commercial_floorspace.py": 4,
+    "test_commercial_from_files.py": 2,
+    "test_commercial_initial_state.py": 102,
     "test_commercial_inputs.py": 39,
+    "test_commercial_kparm.py": 10,
+    "test_commercial_levers.py": 5,
     "test_commercial_report.py": 14,
-    "test_commercial_service_demand.py": 54,
+    "test_commercial_service_demand.py": 45,
     "test_commercial_technology_choice.py": 57,
     "test_commercial_technology_choice_inputs.py": 6,
     "test_oracle.py": 3,
-    "test_run_demand.py": 30
+    "test_run_demand.py": 32,
+    "test_run_demand_files.py": 16,
+    "test_run_demand_industrial.py": 11,
+    "test_run_demand_tran.py": 8
    },
    "routines": [
     {
@@ -350,11 +370,18 @@
      "done": true
     },
     {
-     "name": "COMConsumption (first call: KSTEO, KMINFL reads, STEO targets into CMSEDS)",
-     "state": "To do. KMINFL is re-read every call; tests take it from the oracle",
-     "match": "",
+     "name": "COMConsumption (first call: KSTEO, KMINFL reads, STEO targets into CMSEDS, spray valve standard)",
+     "state": "Done 2026-11-02",
+     "match": "KSTEO and KMINFL tables equal the oracle's; the STEO rows come from EIA's own loader (src/nems_open/steo.py); the valve standard is computed each year (spray_valve_standard)",
      "lines": "",
-     "done": false
+     "done": true
+    },
+    {
+     "name": "COMM starting state (2019, first iteration) from files",
+     "state": "Done 2026-11-02",
+     "match": "Commercial.start_from_files() runs 2019 to 2050 with no oracle dump; end-use arrays equal the oracle's at every test year (see below)",
+     "lines": "",
+     "done": true
     },
     {
      "name": "COMBenchmarking",
@@ -408,14 +435,17 @@
     }
    ],
    "eia_file_count": 1,
-   "ours_lines": 460,
+   "ours_lines": 499,
    "ours_files": [
     "src/nems_open/demand_adapter.py",
     "src/nems_open/fit_elasticities.py"
    ],
-   "tests": 11,
+   "tests": 32,
    "test_files": {
-    "test_run_model.py": 11
+    "test_run_model.py": 13,
+    "test_run_model_commercial_levers.py": 3,
+    "test_run_model_efp.py": 3,
+    "test_run_model_lp.py": 13
    },
    "routines": [
     {
@@ -522,7 +552,7 @@
   "transportation": {
    "name": "Transportation",
    "side": "demand",
-   "kind": "partial",
+   "kind": "real",
    "eia_lines": 18378,
    "eia_files": [
     {
@@ -539,114 +569,246 @@
     }
    ],
    "eia_file_count": 3,
-   "ours_lines": 460,
+   "ours_lines": 7867,
    "ours_files": [
-    "src/nems_open/demand_adapter.py",
-    "src/nems_open/fit_elasticities.py"
+    "src/nems_open/transportation/__init__.py",
+    "src/nems_open/transportation/air_common.py",
+    "src/nems_open/transportation/air_demand.py",
+    "src/nems_open/transportation/air_report.py",
+    "src/nems_open/transportation/air_stock.py",
+    "src/nems_open/transportation/bench.py",
+    "src/nems_open/transportation/cafe.py",
+    "src/nems_open/transportation/cafe_meet.py",
+    "src/nems_open/transportation/common.py",
+    "src/nems_open/transportation/femcalc.py",
+    "src/nems_open/transportation/fleet.py",
+    "src/nems_open/transportation/fleet_mpg.py",
+    "src/nems_open/transportation/frt_act.py",
+    "src/nems_open/transportation/frt_agg.py",
+    "src/nems_open/transportation/frt_choice.py",
+    "src/nems_open/transportation/frt_common.py",
+    "src/nems_open/transportation/frt_cost.py",
+    "src/nems_open/transportation/frt_fuel.py",
+    "src/nems_open/transportation/frt_ghg.py",
+    "src/nems_open/transportation/frt_new.py",
+    "src/nems_open/transportation/frt_rpt.py",
+    "src/nems_open/transportation/frt_ship.py",
+    "src/nems_open/transportation/frt_stock.py",
+    "src/nems_open/transportation/frt_tech.py",
+    "src/nems_open/transportation/frt_vmt.py",
+    "src/nems_open/transportation/hav.py",
+    "src/nems_open/transportation/initial_state.py",
+    "src/nems_open/transportation/ldv_attrib.py",
+    "src/nems_open/transportation/ldv_choice.py",
+    "src/nems_open/transportation/ldv_tech.py",
+    "src/nems_open/transportation/mean_funcs.py",
+    "src/nems_open/transportation/misc_modes.py",
+    "src/nems_open/transportation/newldv.py",
+    "src/nems_open/transportation/report.py",
+    "src/nems_open/transportation/small.py",
+    "src/nems_open/transportation/stock.py",
+    "src/nems_open/transportation/stock_mpg.py",
+    "src/nems_open/transportation/tmac.py",
+    "src/nems_open/transportation/tmpgnew.py",
+    "src/nems_open/transportation/totals.py",
+    "src/nems_open/transportation/tran.py",
+    "src/nems_open/transportation/travel.py"
    ],
-   "tests": 11,
+   "tests": 285,
    "test_files": {
-    "test_run_model.py": 11
+    "test_run_demand_tran.py": 8,
+    "test_tran_chain.py": 5,
+    "test_tran_ev_lever.py": 4,
+    "test_tran_flthav.py": 5,
+    "test_tran_freight.py": 65,
+    "test_tran_from_files.py": 3,
+    "test_tran_modes.py": 10,
+    "test_tran_newldv.py": 5,
+    "test_tran_oracle.py": 16,
+    "test_tran_readers.py": 9,
+    "test_tran_small.py": 60,
+    "test_tran_tail.py": 30,
+    "test_tran_tmac.py": 5,
+    "test_tran_tmpgnew.py": 60
    },
    "routines": [
     {
-     "name": "FEMCALC",
-     "state": "",
+     "name": "READLDV, READVMT, READSTOCK, READHIST, READNHTSA",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "1072",
-     "done": false,
-     "file": "tran.f"
+     "lines": "870+170+140+165+340",
+     "done": true
     },
     {
-     "name": "READLDV",
-     "state": "",
+     "name": "TMAC",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "869",
-     "done": false,
-     "file": "tran.f"
+     "lines": "68",
+     "done": true
+    },
+    {
+     "name": "NEWLDV",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "87",
+     "done": true
     },
     {
      "name": "TMPGNEW",
-     "state": "",
+     "state": "Ported, matches the oracle",
      "match": "",
      "lines": "658",
-     "done": false,
-     "file": "tran.f"
+     "done": true
     },
     {
-     "name": "TRUCK_ACT",
-     "state": "",
+     "name": "TREG",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "642",
-     "done": false,
-     "file": "tranfrt.f"
+     "lines": "88",
+     "done": true
     },
     {
-     "name": "CFREAD",
-     "state": "",
+     "name": "TFLTSTKS",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "640",
-     "done": false,
-     "file": "tranfrt.f"
+     "lines": "112",
+     "done": true
     },
     {
-     "name": "TAIREFF",
-     "state": "",
+     "name": "FLTHAV",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "603",
-     "done": false,
-     "file": "tranair.f"
+     "lines": "323",
+     "done": true
     },
     {
-     "name": "TREPORT",
-     "state": "",
+     "name": "TFLTVMTS",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "555",
-     "done": false,
-     "file": "tran.f"
+     "lines": "20",
+     "done": true
     },
     {
-     "name": "CAFECALC",
-     "state": "",
+     "name": "TSMOD",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "521",
-     "done": false,
-     "file": "tran.f"
+     "lines": "124",
+     "done": true
     },
     {
-     "name": "TRUCK_NEW",
-     "state": "",
+     "name": "TMPGSTK",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "514",
-     "done": false,
-     "file": "tranfrt.f"
+     "lines": "262",
+     "done": true
     },
     {
-     "name": "TBENCHMARK",
-     "state": "",
+     "name": "TCURB",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "473",
-     "done": false,
-     "file": "tran.f"
+     "lines": "35",
+     "done": true
+    },
+    {
+     "name": "TFLTMPGS",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "290",
+     "done": true
+    },
+    {
+     "name": "TFLTCONS",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "71",
+     "done": true
+    },
+    {
+     "name": "TVMT",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "145",
+     "done": true
+    },
+    {
+     "name": "TRANFRT(0), TRANFRT(1)",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "5,700 (tranfrt.f)",
+     "done": true
+    },
+    {
+     "name": "TMPGAG",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "39",
+     "done": true
+    },
+    {
+     "name": "TRAIL",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "146",
+     "done": true
+    },
+    {
+     "name": "TSHIP",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "289 (tranfrt.f)",
+     "done": true
+    },
+    {
+     "name": "TRANAIR",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "1,720 (tranair.f)",
+     "done": true
     },
     {
      "name": "TMISC",
-     "state": "",
+     "state": "Ported, matches the oracle",
      "match": "",
      "lines": "440",
-     "done": false,
-     "file": "tran.f"
+     "done": true
     },
     {
-     "name": "TRUCK_CHOICE",
-     "state": "",
+     "name": "TCONS",
+     "state": "Ported, matches the oracle",
      "match": "",
-     "lines": "397",
-     "done": false,
-     "file": "tranfrt.f"
+     "lines": "59",
+     "done": true
+    },
+    {
+     "name": "TINTEG",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "118",
+     "done": true
+    },
+    {
+     "name": "TBENCHMARK",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "473",
+     "done": true
+    },
+    {
+     "name": "TREPORT",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "555",
+     "done": true
+    },
+    {
+     "name": "rest of TRAN",
+     "state": "Ported, matches the oracle",
+     "match": "",
+     "lines": "90",
+     "done": true
     }
    ],
-   "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
+   "routines_source": "SCOPE.md",
    "eia_state": "To port",
    "blocker": "None"
   },
@@ -686,16 +848,86 @@
     }
    ],
    "eia_file_count": 7,
-   "ours_lines": 738,
+   "ours_lines": 7862,
    "ours_files": [
+    "src/nems_open/emm/__init__.py",
+    "src/nems_open/emm/capacity.py",
+    "src/nems_open/emm/capacity_report.py",
+    "src/nems_open/emm/chain.py",
+    "src/nems_open/emm/couple.py",
+    "src/nems_open/emm/db.py",
+    "src/nems_open/emm/demand.py",
+    "src/nems_open/emm/dispatch.py",
+    "src/nems_open/emm/dispatch_report.py",
+    "src/nems_open/emm/efp/__init__.py",
+    "src/nems_open/emm/efp/avrprc.py",
+    "src/nems_open/emm/efp/books.py",
+    "src/nems_open/emm/efp/capcost.py",
+    "src/nems_open/emm/efp/common.py",
+    "src/nems_open/emm/efp/compprc.py",
+    "src/nems_open/emm/efp/cwip.py",
+    "src/nems_open/emm/efp/depreciation.py",
+    "src/nems_open/emm/efp/efd_standin.py",
+    "src/nems_open/emm/efp/elefp.py",
+    "src/nems_open/emm/efp/elset.py",
+    "src/nems_open/emm/efp/expenses.py",
+    "src/nems_open/emm/efp/gl.py",
+    "src/nems_open/emm/efp/phasein.py",
+    "src/nems_open/emm/efp/rates.py",
+    "src/nems_open/emm/efp/statements.py",
+    "src/nems_open/emm/history.py",
+    "src/nems_open/emm/inputs.py",
+    "src/nems_open/emm/ldsm/__init__.py",
+    "src/nems_open/emm/ldsm/common.py",
+    "src/nems_open/emm/ldsm/driver.py",
+    "src/nems_open/emm/ldsm/ecp.py",
+    "src/nems_open/emm/ldsm/efd.py",
+    "src/nems_open/emm/ldsm/forecast.py",
+    "src/nems_open/emm/ldsm/outputs.py",
+    "src/nems_open/emm/ldsm/system_load.py",
+    "src/nems_open/emm/load.py",
+    "src/nems_open/emm/plants.py",
+    "src/nems_open/emm/regions.py",
+    "src/nems_open/emm/retail.py",
+    "src/nems_open/emm/system.py",
+    "src/nems_open/emm/technology.py",
     "src/nems_open/supply_standin/__init__.py",
     "src/nems_open/supply_standin/data.py",
     "src/nems_open/supply_standin/fit.py",
     "src/nems_open/supply_standin/model.py"
    ],
-   "tests": 24,
+   "tests": 560,
    "test_files": {
-    "test_supply_standin.py": 24
+    "test_efp_avrprc.py": 36,
+    "test_efp_books.py": 45,
+    "test_efp_capcost.py": 42,
+    "test_efp_compprc.py": 6,
+    "test_efp_cwip.py": 12,
+    "test_efp_depreciation.py": 24,
+    "test_efp_efd_standin.py": 9,
+    "test_efp_elefp.py": 5,
+    "test_efp_elset.py": 18,
+    "test_efp_expenses.py": 18,
+    "test_efp_gl.py": 18,
+    "test_efp_phasein.py": 18,
+    "test_efp_rates.py": 6,
+    "test_efp_statements.py": 6,
+    "test_emm_capacity.py": 30,
+    "test_emm_chain.py": 3,
+    "test_emm_demand.py": 9,
+    "test_emm_dispatch.py": 41,
+    "test_emm_history.py": 12,
+    "test_emm_load.py": 6,
+    "test_emm_plants.py": 97,
+    "test_emm_regions.py": 2,
+    "test_emm_system.py": 4,
+    "test_emm_technology.py": 5,
+    "test_ldsm_driver.py": 9,
+    "test_ldsm_ecp.py": 8,
+    "test_ldsm_efd.py": 6,
+    "test_ldsm_forecast.py": 21,
+    "test_ldsm_system_load.py": 19,
+    "test_supply_standin.py": 25
    },
    "routines": [
     {
@@ -796,7 +1028,7 @@
     }
    ],
    "routines_source": "routine headers in EIA's source (Fortran SUBROUTINE, AIMMS Procedure, Python def)",
-   "eia_state": "To port, last",
+   "eia_state": "Oracle built (LDSM and EFP Fortran run; ECP and EFD solves swapped out); port to do",
    "blocker": "Biggest piece. Its optimization models run on AIMMS (paid)",
    "fits": [
     {
@@ -857,16 +1089,16 @@
     }
    ],
    "eia_file_count": 4,
-   "ours_lines": 738,
+   "ours_lines": 757,
    "ours_files": [
     "src/nems_open/supply_standin/__init__.py",
     "src/nems_open/supply_standin/data.py",
     "src/nems_open/supply_standin/fit.py",
     "src/nems_open/supply_standin/model.py"
    ],
-   "tests": 24,
+   "tests": 25,
    "test_files": {
-    "test_supply_standin.py": 24
+    "test_supply_standin.py": 25
    },
    "routines": [
     {
@@ -1044,16 +1276,16 @@
     }
    ],
    "eia_file_count": 15,
-   "ours_lines": 738,
+   "ours_lines": 757,
    "ours_files": [
     "src/nems_open/supply_standin/__init__.py",
     "src/nems_open/supply_standin/data.py",
     "src/nems_open/supply_standin/fit.py",
     "src/nems_open/supply_standin/model.py"
    ],
-   "tests": 24,
+   "tests": 25,
    "test_files": {
-    "test_supply_standin.py": 24
+    "test_supply_standin.py": 25
    },
    "routines": [
     {
@@ -1171,16 +1403,16 @@
     }
    ],
    "eia_file_count": 3,
-   "ours_lines": 738,
+   "ours_lines": 757,
    "ours_files": [
     "src/nems_open/supply_standin/__init__.py",
     "src/nems_open/supply_standin/data.py",
     "src/nems_open/supply_standin/fit.py",
     "src/nems_open/supply_standin/model.py"
    ],
-   "tests": 24,
+   "tests": 25,
    "test_files": {
-    "test_supply_standin.py": 24
+    "test_supply_standin.py": 25
    },
    "routines": [
     {
@@ -1342,13 +1574,13 @@
     }
    ],
    "eia_file_count": 13,
-   "ours_lines": 341,
+   "ours_lines": 350,
    "ours_files": [
     "src/nems_open/supply_standin/model.py"
    ],
-   "tests": 24,
+   "tests": 25,
    "test_files": {
-    "test_supply_standin.py": 24
+    "test_supply_standin.py": 25
    },
    "routines": [
     {
@@ -1454,7 +1686,7 @@
   }
  },
  "totals": {
-  "tests": 1314,
-  "generated": "2026-11-02"
+  "tests": 2399,
+  "generated": "2026-11-03"
  }
 }

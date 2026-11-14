@@ -10,3 +10,5 @@ oracle/upstream_link
 oracle/build_ind.log
 oracle/cycle.sh
 /data/
+web/data/real_build/
+third_party/

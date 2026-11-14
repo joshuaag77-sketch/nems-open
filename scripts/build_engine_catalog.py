@@ -46,16 +46,20 @@ MODULES = {
         "tests": ["test_run_model"], "scope_row": "Industrial demand",
     },
     "transportation": {
-        "name": "Transportation", "side": "demand", "kind": "partial",
+        "name": "Transportation", "side": "demand", "kind": "real",
         "eia": ["source/tran.f", "source/tranair.f", "source/tranfrt.f"],
-        "ours": ["demand_adapter.py", "fit_elasticities.py"],
-        "tests": ["test_run_model"], "scope_row": "Transportation demand",
+        "ours": ["transportation/*.py"],
+        "tests": ["test_tran_", "test_run_demand_tran"], "scope_row": "Transportation demand",
+        # SCOPE's TRAN map has no State column: every routine in it is ported and checked
+        "scope_table": "## Transportation module", "default_state": "Ported, matches the oracle",
     },
     "electricity": {
         "name": "Electricity", "side": "supply", "kind": "stand",
         "eia": ["source/uecp.f", "source/uefd.f", "source/udat.f", "source/uefp.f", "source/uldsm.f",
                 "models/ecp/**/*", "models/efd/**/*"],
-        "ours": ["supply_standin/*.py"], "tests": ["test_supply_standin"], "scope_row": "Electricity",
+        # the stand-in, plus the dispatch LP and ported EFP/LDSM in emm/ (the real set's electricity)
+        "ours": ["supply_standin/*.py", "emm/**/*.py"], "tests": ["test_supply_standin", "test_emm", "test_efp", "test_ldsm", "test_dispatch"],
+        "scope_row": "Electricity",
         "prices": ["MPBLK/pelrs", "MPBLK/pelcm", "MPBLK/pelin"],
     },
     "natural_gas": {
@@ -168,11 +172,11 @@ def collected_tests() -> Counter:
     return files
 
 
-def routines_from_scope(rows: list[dict]) -> list[dict]:
+def routines_from_scope(rows: list[dict], default_state: str | None = None) -> list[dict]:
     out = []
     for r in rows:
         name = r.get("Routine") or r.get("Subroutine")
-        state = r.get("State", "")
+        state = r.get("State", default_state or "")
         if not name:
             continue
         done = state.lower().startswith("done") or state.lower().startswith("ported")
@@ -202,7 +206,7 @@ def main() -> None:
             "tests": sum(n_tests.values()), "test_files": n_tests,
         }
         if "scope_table" in m:
-            entry["routines"] = routines_from_scope(markdown_table(scope, m["scope_table"]))
+            entry["routines"] = routines_from_scope(markdown_table(scope, m["scope_table"]), m.get("default_state"))
             entry["routines_source"] = "SCOPE.md"
         else:
             entry["routines"] = [{"name": r["name"], "state": "", "match": "", "lines": str(r["lines"]),

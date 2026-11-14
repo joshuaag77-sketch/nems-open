@@ -21,8 +21,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-BUILD = HERE / "build"
-RUN = HERE / "run"
+# Build and run folders live under WORK: this folder by default; NEMS_ORACLE_WORK moves them (build_wsl.sh keeps
+# Linux objects and run folders on the Linux file system, away from the Windows ones).
+WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))
+BUILD = WORK / "build"
+RUN = WORK / "run"
 
 # 2019, 2020, 2021, 2025, 2026, 2027, 2030, 2040, 2050
 DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]
@@ -134,9 +137,11 @@ DECL_FILES = ["parametr", "comparm", "comvars", "commrep", "qblk", "apq", "ampbl
 # routine's last line), before (dump before that line rather than after it),
 # private, carried.
 RESD_DUMP_YEARS = [31, 32, 33, 36, 37, 38, 41, 51, 61]  # 2020 2021 2022 2025 2026 2027 2030 2040 2050
-# ORACLE_DUMP_YEARS="31,32,36" narrows the dumps (a full residential set is 18 GB).
-if os.environ.get("ORACLE_DUMP_YEARS"):
-    RESD_DUMP_YEARS = [int(y) for y in os.environ["ORACLE_DUMP_YEARS"].split(",")]
+# ORACLE_DUMP_YEARS="31,32,36" narrows the dumps (a full residential set is 18 GB); NEMS_ORACLE_YEARS does the
+# same for every module and is what build_wsl.sh passes through.
+for _var in ("ORACLE_DUMP_YEARS", "NEMS_ORACLE_YEARS"):
+    if os.environ.get(_var):
+        RESD_DUMP_YEARS = [int(y) for y in os.environ[_var].split(",")]
 RESD_TARGETS = [
     dict(tag="pr", call=r"IF \(CurCalYr\.GE\.RECSYear\) CALL RDPR\b"),
     dict(tag="nh", call=r"CALL NEWHSE\b"),
@@ -339,6 +344,251 @@ MODULES = {
     "emm": dict(build="build_emm", run="run_emm", years=EMM_DUMP_YEARS, targets=EMM_TARGETS, module_text=False,
                 sources=["util", "udat", "uldsm", "uefp", "uefd", "uecp", "unugs", "udaf", "ucape", "uread"]),
 }
+# Industrial: routines are external, sharing MODULE I_ through USE, so as for
+# residential the state dump USEs the module. Dumps are the routine-by-routine
+# targets below, taken from the final iteration of these years.
+IND_DUMP_YEARS = [30, 31, 32, 36, 37, 38, 41, 51, 61]  # 2019 2020 2021 2025 2026 2027 2030 2040 2050
+# CALBSC runs once per industry and region; the dump holds the last one of the year.
+IND_TARGETS = [
+    dict(tag="bsc", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="stot", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    # Single industry and region cases, since each dump holds only one call: food (7) and bulk
+    # chemicals (9) have CHP and share biomass boiler fuel, wood products (19) burns biomass,
+    # mining (3) is nonmanufacturing (no coal boilers).
+    dict(tag="stot7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="stot9", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="stot19", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="stot3", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALSTOT", nth=1,
+         end=r"^\s*END SUBROUTINE CALSTOT", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="bsc3", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="bsc7", call=r"if \(inddir\.ne\.8 \.and\. inddir\.ne\.12\) CALL CALBSC", nth=1,
+         end=r"^\s*END SUBROUTINE CALBSC", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="itot", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="itot1", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="itot7", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="itot8", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.8 .and. indreg.eq.2"),
+    dict(tag="itot12", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.12 .and. indreg.eq.1"),
+    dict(tag="itot16", call=r"CALL INDTOTAL\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE INDTOTAL", before=True, private=[], carried=[], when="inddir.eq.16 .and. indreg.eq.4"),
+    dict(tag="cinit", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="cinit7", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="cinit9", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="cinit19", call=r"CALL COGINIT\(INDREG\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE COGINIT", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="ecog", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="ecog7", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="ecog9", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="ecog19", call=r"call evalcogen\(0,CURIYR\+BASEYR-1\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE EvalCogen", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="cgen", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.21 .and. indreg.eq.4"),
+    dict(tag="cgen7", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="cgen9", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.3"),
+    dict(tag="cgen19", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.2"),
+    dict(tag="cgen1", call=r"CALL CALGEN\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE CALGEN", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="nat", call=r"CALL NATTOTAL\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="nat1", call=r"CALL NATTOTAL\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.4"),
+    dict(tag="nat7", call=r"CALL NATTOTAL\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE NATTOTAL", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.4"),
+    dict(tag="btot", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="btot1", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="btot7", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="btot8", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.8 .and. indreg.eq.2"),
+    dict(tag="btot12", call=r"CALL CALBTOT\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CALBTOT", before=True, private=[], carried=[], when="inddir.eq.12 .and. indreg.eq.1"),
+    dict(tag="con", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="indnum.eq.1 .and. indreg.eq.1"),
+    dict(tag="con4", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="indnum.eq.1 .and. indreg.eq.4"),
+    dict(tag="con2", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2"),
+    dict(tag="con3", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="con6", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.6 .and. indreg.eq.3"),
+    dict(tag="con7", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="con9", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2"),
+    dict(tag="con24", call=r"CALL CONTAB\(INDREG\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="cons", call=r"CALL CONTAB\(5\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="indnum.eq.1 .and. indreg.eq.4"),
+    dict(tag="cons7", call=r"CALL CONTAB\(5\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.4"),
+    dict(tag="cons24", call=r"CALL CONTAB\(5\)", nth=1,
+         end=r"^\s*END\s+SUBROUTINE CONTAB", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="byp", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="indnum.eq.1 .and. indreg.eq.1"),
+    dict(tag="byp1", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2"),
+    dict(tag="byp7", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="byp9", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2"),
+    dict(tag="byp24", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="byp3", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="byp19", call=r"CALL CALBYPROD\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.19 .and. indreg.eq.4"),
+    dict(tag="pr1", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2"),
+    dict(tag="pr3", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="pr6", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.6 .and. indreg.eq.3"),
+    dict(tag="pr7", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="pr9", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2"),
+    dict(tag="pr14", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.14 .and. indreg.eq.1"),
+    dict(tag="pr24", call=r"CALL CALPROD\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="pt1", call=r"CALL CALPATOT\(version\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2"),
+    dict(tag="pt7", call=r"CALL CALPATOT\(version\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="pt9", call=r"CALL CALPATOT\(version\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2"),
+    dict(tag="pt24", call=r"CALL CALPATOT\(version\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="pt18", call=r"CALL CALPATOT\(version\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1"),
+    dict(tag="cs7_11", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3 .and. ifuel.eq.1 .and. istep.eq.1"),
+    dict(tag="cs7_21", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3 .and. ifuel.eq.2 .and. istep.eq.1"),
+    dict(tag="cs7_12", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3 .and. ifuel.eq.1 .and. istep.eq.2"),
+    dict(tag="cs7_32", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3 .and. ifuel.eq.3 .and. istep.eq.2"),
+    dict(tag="cs1_11", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2 .and. ifuel.eq.1 .and. istep.eq.1"),
+    dict(tag="cs1_21", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2 .and. ifuel.eq.2 .and. istep.eq.1"),
+    dict(tag="cs1_12", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2 .and. ifuel.eq.1 .and. istep.eq.2"),
+    dict(tag="cs1_32", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2 .and. ifuel.eq.3 .and. istep.eq.2"),
+    dict(tag="cs9_11", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2 .and. ifuel.eq.1 .and. istep.eq.1"),
+    dict(tag="cs9_21", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2 .and. ifuel.eq.2 .and. istep.eq.1"),
+    dict(tag="cs9_12", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2 .and. ifuel.eq.1 .and. istep.eq.2"),
+    dict(tag="cs9_32", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.9 .and. indreg.eq.2 .and. ifuel.eq.3 .and. istep.eq.2"),
+    dict(tag="cs24_11", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4 .and. ifuel.eq.1 .and. istep.eq.1"),
+    dict(tag="cs24_21", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4 .and. ifuel.eq.2 .and. istep.eq.1"),
+    dict(tag="cs24_12", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4 .and. ifuel.eq.1 .and. istep.eq.2"),
+    dict(tag="cs24_32", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4 .and. ifuel.eq.3 .and. istep.eq.2"),
+    dict(tag="cs18_11", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1 .and. ifuel.eq.1 .and. istep.eq.1"),
+    dict(tag="cs18_21", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1 .and. ifuel.eq.2 .and. istep.eq.1"),
+    dict(tag="cs18_12", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1 .and. ifuel.eq.1 .and. istep.eq.2"),
+    dict(tag="cs18_32", call=r"CALL CALCSC\(IFUEL,ISTEP\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1 .and. ifuel.eq.3 .and. istep.eq.2"),
+    dict(tag="m7", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="m1", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.1"),
+    dict(tag="m1b", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.4"),
+    dict(tag="m24", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="m18", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.18 .and. indreg.eq.1"),
+    dict(tag="m3", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.1"),
+    dict(tag="m6", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.6 .and. indreg.eq.3"),
+    dict(tag="m14", call=r"CALL MODCAL\(.original.\)", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.14 .and. indreg.eq.4"),
+    dict(tag="wx", call=r"CALL WEXOG\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[]),
+    dict(tag="bif7", call=r"CALL INDBIFURC\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
+    dict(tag="bif1", call=r"CALL INDBIFURC\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.1 .and. indreg.eq.2"),
+    dict(tag="bif24", call=r"CALL INDBIFURC\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.24 .and. indreg.eq.4"),
+    dict(tag="bif3", call=r"CALL INDBIFURC\b", nth=1,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.4"),
+]
+IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
+# Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
+IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "ibyr2", "lastcalyr", "curitr",
+                   "BSCIBYR", "beff", "PRCX", "PRCXIBYR", "PRCXYR", "MAINFUELS", "BSFUELSHR", "BSSHR", "Boiler_Fuel_List", "HPbeff",
+                   # CALSTOT
+                   "stemcur", "biosteam", "biosteamlag", "prodvx", "prodvxlag", "noncogsteam", "noncogfossteam",
+                   "CogBoilFuel", "FuelFosSteam", "FosFuelSteamSize", "sizeshr", "CALIBIBYR_FOS", "CALIBIBYR_BIO",
+                   "BOILIBYR", "STEMCURIBYR", "COGSTEAMIBYR", "BIOSTEAMIBYR", "ENSQTY", "ENPRQTY", "cogsteamhist",
+                   "maxcogyr", "baseyr", "numflchp", "yr",
+                   "cogthr", "cogelf", "coggrd", "cogcap", "coggen", "genfuel", "rptcap", "rptgen", "cogsteam",
+                   # INDTOTAL
+                   "ENPMQTY", "ENPIQTY", "ENBQTY", "BYPBSCI", "BYPBSCR", "BYPBSCM", "CFELQ", "ELOWN", "ELSALE",
+                   "REFCON", "ELOWNX", "ELSALEX", "XELIN", "XELINSHR", "QTYMAIN", "QTYINTR", "QTYRENW", "indnum",
+                   # COGINIT
+                   "nadds"] + list(f"cogadd%{c}" for c in ("year", "industry", "censusdiv", "fuelind", "gen", "cap", "thr", "elc", "grd")) + [
+                   # EVALCOGEN
+                   "nsys", "nload", "CapCostYearly", "CheatRateYearly", "OverAllEffYearly", "CHeatRate", "CogSizeKW",
+                   "CapFac", "maxRegCHPutil", "RegCHPutil", "QELAS", "CogFuelPrice", "CogElecPrice", "CapCostMultStart",
+                   "CapCostMultEnd", "CapCostMult", "MC_RMTCM10Y", "MC_CPI", "AcceptFrac", "AcceptFrac2",
+                   "CogCapCostKW", "OverAllEff", "ElecGenEff", "ElecSizeMWH", "FuelUse", "PowerSteam", "SteamOutput",
+                   "EBoilEff", "CogSys", "FuelCost", "ExistFuelUse", "ExistFuelCost", "ElecValue", "IncrFuelCost",
+                   "OperProfit", "Investment", "CPayBack", "EconFrac",
+                   # CALGEN
+                   "lookahead", "ijumpyr", "ieyr", "DollarYearCHP", "StandByFrac", "CARBSHR", "CARBSHR_AB", "QGFIN", "QELIN",
+                   "aGFIN", "pGFIN", "aELIN", "SteamSeg_Food", "SteamSeg_Paper", "SteamSeg_Chem", "SteamSeg_Steel",
+                   "SteamSeg_Other", "stemcurlag", "IFSBYP", "IFSLOCBY", "BYPSTMM", "BYPSTMI", "BYPSTMR", "BYPSTM",
+                   "ENBINT", "EMPLX", "PRODVX", "EMPLXIBYR", "PRODVXIBYR", "TQMAIN", "TQINTR", "TQRENW", "QSLUIN", "MC_REVIND", "MSEDYR",
+                   # CONTAB
+                   "MANHP", "NONHP", "REFCON", "H2CON", "AGCON", "MINECON", "CONSTCON", "FOODCON", "PAPERCON", "CHEMCON", "GLASSCON", "CEMENTCON", "STEELCON", "ALUMCON", "FABMETALCON", "MACHINECON", "COMPUTECON", "TRANEQUIPCON", "ELECEQUIPON", "WOODPRODCON", "PLASTICCON", "LTCHEMCON", "OTHRNMMCON", "OTHRPRIMCON", "MISCFINCON", "QtyByInd", "QELRF", "QELeth", "QNGRF", "QNGeth", "QCLRF", "QCLeth", "QRLRF", "QDSRF", "QLGRF", "QSGRF", "QPCRF", "QCCRF", "QOTRF", "QH2RF", "QELHM", "QNGHMHP", "QNGHMPF", "CGOGSQ", "mainfuels", "carbshr_ab", "carbshrca", "elown", "elsale", "HPbeff", "beff",
+                   # CALPROD etc
+                   "mpastp", "ifmax", "ifloc", "ifbyp", "iflocby", "bypcsc", "bypint", "bypintlag", "bypqty", "prodlag", "prodcur", "idlcap", "idlcaplag", "idval", "techstrtyr", "frztech", "hitech", "bypadibyr", "bscibyr", "enpint", "enpintlag", "bcsc", "ijumpcalyr", "itpc", "steolastyr", "tpc1", "tpc2", "enpqty", "chemship", "fertilizer_h2", "prodretr", "retrate", "iretire", "phdrat", "prodx", "prodflow", "ntmax", "ipastp", "prodxlag", "prcxlag", "foodship", "prodxibyr", "rei_adj", "rei_adj_lag", "ind_flow_share", "BUSHEL", "curitr", "sumprodcur", "co2_clink", "co2_lime",  "bypbscm", "bypbsci", "bypbscr",
+                   # WEXOG
+                   "bf", "rbf", "bf_seds", "rbf_steo", "rbf_seds", "bf_steo", "firmshr", "bmain_adjusted", "brenew_adjusted", "asphalttarget", "asphaltpercent", "feedngtotal", "feedhgltotal", "feednaphtotal", "steoq", "icuriyr", "msedyr", "sedslastyr", "fcrl", "co2_elec", "qngpin", "ogsupgas", "cfngc", "cfelq", "mc_gslgisnhwyr", "qselin", "qsngin", "qsclin", "qsmcin", "qsciin", "qsrsin", "qsdsin", "qslgin", "qsmgin", "qspcin", "qsasin", "qsluin", "qspfin", "qsksin", "qsotin", "qshoin", "qsbmin", "qsmsin", "qsppin", "qsgfin", "qsgiin", "qsprin", "qelinh2ng", "qelinh2e", "h2_chem_demand_div", "qelin", "qh2inpf", "qgfin", "qgiin", "inqngpf", "qngin", "qclin", "qmcin", "qciin", "qrsin", "qrlin", "qdsin", "qlgin", "inqlgpf", "inqlghp", "qmgin", "qsgin", "qpcin", "qasin", "qluin", "qpfin", "qkSin", "qotin", "qh2inhp", "qhoin", "qbmin", "qmsin", "qtrin", "qh2in", "byprdh2in", "qprin", "tqrenw", "qh2rf", "qh2tr", "qh2el", "qcleth", "qngeth",
+                   "carbshr", "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
+IND_DECL_FILES = ["ccatsdat", "ngtdmrep", "convfact", "wrenew", "hmmblk", "parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
+                  "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
+MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
+                      includes=["hmmblk"], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
+                      decl_files=IND_DECL_FILES, module_text=True, module_name="I_", decls_only=True)
 CFG = MODULES["comm"]
 
 # Spaces are allowed around the * ("REAL *4" in efpnd).
@@ -420,6 +670,11 @@ def common_names(text):
     return names
 
 
+# Components of the derived-type array COGADD (planned CHP builds); dumped as plain arrays.
+COMPONENT_DECLS = {f"cogadd%{c}": ("integer" if c in ("year", "industry", "censusdiv", "fuelind") else "real", 1)
+                   for c in ("year", "industry", "censusdiv", "fuelind", "gen", "cap", "thr", "elc", "grd")}
+
+
 def dump_call(tag, name, t, rank):
     code = type_code(t, name)
     if code is None:
@@ -429,17 +684,17 @@ def dump_call(tag, name, t, rank):
         # that declares them as text (odump_c in stubs.f90).
         lb = f"lbound({name})" if rank else "0"
         ub = f"ubound({name})" if rank else "0"
-        return (f"      call odump_c('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+        return (f"      call odump_c('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', "
                 f"{rank}, {lb}, {ub})")
     if rank == 0:
-        return f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
-    return (f"      call odump('{tag}', '{name.lower()}', CURIYR, {name}, sizeof({name}), '{code}', "
+        return f"      call odump('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', 0, 0, 0)"
+    return (f"      call odump('{tag}', '{name.lower().replace('%', '_')}', CURIYR, {name}, sizeof({name}), '{code}', "
             f"{rank}, lbound({name}), ubound({name}))")
 
 
-def module_r_(source_text):
-    """The MODULE R_ block of resd.f: its declarations and its shared arrays."""
-    m = re.search(r"^MODULE R_\s*$(.*?)^END MODULE R_", source_text, re.I | re.M | re.S)
+def module_r_(source_text, name="R_"):
+    """The MODULE R_ block of resd.f (or I_ of ind.f): its declarations and its shared arrays."""
+    m = re.search(r"^\s*MODULE " + name + r"\s*$(.*?)^\s*END MODULE " + name, source_text, re.I | re.M | re.S)
     text = m.group(1)
     names = common_names(text)
     for st in statements(text):
@@ -484,10 +739,12 @@ def write_state_routine(inc_dir, source_text=None):
     for n in CFG["block_files"]:
         names += common_names((inc_dir / n).read_text(encoding="latin-1"))
     if CFG["module_text"]:
-        mtext, mnames = module_r_(source_text)
+        mtext, mnames = module_r_(source_text, CFG.get("module_name", "R_"))
         decls.update(declarations(mtext))
-        names += mnames
+        if not CFG.get("decls_only"):  # ind: only the names listed in extra, not all of I_
+            names += mnames
     names += CFG["extra"]
+    decls.update(COMPONENT_DECLS)
 
     def calls_for(subset):
         cs = [c for c in (dump_call("'//tag//'", n, *decls.get(n.lower(), ("?", 0))) for n in {s.lower(): s for s in subset}.values()) if c]
@@ -495,7 +752,7 @@ def write_state_routine(inc_dir, source_text=None):
 
     calls = calls_for(names)
     extra_routine = ""
-    if CFG["module_text"]:
+    if CFG["module_text"] and "wide_files" in CFG:
         # A full residential dump is about 170 MB. Around a target, dump only the
         # shared arrays its routines mention; the full set is kept for 'final'.
         wide = list(names)
@@ -550,7 +807,14 @@ def write_state_routine(inc_dir, source_text=None):
     return len(calls)
 
 
+# Variables the dump hooks must leave out: names the 2026 source declares where the hook sits but another
+# release does not (ORACLE_SKIP_VARS="applyramp,datactrservpenetration", found from the compiler's
+# "has no IMPLICIT type" errors; see docs/aeo_diff2.md).
+SKIP_VARS = {v.strip().lower() for v in os.environ.get("ORACLE_SKIP_VARS", "").split(",") if v.strip()}
+
+
 def private_dumps(tag, names, src_decls):
+    names = [n for n in names if n.lower() not in SKIP_VARS]
     return [c for c in (dump_call(tag, n, *src_decls.get(n.lower(), ("?", 0))) for n in names) if c]
 
 
@@ -581,8 +845,9 @@ def instrument(comm_path: Path, upstream: Path):
         first = comm and tag in FIRST_CALL
         first_in = f"{ind}CALL ORACLE_STATE('f{tag}_in')\n" if first else ""
         first_out = f"\n{ind}CALL ORACLE_STATE('f{tag}_out')" if first else ""
-        text = (text[:m.start()] + f"{ind}CALL ORACLE_STATE('{tag}_in')\n{first_in}{ind}{m.group(2)}\n"
-                f"{ind}CALL ORACLE_STATE('{tag}_out'){first_out}" + text[m.end():])
+        guard = f"IF ({tg['when']}) " if tg.get("when") else ""  # dump one industry and region only
+        text = (text[:m.start()] + f"{ind}{guard}CALL ORACLE_STATE('{tag}_in')\n{first_in}{ind}{m.group(2)}\n"
+                f"{ind}{guard}CALL ORACLE_STATE('{tag}_out'){first_out}" + text[m.end():])
         years = ", ".join(map(str, CFG["years"]))
         if not private and not carried:
             continue
@@ -906,9 +1171,9 @@ def make_dirs():
 
 
 if __name__ == "__main__":
-    upstream, src = Path(sys.argv[1]).resolve(), Path(sys.argv[2])
+    upstream, src = Path(os.path.abspath(sys.argv[1])), Path(sys.argv[2])
     CFG = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
-    BUILD, RUN = HERE / CFG["build"], HERE / CFG["run"]
+    BUILD, RUN = WORK / CFG["build"], WORK / CFG["run"]
     if CFG is MODULES["emm"]:
         n = write_state_routine_emm(upstream / "includes")
         instrument_emm(src)

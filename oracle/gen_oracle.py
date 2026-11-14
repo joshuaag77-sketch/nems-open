@@ -8,10 +8,8 @@ Writes into oracle/run/:
 And into oracle/build/:
   load_restart.f90 Fortran that reads dump/*.bin into the COMMON blocks
 
-Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 tran
-module is comm (default, run/ and build/), resd, emm or tran (run_<module>/ and build_<module>/).
-The build folder also gets a copy of the upstream includes in inc/, so the compile
-works wherever the upstream checkout lives (spaces in its path break -I).
+Usage: python -I gen_oracle.py <upstream> <scenario> [module]   e.g. ../nems-upstream cb2026 resd
+module is comm (default, run/ and build/), resd or emm (run_<module>/ and build_<module>/).
 """
 
 import csv
@@ -25,6 +23,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
+WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))   # build and run folders (see hooks.py)
 
 # One entry per ported module. includes: same includes, same order, as the module's
 # entry routine sees them (nested includes such as apq -> qblk are followed).
@@ -62,6 +61,21 @@ MODULES = {
         workbooks=[("input/rdm/rsmess.xlsx", s) for s in ("RSCLASS", "RSMEQP", "RSSWITCH", "RSMSHL")],
         skip_blocks=["RESDREP", "RSCON", "RSEFF"],
     ),
+    "ind": dict(
+        source=["ind.f"], run="run_ind", build="build_ind",
+        # MODULE I_ at the top of ind.f, then the extra includes its routines add
+        includes=["parametr", "ccatsdat", "ncntrl", "emmparm", "macout", "qblk", "mpblk", "intout", "epmmpblk",
+                  "qsblk", "eusprc", "indout", "cogen", "indrep", "bifurc", "wrenew", "ogsmout", "pmmrpt",
+                  "pmmout", "ngtdmrep", "comparm", "tranrep", "cdsparms",
+                  "hmmblk", "ghgrep", "emeblk", "emission", "steoblock", "indepm", "coalrep", "coalout",
+                  "lfmmout", "emoblk", "convfact", "ab32"],
+        workbooks=[("input/idm/indcogenx.xlsx", "icogen")]
+                  + [("input/idm/ironstlx.xlsx", s) for s in ("steel", "paper", "Aluminum", "Glass", "Lime", "Cement")],
+        # Nothing is skipped: IND reads the current year's quantities (calgen divides by QGFIN)
+        # and next year's consumption (AGCON, ... in CARBSHRCA) before it writes them, so the
+        # run starts from the restart file's values, as NEMS does from its seed restart.
+        skip_blocks=[],
+    ),
     # EMM's Fortran: the yearly driver UTIL and everything it calls, with only the
     # ECP and EFD solves swapped out (see hooks.py). includes="auto" takes every
     # include these files use. EFP's own outputs are not loaded.
@@ -88,8 +102,8 @@ MODULES = {
 }
 
 # Set by main() from MODULES.
-RUN = HERE / "run"
-BUILD = HERE / "build"
+RUN = WORK / "run"
+BUILD = WORK / "build"
 INCLUDES: list[str] = []
 WORKBOOKS: list = []
 SKIP_BLOCKS: list[str] = []
@@ -146,14 +160,19 @@ def write_filelist(upstream: Path, scenario: str, file_modes=False):
     path), and write filemodes.txt with each file's action, access, form and
     record length from the scedes file, for stubs.f90's FILE_MGR."""
     rows, opts, modes = [], [], []
-    text = (upstream / "scedes" / f"scedes.{scenario}.csv").read_text(encoding="latin-1")
-    for parts in csv.reader(text.splitlines()):
+    csv_path = upstream / "scedes" / f"scedes.{scenario}.csv"
+    if csv_path.exists():
+        lines = list(csv.reader(csv_path.read_text(encoding="latin-1").splitlines()))
+    else:           # AEO2025 and earlier: scedes.<scenario> holds KEY=value lines
+        text = (upstream / "scedes" / f"scedes.{scenario}").read_text(encoding="latin-1")
+        lines = [list(l.partition("=")[0::2]) for l in text.splitlines() if "=" in l]
+    for parts in lines:
         if len(parts) < 2 or parts[0].startswith("#"):
             continue
         key, value = parts[0].strip(), parts[1].strip()
         path = None
         if value.startswith("$NEMS/"):
-            path = (upstream / value[len("$NEMS/"):]).resolve()
+            path = Path(os.path.abspath(upstream / value[len("$NEMS/"):]))   # not resolve(): keep a space-free symlink path
             key = key[:-1] if key.endswith('N') else key
             rows.append(f"{key} {path}")
         elif re.fullmatch(r"-?\d+", value):
@@ -180,15 +199,48 @@ def flatten_workbooks(upstream: Path):
                         str(upstream / book), sheet, str(out)], check=True)
 
 
-def dump_restart(upstream: Path, scenario: str, members):
-    runs = sorted((upstream / "output" / "aeo2026" / scenario).glob("*/restart.npz"))
+def common_aliases(inc_dir: Path, includes):
+    """{(BLOCK, name): [other names]} for COMMON blocks that two includes declare with
+    different variable names over the same memory (ampblk calls the industrial
+    electricity price PELIN, epmmpblk calls it AELIN). The restart file keeps one
+    spelling; the other include needs its own copy loaded."""
+    lists = {}
+    wanted = {m.group(1).upper() for n in includes
+              for st in statements((inc_dir / n).read_text(encoding="latin-1"))
+              if (m := re.match(r"common\s*/\s*(\w+)\s*/", st, re.I))}
+    # The other spelling usually lives in an include the module does not pull in, so scan them all.
+    for f in sorted(inc_dir.iterdir()):
+        if not f.is_file():
+            continue
+        for st in statements(f.read_text(encoding="latin-1")):
+            m = re.match(r"common\s*/\s*(\w+)\s*/(.*)", st, re.I)
+            if m and m.group(1).upper() in wanted:
+                body = re.sub(r"\([^()]*\)", "", m.group(2))
+                names = [v.strip().lower() for v in body.split(",") if v.strip()]
+                lists.setdefault(m.group(1).upper(), []).append(names)
+    aliases = {}
+    for block, ls in lists.items():
+        for a in ls:
+            for b in ls:
+                if a is not b and len(a) == len(b):
+                    for x, y in zip(a, b):
+                        if x != y:
+                            aliases.setdefault((block, x), set()).add(y)
+    return aliases
+
+
+def dump_restart(upstream: Path, scenario: str, members, aliases=None):
+    aliases = aliases or {}
+    year = os.environ.get("NEMS_AEO_YEAR", "2026")        # "2025" for the AEO2025 checkout (docs/aeo_diff.md)
+    runs = sorted((upstream / "output" / f"aeo{year}" / scenario).glob("*/restart.npz"))
     z = np.load(runs[0], allow_pickle=False)
     dump = RUN / "dump"
     dump.mkdir(parents=True, exist_ok=True)
     loaded = []
     for key in z.files:
         block, _, var = key.partition("/")
-        if (block.upper(), var.lower()) not in members or block.upper() in SKIP_BLOCKS:
+        wanted = [(block.upper(), var.lower())] + [(block.upper(), o) for o in aliases.get((block.upper(), var.lower()), ())]
+        if not any(w in members for w in wanted) or block.upper() in SKIP_BLOCKS:
             continue
         try:
             a = z[key]
@@ -198,7 +250,13 @@ def dump_restart(upstream: Path, scenario: str, members):
             continue
         fname = f"{block}__{var}.bin".lower()
         (dump / fname).write_bytes(np.asfortranarray(a).tobytes(order="F"))
-        loaded.append((var.upper(), fname))
+        if (block.upper(), var.lower()) in members:
+            loaded.append((var.upper(), fname))
+        for other in sorted(aliases.get((block.upper(), var.lower()), ())):
+            if (block.upper(), other) in members and not any(v == other.upper() for v, _ in loaded):
+                oname = f"{block}__{other}.bin".lower()
+                (dump / oname).write_bytes(np.asfortranarray(a).tobytes(order="F"))
+                loaded.append((other.upper(), oname))
     return loaded
 
 
@@ -216,7 +274,7 @@ def auto_includes(sources) -> list[str]:
 
 
 def include_prefixes(sources):
-    """For each include, the include list of the first module or routine that uses it,
+    """For each include, the include list of the first routine that uses it,
     up to and including it. That ordering already compiles, so it is safe."""
     prefixes = {}
     for routine in re.split(r"(?im)^\s*end\s*(?:subroutine|function|module)?\s*\w*\s*$", source_text(sources)):
@@ -298,15 +356,15 @@ def write_loader(loaded, inc_dir: Path, sources):
 
 def main():
     global RUN, BUILD, INCLUDES, WORKBOOKS, SKIP_BLOCKS
-    upstream, scenario = Path(sys.argv[1]).resolve(), sys.argv[2]
+    upstream, scenario = Path(os.path.abspath(sys.argv[1])), sys.argv[2]   # abspath, not resolve: keep a space-free symlink path
     mod = MODULES[sys.argv[3] if len(sys.argv) > 3 else "comm"]
-    RUN, BUILD = HERE / mod["run"], HERE / mod["build"]
+    RUN, BUILD = WORK / mod["run"], WORK / mod["build"]
     sources = [upstream / "source" / s for s in ([mod["source"]] if isinstance(mod["source"], str) else mod["source"])]
     INCLUDES, WORKBOOKS, SKIP_BLOCKS = mod["includes"], mod["workbooks"], mod["skip_blocks"]
     if INCLUDES == "auto":
         INCLUDES = auto_includes(sources)
-    RUN.mkdir(exist_ok=True)
-    BUILD.mkdir(exist_ok=True)
+    RUN.mkdir(parents=True, exist_ok=True)
+    BUILD.mkdir(parents=True, exist_ok=True)
     shutil.copytree(upstream / "includes", BUILD / "inc", dirs_exist_ok=True)
     inc_dir = upstream / "includes"
     includes = walk_includes(INCLUDES, inc_dir)
@@ -329,7 +387,7 @@ def main():
         (RUN / dst).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(upstream / src, RUN / dst)
     flatten_workbooks(upstream)
-    loaded = dump_restart(upstream, scenario, members)
+    loaded = dump_restart(upstream, scenario, members, common_aliases(inc_dir, includes))
     subprocess.run([sys.executable, str(HERE / "steo_fill.py"), str(upstream),
                     str(RUN / "dump" / "steo_var_com__eq.bin")], check=True)
     n = write_loader(loaded, inc_dir, sources)

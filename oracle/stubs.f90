@@ -1,3 +1,10 @@
+#ifdef POSUNIT
+#define NU unit=u
+#define FREEU call free_unit(u)
+#else
+#define NU newunit=u
+#define FREEU
+#endif
 ! Stand-ins for the NEMS services comm.f calls, so it runs outside NEMS.
 ! FILE_MGR opens files by key using run/filelist.txt.
 ! RTOVALUE returns scenario switches from run/options.txt.
@@ -80,13 +87,16 @@ integer function file_mgr(func, name_in, new)
   enddo
   if (.not. found) then
     ! Report and debug files NEMS names at run time: send them to out/.
-    call execute_command_line('if not exist out mkdir out')
+    FREEU
+    call ensure_out()
     path = 'out/'//trim(key)//'.txt'
-    open(unit=u, file=trim(path), status='replace', action='write')
+    open(NU, file=trim(path), status='replace', action='write')
   else if (new) then
-    open(unit=u, file=trim(path), status='replace', action='write')
+    FREEU
+    open(NU, file=trim(path), status='replace', action='write')
   else
-    open(unit=u, file=trim(path), status='old', action='read')
+    FREEU
+    open(NU, file=trim(path), status='old', action='read')
   endif
   do sp = 1, 500
     if (units(sp) == 0) then
@@ -205,7 +215,7 @@ subroutine dump(name, x, nbytes)
   integer(1) x(*)
   integer(8) nbytes
   integer u
-  call execute_command_line('if not exist out mkdir out')
+  call ensure_out()
   open(newunit=u, file='out/'//name//'.bin', access='stream', form='unformatted', status='replace')
   write(u) x(1:nbytes)
   close(u)
@@ -272,3 +282,28 @@ subroutine callsys(iret, cmd)
   character(*) cmd
   call execute_command_line(trim(cmd), exitstat=iret)
 end subroutine callsys
+
+! gfortran's newunit hands out negative numbers; EIA's code tests unit .le. 0 as
+! failure (mecsbase), so the industrial oracle needs positive units.
+subroutine free_unit(u)
+  implicit none
+  integer u
+  logical op
+  u = 200
+  do
+    inquire(unit=u, opened=op)
+    if (.not. op) exit
+    u = u + 1
+  enddo
+end subroutine free_unit
+! out/ holds the dumps and reports; the same command on Windows (cmd) and Linux (sh).
+subroutine ensure_out()
+  implicit none
+  character(64) osname
+  call get_environment_variable('OS', osname)
+  if (index(osname, 'Windows') > 0) then
+    call execute_command_line('if not exist out mkdir out')
+  else
+    call execute_command_line('mkdir -p out')
+  endif
+end subroutine ensure_out

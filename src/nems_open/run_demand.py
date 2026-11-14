@@ -102,6 +102,9 @@ class ResidentialSector:
     name = "residential"
     suffix = "rs"
 
+    def __init__(self, levers=None):
+        self.levers = levers            # residential.levers.ResidentialLevers
+
     @staticmethod
     def available(year: int) -> bool:
         """Any year from 2021: from the oracle's dump where there is one, else from the files."""
@@ -131,6 +134,9 @@ class ResidentialSector:
         from nems_open.residential.reports import nhtshr, resdrp2
         s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, itr
         inputs.apply(s)
+        if self.levers and year >= self.levers.year and not s.get("_levers_applied"):
+            from nems_open.residential import levers
+            s["_levers_applied"] = levers.apply(self.levers, s)
         resd.projection_year(s)
         if year == resd.LASTYEAR and itr == 2:
             nhtshr(s)
@@ -183,8 +189,9 @@ class CommercialSector:
 class IndustrialSector:
     """SUBROUTINE IND (source/ind.f): the slot industrial fills as its port lands.
 
-    Ported so far (branch `industrial`): CALBSC, CALSTOT and INDTOTAL, the boiler and
-    fuel accounting inside ISEAM's loop over 24 industries and 4 Census regions. The
+    Ported so far: CALBSC, CALSTOT and INDTOTAL (boiler and fuel accounting inside ISEAM's
+    loop over 24 industries and 4 Census regions) and COGINIT, EVALCOGEN and CALGEN (combined
+    heat and power). The
     steps that carry those results to QBLK (MODCAL, NATTOTAL, WRQTY, and WEXOG's
     history and STEO benchmarking) are not ported, so the ported routines cannot move
     QBLK yet. Until they are, the sector's fuel use is the industrial oracle's: EIA's
@@ -195,7 +202,7 @@ class IndustrialSector:
     """
     name = "industrial"
     suffix = "in"
-    ported = ("CALBSC", "CALSTOT", "INDTOTAL")
+    ported = ("CALBSC", "CALSTOT", "INDTOTAL", "COGINIT", "EVALCOGEN", "CALGEN")
 
     @staticmethod
     def oracle_out():
@@ -235,11 +242,11 @@ class InProcess:
     the work, quantities() waits for it. The worker holds the sector's state and its own
     copy of the restart file; each iteration it gets the caller's input overrides."""
 
-    def __init__(self, name: str, year: int, snapshot_path, ev_share: dict | None = None):
+    def __init__(self, name: str, year: int, snapshot_path, options: dict | None = None):
         import multiprocessing as mp
         ctx = mp.get_context("spawn")
         self.conn, child = ctx.Pipe()
-        self.proc = ctx.Process(target=_sector_worker, args=(child, name, year, str(snapshot_path), ev_share),
+        self.proc = ctx.Process(target=_sector_worker, args=(child, name, year, str(snapshot_path), options),
                                 daemon=True)
         # The worker needs only this package. Hide the caller's script from the spawn, which
         # would otherwise re-run its top level in the worker (a script with no main guard
@@ -277,13 +284,13 @@ class InProcess:
                 self.proc.terminate()
 
 
-def _sector_worker(conn, name: str, year: int, snapshot_path: str, ev_share: dict | None = None) -> None:
+def _sector_worker(conn, name: str, year: int, snapshot_path: str, options: dict | None = None) -> None:
     import traceback
     error = None
     try:
         inputs = Inputs(Snapshot(snapshot_path))
-        sector = SECTORS[name](ev_share) if name == "transportation" else SECTORS[name]()
-        state = sector.start(year)
+        sector = SECTORS[name](**(options or {}))
+        state = sector.start(year, inputs)
     except Exception:
         error = traceback.format_exc()
     while True:
@@ -370,6 +377,8 @@ class TransportationSector:
             s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, i
             apply_transportation(inputs, s)
             tran.tran(s, t["carry"])
+            if self.ev_share:
+                share_ev_charging(inputs, s)
         t["next_itr"] = itr + 1
 
     def quantities(self, t) -> dict:
@@ -380,6 +389,20 @@ class TransportationSector:
 # buildings modules), and TMPGNEW fills zero E85 prices from gasoline (PETTR) and TMISC
 # the US methanol price (PMETR), so EIA's restart copies of those differ from TRAN's.
 TRAN_WRITES = ("pettr", "pmetr")
+
+
+def share_ev_charging(inputs: Inputs, s: dict) -> None:
+    """Hand this year's TRQ_ELEC from TRAN to the buildings modules. EV charging reaches the
+    grid through them (EIA's QELRS and QELCM add TRQ_ELEC; QELTR is passenger rail only), and
+    they otherwise read EIA's copy, so an EV share target would cut gasoline and add no load.
+    As in NEMS's module order they see it on their next iteration. Only with a target: without
+    one the buildings keep EIA's copy and stay bit-identical to the oracle."""
+    full = inputs.by_var["trq_elec"]
+    trq = inputs.overrides.get(full)
+    if trq is None:
+        trq = inputs.overrides[full] = np.array(inputs.snapshot[full])
+    j = int(s["curiyr"]) - 1
+    trq[:, :, j] = s["trq_elec"].a[:, :, j]
 
 
 def apply_transportation(inputs: Inputs, s: dict) -> None:
@@ -482,7 +505,8 @@ class DemandRunner:
 
     def __init__(self, year: int, inputs: Inputs | None = None,
                  sectors=("residential", "commercial"), parallel: bool = False,
-                 commercial_from_files: bool = False, commercial_levers=None, ev_share: dict | None = None):
+                 commercial_from_files: bool = False, commercial_levers=None, ev_share: dict | None = None,
+                 residential_levers=None):
         self.inputs = inputs or Inputs()
         self.year = year
         self.first_iteration = 2
@@ -492,17 +516,17 @@ class DemandRunner:
             if SECTORS[name] is None:
                 raise NotImplementedError(f"{name} demand is not ported yet")
         # parallel: every sector but the last runs in a worker process (started first, so
-        # it loads while this process starts the last one). Results are the same. A commercial
-        # sector with options (from files, levers) stays in this process: a worker builds its own default.
-        options = commercial_from_files or commercial_levers is not None
-        workers = {name: InProcess(name, year, self.inputs.snapshot.path, ev_share)
-                   for name in names[:-1] if not (name == "commercial" and options)} if parallel else {}
+        # it loads while this process starts the last one). Results are the same.
+        options = {"residential": {"levers": residential_levers},
+                   "commercial": {"from_files": commercial_from_files, "levers": commercial_levers},
+                   "transportation": {"ev_share": ev_share}}
+        workers = {name: InProcess(name, year, self.inputs.snapshot.path, options.get(name))
+                   for name in names[:-1]} if parallel else {}
         for name in names:
             if name in workers:
                 self.sectors.append((workers[name], None))
             else:
-                sector = (SECTORS[name](commercial_from_files, commercial_levers) if name == "commercial"
-                          else SECTORS[name](ev_share) if name == "transportation" else SECTORS[name]())
+                sector = SECTORS[name](**options.get(name, {}))
                 self.sectors.append((sector, sector.start(year, self.inputs)))
         self.q = eia_quantities(self.inputs.snapshot)
 

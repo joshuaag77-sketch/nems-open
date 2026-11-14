@@ -52,6 +52,81 @@ RULES = [
     # RESDBOUT's lighting report (format 990), so write the zeros as reals.
     (re.compile(r"(LTInvest\(app,Y,E,B,D,2\)),0,0,(LTsubsidy\(app,Y,E,B,D,1\),LTsubsidy\(app,Y,E,B,D,2\)),0,0,0"),
      r"\1,0.,0.,\2,0.,0.,0."),
+    # Industrial (ind.f). A parenthesized item list in READ, "(a(4,1),a(4,4:5))", is not
+    # an implied DO; drop the parentheses.
+    (re.compile(r"\(enbint\(4,1\),enbint\(4,4:5\)\)"), "enbint(4,1),enbint(4,4:5)"),
+    # Industrial: "IF(INDREG.EQ.4) CALL CONTAB(5)" -> block IF, so the oracle can hook the CALL line.
+    (re.compile(r"^(\s*)IF\s*\(\s*indreg\s*\.eq\.\s*4\s*\)\s*CALL\s+CONTAB\(5\)\s*$", re.I | re.M),
+     "IF(INDREG.EQ.4) THEN" + chr(10) + "  CALL CONTAB(5)" + chr(10) + "ENDIF"),
+    # Intel's backslash edit descriptor (no line advance) is only used on console output.
+    (re.compile(r"f9\.2\\\)'"), "f9.2)'"),
+    # Numeric variable-format expressions, <26-10+1>F12.3: any repeat count that covers the list.
+    (re.compile(r"<\d[\w+\-*/ ()]*>(?=[FfIiEeAa])"), "999"),
+    # CHARACTER*NAME with a parameter name needs parentheses in gfortran.
+    (re.compile(r"\bcharacter\s*\*\s*([A-Za-z_]\w*)(?!\s*\()", re.I), r"character(len=\1)"),
+    # Intel's EOF(unit) is not in gfortran. Give MODULE I_ one: read a record, and step back
+    # over it if there was one.
+    (re.compile(r"^(\s*)end\s+module\s+i_\s*$", re.I | re.M),
+     "      contains\n      logical function eof(u)\n      integer u, ios\n      character(1) c\n"
+     "      read(u, '(a)', iostat=ios) c\n      eof = ios /= 0\n      if (ios == 0) backspace(u)\n"
+     "      end function eof\n      end module i_"),
+    # Scalar assignment to a not-yet-allocated array: Intel does nothing, gfortran writes to
+    # address zero. ISEAM and WEXOG zero these before they are first allocated.
+    (re.compile(r"^(\s*)(qcr(?:cokeplnt|indchp|indnchp)|feed\w+total|feedH2fertilizer|EthaneDivFrac|PropaneDivFrac)"
+                r"\s*=\s*0\s*$", re.I | re.M),
+     r"\1if (allocated(\2)) \2 = 0"),
+    # MIN(x, 1.0) with x = NaN: Intel returns the second argument (1.0), gfortran returns the NaN.
+    # CARBSHRCA is 0/0 or x/0 in the first California year (it divides by next year's
+    # consumption, which does not exist yet), so EIA's code relies on the cap.
+    (re.compile(r"min\(CARBSHRCA\(INDDIR\),1\.0\)", re.I),
+     "merge(1.0,min(CARBSHRCA(INDDIR),1.0),isnan(CARBSHRCA(INDDIR)))"),
+    # CALBTOT keeps the base-year production and employment in local arrays that persist between calls
+    (re.compile(r"^(\s*)real emplxIBYR\(numind,4\),prodvxIBYR\(numind,4\)[ \t]*$", re.I | re.M), r"\1"),
+    (re.compile(r"^(\s*REAL EMPLX)[ ]+!.*$", re.I | re.M), r"\1"+"\n      REAL EMPLXIBYR(numind,4), PRODVXIBYR(numind,4)"),
+    # CALPROD keeps PRODXIBYR (base-year production) and CALCSC keeps REI_Adj in local arrays that persist
+    # between calls; move them to MODULE I_ so the oracle can dump them.
+    (re.compile(r"^\s*REAL PRODXIBYR\(numind,4\)/nz\*0\./.*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL REI_Adj(?:_Lag)?\(3,17,maxstep\).*$", re.I | re.M), ""),
+    (re.compile(r"^(\s*REAL EMPLXIBYR\(numind,4\), PRODVXIBYR\(numind,4\))$", re.I | re.M),
+     chr(92) + "1" + chr(10) + "      REAL PRODXIBYR(numind,4)" + chr(10) + "      REAL REI_Adj(3,17,maxstep), REI_Adj_Lag(3,17,maxstep)"),
+    # WEXOG keeps its benchmark factors and feedstock series in local variables that persist between calls;
+    # move them to MODULE I_ so the oracle can dump them.
+    (re.compile(r"^\s*REAL BF_SEDS\(MAINFL,NCENSREG\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL RBF_SEDS\(RENEWFL,NCENSREG\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL BF_STEO\(MAINFL\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL RBF_STEO\(RENEWFL\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL BMAIN_ADJUSTED\(MAINFL,5\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL BRENEW_ADJUSTED\(RENEWFL,5\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real asphalttarget\(5\), asphaltpercent\(5\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::feedngtotal\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::FEEDHGLtotal\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::feednaphtotal\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^(\s*)REAL FIRMSHR\(5\),SUMCDIV", re.I | re.M), r"\1REAL SUMCDIV"),
+    (re.compile(r"^(\s*REAL PRODXIBYR\(numind,4\))$", re.I | re.M),
+     r"\1" + chr(10) + "      REAL BF_SEDS(mainfuels-1,4), RBF_SEDS(8,4), BF_STEO(mainfuels-1), RBF_STEO(8), FIRMSHR(5)" + chr(10)
+     + "      REAL BMAIN_ADJUSTED(mainfuels-1,5), BRENEW_ADJUSTED(8,5), asphalttarget(5), asphaltpercent(5)" + chr(10)
+     + "      REAL,ALLOCATABLE::feedngtotal(:), FEEDHGLtotal(:), feednaphtotal(:)"),
+    # NaN report format (format 2336) gives an I4 edit descriptor to a REAL; Intel prints it, gfortran stops.
+    (re.compile(r'6\(":",I4\),2\(":",F21\.6\)'), '5(":",I4),3(":",F21.6)'),
+    # INDSIC and INDGRP only write EIA's internal spreadsheet reports (indsic.csv, indreg*.csv,
+    # indt.csv) through direct-access CSV code gfortran rejects. They compute nothing the
+    # module keeps, so the oracle skips the calls.
+    (re.compile(r"^(\s*)(call\s+(?:indsic|indgrp)\s*\()", re.I | re.M), r"\1! oracle skips report: \2"),
+    # MECSBASE reads prodflow.txt front to back and BACKSPACEs a record it is not ready for,
+    # which only works if IEDATA asks for (industry, region) in file order. ISEAM does not:
+    # it asks (12,1..4), (13,1), (12,2..4), (14,1), (13,2), and the sections for 13 go missing.
+    # Make each call self-contained: rewind, skip sections that come before the requested
+    # one, stop at the first one that comes after. Same data in the same arrays.
+    (re.compile(r"do while \(inpreg\.le\.indreg\.and\. &\s*\r?\n\s*inpind\.le\.inddir\)", re.I), "do"),
+    (re.compile(r"^(\s*)if\(iunit\.le\.0\) return\s*$(?=(?:\r?\n.*){0,3}\r?\n\s*inpind=0)", re.I | re.M),
+     r"\1if(iunit.le.0) return\n\1rewind(iunit)"),
+    (re.compile(r"^(\s*)backspace\(iunit\)\s*\r?\n\s*return\s*$", re.I | re.M),
+     r"\1if (inpind.gt.inddir.or.(inpind.eq.inddir.and.inpreg.gt.indreg)) return"),
+    # ENPROD's STEPBYP records give the fuel number as "33.00". ifort reads that into an
+    # INTEGER in a list-directed READ; gfortran stops with "Bad integer". Read it as a real.
+    (re.compile(r"(INTEGER IFL,IERR,IDUM,IFX,ISTP,IFLAG)", re.I), r"\1\n      REAL RFX_"),
+    (re.compile(r"(READ\(ISTR2,\*,ERR=100,IOSTAT=IOSi\) IDUM,)IFX(, &\s*\r?\n\s*\(TEMP\(J\),J=1,4\))", re.I),
+     r"\1RFX_\2\n      IFX = nint(RFX_)"),
     # EMM: a variable format count that starts with a number, "<10+EFD_D_FPP-1>I7"
     # in a debug WRITE in udat.f. Same reasoning as above: it ends the format.
     (re.compile(r"<\d+[+\-][A-Za-z_]\w*(?:[+\-]\d+)?>"), "999"),
@@ -133,7 +208,7 @@ def unwrap_do_items(text: str) -> str:
         if i < 0 or i >= len(text) or top_eq:
             continue
         inner = text[start + 1:i]
-        if "," not in inner:
+        if "," not in inner or inner.lstrip().startswith("/"):   # no comma, or an array constructor (/ ... /)
             continue
         after = re.match(r"\s*(?:&\s*\n\s*&?)?\s*,\s*(?:&\s*\n\s*&?)?\s*\w+\s*=", text[i + 1:])
         if after:

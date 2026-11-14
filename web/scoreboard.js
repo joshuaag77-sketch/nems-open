@@ -6,7 +6,7 @@
   const pill = (grade, text) => `<span class="fid fid-${grade}">${esc(text)}</span>`;
   const NAMES = { match: "matches EIA", within: "within X%", stand: "stand-in" };
   const num = (x) => (x < 1e-3 ? x.toExponential(0) : String(x));
-  const SETS = { fast: "Fast stand-ins (144 scenarios)", real: "Real ported modules (16 scenarios)" };
+  const SETS = { fast: "Fast stand-ins (144 scenarios)", real: "Real ported modules (16 scenarios)", datacenter: "Data center story (ported residential, commercial and transportation, dispatch LP)" };
 
   el("grades").innerHTML = Object.entries(F.grades).map(([g, t]) => `<li>${pill(g, NAMES[g])} ${esc(t)}</li>`).join("");
   el("generated").textContent = `Built ${F.generated} from ${F.tests_collected.toLocaleString("en-US")} collected tests. Reference: ${F.reference}.`;

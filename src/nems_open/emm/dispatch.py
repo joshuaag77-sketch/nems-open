@@ -102,6 +102,8 @@ class DispatchCase:
     must_run_oil_gw: np.ndarray = None   # (25,) average output of must-run oil steam units, GW (taken out of `steam`)
     must_run_oil_hr: np.ndarray = None   # (25,) their heat rate, Btu/kWh
     ignition_share: float = 0.0          # share of coal Btu that is distillate (plant file fuel 2, T_FSHR_2)
+    flat_twh: np.ndarray = None          # (25,) part of net_load_twh that runs flat across the year (data centers)
+    flex_share: float = 0.0              # share of flat_twh that can be curtailed over the year
 
 
 @dataclass
@@ -113,6 +115,7 @@ class DispatchResult:
     fuel_tbtu: dict = field(default_factory=dict)           # coal, gas, distillate, residual, uranium -> (25,)
     co2_mt: np.ndarray = None                               # (25,)
     unserved_twh: np.ndarray = None                         # (25,)
+    curtailed_twh: np.ndarray = None                        # (25,) flexible load the LP chose to cut
     spilled_twh: np.ndarray = None                          # (25,)
     price: np.ndarray = None                                # (25, 36, 24) 1987$/MWh
     objective: float = 0.0
@@ -403,7 +406,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     def by_region(a):
         return xr.DataArray(np.asarray(a, dtype=float), coords=[R]) * ones
 
-    load_gw = xr.DataArray(case.net_load_twh[:, None, None] * 1000.0 * case.shapes, coords=[R, D, H])
+    flat = case.flat_twh if case.flat_twh is not None else np.zeros(NUM_R)
+    flat_gw = flat * 1000.0 / HOURS_PER_YEAR
+    load_gw = xr.DataArray((case.net_load_twh - flat)[:, None, None] * 1000.0 * case.shapes + flat_gw[:, None, None], coords=[R, D, H])
     m = linopy.Model()
 
     # Thermal plants
@@ -473,7 +478,12 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         trade_out = (trade * xr.DataArray(outof, coords=[R, L])).sum("link")
     spill = m.add_variables(lower=0, coords=[R, D, H], name="spill")
     unserved = m.add_variables(lower=0, coords=[R, D, H], name="unserved")
-    bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill + trade_in - trade_out == load_gw - fixed - oil_gw, name="balance")
+    curtail = 0
+    if case.flex_share > 0:
+        # Flexible load: cut up to the flat load in any hour, within a yearly energy budget by region.
+        curtail = m.add_variables(lower=0, upper=xr.DataArray(flat_gw[:, None, None] * np.ones((NUM_R, 36, nh)), coords=[R, D, H]), name="curtail")
+        m.add_constraints((curtail * w).sum(["day", "hour"]) <= xr.DataArray(flat * 1000.0 * case.flex_share, coords=[R]), name="curtail_budget")
+    bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved + curtail - spill + trade_in - trade_out == load_gw - fixed - oil_gw, name="balance")
 
     objective = (g_th * cost_da * w).sum() + (g_hy * w).sum() * 0.01 + (unserved * (UNSERVED_COST * w)).sum()
     if trade is not None:
@@ -505,6 +515,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         res.trade_twh = (flow * case.weights[None, :, None]).sum(axis=(1, 2)) / 1000.0
     res.spilled_twh = spilled
     res.unserved_twh = energy(unserved.solution.transpose("region", "day", "hour").values)
+    res.curtailed_twh = energy(curtail.solution.transpose("region", "day", "hour").values) if case.flex_share > 0 else np.zeros(NUM_R)
 
     # TWh x Btu/kWh = 1e9 Btu = 1e-3 trillion Btu
     fuel = {k: np.zeros(NUM_R) for k in ("coal", "gas", "distillate", "residual", "uranium")}

@@ -48,6 +48,16 @@ The levers are `--carbon`, `--ev`, `--efficiency` (a multiplier on building fuel
 
 Open `web/index.html` in a browser. No server is needed. To rebuild its data: `python scripts/precompute_scenarios.py` (see [web/README.md](web/README.md)).
 
+### Ask a question
+
+```
+pip install -e ".[agent]"
+export ANTHROPIC_API_KEY=...
+python -m nems_open.agent "What does a $50 carbon price do to US energy CO2 in 2040?"
+```
+
+A Claude tool-use agent over the model's own tools. Every number in its answer comes from a tool result and carries its module, variable and grade; if the answer rests on a stand-in it says so; a question the model cannot resolve (a street, a site, a year before 2025) is declined. Needs your own API key; without one it only runs the scope gate. See [docs/agent.md](docs/agent.md).
+
 ### One piece, in Python
 
 ```python

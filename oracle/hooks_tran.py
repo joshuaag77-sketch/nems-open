@@ -23,6 +23,7 @@ Output only: nothing here changes a computed value.
 Usage: python -I hooks_tran.py <upstream> <build_tran folder>
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -31,7 +32,9 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from hooks import declarations, common_names, statements, split_top  # noqa: E402
 
-RUN = HERE / "run_tran"
+# run folders live under WORK (this folder by default; build_wsl.sh moves them to the Linux disk)
+WORK = Path(os.environ.get("NEMS_ORACLE_WORK", HERE))
+RUN = WORK / "run_tran"
 
 # 2020, 2025, 2030, 2040, 2050: one history year, the last STEO-benchmarked year,
 # and three projection years. Fewer than the commercial set because module state
@@ -422,6 +425,8 @@ def instrument(build):
 
 
 def make_dirs():
+    from cache import link_out   # run_tran/out -> the shared oracle cache (a real out/ folder is left alone)
+    link_out("tran")
     final = RUN / "out" / "state" / "final" / "0"
     final.mkdir(parents=True, exist_ok=True)
     for tag, *_ in TARGETS:

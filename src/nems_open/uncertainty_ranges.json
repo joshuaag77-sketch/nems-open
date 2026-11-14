@@ -1,0 +1,102 @@
+{
+ "note": "Each input is a pair of EIA's own AEO2026 side cases. The ends are EIA's; the shape between them and the adding up of effects are ours. Bands from this sampling are not EIA's and run on stand-ins.",
+ "sampling": {
+  "method": "Latin hypercube, 1000 points, one seed",
+  "distribution": "triangular, most likely at EIA's reference; two-sided inputs on [-1, 1], one-sided on [0, 1]",
+  "effects": "added: the run's baseline is the reference plus weight x (case - reference) for each input"
+ },
+ "factors": {
+  "oil_gas_supply": {
+   "label": "Oil and gas supply (moves Brent and gas prices)",
+   "low_case": "lowogs",
+   "high_case": "highogs",
+   "two_sided": true,
+   "eia_names": [
+    "Low Oil and Gas Supply",
+    "High Oil and Gas Supply"
+   ],
+   "why_one_input": "AEO2026 has no oil price case. Brent and gas prices move together in these two cases, so oil price and gas supply are one input.",
+   "measured": {
+    "lowogs": {
+     "brent_2050_pct": 23.1,
+     "gas_to_homes_2050_pct": 51.4,
+     "electricity_sales_2050_pct": -4.0,
+     "energy_use_2050_pct": -11.0
+    },
+    "highogs": {
+     "brent_2050_pct": -15.3,
+     "gas_to_homes_2050_pct": -6.5,
+     "electricity_sales_2050_pct": 2.1,
+     "energy_use_2050_pct": 7.9
+    }
+   }
+  },
+  "economic_growth": {
+   "label": "Economic growth",
+   "low_case": "lm2026",
+   "high_case": "hm2026",
+   "two_sided": true,
+   "eia_names": [
+    "Low Economic Growth",
+    "High Economic Growth"
+   ],
+   "measured": {
+    "lm2026": {
+     "brent_2050_pct": -1.0,
+     "gas_to_homes_2050_pct": -1.0,
+     "electricity_sales_2050_pct": -5.0,
+     "energy_use_2050_pct": -5.9
+    },
+    "hm2026": {
+     "brent_2050_pct": 2.2,
+     "gas_to_homes_2050_pct": 1.1,
+     "electricity_sales_2050_pct": 5.9,
+     "energy_use_2050_pct": 6.9
+    }
+   }
+  },
+  "load_growth": {
+   "label": "Electricity load growth (data centers)",
+   "low_case": "cb2026",
+   "high_case": "higheldmd",
+   "two_sided": false,
+   "eia_names": [
+    "Reference",
+    "High Electricity Demand"
+   ],
+   "why_one_sided": "EIA publishes only a high electricity demand case.",
+   "measured": {
+    "higheldmd": {
+     "brent_2050_pct": -0.1,
+     "gas_to_homes_2050_pct": 0.8,
+     "electricity_sales_2050_pct": 8.5,
+     "energy_use_2050_pct": 2.9
+    }
+   }
+  },
+  "technology_cost": {
+   "label": "Zero-carbon technology cost",
+   "low_case": "lowztc",
+   "high_case": "highztc",
+   "two_sided": true,
+   "eia_names": [
+    "Low Zero-Carbon Technology Cost",
+    "High Zero-Carbon Technology Cost"
+   ],
+   "measured": {
+    "lowztc": {
+     "brent_2050_pct": 0.7,
+     "gas_to_homes_2050_pct": -1.9,
+     "electricity_sales_2050_pct": -1.2,
+     "energy_use_2050_pct": -3.2
+    },
+    "highztc": {
+     "brent_2050_pct": -0.7,
+     "gas_to_homes_2050_pct": 0.5,
+     "electricity_sales_2050_pct": 0.1,
+     "energy_use_2050_pct": 0.5
+    }
+   }
+  }
+ }
+}

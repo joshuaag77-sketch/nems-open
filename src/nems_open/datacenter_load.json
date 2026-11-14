@@ -1,0 +1,121 @@
+{
+  "about": "Data center load cases for run_model. Every number below comes from the cited public document; datacenter.py turns them into TWh by year. Anything that is our choice, not a source's, is under 'choices'.",
+  "sources": {
+    "grid_strategies_2025": {
+      "title": "Power Demand Forecasts Revised Up for Third Year Running, Led by Data Centers",
+      "publisher": "Grid Strategies (Wilson, Meyer, Zimmerman, Gramlich)",
+      "date": "November 2025",
+      "url": "https://gridstrategiesllc.com/wp-content/uploads/Grid-Strategies-National-Load-Growth-Report-2025.pdf",
+      "read": "the PDF itself",
+      "findings": {
+        "datacenter_peak_growth_gw_2025_2030": {"value": 90, "where": "p. 4, p. 10: of 166 GW of forecast peak growth, roughly 90 GW are linked to data centers"},
+        "market_analyst_gw_2025_2030": {"value": 65, "where": "p. 4, p. 10: analysts indicate growth unlikely to need much more than 65 GW; utility forecasts likely overstated by roughly 25 GW"},
+        "large_datacenter_load_factor": {"value": 0.82, "where": "p. 7: Dominion Virginia reported an 82% load factor for large data centers in 2024"}
+      }
+    },
+    "lbnl_2024": {
+      "title": "2024 United States Data Center Energy Usage Report",
+      "publisher": "Lawrence Berkeley National Laboratory, for the US Department of Energy",
+      "date": "December 2024",
+      "url": "https://newscenter.lbl.gov/2025/01/15/berkeley-lab-report-evaluates-increase-in-electricity-demand-from-data-centers/",
+      "read": "Berkeley Lab's summary of the report's key findings",
+      "findings": {
+        "twh_2023": {"value": 176, "where": "key findings: 176 TWh in 2023"},
+        "twh_2028_low": {"value": 325, "where": "key findings: 325 to 580 TWh by 2028"},
+        "twh_2028_high": {"value": 580, "where": "key findings: 325 to 580 TWh by 2028"}
+      }
+    },
+    "anthropic_2025": {
+      "title": "Build AI in America: Anthropic Energy Report",
+      "publisher": "Anthropic",
+      "date": "July 21, 2025",
+      "url": "https://www.anthropic.com/news/build-ai-in-america",
+      "read": "the page",
+      "disclosure": "Anthropic makes Claude, the AI that assembled these assumptions. Its report is an AI developer's own statement of what its industry needs, not a neutral forecast.",
+      "findings": {
+        "ai_capacity_gw_2028": {"value": 50, "where": "section Energy needs for global AI leadership: the US AI sector needs at least 50 GW of electric capacity by 2028"}
+      }
+    },
+    "bnef_2026": {
+      "title": "Data Centers on Track to Suck Up a Fifth of US Power Use by 2035 (reporting a BloombergNEF forecast)",
+      "publisher": "Bloomberg Government, on BloombergNEF",
+      "date": "July 21, 2026",
+      "url": "https://news.bgov.com/international-trade/data-centers-on-track-to-suck-up-a-fifth-of-us-power-use-by-2035",
+      "read": "the news article; BNEF's report itself is paid and was not read",
+      "findings": {
+        "datacenter_gw_2035": {"value": 194, "where": "BNEF projects data center power needs to reach 194 GW by 2035"}
+      }
+    },
+    "duke_2025": {
+      "title": "Rethinking Load Growth: Assessing the Potential for Integration of Large Flexible Loads in US Power Systems",
+      "publisher": "Nicholas Institute, Duke University (Norris, Profeta, Patino-Echeverri, Cowie-Haskell)",
+      "date": "February 2025",
+      "url": "https://nicholasinstitute.duke.edu/publications/rethinking-load-growth",
+      "read": "Duke's publication page for the report; the figures from coverage of it, https://www.utilitydive.com/news/us-grid-headroom-flexible-load-data-center-ai-ev-duke-report/739767/ and https://www.powermag.com/duke-researchers-grid-flexibility-key-to-accommodate-load-growth",
+      "findings": {
+        "curtailment_share": {"value": 0.005, "where": "0.5% annual curtailment: 98 GW of new load across 22 balancing authorities (POWER); 177 hours a year (Utility Dive); about 2.1 hours each (POWER)"},
+        "headroom_gw": {"value": 98, "where": "POWER: 76 GW at 0.25%, 98 GW at 0.5%, 126 GW at 1%"}
+      }
+    },
+    "eia_higheldmd": {
+      "title": "AEO2026 High Electricity Demand side case (higheldmd)",
+      "publisher": "US Energy Information Administration",
+      "date": "2026",
+      "url": "https://www.eia.gov/outlooks/aeo/",
+      "read": "the restart file in EIA's NEMS release",
+      "findings": {
+        "regional_shares": {"value": "computed", "where": "where EIA's own high-demand case puts extra commercial electricity by census division, higheldmd minus cb2026, QBLK/qelcm, 2040"}
+      }
+    },
+    "eia_cb2026": {
+      "title": "AEO2026 reference (Counterfactual Baseline, cb2026)",
+      "publisher": "US Energy Information Administration",
+      "date": "2026",
+      "url": "https://www.eia.gov/outlooks/aeo/",
+      "read": "the restart file in EIA's NEMS release",
+      "findings": {
+        "datacenter_servers": {"value": "computed", "where": "COMMREP/cmusconsumption, the Data Center Servers service (8), electricity"}
+      }
+    }
+  },
+  "cases": {
+    "reference": {
+      "label": "EIA reference",
+      "short": "EIA's own data center growth, nothing added.",
+      "anchors_gw": {},
+      "sources": ["eia_cb2026"]
+    },
+    "utility": {
+      "label": "Utility forecasts",
+      "short": "What utilities and grid operators have published: about 90 GW of new data center load by 2030.",
+      "anchors": [{"year": 2030, "growth_gw_since_2025": 90, "source": "grid_strategies_2025"}],
+      "sources": ["grid_strategies_2025"]
+    },
+    "ai_high": {
+      "label": "High growth: AI industry and analysts",
+      "short": "An AI developer's 50 GW for AI by 2028, then BloombergNEF's 194 GW for all data centers by 2035.",
+      "anchors": [{"year": 2028, "ai_gw_on_top_of_2025": 50, "source": "anthropic_2025"},
+                  {"year": 2035, "total_gw": 194, "source": "bnef_2026"}],
+      "sources": ["anthropic_2025", "bnef_2026"]
+    },
+    "ai_high_flex": {
+      "label": "High growth, flexible load",
+      "short": "The same load, but the new data centers can cut 0.5% of their annual energy when the grid is tightest.",
+      "anchors": [{"year": 2028, "ai_gw_on_top_of_2025": 50, "source": "anthropic_2025"},
+                  {"year": 2035, "total_gw": 194, "source": "bnef_2026"}],
+      "flex_share": 0.005,
+      "sources": ["anthropic_2025", "bnef_2026", "duke_2025"]
+    }
+  },
+  "choices": {
+    "scope": "EIA's Data Center Servers service (80 TWh in 2023) is narrower than LBNL's whole-facility count (176 TWh). EIA's service is scaled by that 2023 ratio to compare like with like. Check: scaled EIA in 2028 is 323 TWh, against LBNL's low end of 325.",
+    "gw_to_twh": "GW times 8.76 times the 82% load factor, for every forecast given in GW. Forecasts that are capacity or peak are treated alike.",
+    "added": "Only the part above EIA's own scaled path is added, to commercial electricity. It runs flat across the hours of the year.",
+    "between_anchors": "Straight lines between anchors, starting from EIA's scaled 2025 level.",
+    "after_last_anchor": "No source goes further, so the amount added is held at its last anchor year's level; the total keeps growing only with EIA's own path.",
+    "non_ai_load": "The 50 GW is AI only. Everything else is held at the 2025 level through 2028.",
+    "flexibility": "Duke's 0.5% is applied as a budget on the added load's energy in each region; the dispatch LP spends it where power is dearest. Duke's result is about peak capacity, which this model does not test, so the small effect here says nothing against it. 3-hour blocks, so the short curtailments Duke describes are coarser here.",
+    "fleet": "The LP runs EIA's reference plant fleet and builds nothing, so all the new load falls on plants with room to run more, mostly gas. A model that builds would meet some of it with new plants, so CO2 and prices here are not what would happen, only what this fleet would do.",
+    "adequacy": "The LP works on 36 typical days in 3-hour blocks with no reserve margin. It tests whether the fleet can make the energy, not whether it can hold the peak hour, so no unserved load here does not mean the grid would be reliable."
+  }
+}

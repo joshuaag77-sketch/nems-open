@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>For Experts</title>
+<meta name="description" content="The detailed views behind NEMS Open: the model's structure, every grade, the switches, and the earlier demos.">
+<style>
+:root{--bg:#0b0e13;--panel:#131820;--line:#252c37;--ink:#ece9e1;--ink2:#b3b0a7;--ink3:#86847c;--accent:#5DCAA5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:22px 16px 10px}
+h1{font-size:24px;margin:0 0 4px}
+.lead{color:var(--ink2);margin:0 0 18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+a.card{display:block;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;color:inherit;text-decoration:none}
+a.card:hover{border-color:var(--accent)}
+a.card b{display:block;font-size:16px;margin-bottom:4px}
+a.card span{color:var(--ink2);font-size:13.5px}
+h2{font-size:15px;color:var(--ink2);font-weight:600;margin:22px 0 8px}
+</style>
+<script defer src="site.js?v=11"></script>
+</head>
+<body>
+<main>
+  <h1>For experts</h1>
+  <p class="lead">The detailed views. Units here are the model's own (quadrillion Btu, dollars per million Btu, cents per kWh), and every grade has its evidence.</p>
+  <h2>How the model works</h2>
+  <div class="cards">
+    <a class="card" href="engine3d.html"><b>Inside the engine</b><span>Every module, routine and shared variable of EIA's NEMS in 3D, with what has been ported.</span></a>
+    <a class="card" href="index.html?how"><b>How it works</b><span>The loop, the stand-ins and the ported modules, step by step.</span></a>
+    <a class="card" href="switches.html"><b>Switches</b><span>Every setting in EIA's run files, where the code reads it, and which side cases change it.</span></a>
+  </div>
+  <h2>How far to trust it</h2>
+  <div class="cards">
+    <a class="card" href="scoreboard.html"><b>Scoreboard</b><span>The grade of every module and every number, with the test or fit behind it.</span></a>
+    <a class="card" href="about.html"><b>About and credits</b><span>What this project is, what it is not, and EIA's role.</span></a>
+  </div>
+  <h2>Earlier demos</h2>
+  <div class="cards">
+    <a class="card" href="index.html"><b>Policy demo</b><span>The first sandbox: carbon price, EV sales and building efficiency, with charts and a trace of each number.</span></a>
+    <a class="card" href="datacenter.html"><b>Data centers</b><span>Four data center load cases run through the ported modules and the dispatch model.</span></a>
+  </div>
+</main>
+</body>
+</html>

@@ -63,3 +63,15 @@ def test_runner_lever_moves_transport_fuel():
     ev.run_year()
     assert ev.q["qeltr"][10, j] > base.q["qeltr"][10, j]
     assert ev.q["qmgtr"][10, j] < base.q["qmgtr"][10, j]
+
+
+def test_ev_charging_reaches_the_buildings_modules():
+    """TRAN's TRQ_ELEC for the current year replaces EIA's copy for the buildings; other years stay EIA's."""
+    from types import SimpleNamespace
+    from nems_open.run_demand import share_ev_charging
+    eia = np.ones((10, 11, 61), dtype=np.float32)
+    inputs = SimpleNamespace(by_var={"trq_elec": "TRANREP/trq_elec"}, snapshot={"TRANREP/trq_elec": eia}, overrides={})
+    s = {"curiyr": Y, "trq_elec": FArray(np.full((10, 11, 61), 2.0, dtype=np.float32), lb=(1, 1, 1))}
+    share_ev_charging(inputs, s)
+    got = inputs.overrides["TRANREP/trq_elec"]
+    assert (got[:, :, Y - 1] == 2.0).all() and (got[:, :, Y - 2] == 1.0).all() and (eia == 1.0).all()
