@@ -15,6 +15,9 @@ case "$MOD" in ecp|efd|rest) ;; *) echo "run_aimms.sh: module '$MOD' not wired" 
 AIMMS="${AIMMS_EXE:-/mnt/c/Users/joshu/AppData/Local/AIMMS/IFA/Aimms/25.5.7.1-x64-VS2022/Bin/aimms.exe}"
 WRAPPER_WIN="$(wslpath -w "$(readlink -f main)/wrapper/wrapper.aimms")"
 printf 'req_year := %s ;\nreq_itr := %s ;\n' "$YEAR" "$ITR" > "$MOD/request.txt"
+# ReStore reads its year from rest/ECPYEAR.txt (re::Model_Prepare), which EIA's Python launcher writes; not in the
+# Fortran, so written here.
+[ "$MOD" = rest ] && printf 'Year := data { %s } ;\n' "$YEAR" > rest/ECPYEAR.txt
 rm -f "$MOD/done.txt" "$MOD/showreel_stats.txt"
 echo "run_aimms.sh: $MOD $YEAR iteration $ITR"
 t0=$(date +%s)

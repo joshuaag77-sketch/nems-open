@@ -117,6 +117,7 @@ Model Main_wrapper {
     Procedure run_ecp {
         Body: {
             read from file "../../ecp/request.txt";
+            ensure_mappings;
             ec::api_curcalyr := req_year;
             ec::api_curitr := req_itr;
             ec::File_Call;
@@ -125,6 +126,7 @@ Model Main_wrapper {
     Procedure run_efd {
         Body: {
             read from file "../../efd/request.txt";
+            ensure_mappings;
             ed::api_curcalyr := req_year;
             ed::api_curitr := req_itr;
             ed::File_Call;
@@ -133,9 +135,19 @@ Model Main_wrapper {
     Procedure run_rest {
         Body: {
             read from file "../../rest/request.txt";
+            ensure_mappings;
             re::api_curcalyr := req_year;
             re::api_curitr := req_itr;
             re::File_Call;
+        }
+    }
+    Procedure ensure_mappings {
+        Body: {
+            ! The libraries name their DEX mappings relative to the running project (this wrapper), where EIA's own
+            ! projects keep them generated; generate them here once.
+            if not FileExists("Mappings/Generated/Output_Report-generation-CSV.xml") then
+                dex::GenerateDatasetMappings;
+            endif;
         }
     }
     Procedure MainTermination {
