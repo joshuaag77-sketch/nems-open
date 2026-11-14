@@ -35,5 +35,15 @@ print(f"aimms_fortran.py: {k} EOF() test(s) left to the READ's END=")
 # for IRS/IDS in uefd.f; kept the same way here.
 text, k = re.subn(r"if\(index\(line,';'\)\)", "if(BTEST(index(line,';'),0))", text, flags=re.I)
 print(f"aimms_fortran.py: {k} integer IF test(s) as Intel's low bit")
+# Windows paths in file names ('ecp\ecpsetdata.dat', 'main\endpoint_p2_caller.txt'): on Linux a backslash is part of
+# the name, so the file would land in the run folder instead of the module folder AIMMS reads. Forward slashes.
+def _slashes(m):
+    return m.group(0).replace("\\", "/")
+text, k = re.subn(r"(['\"])(\.\\)?(ecp|efd|main|rest|coal)\\[^'\"\n]*\1", _slashes, text, flags=re.I)
+print(f"aimms_fortran.py: {k} module-folder path literal(s) with forward slashes")
+# read(line(1:ifound),'(i999)') takes "01." from "01..26" (ifound is the first dot); Intel stops at the dot,
+# gfortran rejects it. Same number, read without the dot.
+text, k = re.subn(r"read\(line\(1:ifound\),'\(i999\)'\)", "read(line(1:ifound-1),*)", text, flags=re.I)
+print(f"aimms_fortran.py: {k} range-start read(s) without the trailing dot")
 path.write_text(text, encoding="latin-1")
 print(f"aimms_fortran.py: {n} AIMMS launch(es) pointed at run_aimms.sh")

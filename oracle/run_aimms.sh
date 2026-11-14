@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Called by EIA's AIMMS interface in the AIMMS-coupled EMM oracle (oracle/aimms_fortran.py), from the run folder,
 # each time NEMS would start ECP or EFD in AIMMS. NEMS has just written its request to "main\endpoint_p2_caller.txt"
-# (a file of that literal name under Linux) and the module's composite input file. This runs Windows aimms.exe on
+# (aimms_fortran.py turns its backslash into a slash) and the module's composite input file. This runs Windows aimms.exe on
 # the wrapper project (oracle/aimms_patch.py) and waits for <module>/done.txt.
 #
 # The AIMMS folders (ecp, efd, main, ...) are links into AIMMS_RUN_WIN on the Windows disk, where aimms.exe can
 # read and write them; set by oracle/build.sh.
 set -u
-REQ='main\endpoint_p2_caller.txt'
+REQ='main/endpoint_p2_caller.txt'
 [ -f "$REQ" ] || { echo "run_aimms.sh: no $REQ" >&2; exit 1; }
 field() { grep -i "^$1" "$REQ" | head -1 | sed 's/.*: *//' | tr -d '\r '; }
 MOD=$(field my_module); YEAR=$(field year); ITR=$(field iter)
