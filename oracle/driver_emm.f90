@@ -33,6 +33,7 @@ program oracle_emm
     do CURITR = 1, iters
       FCRL = merge(1, 0, CURITR == iters)
       NCRL = FCRL
+      call ORACLE_DPV         ! renew.f's distributed-solar totals (AIMMS build only; a no-op otherwise)
       call UTIL
     enddo
     if (CURCALYR >= 2020) write(*,'(a,i0)') ' done ', CURCALYR

@@ -67,6 +67,7 @@ if [ "$MOD" = emm ]; then
   # AIMMS-coupled variant (NEMS_ORACLE_AIMMS=1): EIA's own AIMMS interface (uaimms.f) replaces the stubs, ECP
   # runs, and each year's solve goes to Windows aimms.exe through run_aimms.sh (docs/aimms_needs.md).
   AIMMS_OBJS=""; STUBS="$ORACLE/emm_stubs.f90"
+  DPV_SRC="$ORACLE/dpv_off.f90"   # renew.f's DPV totals: only the AIMMS build fills them (ECP divides by them)
   if [ "${NEMS_ORACLE_AIMMS:-0}" = 1 ]; then
     cp "$U/source/uaimms.f" uaimms_pre.f
     $PY -I "$ORACLE/aimms_fortran.py" --pre uaimms_pre.f     # Intel variable formats, before patch_intel.py
@@ -77,6 +78,7 @@ if [ "$MOD" = emm ]; then
     sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
     STUBS=emm_stubs_aimms.f90
     gfortran $FLAGS -c "$ORACLE/oracle_vfe.f90"
+    DPV_SRC="$ORACLE/dpv_renew.f90"
     AIMMS_OBJS="uaimms.o oracle_vfe.o"   # Intel ifcore/ifport stand-ins are already in emm_modules.f90
   fi
   # Modules first: udat.f holds two that uldsm.f and util.f use.
@@ -86,9 +88,9 @@ if [ "$MOD" = emm ]; then
   if [ -n "$AIMMS_OBJS" ]; then gfortran $FLAGS -c uaimms.f90; fi
   gfortran $FLAGS -cpp -c "$ORACLE/stubs.f90"     # preprocessed since the industrial build (POSUNIT)
   gfortran $FLAGS -c wk1_subset.f90 "$ORACLE/readrng_stub.f90" "$STUBS" load_restart.f90 \
-    oracle_state.f90 "$ORACLE/efd_standin.f90" "$ORACLE/driver_emm.f90"
+    oracle_state.f90 "$ORACLE/efd_standin.f90" "$ORACLE/driver_emm.f90" "$DPV_SRC"
   rm -f "$WORK/run_emm/oracle$EXE"
-  gfortran -o "$WORK/run_emm/oracle$EXE" driver_emm.o efd_standin.o oracle_state.o load_restart.o \
+  gfortran -o "$WORK/run_emm/oracle$EXE" driver_emm.o "$(basename "${DPV_SRC%.*}").o" efd_standin.o oracle_state.o load_restart.o \
     $(for s in $SRCS; do echo $s.o; done) ephrts.o uesql.o emm_modules.o ecp_row_col.o efd_row_col.o \
     wk1_subset.o readrng_stub.o stubs.o "$(basename "$STUBS" .f90).o" $AIMMS_OBJS \
     $SQLITE_OBJS $SQLITE_LIBS 2>&1 | grep -v "drectve" || true
