@@ -1,5 +1,12 @@
 # LFMM: scope and the smallest path
 
+> **Hand-off (lfmm-gams lane, 2026-11-14).** EIA's real LFMM solves 2010-2035 in sequence on cb2026, every year
+> optimal (HiGHS, GAMS's Linux build in WSL; about 2-4 min a year, about 300 MB). Run:
+> `PYTHONPATH=src python -m nems_open.lfmm.gams_run <run folder> 2010 2035`. 2035 US prices vs cb2026: diesel -0.1%,
+> jet +1.1%, industrial diesel +0.7%, resid -1.9%, heating oil -1.9%, gasoline -13.3% (open). Next: the gasoline gap,
+> then run(lfmm="gams") with showreel logging, as coal and gas. Details below.
+
+
 EIA's Liquid Fuels Market Module (LFMM) models US refining, biofuels and product trade. It is the
 largest supply module we have not ported. This note sizes it, lists what crosses the restart
 file, and records the path taken in this push: a fitted stand-in, graded amber, behind
@@ -118,6 +125,84 @@ community licence caps model size, likely too small), plus EIA's NEMS-side drive
 run of `lfshell.gms` on GDX dumped from the cb2026 restart. The cheaper check, available now, is
 EIA's own cb2026 outputs in the restart file (LFMMOUT, PMMOUT, MPBLK), which the stand-in already
 reproduces exactly.
+
+## Running EIA's LFMM: licences and readers (checked 2026-11-14)
+
+**Free GAMS licences.** The Community licence (academic, 12 months) caps LP at 5,000 rows and 5,000 columns; LFMM's LP
+(about 100 variable families and 136 equation families over refining regions, refinery types, processes and modes,
+crudes, sources and supply steps, streams, census divisions and three periods, `lfmodel.gms`) is far above that, though
+its exact size is unmeasured (it comes from the sets in `lfminset.gdx`). The demo licence is smaller still. Since
+June 2026 GAMS offers a free **Personal licence** that, per GAMS, supersedes the Community licence and has no model-size
+limit, for individual, non-commercial use by students, researchers and hobbyists, with open-source solvers only (HiGHS,
+SCIP, IPOPT, SHOT; no CPLEX, Xpress or Gurobi). A free academic GAMSPy licence (institutional email) adds some commercial
+solvers. Full academic GAMS is discounted, not free. Penn's software licensing office lists no GAMS site licence
+(listings cover MATLAB, Mathematica, Stata, SPSS, Esri); ask licenses@upenn.edu before paying for anything. Sources:
+gams.com/free-licenses, forum.gams.com "Availability of the New GAMS Personal License", gams.com UG_License,
+osl.isc.upenn.edu.
+
+So lfshell.gms fits the free Personal licence, not the Community or demo ones. Signing up and installing GAMS is
+Josh's step. One catch: EIA solves LFMM with Xpress (`$set LPsolver Xpress` in lfshell.gms; a CPLEX option file is
+kept). The Personal licence would solve it with HiGHS (one line). Product prices are LP duals, so where the LP is
+degenerate HiGHS can return different prices than Xpress; that needs a check against cb2026, as coal and gas had.
+
+**Reading EIA's GDX files.** The GDX files are GDX version 7 from GAMS 43.2, uncompressed (element names are plain
+text). Tried in a throwaway environment: `gamsapi[transfer]` 54.7.0 from PyPI installs, but the wheel carries only the
+Python wrapper (`gams.core.gdx`); the GDX library itself (`gdxcclib64.dll`) comes with a GAMS installation, so
+gams.transfer and gdxpds cannot read GDX here until GAMS is installed. Reading needs no licence. Without GAMS there are
+two open routes: build GAMS's MIT-licensed GDX library from its GitHub source (GAMS-dev/gdx), or write a small
+pure-Python reader for uncompressed GDX v7 against that source.
+
+**Smallest slice for product prices.** Prices are not a slice: LFMM sets each product's price from the dual of its
+census-division demand row (`RecipeDemands.m(CenDiv, product, Period)` divided by the GDP deflator, lfreport.gms
+915-945), then adds margins and policy adjustments (AB 32 in the Pacific). Refining is joint production, so one
+gasoline or diesel price needs the whole refinery LP for the current period: crude supply and transport, processes
+and modes, recipe and specification blending, transport to census divisions, product trade, and the RFS block
+(RIN costs move gasoline and diesel prices). What can be left out for a first translation: the three-period
+look-ahead (current period only), LCFS, CFP and WACFS (state programs, separable blocks), CO2 for EOR, coal and
+biomass to liquids. Still weeks of work, most of it the data layer (lfprep.gms, 320 KB, builds the coefficients).
+
+**Recommendation.** Fastest path to EIA's real refining model in the loop, the way coal and gas went: Josh signs up for
+the free GAMS Personal licence and installs GAMS; then `run(lfmm="gams")` writes LFMM's per-year GDX input from the
+loop (gams.transfer, now able to load the GDX library), runs lfshell.gms with HiGHS, and reads prices and refinery fuel
+back. Check HiGHS against cb2026 first. The HiGHS translation stays the open fallback, as for coal.
+
+## run(lfmm="gams"): status (2026-11-14)
+
+GAMS 54 with Josh's free Personal licence runs from `~/dev/gams-venv` (gamspy_base: gams.exe, the GDX library; no
+GDXXRW). gams.transfer reads EIA's GDX there (`system_directory=` gamspy_base): lfminset.gdx holds 165 symbols, e.g.
+9 refining regions, 2 refinery types, 55 processes, 816 process modes, 569 streams, 3 periods.
+
+How NEMS feeds LFMM (refine.f): FILER writes every array in varlistl.txt (1,071 after ALL blocks expand, all present in
+the cb2026 restart) to NEM_TO_LFMM1.gdx; refine.f also writes E85.gdx (E85 supply curves it computes) and STEO_Hist.gdx
+(STEO and history from rfhist.txt); lfprep.gms runs GDXXRW on input/CoalD2RefMap.xls and input/intcrdshr.xls (the
+latter ships in input/iem/); lfshell keeps its own state between years in LFMM_Builds.gdx, GrossCapacity.gdx,
+Grossdumfact.gdx and LFMM_p1.gdx. Then `gams LFshell.gms`; EIA's shell sets Xpress as LP solver.
+
+Built (`src/nems_open/lfmm/gams_io.py`, tests/test_lfmm_gams_io.py): NEM_TO_LFMM1.gdx from restart-style arrays with
+FILER's element labels and record rules (DIM/DIMD records of dict.txt; zeros skipped; size-1 dimensions kept up to
+the last dimension above 1). Written in about 6 s (17 MB) through the GAMS venv's Python. A compile-only pass of
+LFshell.gms (`gams LFshell.gms a=c`, no solve) now gets through LF_NEM's $Loads; remaining errors are the missing side
+files above.
+
+Done since: the side files, E85.gdx and STEO_Hist.gdx, HiGHS as LP solver, a clean compile, and solves.
+
+Solving. Windows Smart App Control blocks GAMS's unsigned option library (joatdclib64.dll), which every solver link
+loads, so `gams_run.gams()` runs GAMS's Linux build in WSL Ubuntu (GAMSPy in /root/gams-venv, licence read in place
+from /mnt/c). The run folder's paths are patched to forward slashes so the same folder works on both.
+
+Two things every year needs, as NEMS calls LFMM (`gams_run.sequence`):
+- Years in order from 2010 (refine.f calls LFMM from CURIYR 21). Later years read LFMM_Builds.gdx (PriorBuilds),
+  GrossCapacity.gdx and Grossdumfact.gdx that earlier years write.
+- NCNTRL_FCRL=1, NEMS's final iteration of the year. Only then lfprep.gms activates periods 2 and 3, where LFMM builds
+  capacity and saves PriorBuilds. With FCRL=0 nothing is ever built (pseudo-units like FUM have no existing
+  capacity) and every year from 2011 is infeasible.
+
+Result (2035, United States, 1987$/MMBtu, LFMM vs cb2026): PMGTR 8.02 vs 9.26 (-13.3%), PDSTR 10.58 vs 10.59,
+PJFTR 7.26 vs 7.18, PRLTR 5.95 vs 6.07, PDSIN 8.83 vs 8.77, PRHTR 4.76 vs 4.85. Gasoline is the open gap; one pass
+per year here against NEMS's several iterations with demand feedback is one suspect, the E85 and RFS inputs another.
+
+Next: the gasoline gap; then the LFMM_TO_NEMS.gdx reader into the restart arrays and run(lfmm="gams") with showreel
+logging, as coal and gas.
 
 ## Full port, later
 
