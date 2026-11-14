@@ -45,6 +45,7 @@ def type_parameters() -> dict[str, np.ndarray]:
     overnight_cost: UPOVR, $/kW before regional multipliers; 9999 means the type cannot be built
     unit_size_mw: UPMSSIZ, typical unit size; project_contingency: UPLRPC
     learning_start_year, learning_end_year: UPLRSYR, UPLRLYR, the years cost learning applies
+    construction_lead_years: UPCLYR, years from the build decision to service
     """
     r = named_ranges(ECPDATY, "COSTPERF")
 
@@ -59,6 +60,7 @@ def type_parameters() -> dict[str, np.ndarray]:
         "max_capacity_factor": col("UPMCF"), "construction_profile": col("UPCPRO", 10),
         "overnight_cost": col("UPOVR"), "unit_size_mw": col("UPMSSIZ"), "project_contingency": col("UPLRPC"),
         "learning_start_year": col("UPLRSYR"), "learning_end_year": col("UPLRLYR"),
+        "construction_lead_years": col("UPCLYR"),
     }
 
 
