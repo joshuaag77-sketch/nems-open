@@ -37,7 +37,14 @@ AIMMS = Path.home() / "AppData" / "Local" / "AIMMS" / "IFA" / "Aimms" / "25.5.7.
 # What File_Call writes after each solve, for the HiGHS port to compare against (AIMMS text data format).
 EXPORT = ("ProductionVolume", "ProdVolSolutionPriorYr", "LAG_PRI", "LAG_PROD", "QTarget", "qprods",
           "FY_PROD_CAP3", "SC_1_PRICE87", "SC_QUAN", "Qdutzr", "EMM_max_SubBitBtus_D", "EMM_max_LigBtus_D",
-          "TrubndScrubbed", "TrubndUnscrubbed", "Copy8c_CdyrsScrubbed", "Copy9c_CdyrsUnscrubbed")
+          "TrubndScrubbed", "TrubndUnscrubbed", "Copy8c_CdyrsScrubbed", "Copy9c_CdyrsUnscrubbed",
+          # duals as MainExecution stores them after the solve (ShadowPrice * MC_JPGDP(CPSBaseYr))
+          "ShadowDomesticElectricityDemand", "ShadowResidCommDemand", "ShadowIndustrialDemand", "ShadowCokingDemand",
+          "SupplyCurveStepBalShadow3",
+          # the solution's flows and the rates it paid
+          "ElectricityTransportAC", "IndustrialTransport", "CokingTransport", "ResidentialTransport",
+          "ExportsTransport2", "Trate2wSurchBtu",
+          "IndustrialDemand", "CokingDemand", "ResidCommDemand", "ImportsElectricity", "ImportsIndustrial", "ImportsCoking")
 
 FILE_CALL = """	Procedure File_Call {
 		Body: {
@@ -68,6 +75,7 @@ FILE_CALL = """	Procedure File_Call {
 WRAPPER_REFS = """<?xml version="1.0"?>
 <References AIMMS_Version="25.5.7.1 (x64)">
 	<MainProject Path="MainProject" />
+	<RepositoryLibrary UUID="BDF54E1C-AF05-4D77-856C-F3C05F20FFB8" Name="AimmsDEX" Version="25.2.1.1" />
 	<RepositoryLibrary UUID="E26C298C-5EF6-42C5-B7B7-59ED3DF48D6F" Name="AimmsXLLibrary" Version="24.0.1.1" />
 	<Library Path="..\\\\..\\\\coal\\\\MainProject" />
 </References>
@@ -85,23 +93,23 @@ Model Main_wrapper {
     Parameter req_first;
     Parameter req_last;
     Parameter req_itrs;
-    Parameter y;
-    Parameter i;
+    Parameter wr_year;
+    Parameter wr_itr;
     Procedure MainInitialization;
     Procedure MainExecution;
     Procedure run_coal {
         Body: {
             read from file "../../coal/request.txt";
-            y := req_first;
-            while y <= req_last do
-                i := 1;
-                while i <= req_itrs do
-                    cl::api_curcalyr := y;
-                    cl::api_curitr := i;
+            wr_year := req_first;
+            while wr_year <= req_last do
+                wr_itr := 1;
+                while wr_itr <= req_itrs do
+                    cl::api_curcalyr := wr_year;
+                    cl::api_curitr := wr_itr;
                     cl::File_Call;
-                    i += 1;
+                    wr_itr += 1;
                 endwhile;
-                y += 1;
+                wr_year += 1;
             endwhile;
         }
     }
@@ -119,6 +127,19 @@ def _dims(var: dictionary.Variable) -> list[str]:
     return [f"M{d}" if str(d).isdigit() else str(d) for d in var.dims]
 
 
+def _aligned(head: list[str], rows: list[list[str]], left_last: bool = False) -> str:
+    """A composite table laid out as pandas to_string lays it out: every column right-justified to its
+    widest entry, one space between columns. AIMMS reads composite tables by column position, so each
+    value must sit under its header ("The entry 1 is between two columns" otherwise)."""
+    width = [max(len(c) for c in col) for col in zip(head, *rows)]
+
+    def line(cells):
+        last = len(cells) - 1
+        return " ".join(c.ljust(w) if left_last and k == last else c.rjust(w) for k, (c, w) in enumerate(zip(cells, width)))
+
+    return "\nCOMPOSITE TABLE:\n" + "\n".join(line(r) for r in [head] + rows) + "\n;\n"
+
+
 def _table(name: str, dims: list[str], arr: np.ndarray, year: int) -> str | None:
     """One composite table, as write_aimms_input writes it: indices 1-based, later indices vary slowest,
     and after the base year only the current year's slice of an MNUMYR array."""
@@ -127,11 +148,11 @@ def _table(name: str, dims: list[str], arr: np.ndarray, year: int) -> str | None
         if not name.startswith("NCHAR_"):
             return None
         text = b"".join(np.atleast_1d(arr).astype("S").ravel(order="F")).decode("latin-1").strip()
-        return f'\nCOMPOSITE TABLE:\ncl::M1 cl::{name}\n1 "{text}"\n;'
-    yi =year - FIRST_NEMS_YEAR + 1
+        return _aligned(["cl::M1", f"cl::{name}"], [["1", f'"{text}"']], left_last=True)
+    yi = year - FIRST_NEMS_YEAR + 1
     if arr.ndim == 0:
         v = float(arr) if "CONVFACT" in name else int(arr)
-        return f"\nCOMPOSITE TABLE:\ncl::M1 cl::{name}\n1 {v}\n;"
+        return _aligned(["cl::M1", f"cl::{name}"], [["1", str(v)]])
     idx = np.indices(arr.shape).reshape(arr.ndim, -1).T + 1
     vals = arr.reshape(-1)
     order = np.lexsort(idx.T)              # last index slowest, as sort_values([last, ..., first])
@@ -139,9 +160,9 @@ def _table(name: str, dims: list[str], arr: np.ndarray, year: int) -> str | None
     if year > BASE_YEAR and "MNUMYR" in dims:
         keep = idx[:, dims.index("MNUMYR")] == yi
         idx, vals = idx[keep], vals[keep]
-    head = " ".join(f"cl::{d}" for d in dims) + f" cl::{name}"
-    rows = [" ".join(str(int(j)) for j in r) + f" {float(v):.15f}" for r, v in zip(idx, vals)]
-    return "\nCOMPOSITE TABLE:\n" + head + "\n" + "\n".join(rows) + "\n;\n"
+    head = [f"cl::{d}" for d in dims] + [f"cl::{name}"]
+    rows = [[str(int(j)) for j in r] + [f"{float(v):.15f}"] for r, v in zip(idx, vals)]
+    return _aligned(head, rows)
 
 
 def write_input(year: int, itr: int, folder: Path, snapshot: Snapshot | None = None) -> Path:
@@ -180,13 +201,23 @@ def add_file_call(ams: Path) -> None:
     ams.write_text(text, encoding="utf-8")
 
 
-def prepare(run: Path) -> None:
+def prepare(run: Path, mps: bool = False) -> None:
+    """mps: switch on EIA's own debug branch in MainExecution (AIMCLSolvDebug, hard-set to 0 in the shipped
+    model), which writes CPLEX's generated LP as an MPS file at every solve, with the row and column mapping."""
     run = Path(run)
     dst = run / "coal"
     if dst.exists():
         shutil.rmtree(dst)
     shutil.copytree(state.COAL_DIR, dst, ignore=shutil.ignore_patterns("*.aimmspack", "backup"))
     add_file_call(dst / "MainProject" / "coal.ams")
+    if mps:
+        ams = dst / "MainProject" / "coal.ams"
+        text = ams.read_text(encoding="utf-8")
+        marker = "AIMCLSolvDebug :=0;"   # the first one, in MainExecution, just before if(AIMCLSolvDebug=1)
+        at = text.find(marker)
+        if at < 0 or "if(AIMCLSolvDebug=1)" not in text[at:at + 200]:
+            raise SystemExit("AIMCLSolvDebug switch not found where expected")
+        ams.write_text(text[:at] + "AIMCLSolvDebug :=1;" + text[at + len(marker):], encoding="utf-8")
     write_runval(run)
     for sub in ("log", "export", "toAIMMS", "fromAIMMS"):
         (dst / sub).mkdir(exist_ok=True)
@@ -218,7 +249,7 @@ def write_runval(run: Path, scenario: str = "cb2026") -> Path:
             path = run / "coal" / path.relative_to(state.COAL_DIR.resolve())
         except ValueError:
             pass
-        lines.append(f'{key} := "{str(path)}";')
+        lines.append(f'{key} := "{path.as_posix()}";')
     out = run / "coal" / "cl_runval.txt"
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out
@@ -236,7 +267,7 @@ def command(run: Path) -> list[str]:
 def main(argv) -> None:
     import subprocess
     run, first, last, itrs = Path(argv[1]), int(argv[2]), int(argv[3]), int(argv[4])
-    prepare(run)
+    prepare(run, mps="mps" in argv[5:])
     s = Snapshot()
     for y in range(first, last + 1):
         for i in range(1, itrs + 1):
@@ -247,3 +278,63 @@ def main(argv) -> None:
 
 if __name__ == "__main__":
     main(sys.argv)
+
+
+def _key(text: str) -> tuple:
+    return tuple(x.strip().strip("'\"") for x in text.strip().strip("()").split(","))
+
+
+def _num(text: str) -> float:
+    return 0.0 if text == "zero" else float(text)
+
+
+def _parse_table(lines: list[str]) -> dict:
+    """An AIMMS `data table` block: header lines of column labels (right-aligned), a `!  ----` rule, then rows
+    `( a, b )  v  v ...`, blanks meaning no value. Wide tables repeat header and rows in several blocks."""
+    import re
+    out, cols = {}, []
+    for ln in lines:
+        if not ln.strip():
+            continue
+        st = ln.strip()
+        if st.startswith("!"):
+            continue
+        if st.startswith("("):
+            close = ln.index(")")
+            key = _key(ln[:close + 1])
+            for label, right, left in cols:
+                cell = ln[max(left, close + 1):right].strip()
+                if cell:
+                    out[key + (label,)] = _num(cell)
+        else:   # a header line: labels and where they end
+            cols, prev = [], 0
+            for m in re.finditer(r"\S+", ln):
+                cols.append((m.group(0), m.end(), prev))
+                prev = m.end()
+    return out
+
+
+def read_export(path: Path) -> dict[str, dict]:
+    """Parse an AIMMS `write ... to file` text data file into {identifier: {index tuple: value}}: the sparse
+    form `NAME(dims) := data { ( a, b ) : v , ... } ;`, the `data table` form, and scalars. Prefixes (cl::)
+    are dropped from names."""
+    import re
+    text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+    heads = list(re.finditer(r"^\s*([\w:]+)(?:\([^)]*\))?\s*:=\s*", text, re.M))
+    out: dict[str, dict] = {}
+    for n, m in enumerate(heads):
+        name = m.group(1).split("::")[-1]
+        body = text[m.end(): heads[n + 1].start() if n + 1 < len(heads) else len(text)]
+        body = body[:body.rfind(";")] if ";" in body else body
+        if body.lstrip().startswith("data table"):
+            out[name] = _parse_table(body.lstrip()[len("data table"):].splitlines())
+        elif body.lstrip().startswith("data"):
+            inner = body[body.index("{") + 1: body.rindex("}")]
+            out[name] = {_key(e.group(1)): _num(e.group(2)) for e in
+                         re.finditer(r"(\([^)]*\)|'[^']*'|[\w.+-]+)\s*:\s*([-+0-9.eE]+|zero)", inner)}
+        else:
+            try:
+                out[name] = {(): float(body.strip())}
+            except ValueError:
+                pass
+    return out

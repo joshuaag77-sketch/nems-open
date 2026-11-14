@@ -154,3 +154,34 @@ def contract_floor(year: int, keys: list, macro: Macro | None = None, data=None)
         for ci, q, cnum in by_plant.get(plant[pu], ()):
             out[ci, r - 1] += q * prof.get((cnum, year), 0.0)
     return out
+
+
+MATS_YEAR = 2015          # MercuryRemovalUpperBound: the rule applies for cyr > 2015
+MATS_MEF_LIMIT = 0.101    # MercuryRemoval: step 1 (no activated carbon) only if EMM_MEF(1, rank, type) <= this
+RANK_M4 = {"1B": 1, "2S": 2, "3L": 3, "5G": 3, "4P": 4}   # Map_Rank_M4 (cdsRegionRef); 4 is beyond MX_RNK
+
+
+def mats_adder(year: int, keys: list, macro: Macro | None = None) -> np.ndarray:
+    """Extra cost of delivering a curve's coal to a plant type under MATS, (len(keys), 38), 1987$/MMBtu.
+
+    In the CMM LP each power delivery has two steps (ElectricityTransportAC, nsteps 1 and 2). Step 1 is coal
+    burned without activated carbon; after 2015 its upper bound is 0 where the plant type's mercury emission
+    factor for that rank, COALEMM EMM_MEF(1, rank, NUTSEC), exceeds 0.101 (MercuryRemoval,
+    MercuryRemovalUpperBound, coal.ams 15835-15873). Step 2 pays the same rate plus
+    ACI_CST(2, rank, NUTSEC) / 10 (ElectricityTransport1Cost). The mercury cap itself (Mercp02) does not bind
+    in cb2026 (EMEL_QHG 999.9 tons), so step 2 is never cheaper than an allowed step 1, and the two steps
+    reduce to one delivery whose cost carries this adder: 0 where step 1 is allowed, the ACI cost where not.
+    EIA codes ACI_CST as 100 where a plant type cannot take a rank at all, which makes the adder 10."""
+    macro = macro or Macro()
+    mef = np.asarray(macro.s["COALEMM/emm_mef"], float)     # (NSTEPS, MX_RNK, NUTSEC)
+    aci = np.asarray(macro.s["COALEMM/aci_cst"], float)
+    out = np.zeros((len(keys), NTYPE))
+    if year <= MATS_YEAR:
+        return out
+    for i, k in enumerate(keys):
+        m4 = RANK_M4.get(k[4], 0)
+        if not 1 <= m4 <= mef.shape[1]:
+            continue          # no factor for this rank: Copy_emm_mef is 0, step 1 allowed
+        blocked = mef[0, m4 - 1, :NTYPE] > MATS_MEF_LIMIT
+        out[i] = np.where(blocked, aci[1, m4 - 1, :NTYPE] / 10.0, 0.0)
+    return out

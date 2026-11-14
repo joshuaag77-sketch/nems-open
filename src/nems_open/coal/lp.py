@@ -30,8 +30,9 @@ class Demand:
     regions: list                 # 16 coal demand regions
     elec: np.ndarray              # (16,) TBtu
     other: dict                   # sector -> (16,) TBtu
-    exports: np.ndarray           # (6,) TBtu by supply region 1APN..6WSR
+    exports: np.ndarray           # (6,) Mt by supply region 1APN..6WSR (COALPROD2 - COALPROD)
     sregs: list
+    exports_rank: dict | None = None   # rank -> TBtu, US exports by coal rank (COALREP CLEXPRANK)
 
 
 def demands(year: int, macro: Macro | None = None, data=None) -> Demand:
@@ -55,12 +56,14 @@ def demands(year: int, macro: Macro | None = None, data=None) -> Demand:
                                for d in names])
     prod2, prod = np.asarray(s["COALREP/COALPROD2"])[:, :, yi], np.asarray(s["COALREP/COALPROD"])[:, :, yi]
     exp_mt = (prod2 - prod)[:10, :6].sum(axis=0)   # rows 1 to 10 are demand divisions; row 11 is production by supply region
-    return Demand(names, q, other, exp_mt, ["1APN", "2APR", "3INR", "4LGN", "5PRB", "6WSR"])
+    rank = dict(zip(("1B", "2S", "3L", "4P", "5G"), np.asarray(s["COALREP/CLEXPRANK"], float)[:, yi]))
+    return Demand(names, q, other, exp_mt, ["1APN", "2APR", "3INR", "4LGN", "5PRB", "6WSR"], rank)
 
 
 def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=None, rcaf: float | None = None,
           solver: str = "highs", steo: dict | None = None, tolerance: float = 0.02, power=None,
-          tier1: np.ndarray | None = None, contracts: np.ndarray | None = None) -> dict:
+          tier1: np.ndarray | None = None, contracts: np.ndarray | None = None,
+          export_rule: str = "region", mats: np.ndarray | None = None) -> dict:
     """Solve one year. `step` has sc_quan, sc_1_price87 and cap (tons) as from supply.base_year/Chain.year.
     power: an electric.PowerDemand. Given, electricity demand is met per plant type and region and the
     sub-bituminous and lignite diversity caps apply (coal.ams SubbituminousDiversity, LigniteDiversity),
@@ -71,7 +74,12 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
     TransportationBound*, BalanceScrubUnscrubTier*, MakeSureSecondTierGetsFirstTierPrice).
     contracts: electric.contract_floor, (curves, 16) TBtu. Given, electricity deliveries from each curve to
     each region are at least the contract (ContractsScrubbed + ContractsUnScrubbed), with EIA's
-    ContractEscape at 999 per MMBtu for what cannot be delivered; the escape used is reported."""
+    ContractEscape at 999 per MMBtu for what cannot be delivered; the escape used is reported.
+    export_rule: how fixed US exports are pinned to curves, standing in for EIA's international model:
+    "region" (supply-region totals, the older default), "rank" (US totals by coal rank, CLEXPRANK, so
+    coking exports come from metallurgical curves), or "both".
+    mats: electric.mats_adder, (curves, 38) 1987$/MMBtu added to each power delivery's cost by plant type
+    (EIA's MATS rule: activated carbon cost where the plant type cannot burn the rank without it)."""
     data = data or inputs.load()
     rcaf = rcaf if rcaf is not None else float(transport.rcaf()["cum"][year - 1990])
     nc, nd = len(keys), len(dem.regions)
@@ -91,7 +99,7 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             r = trate2.get((sreg, sulf, mtyp, rank, d, "E"))
             if r is not None and r < 900 and rank != "4P":
                 for t in types[di]:
-                    ship[("E", ci, di, t)] = r * rcaf / btu[ci]
+                    ship[("E", ci, di, t)] = r * rcaf / btu[ci] + (float(mats[ci, t]) if mats is not None and t >= 0 else 0.0)
                 r3 = trate3.get((sreg, sulf, mtyp, rank, d, "E"))
                 if tier1 is not None and r3 is not None and r3 - r > 0:
                     tier2[(ci, di)] = (r3 - r) * rcaf / btu[ci]
@@ -120,9 +128,17 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             lhs = lhs + X.isel(k=sel).sum()
         cons_bal[ci] = m.add_constraints(lhs == 0, name=f"bal{ci}")
     sreg_idx = {s: [i for i, k in enumerate(keys) if k[1] == s] for s in dem.sregs}
-    for si, s in enumerate(dem.sregs):
-        avg_btu = btu[sreg_idx[s]].mean()
-        m.add_constraints(E.isel(c=sreg_idx[s]).sum() == dem.exports[si] * avg_btu, name=f"exp{si}")
+    if export_rule in ("region", "both"):
+        for si, s in enumerate(dem.sregs):
+            avg_btu = btu[sreg_idx[s]].mean()
+            m.add_constraints(E.isel(c=sreg_idx[s]).sum() == dem.exports[si] * avg_btu, name=f"exp{si}")
+    if export_rule in ("rank", "both"):
+        for rk, v in (dem.exports_rank or {}).items():
+            sel = [i for i, k in enumerate(keys) if k[4] == rk]
+            if sel:
+                m.add_constraints(E.isel(c=sel).sum() == float(v), name=f"exprank_{rk}")
+            elif v > 1e-6:
+                raise ValueError(f"exports of rank {rk} but no curve of that rank")
 
     demand_cons, type_cons, slack_cost, slacks = {}, {}, 0, {}
     if power is not None:
