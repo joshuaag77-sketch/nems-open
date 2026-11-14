@@ -33,6 +33,7 @@ class Demand:
     exports: np.ndarray           # (6,) Mt by supply region 1APN..6WSR (COALPROD2 - COALPROD)
     sregs: list
     exports_rank: dict | None = None   # rank -> TBtu, US exports by coal rank (COALREP CLEXPRANK)
+    exports_curve: np.ndarray | None = None   # TBtu per supply curve, for export_rule="curve" (diagnostics)
 
 
 def demands(year: int, macro: Macro | None = None, data=None) -> Demand:
@@ -132,6 +133,9 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
         for si, s in enumerate(dem.sregs):
             avg_btu = btu[sreg_idx[s]].mean()
             m.add_constraints(E.isel(c=sreg_idx[s]).sum() == dem.exports[si] * avg_btu, name=f"exp{si}")
+    if export_rule == "curve":            # diagnostic: exports per curve given (e.g. from EIA's replay)
+        for ci, v in enumerate(dem.exports_curve):
+            m.add_constraints(1 * E.isel(c=ci) == float(v), name=f"expcurve_{ci}")
     if export_rule in ("rank", "both"):
         for rk, v in (dem.exports_rank or {}).items():
             sel = [i for i, k in enumerate(keys) if k[4] == rk]

@@ -62,6 +62,20 @@ FILE_CALL = """	Procedure File_Call {
 			  sExportFile := "../../coal/export/coal_" + formatstring("%i", ncntrl_curcalyr(1)) + "_"
 			                 + formatstring("%>02i", ncntrl_curitr(1)) + ".txt";
 			  write EXPORT_LIST to file sExportFile in replace mode;
+			  ! which constraints bind: their shadow prices after the solve
+			  dual_sub(DReg,pt2,cyr) := SubbituminousDiversity.ShadowPrice(DReg,pt2,cyr);
+			  dual_lig(DReg,pt2,cyr) := LigniteDiversity.ShadowPrice(DReg,pt2,cyr);
+			  dual_cont_s(SReg,Sulf,Mtyp,Rank,DReg,cyr) := ContractsScrubbed.ShadowPrice(SReg,Sulf,Mtyp,Rank,DReg,cyr);
+			  dual_cont_u(SReg,Sulf,Mtyp,Rank,DReg,cyr) := ContractsUnScrubbed.ShadowPrice(SReg,Sulf,Mtyp,Rank,DReg,cyr);
+			  dual_so2(DReg,cyr) := Copy_SULFPNConstraint.ShadowPrice(DReg,cyr);
+			  dual_cap(SReg,Sulf,Mtyp,Rank,cyr) := ProductionCapacityLimit.ShadowPrice(SReg,Sulf,Mtyp,Rank,cyr);
+			  dual_hg(cyr) := Mercp02.ShadowPrice(cyr);
+			  dual_aci(cyr) := Acixxxxy2.ShadowPrice(cyr);
+			  dual_ind(IndSec,DReg,cyr) := IndustrialDemandRequirement.ShadowPrice(IndSec,DReg,cyr);
+			  sExportFile := "../../coal/export/duals_" + formatstring("%i", ncntrl_curcalyr(1)) + "_"
+			                 + formatstring("%>02i", ncntrl_curitr(1)) + ".txt";
+			  write dual_sub, dual_lig, dual_cont_s, dual_cont_u, dual_so2, dual_cap, dual_hg, dual_aci, dual_ind
+			        to file sExportFile in replace mode;
 			Onerror err do
 			  ErrorHandler(err);
 			endblock;
@@ -69,6 +83,15 @@ FILE_CALL = """	Procedure File_Call {
 			COALResetOptions;
 		}
 		StringParameter sExportFile;
+		Parameter dual_sub { IndexDomain: (DReg,pt2,cyr); }
+		Parameter dual_lig { IndexDomain: (DReg,pt2,cyr); }
+		Parameter dual_cont_s { IndexDomain: (SReg,Sulf,Mtyp,Rank,DReg,cyr); }
+		Parameter dual_cont_u { IndexDomain: (SReg,Sulf,Mtyp,Rank,DReg,cyr); }
+		Parameter dual_so2 { IndexDomain: (DReg,cyr); }
+		Parameter dual_cap { IndexDomain: (SReg,Sulf,Mtyp,Rank,cyr); }
+		Parameter dual_hg { IndexDomain: cyr; }
+		Parameter dual_aci { IndexDomain: cyr; }
+		Parameter dual_ind { IndexDomain: (IndSec,DReg,cyr); }
 	}
 """
 

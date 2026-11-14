@@ -36,6 +36,43 @@ in 2028), while EIA's run produces 54 to 63 Mt. So in EIA's run Interior coal is
 ours. The suspects are the forecast-year supply curves, which here run on substitutes for the lagged state in
 the AIMMS case files (FY_PROD_CAP, LAG_PRI, QTarget; table below). The AIMMS reference export settles that.
 
+## Reference: EIA's coal model replayed in AIMMS (coal/aimms_run.py)
+
+AIMMS 25.5.7.1 (academic licence) runs EIA's coal.ams headless. `python -m nems_open.coal.aimms_run <run> 2024 2050 2`
+copies models/coal into a run folder, writes each year's GlobalDataToAIMMS_<year>_<itr>.txt from the cb2026 restart
+the way NEMS's aimms_util.write_aimms_input does (composite tables, columns aligned, base year all years, later years
+their own slice), writes cl_runval.txt, adds a File_Call entry point (Coal_API_Call without the DEX request) and a
+wrapper project that loops years and iterations in one process, so the model carries its lag state as in NEMS. After
+each solve File_Call writes the supply curves, lag state, caps, tier bounds, contracts, demand duals, flows and rates
+(`aimms_run.read_export` parses them). 54 solves (2024-2050, two iterations) take about 5 minutes. Add `mps` to dump
+CPLEX's generated LP through EIA's own debug switch (AIMCLSolvDebug).
+
+What the replay shows (`python -m nems_open.coal.aimms_compare <run> <years>`):
+- The replay on converged inputs reproduces the restart from 2027 (2028: 447 vs 441 Mt; 2040 and 2050 equal by region).
+- Every input this port rebuilds equals EIA's in the replay, 2030: plant-type demand (4,961.7 TBtu), diversity caps
+  (difference 0.0), tier-1 bounds, contracts, all 224 power transport rates (within 0.4%).
+- Two pieces were missing and are now in: the MATS rule (`electric.mats_adder`: after 2015 a plant type that cannot
+  burn a rank without activated carbon pays ACI_CST/10 per MMBtu, 10 where EIA codes it as impossible), and exports
+  pinned by rank (`export_rule="rank"`, CLEXPRANK), which match the replay's exports by rank exactly. With exports pinned
+  by supply region the LP exported central Appalachian steam coal where EIA exports metallurgical coal.
+- Fed EIA's own supply curves for the year, our LP still produces too much Interior and too little PRB in 2027-2035
+  (2030: Interior 82 vs 55 Mt, PRB 127 vs 152; total regional miss 59 Mt with rank exports, 75 with region exports;
+  2050 within 18). So the gap is in the LP, not in the curves or lag state. EIA's demand duals show region-specific
+  extra costs on used routes (about 0.03 per MMBtu in 07EN, 0.5-0.6 in 11C2 and 14CU) that are not sulfur-proportional;
+  the matrix comparison (MPS dump) is the next step to name the constraint.
+- What binds in EIA's 2030 solve (shadow prices exported by File_Call to duals_<year>_<itr>.txt): only contracts
+  (central Appalachia into 04S2, duals 0.59 and 0.22; two lignite contracts on their 999 escape). Diversity caps,
+  regional SO2, capacity, mercury and activated carbon all have zero duals.
+- Pinning exports per curve to the replay's (`export_rule="curve"`, diagnostic only) makes Appalachia match
+  (2030: 76/75 and 69/66 Mt) but leaves Interior 78 vs 55 and PRB 116 vs 152. Contracts on change nothing. So with
+  equal curves, rates, demands, caps, contracts and exports, our LP still sends Interior coal where EIA sends PRB
+  (07EN: EIA all PRB, ours mostly Interior), although by the exported rates and step prices Interior is cheaper
+  delivered there (about 1.02 vs 1.06 per MMBtu). EIA's demand duals over MC_JPGDP(2024) = 2.356 equal rate plus
+  supply shadow on most used routes, but carry a constant extra per region on others (0.03 in 07EN, 0.4-0.6 in
+  11C2, 12WS, 14CU, 15ZN). That points at a cost term or bound in EIA's objective that this port lacks.
+  The MPS dump works (`aimms_run ... mps`, 14 files cpx000NN.mps) but AIMMS writes presolved, unnamed rows and
+  columns (c1, x1); the next step is a named constraint listing (AIMMS option constraint_listing) for 2030.
+
 ## What it leaves out (the real model has 125 equation families)
 Mercury and activated carbon, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
 
