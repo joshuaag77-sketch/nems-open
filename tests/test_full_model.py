@@ -34,7 +34,7 @@ def test_fifteen_headline_numbers(stub_table):
 
 def test_numbers_the_model_does_not_compute_say_so(stub_table):
     by = {r["key"]: r for r in stub_table["rows"]}
-    for k in ("henry_hub", "brent", "gen_gas"):          # no gas market, no oil market, no LP in the stub run
+    for k in ("henry_hub", "brent", "gen_gas"):          # stub run: no gas market (ogs standin), no oil market, no LP
         assert by[k]["model"] is None and by[k]["note"] == "not modeled yet" and by[k]["eia"][2050] > 0
 
 

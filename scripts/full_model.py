@@ -13,8 +13,7 @@ Sectors come from ported_sectors(): industrial joins (with ind="ported") once ru
 
 Headline numbers, each by year against EIA's published arrays in the cb2026 restart file: total energy use, CO2,
 power generation by fuel, Henry Hub, Brent, gasoline and diesel prices, electricity price, home gas price, the
-household energy bill, electricity sales. A number this model does not compute yet (Henry Hub before a gas market
-module, Brent before a world oil module) is listed with EIA's value and "not modeled yet", never a stand-in guess.
+household energy bill, electricity sales. A number this model does not compute yet (Brent before a world oil module) is listed with EIA's value and "not modeled yet", never a stand-in guess.
 
 The page (web/scoreboard.html, "How close is the whole model to EIA") reads web/data/full_model.json.
 """
@@ -43,10 +42,9 @@ SWITCHES = {
     "elec": "lp",               # the dispatch LP
     "elec_price": "efp",        # EIA's ported EFP retail prices
     "macro": "frbus",           # the economy module (needs cycles >= 2)
-    "ogs": "hsm",               # EIA's oil and gas supply (HSM)
+    "ogs": "hsm",               # EIA's oil and gas supply (HSM) with the NGMM gas price loop
     "lfmm": "standin",          # the refining stand-in
     "ind": "ported",            # the ported industrial year loop (with "industrial" in ported)
-    "ngmm": "port",             # natural gas markets, when it lands
     "elec_cap": "lp",           # capacity planning, when it lands
     "coal": "port",             # coal market, when it lands
 }
@@ -158,7 +156,7 @@ def model_numbers(r) -> dict:
         gen = {g: sum(np.asarray(r.generation_twh[n], dtype=np.float64) for n in lp if n in r.generation_twh)
                for g, (lp, _) in GEN.items()}
     return numbers(r.prices, r.quantities, r.co2, base, homes_series(), gen,
-                   {"henry_hub": getattr(r, "henry_hub", None), "brent": getattr(r, "brent", None)})
+                   {"henry_hub": (getattr(r, "gas", None) or {}).get("henry_hub"), "brent": getattr(r, "brent", None)})
 
 
 # ---- watch it run ---------------------------------------------------------------------------------
@@ -226,6 +224,7 @@ def save_run(r, path: Path) -> None:
     arrays = {f"p:{k}": v for k, v in r.prices.items()} | {f"q:{k}": v for k, v in r.quantities.items()}
     arrays |= {f"c:{k}": v for k, v in r.co2.items()}
     arrays |= {f"g:{k}": v for k, v in (r.generation_twh or {}).items()}
+    arrays |= {f"n:{k}": np.asarray(v) for k, v in (getattr(r, "gas", None) or {}).items()}
     np.savez_compressed(path, **arrays, stable=np.array([[y, int(s)] for y, s in r.stable.items()] or [[0, 0]]))
 
 
@@ -233,7 +232,7 @@ def load_run(path: Path):
     from types import SimpleNamespace
     z = np.load(path, allow_pickle=False)
     pick = lambda pre: {k[2:]: z[k] for k in z.files if k.startswith(pre)}
-    return SimpleNamespace(prices=pick("p:"), quantities=pick("q:"), co2=pick("c:"), generation_twh=pick("g:") or None,
+    return SimpleNamespace(prices=pick("p:"), quantities=pick("q:"), co2=pick("c:"), generation_twh=pick("g:") or None, gas=pick("n:") or None,
                            stable={int(y): bool(s) for y, s in z["stable"] if y})
 
 
