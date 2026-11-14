@@ -115,7 +115,10 @@ def sequence(run: Path, years, arrays: dict, timeout: float = 7200) -> dict[int,
         (run / f).unlink(missing_ok=True)
     out = {}
     for y in years:
-        prepare(run, y, arrays, fresh=False)
+        # FCRL=1 (NEMS's final iteration of the year): only then LFMM activates periods 2 and 3, where it builds
+        # capacity, and saves PriorBuilds for later years (lfprep.gms ActivePeriod). With FCRL=0 nothing is built
+        # and every year after 2010 is infeasible.
+        prepare(run, y, arrays, fcrl=1, fresh=False)
         (run / "LFMM.log").unlink(missing_ok=True)   # GAMS appends to the log file
         out[y] = gams(run, timeout=timeout)
         if (run / "LFMM_to_NEMS.gdx").exists():

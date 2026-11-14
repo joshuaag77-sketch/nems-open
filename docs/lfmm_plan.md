@@ -1,16 +1,10 @@
 # LFMM: scope and the smallest path
 
-> **Hand-off (lfmm-gams lane, 2026-11-14).** Goal: `run(lfmm="gams")`, EIA's real LFMM (GAMS) solved with HiGHS under
-> Josh's free Personal licence (`~/dev/gams-venv`, gams.exe in `Lib/site-packages/gamspy_base`, licence passed with
-> `license=`; never copy it into the repo). Branch `lfmm-gams` in `C:/Users/joshu/dev/nems-open-coal`.
-> Done: `src/nems_open/lfmm/gams_io.py` (NEM_TO_LFMM1.gdx like FILER; write step runs under the GAMS venv Python:
-> `PYTHONPATH=src <venv>/Scripts/python.exe -m nems_open.lfmm.gams_io write payload.pkl out.gdx`),
-> `src/nems_open/lfmm/side_files.py` (CoalDRefMap.gdx, crudeshares.gdx from the .xls through Excel). Run folder
-> `C:/Users/joshu/dev/oracle-cache/lfmm-gams` holds LF*.gms, input/ (plus intcrdshr.xls), NEM_TO_LFMM1.gdx (cb2026,
-> 2030, itr 1), the two side files. Next: (1) E85.gdx: port refine.f `E85_Demand_Curve` (design 2 only); (2) STEO_Hist.gdx:
-> the RFHIST1 part of refine.f (3880-3950); (3) run-folder edits: comment out `$call GDXXRW` in LFprep.gms (1440, 1466),
-> LPsolver HiGHS; (4) `gams LFshell.gms a=c` clean; (5) solve 2030 under `scripts/with_heavy_lock.sh`, compare MPBLK
-> pmgtr, pdstr, pjftr, prltr with the restart. Inputs and labels for (1) and (2): shared notes `lfmm-gams-handover.md`.
+> **Hand-off (lfmm-gams lane, 2026-11-14).** EIA's real LFMM solves 2010-2035 in sequence on cb2026, every year
+> optimal (HiGHS, GAMS's Linux build in WSL; about 2-4 min a year, about 300 MB). Run:
+> `PYTHONPATH=src python -m nems_open.lfmm.gams_run <run folder> 2010 2035`. 2035 US prices vs cb2026: diesel -0.1%,
+> jet +1.1%, industrial diesel +0.7%, resid -1.9%, heating oil -1.9%, gasoline -13.3% (open). Next: the gasoline gap,
+> then run(lfmm="gams") with showreel logging, as coal and gas. Details below.
 
 
 EIA's Liquid Fuels Market Module (LFMM) models US refining, biofuels and product trade. It is the
@@ -190,11 +184,25 @@ the last dimension above 1). Written in about 6 s (17 MB) through the GAMS venv'
 LFshell.gms (`gams LFshell.gms a=c`, no solve) now gets through LF_NEM's $Loads; remaining errors are the missing side
 files above.
 
-Next: (1) CoalDRefMap.gdx and crudeshares.gdx from the two .xls files (Excel through pywin32 reads them; GDXXRW
-ranges are in the xls's IndexData sheet and lfprep.gms 1440-1474); (2) port refine.f's E85.gdx and STEO_Hist.gdx
-writers (refine.f about 1550-1830 and 3880-3950); (3) set the LP solver to HiGHS; (4) solve one year standalone on
-cb2026 (heavy: under HEAVY.lock, after the integration run) and compare MPBLK product prices; (5) the reader for
-LFMM_TO_NEMS.gdx and run(lfmm="gams") with showreel logging, as coal and gas.
+Done since: the side files, E85.gdx and STEO_Hist.gdx, HiGHS as LP solver, a clean compile, and solves.
+
+Solving. Windows Smart App Control blocks GAMS's unsigned option library (joatdclib64.dll), which every solver link
+loads, so `gams_run.gams()` runs GAMS's Linux build in WSL Ubuntu (GAMSPy in /root/gams-venv, licence read in place
+from /mnt/c). The run folder's paths are patched to forward slashes so the same folder works on both.
+
+Two things every year needs, as NEMS calls LFMM (`gams_run.sequence`):
+- Years in order from 2010 (refine.f calls LFMM from CURIYR 21). Later years read LFMM_Builds.gdx (PriorBuilds),
+  GrossCapacity.gdx and Grossdumfact.gdx that earlier years write.
+- NCNTRL_FCRL=1, NEMS's final iteration of the year. Only then lfprep.gms activates periods 2 and 3, where LFMM builds
+  capacity and saves PriorBuilds. With FCRL=0 nothing is ever built (pseudo-units like FUM have no existing
+  capacity) and every year from 2011 is infeasible.
+
+Result (2035, United States, 1987$/MMBtu, LFMM vs cb2026): PMGTR 8.02 vs 9.26 (-13.3%), PDSTR 10.58 vs 10.59,
+PJFTR 7.26 vs 7.18, PRLTR 5.95 vs 6.07, PDSIN 8.83 vs 8.77, PRHTR 4.76 vs 4.85. Gasoline is the open gap; one pass
+per year here against NEMS's several iterations with demand feedback is one suspect, the E85 and RFS inputs another.
+
+Next: the gasoline gap; then the LFMM_TO_NEMS.gdx reader into the restart arrays and run(lfmm="gams") with showreel
+logging, as coal and gas.
 
 ## Full port, later
 
