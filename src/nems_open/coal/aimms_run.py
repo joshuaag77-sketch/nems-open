@@ -21,6 +21,8 @@ Run (one AIMMS job at a time, under HEAVY.lock):
 """
 
 import shutil
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -285,8 +287,8 @@ def prepare(run: Path, mps: bool = False, steo: str = "shipped") -> None:
     from steovars.csv as NEMS does each run (EXC = 1), not yet checked against cb2026."""
     run = Path(run)
     dst = run / "coal"
-    if dst.exists():
-        shutil.rmtree(dst)
+    if dst.exists():   # AIMMS marks some folders read-only (User Files/bitmaps); clear the flag and retry
+        shutil.rmtree(dst, onexc=lambda f, path, _: (os.chmod(path, stat.S_IWRITE), f(path)))
     shutil.copytree(state.COAL_DIR, dst, ignore=shutil.ignore_patterns("*.aimmspack", "backup"))
     add_file_call(dst / "MainProject" / "coal.ams")
     if mps:
