@@ -541,6 +541,11 @@ IND_TARGETS = [
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.14 .and. indreg.eq.4"),
     dict(tag="wx", call=r"CALL WEXOG\b", nth=0,
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[]),
+    dict(tag="smp", call=r"CALL Setup_Mac_and_Price\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[]),
+    # Start of IND in the first iteration of a dump year: the whole module's state, incl. COPYBUF (RDBIN/WRBIN buffers).
+    dict(tag="ys", call=r"Call INDEASY\b", nth=0,
+         end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[]),
     dict(tag="bif7", call=r"CALL INDBIFURC\b", nth=1,
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.7 .and. indreg.eq.3"),
     dict(tag="bif1", call=r"CALL INDBIFURC\b", nth=1,
@@ -550,6 +555,9 @@ IND_TARGETS = [
     dict(tag="bif3", call=r"CALL INDBIFURC\b", nth=1,
          end=r"^\s*END\s+SUBROUTINE X", before=True, private=[], carried=[], when="inddir.eq.3 .and. indreg.eq.4"),
 ]
+if os.environ.get("ORACLE_TAGS"):   # a lean rerun: only these tags (comma list), e.g. ORACLE_TAGS=ys,smp,wx
+    _keep = {x.strip() for x in os.environ["ORACLE_TAGS"].split(",") if x.strip()}
+    IND_TARGETS = [t_ for t_ in IND_TARGETS if t_["tag"] in _keep]
 IND_STATE_BLOCK_FILES = ["indrep", "indout", "cogen", "bifurc"]
 # Module-level arrays and scalars of MODULE I_ that the ported routines read or write.
 IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "ibyr2", "lastcalyr", "curitr",
@@ -583,11 +591,26 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "mpastp", "ifmax", "ifloc", "ifbyp", "iflocby", "bypcsc", "bypint", "bypintlag", "bypqty", "prodlag", "prodcur", "idlcap", "idlcaplag", "idval", "techstrtyr", "frztech", "hitech", "bypadibyr", "bscibyr", "enpint", "enpintlag", "bcsc", "ijumpcalyr", "itpc", "steolastyr", "tpc1", "tpc2", "enpqty", "chemship", "fertilizer_h2", "prodretr", "retrate", "iretire", "phdrat", "prodx", "prodflow", "ntmax", "ipastp", "prodxlag", "prcxlag", "foodship", "prodxibyr", "rei_adj", "rei_adj_lag", "ind_flow_share", "BUSHEL", "curitr", "sumprodcur", "co2_clink", "co2_lime",  "bypbscm", "bypbsci", "bypbscr",
                    # WEXOG
                    "bf", "rbf", "bf_seds", "rbf_steo", "rbf_seds", "bf_steo", "firmshr", "bmain_adjusted", "brenew_adjusted", "asphalttarget", "asphaltpercent", "feedngtotal", "feedhgltotal", "feednaphtotal", "steoq", "icuriyr", "msedyr", "sedslastyr", "fcrl", "co2_elec", "qngpin", "ogsupgas", "cfngc", "cfelq", "mc_gslgisnhwyr", "qselin", "qsngin", "qsclin", "qsmcin", "qsciin", "qsrsin", "qsdsin", "qslgin", "qsmgin", "qspcin", "qsasin", "qsluin", "qspfin", "qsksin", "qsotin", "qshoin", "qsbmin", "qsmsin", "qsppin", "qsgfin", "qsgiin", "qsprin", "qelinh2ng", "qelinh2e", "h2_chem_demand_div", "qelin", "qh2inpf", "qgfin", "qgiin", "inqngpf", "qngin", "qclin", "qmcin", "qciin", "qrsin", "qrlin", "qdsin", "qlgin", "inqlgpf", "inqlghp", "qmgin", "qsgin", "qpcin", "qasin", "qluin", "qpfin", "qkSin", "qotin", "qh2inhp", "qhoin", "qbmin", "qmsin", "qtrin", "qh2in", "byprdh2in", "qprin", "tqrenw", "qh2rf", "qh2tr", "qh2el", "qcleth", "qngeth",
-                   "carbshr", "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP"]
+                   "carbshr", "penetration", "techstrtyr", "hitech", "RegCHPutil", "maxRegCHPutil", "ibyr2", "ENBQTY", "ENPIQTY", "MC_JPGDP",
+                   # Setup_Mac_and_Price and the yearly shell
+                   "aasin", "aclin", "adsin", "aelin", "agfin", "agiin", "aksin", "algin", "alginpf", "alpin", "alumibyr", "amcin", "amgin", "aotin", "apcin", "apfin", "arlin", "arsin", "baseyr", "bushel", "cementibyr", "chemship", "curcalyr", "curiyr", "dconx", "dprcx", "dprcxlag", "empind", "foodship", "gl_ship", "glassibyr", "ibyr", "ibyr2", "icuriyr", "iyr", "limeibyr", "limeoutput", "mc_empna", "mc_jpgdp", "mc_revind", "outind", "pasin", "pbmascl", "pclin", "pdsin", "pelin", "pelinh2e", "pelinm", "pelinp", "pelins", "pgfin", "pgiin", "ph2in", "pksin", "plgin", "plginpf", "plpin", "pmcin", "pmgin", "potin", "ppcin", "ppfin", "prcx", "prcxibyr", "prcxlag", "prcxyr", "prlin", "prsin", "qasin", "qbmascl", "qclin", "qdsin", "qelas", "qelin", "qelinh2e", "qelinm", "qelinp", "qelins", "qgfin", "qgiin", "qh2inhp", "qh2inpf", "qksin", "qlgin", "qlpin", "qmcin", "qmgin", "qnglq", "qotin", "qpcin", "qpfin", "qrlin", "qsasin", "qsclin", "qsdsin", "qselin", "qsgin", "qsksin", "qslgin", "qslpin", "qsmcin", "qsmgin", "qsngin", "qsotin", "qspcin", "qspfin", "qsppin", "qsrsin", "qssgin", "sedslastyr",
+                   "refqm", "refqi", "refqr", "refelown", "refelsale",
+                   "ethylene_slope", "ethylene_intercept", "ethylene_benchmark", "ethylene_demand", "base_ethane_demand",
+                   "naphtha_flex_consumption", "slow_flex_capacity", "quick_flex_capacity", "naphtha_price_mass",
+                   "ethane_price_mass", "cost_ethylene_from_ethane", "cost_ethylene_from_naphtha", "naphtha_to_hgl",
+                   "hgl_recycle_rate", "heattemp", "heattemp2", "h2_byp_index", "feedethtotal", "feedpropanetotal",
+                   "feednormbutanetotal", "feedisobutanetotal", "feedpropylenetotal", "feedh2fertilizer", "ethanedivfrac",
+                   "propanedivfrac", "pcffeedtarget", "ngfeedtarget", "hglfeedtarget", "ngfeedcalibfact", "hglfeedcalibfact",
+                   "petin", "wti_price", "pdsas", "qetinpf", "qprinpf", "qbuinpf", "qisinpf", "qppinpf", "qprolenerf",
+                   "qetin", "qpvin", "byprdh2in", "mc_gslgisnhwyr",
+                   "em_elec", "ab_allow_p", "engin", "eclin", "emcin", "erlin", "edsin", "elgin", "emgin", "esgin", "epcin",
+                   "epfin", "eksin", "eotin", "enqngpf", "enqlgpf",
+                   "hist_bench", "icalibrate", "iprice", "elec", "fgas", "intgas", "coal", "resid", "dist", "lpg", "qcrdata", "asmdata",
+                   "qcleth", "indmax", "carbshrca", "carbshrcadata"]
 IND_DECL_FILES = ["ccatsdat", "ngtdmrep", "convfact", "wrenew", "hmmblk", "parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
-                  "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk"]
+                  "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk", "intout", "ab32", "emeblk", "ghgrep"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
-                      includes=["hmmblk"], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
+                      includes=["hmmblk", "ghgrep"], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
                       decl_files=IND_DECL_FILES, module_text=True, module_name="I_", decls_only=True)
 CFG = MODULES["comm"]
 
@@ -731,6 +754,35 @@ def routine_idents(source_text, routines):
     return used
 
 
+def copybuf_dump(source_text):
+    """Fortran that dumps the numeric fields of EIA's per-industry-region buffers (derived type
+    COPY_BY_IND_REG, array COPYBUF(4,numind)) as one array per field, "cb_<field>", with the region and
+    industry as the last two dimensions. Only for the 'ys_in' dump (start of a year)."""
+    m = re.search(r"TYPE\s+COPY_BY_IND_REG(.*?)END\s+TYPE\s+COPY_BY_IND_REG", source_text, re.I | re.S)
+    out = ["      if (tag == 'ys_in') then"]
+    for ln in m.group(1).splitlines():
+        ln = ln.split("!")[0].strip()
+        fm = re.match(r"(REAL|INTEGER)\s+(\w+)\s*(?:\((.*)\))?\s*$", ln, re.I)
+        if not fm:
+            continue
+        kind, name, dims = fm.group(1).lower(), fm.group(2), fm.group(3)
+        code = "f4" if kind == "real" else "i4"
+        dl = [d.strip() for d in dims.split(",")] if dims else []
+        # an explicit-shape local with the field's own bounds plus (region, industry)
+        decl = ", ".join(dl + ["4", "numind"])
+        colons = ", ".join([":"] * len(dl) + ["ir_", "id_"])
+        rank = len(dl) + 2
+        out += [f"      block", f"      {kind} :: t_({decl})", "      integer :: ir_, id_, lb_(7), ub_(7), k_",
+                "      do id_ = 1, numind", "      do ir_ = 1, 4",
+                f"      t_({colons}) = COPYBUF(ir_, id_)%{name}" if dl else f"      t_(ir_, id_) = COPYBUF(ir_, id_)%{name}",
+                "      end do", "      end do",
+                f"      do k_ = 1, {rank}", "      lb_(k_) = lbound(t_, k_)", "      ub_(k_) = ubound(t_, k_)", "      end do",
+                f"      call odump(tag, 'cb_{name.lower()}', CURIYR, t_, sizeof(t_), '{code}', {rank}, lb_, ub_)",
+                "      end block"]
+    out.append("      endif")
+    return "\n".join(out)
+
+
 def write_state_routine(inc_dir, source_text=None):
     decls = {}
     for n in CFG["decl_files"]:
@@ -791,6 +843,8 @@ def write_state_routine(inc_dir, source_text=None):
     else:
         inc = "      implicit none\n" + inc
     body = "\n".join(calls)
+    if CFG is MODULES["ind"] and source_text:
+        body += "\n" + copybuf_dump(source_text)
     (BUILD / "oracle_state.f90").write_text(f"""! Generated by hooks.py. Do not edit.
       subroutine oracle_state(tag)
 {inc}
@@ -798,6 +852,8 @@ def write_state_routine(inc_dir, source_text=None):
       integer, parameter :: years({len(CFG["years"])}) = (/ {years} /)
       if (tag(1:1) == 'f') then
         if (CURIYR .ne. {FIRST_YEAR} .or. CURITR .ne. 1) return
+      else if (tag(1:2) == 'ys') then
+        if (tag .ne. 'ys_in' .or. CURITR .ne. 1 .or. .not. any(years == CURIYR)) return
       else
         if (FCRL .ne. 1 .or. .not. any(years == CURIYR)) return
       endif
