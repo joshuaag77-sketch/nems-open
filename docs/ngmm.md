@@ -57,6 +57,17 @@ all within 0.1% (the ported demand lands on EIA's gas use to 0.01%).
 High demand (load_growth 1000 TWh, ogs="ngmm"): US gas use +6.1% in 2050, Henry Hub +2.7%, gas to
 power plants +2.7%, residential gas +0.7%.
 
+With HSM in the loop (ogs="hsm", cycles=2; HSM runs on cycle 1's wellhead prices, its expected production
+centres cycle 2's curve, and runs once more at the end for production):
+
+| run | 2050 Henry Hub | gas to power plants | US gas use | HSM expected L48 production | minutes |
+|---|---|---|---|---|---|
+| reference (EIA: 1.907) | 1.907 (0.0%) | 0.0% | 0.0% | 41,681 Bcf (EIA's restart 41,714) | 29 |
+| high demand, load_growth 1000 TWh | +3.2% | +3.2% | +5.9% | 42,968 Bcf (+3.1%) | 12 |
+
+The market's expected production in the high-demand run (43,254 Bcf) sits within 0.7% of HSM's own answer
+on those prices, so the fitted response and HSM agree where they meet.
+
 ## Limits
 
 - National: one curve, not NGMM's state network. Regional basis and pipeline constraints stay as in
