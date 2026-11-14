@@ -247,18 +247,32 @@ def write_inputs(run: Path, arrays: dict, year: int, itr: int, ncrl: int = 0, fc
 
 
 def read_outputs(run: Path, year: int, itr: int) -> dict[str, dict]:
-    """{"BLOCK_VAR": {(i, j, ...): value}} from NGMM's fromAIMMS file (AIMMS display output, 1-based labels)."""
-    path = Path(run) / "ngas" / "fromAIMMS" / f"GlobalDataToNEMS_{year}_{itr:02d}.txt"
-    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    """{"BLOCK_VAR": {(i, j, ...): value}} from NGMM's fromAIMMS file, 1-based indices.
+
+    The file is AIMMS `display` output, read in NEMS by filer.f (funfmt 7): blocks of "COMPOSITE TABLE:", a header
+    whose last word is the name (maybe with its domain in parentheses; the year column is "globalyr"), rows of
+    index labels and a value, and ";". Labels may be quoted; rows AIMMS leaves out are zero."""
+    return parse_composite(Path(run) / "ngas" / "fromAIMMS" / f"GlobalDataToNEMS_{year}_{itr:02d}.txt")
+
+
+def parse_composite(path: Path) -> dict[str, dict]:
+    text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
     out = {}
-    for m in re.finditer(r"(\w+)\s*:=\s*data\s*\{(.*?)\}\s*;", text, re.S):
+    for block in re.split(r"(?i)composite table:", text)[1:]:
+        lines = [ln for ln in block.split(";")[0].splitlines() if ln.strip()]
+        if not lines:
+            continue
+        name = re.sub(r"\(.*", "", lines[0]).split()[-1].upper().split("::")[-1]
         vals = {}
-        for k, v in re.findall(r"\(([^)]*)\)\s*:\s*([-+.\deE]+)", m.group(2)):
-            vals[tuple(int(x.strip().strip("'")) for x in k.split(","))] = float(v)
-        if not vals:
-            for k, v in re.findall(r"'?(\d+)'?\s*:\s*([-+.\deE]+)", m.group(2)):
-                vals[(int(k),)] = float(v)
-        out[m.group(1).upper().split("::")[-1]] = vals
+        for ln in lines[1:]:
+            cells = [c.strip("'\"") for c in ln.split()]
+            try:
+                vals[tuple(int(c) for c in cells[:-1])] = float(cells[-1].replace("D", "E").replace("d", "e"))
+            except ValueError:
+                continue
+        out[name] = vals
+    for m in re.finditer(r"(?m)^\s*([A-Za-z]\w*)\s*:=\s*([-+.\deEdD]+)\s*;", text):   # scalars, if any
+        out.setdefault(m.group(1).upper(), {(): float(m.group(2))})
     return out
 
 

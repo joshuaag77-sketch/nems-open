@@ -59,3 +59,15 @@ def test_inputs_file_round_numbers(tmp_path):
         ends = [m.end() for m in re.finditer(r"\S+", lines[0])]
         for line in lines[1:]:
             assert [m.end() for m in re.finditer(r"\S+", line)] == ends, line
+
+
+def test_outputs_parse_like_filer(tmp_path):
+    """filer.f funfmt 7: header ends with the name (domain in parentheses allowed), labels may be quoted."""
+    p = tmp_path / "out.txt"
+    p.write_text("COMPOSITE TABLE:\n  MNUMCR  globalyr   MPBLK_PNGEL(MNUMCR,globalyr)\n"
+                 "       1        41   2.5\n     '11'       41   3.25\n;\n\n"
+                 "COMPOSITE TABLE:\n globalyr  NGTDMREP_OGHHPRNG\n       41  1.75\n;\n")
+    out = aimms.parse_composite(p)
+    assert out["MPBLK_PNGEL"] == {(1, 41): 2.5, (11, 41): 3.25}
+    assert out["NGTDMREP_OGHHPRNG"] == {(41,): 1.75}
+    assert aimms.to_array(out["NGTDMREP_OGHHPRNG"], (61,))[40] == 1.75
