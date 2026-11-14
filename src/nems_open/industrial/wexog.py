@@ -42,6 +42,20 @@ NAPHTHA_DIV_FRAC = {1: f32(0.0), 2: f32(0.0), 3: f32(1.0), 4: f32(0.0)}
 COALCOKEIMPORT = (None, 0.0, 0.28, 0.41, 0.01, -0.02, 0.0, 0.31, 0.0, 0.01, 0.0, 1.0)
 END_YR_FEEDSTOCK = 2027
 ICURIYR = 33
+ICURIYR2 = 32
+MAX_FRAC_YEARS = 38
+H2_HEAT = f32(134.229)
+METHANE_HEAT = f32(52.618)
+ULSD_HEAT = f32(41.9540)
+ETHANE_HEAT = f32(0.0000491794)
+NAPHTHA_HEAT = f32(0.0000431386)
+NAPHTHA_NONFLEX = f32(550.0)
+HGL_RECYCLE_BASE = f32(0.95)
+YIELDS_ETHANE = [None] + [f32(x) for x in (0.8091, 0.0591, 0.0704, 0.0194, 0.0178, 0.0081, 0.0081, 0.0, 0.0008, 0.0, 0.0073)]
+YIELDS_NAPHTHA = [None] + [f32(x) for x in (0.3867, 0.0097, 0.1694, 0.1547, 0.0476, 0.0507, 0.0437, 0.0224, 0.0166, 0.0251, 0.0735)]
+CHEM_SLOPE = [None] + [f32(x) for x in (0.0, 0.0, 0.0, 13.7740, 19.9012, 6.65763, 5.60443, 8.00159, 9.19759, 0.0, 0.0)]
+CHEM_INTERCEPT = [None] + [f32(x) for x in (0.0, 0.0, 0.0, -60.5256, 18.8091, -7.81998, 245.34893, 160.36134, 116.15598, 0.0, 0.0)]
+PROPYLENE_DIV_FRAC = [None] + [f32(x) for x in (0.0, 0.053, 0.012, 0.0, 0.015, 0.009, 0.895, 0.0, 0.016)]
 FADEYRS = 12
 CFELQ_DIV = f32(1.0e9)
 
@@ -90,9 +104,6 @@ def wexog(s: dict, indbmovr2: int = 0) -> None:
     mainfuels = int(s["mainfuels"])
     mf = mainfuels - 1
     fcrl = int(s["fcrl"])
-    if curcalyr > END_YR_FEEDSTOCK:
-        raise NotImplementedError("petrochemical cracking model after the last feedstock year is not ported")
-
     tq, tr = s["tqmain"], s["tqrenw"]
     bmain = np.zeros((mf + 1, 6), dtype=f32)  # [fuel 1..23, region 1..5]
     firm = np.zeros(6, dtype=f32)
@@ -284,6 +295,19 @@ def wexog(s: dict, indbmovr2: int = 0) -> None:
     for r in range(1, 5):
         asph_t[r] = f32(asph_t[5]) * f32(asph_p[r])
 
+
+    # HGL recycle rate, and the ethane versus naphtha cracking model after the last read-in feedstock year
+    hgl_rr = s["hgl_recycle_rate"]
+    if curcalyr <= END_YR_FEEDSTOCK:
+        hgl_rr[curiyr] = f32(1.0)
+    else:
+        hgl_rr[curiyr] = f32(f32(f32(f32(1.0) - f32(f32(0.0132) * f32(s["petin"][11, curiyr]))) - f32(0.0218)) / HGL_RECYCLE_BASE)
+    last_read_in = msedyr + feedyears  # index year of the last read-in feedstock year
+    if curcalyr == sedslastyr + feedyears:
+        _ethylene_regression(s, curiyr, fi, feednaph)
+    elif curcalyr > sedslastyr + feedyears:
+        _cracking(s, curiyr, last_read_in)
+
     # benchmark factors for this year
     bf, rbf = s["bf"], s["rbf"]
     badj = s["bmain_adjusted"]
@@ -292,7 +316,29 @@ def wexog(s: dict, indbmovr2: int = 0) -> None:
     for f in range(1, mf + 1):
         for r in range(1, 5):
             bf[curiyr, f, r] = (f32(1.0) - fade) * f32(bf_seds[f, r]) + fade * f32(bf_steo[f]) * f32(bf_seds[f, r])
-            if curiyr >= ICURIYR:
+            if curcalyr > sedslastyr + feedyears:
+                nfc = f32(s["naphtha_flex_consumption"][3, curiyr])
+                pcf = s["pcffeedtarget"]
+                for rr in range(1, 5):
+                    pcf[rr, curiyr] = 0.0
+                pcf[3, curiyr] = f32(nfc + NAPHTHA_NONFLEX)
+                pcf[5, curiyr] = np.add.reduce(np.asarray([pcf[rr, curiyr] for rr in range(1, 5)], dtype=f32), dtype=f32)
+                ngt[5] = f32(bmain[5, 5] * f32(s["ngfeedcalibfact"]))
+                for rr in range(1, 5):
+                    ngt[rr] = f32(ngt[5] * FEEDNGPERCENT[rr])
+                if f == 13:
+                    bf[curiyr, 19, 3] = (f32(1.0) - fade) * f32(bf_seds[19, 3]) + fade * f32(bf_steo[19]) * f32(bf_seds[19, 3])
+                    n2h = s["naphtha_to_hgl"]
+                    x = f32(f32(bmain[19, 3] * f32(bf[curiyr, 19, 3])) - f32(nfc + NAPHTHA_NONFLEX))
+                    x = f32(x * f32(YIELDS_NAPHTHA[1] / NAPHTHA_HEAT))
+                    n2h[3, curiyr] = f32(x * f32(ETHANE_HEAT / YIELDS_ETHANE[1]))
+                    n2h[5, curiyr] = n2h[3, curiyr]
+                    hgt[5] = f32(bmain[13, 5] * f32(s["hglfeedcalibfact"]))
+                    for rr in range(1, 5):
+                        v = f32(f32(f32(hgl_rr[curiyr] * hgt[5]) * FEEDHGLPERCENT[rr]) + f32(n2h[rr, curiyr]))
+                        hgt[rr] = max(v, f32(0.0))
+                    hgt[5] = np.add.reduce(np.asarray([hgt[rr] for rr in range(1, 5)], dtype=f32), dtype=f32)
+            elif curiyr >= ICURIYR:
                 ngt[5] = f32(feedng[fi])
                 hgt[5] = f32(feedhgl[fi])
                 for rr in range(1, 5):
@@ -315,6 +361,8 @@ def wexog(s: dict, indbmovr2: int = 0) -> None:
                 elif f == 19:
                     if curcalyr == sedslastyr + feedyears:
                         bf[curiyr, 19, r] = f32(f32(feednaph[fi]) * NAPHTHA_DIV_FRAC[r] / bmain[19, r]) if bmain[19, r] > 0 else f32(0.0)
+                    elif curcalyr > sedslastyr + feedyears:
+                        bf[curiyr, 19, r] = f32(f32(s["pcffeedtarget"][r, curiyr]) / bmain[19, r]) if bmain[19, r] > 0 else f32(0.0)
                 elif f == 17 and curcalyr >= sedslastyr + 5:
                     bf[curiyr, 17, r] = f32(f32(asph_t[r]) / bmain[17, r]) if bmain[17, r] > 0 else f32(0.0)
             badj[f, r] = bmain[f, r] * f32(bf[curiyr, f, r])
@@ -329,6 +377,95 @@ def wexog(s: dict, indbmovr2: int = 0) -> None:
         rbf[curiyr, f, 5] = f32(np.add.reduce(np.asarray([f32(radj[f, r]) for r in range(1, 5)], dtype=f32), dtype=f32) / tot) if tot != 0 else f32(0.0)
 
     _write_qblk(s, curiyr, curcalyr, msedyr, sedslastyr, steolastyr, iy)
+    _hgl_and_electricity_groups(s, curiyr, curcalyr, msedyr, sedslastyr, feedyears, fi, bmain)
+
+
+def _sum32(vals):
+    t = f32(0.0)
+    for v in vals:
+        t = f32(t + f32(v))
+    return t
+
+
+def _ethylene_regression(s, curiyr, fi, feednaph):
+    """Last read-in feedstock year: seed the flexible cracking capacity and regress ethylene output on petrochemical
+    shipments over the last five read-in years."""
+    nfc, sfc, qfc = s["naphtha_flex_consumption"], s["slow_flex_capacity"], s["quick_flex_capacity"]
+    nfc[3, curiyr] = max(f32(0.0), f32(f32(feednaph[fi]) - NAPHTHA_NONFLEX))
+    sfc[3, curiyr] = f32(5510000.0)
+    qfc[3, curiyr] = f32(2610000.0)
+    max_years = END_YR_FEEDSTOCK - int(s["ibyr"]) + 1
+    xs, ys = [], []
+    for imac in range(1, 6):
+        idx = ICURIYR2 + max_years - 2 - (5 - imac)
+        xs.append(f32(s["mc_revind"][11, 49, idx]))
+        a = f32(f32(f32(s["qetinpf"][11, idx]) / ETHANE_HEAT) * YIELDS_ETHANE[1])
+        b = f32(f32(f32(s["qpfin"][11, idx]) / NAPHTHA_HEAT) * YIELDS_NAPHTHA[1])
+        ys.append(f32(a + b))
+    dot = _sum32([f32(x * y) for x, y in zip(xs, ys)])
+    sx, sy = _sum32(xs), _sum32(ys)
+    sxx = _sum32([f32(x * x) for x in xs])
+    slope = f32(f32(f32(f32(5.0) * dot) - f32(sx * sy)) / f32(f32(f32(5.0) * sxx) - f32(sx * sx)))
+    s["ethylene_slope"] = slope
+    s["ethylene_intercept"] = f32(f32(sy - f32(slope * sx)) / f32(5.0))
+
+
+def _cracking(s, curiyr, last_read_in):
+    """Ethane versus naphtha cracking economics in division 7 and the resulting ethane feedstock (QETINPF)."""
+    cur = curiyr
+    epm, npm = s["ethane_price_mass"], s["naphtha_price_mass"]
+    cce, ccn = s["cost_ethylene_from_ethane"], s["cost_ethylene_from_naphtha"]
+    nfc, sfc, qfc = s["naphtha_flex_consumption"], s["slow_flex_capacity"], s["quick_flex_capacity"]
+    ye, yn = YIELDS_ETHANE, YIELDS_NAPHTHA
+    million = f32(1000000.0)
+    epm[3, cur] = f32(f32(f32(s["petin"][7, cur]) * ETHANE_HEAT) * million)
+    npm[3, cur] = f32(f32(f32(s["ppfin"][7, cur]) * NAPHTHA_HEAT) * million)
+    cce[3, cur] = f32(epm[3, cur] / ye[1])
+    ccn[3, cur] = f32(npm[3, cur] / yn[1])
+    price = [None] * 12
+    for k in range(2, 12):
+        if k == 2:
+            price[k] = f32(f32(s["ph2in"][7, cur]) * H2_HEAT)
+        elif k == 3:
+            price[k] = f32(f32(s["pngin"][7, cur]) * METHANE_HEAT)
+        else:
+            price[k] = f32(f32(CHEM_SLOPE[k] * f32(s["wti_price"][cur])) + CHEM_INTERCEPT[k])
+        if k == 10:
+            price[k] = f32(f32(s["pdsas"][7, cur]) * ULSD_HEAT)
+        elif k == 11:
+            price[k] = f32(f32(f32(price[7] + price[8]) + price[9]) / f32(3.0))
+        cce[3, cur] = f32(cce[3, cur] - f32(f32(price[k] * ye[k]) / ye[1]))
+        ccn[3, cur] = f32(ccn[3, cur] - f32(f32(price[k] * yn[k]) / yn[1]))
+    sfc[3, cur] = sfc[3, cur - 1]
+    qfc[3, cur] = qfc[3, cur - 1]
+    nfc[3, cur] = nfc[3, cur - 1]
+    if (cce[3, cur - 5] > ccn[3, cur - 5] and cce[3, cur - 4] > ccn[3, cur - 4] and cce[3, cur - 3] > ccn[3, cur - 3]
+            and sfc[3, cur - 1] > 0.0):
+        sfc[3, cur] = max(f32(0.0), f32(sfc[3, cur - 1] - f32(sfc[3, last_read_in] * f32(0.2))))
+        qfc[3, cur] = f32(qfc[3, cur - 1] + f32(sfc[3, cur - 1] - sfc[3, cur]))
+    step = f32(f32(qfc[3, cur] * NAPHTHA_HEAT) / yn[1])
+    half = f32(f32(f32(f32(0.5) * qfc[3, cur]) * NAPHTHA_HEAT) / yn[1])
+    if cce[3, cur] > ccn[3, cur]:
+        nfc[3, cur] = min(step, f32(nfc[3, cur - 1] + half))
+    if cce[3, cur] < ccn[3, cur]:
+        nfc[3, cur] = max(f32(0.0), f32(nfc[3, cur - 1] - half))
+    slope, intercept = f32(s["ethylene_slope"]), f32(s["ethylene_intercept"])
+    rev = s["mc_revind"]
+    iy27 = END_YR_FEEDSTOCK - 1989
+    bench_num = f32(f32(f32(f32(s["qetinpf"][11, iy27]) / ETHANE_HEAT) * ye[1]) + f32(f32(f32(s["qpfin"][11, iy27]) / NAPHTHA_HEAT) * yn[1]))
+    bench = f32(bench_num / f32(f32(slope * rev[11, 49, iy27]) + intercept))
+    s["ethylene_benchmark"] = bench
+    demand = f32(f32(f32(f32(slope * rev[11, 49, cur]) + intercept) * bench) * s["hgl_recycle_rate"][cur])
+    s["ethylene_demand"][cur] = demand
+    base = f32(f32(f32(demand - f32(f32(NAPHTHA_NONFLEX * yn[1]) / NAPHTHA_HEAT)) * ETHANE_HEAT) / ye[1])
+    s["base_ethane_demand"][cur] = base
+    q = s["qetinpf"]
+    for icd in range(1, 10):
+        q[icd, cur] = q[icd, last_read_in]
+        if icd == 7:
+            x = f32(f32(f32(f32(nfc[3, cur] * yn[1]) / NAPHTHA_HEAT) * ETHANE_HEAT) / ye[1])
+            q[icd, cur] = f32(f32(base - x) - f32(q[11, last_read_in] - q[7, last_read_in]))
+    q[11, cur] = _sum32([q[d, cur] for d in range(1, 10)])
 
 
 def _write_qblk(s, curiyr, curcalyr, msedyr, sedslastyr, steolastyr, iy):
@@ -349,6 +486,7 @@ def _write_qblk(s, curiyr, curcalyr, msedyr, sedslastyr, steolastyr, iy):
         r = DIV_TO_REG[d]
         co2 = f32(s["co2_elec"][d, iy]) * cfelq / CFELQ_DIV
         s["qelin"][d, iy] = f32(badj[1, r]) * divshr(sh["qselin"], d, r) + g("qelrf", d) + f32(s["qeleth"][iy, d]) + g("qelhm", d) + g("qngpin", d) + co2
+        s["qh2inpf"][d, iy] = f32(f32(badj[2, r]) * divshr(_col(s["h2_chem_demand_div"], 7), d, r)) + g("qh2rf", d)
         s["qgfin"][d, iy] = (f32(badj[3, r]) + f32(badj[5, r])) * divshr(sh["qsngin"], d, r) + g("qnghmhp", d) + g("qnghmpf", d)
         s["qgiin"][d, iy] = f32(badj[4, r]) * divshr(sh["qsngin"], d, r) + g("qngrf", d) + f32(s["qngeth"][iy, d]) + f32(s["cgogsq"][d, iy, 3])
         s["inqngpf"][d, iy] = f32(badj[5, r]) * divshr(sh["qsngin"], d, r)
@@ -379,6 +517,18 @@ def _write_qblk(s, curiyr, curcalyr, msedyr, sedslastyr, steolastyr, iy):
         s["qbmin"][d, iy] = f32(radj[2, r]) * divshr(sh["qsbmin"], d, r)
         s["qmsin"][d, iy] = f32(radj[8, r]) * divshr(sh["qsmsin"], d, r)
         s["qtrin"][d, iy] = f32(s["qhoin"][d, iy]) + f32(s["qbmin"][d, iy]) + f32(s["qmsin"][d, iy])
+        s["qh2inhp"][d, iy] = f32(0.0)
+        s["qh2in"][d, iy] = f32(s["qh2inpf"][d, iy] + s["qh2inhp"][d, iy])
+        with np.errstate(all="ignore"):
+            num = f32(f32(f32(f32(0.1613) * s["qetin"][d, iy]) + f32(f32(0.1287) * s["qprinpf"][d, iy])) + f32(f32(0.0296) * s["qpfin"][d, iy]))
+            den = f32(f32(f32(f32(0.1613) * s["qetin"][d, iy - 1]) + f32(f32(0.1287) * s["qprinpf"][d, iy - 1])) + f32(f32(0.0296) * s["qpfin"][d, iy - 1]))
+            idx = f32(num / den)
+            if f32(f32(s["qetin"][d, iy - 1] + s["qprinpf"][d, iy - 1]) + s["qpfin"][d, iy - 1]) == 0.0:
+                idx = f32(1.0)
+            s["h2_byp_index"][d, iy] = idx
+            if curcalyr == int(s["ibyr"]):
+                raise NotImplementedError("base-year hydrogen byproduct is not ported")
+            s["byprdh2in"][d, iy] = f32(s["byprdh2in"][d, iy - 1] * idx)
     if curcalyr < sedslastyr + 1:
         for d in range(1, 10):
             for nm, src in (("qelin", "qselin"), ("qdsin", "qsdsin"), ("qrsin", "qsrsin"), ("qmgin", "qsmgin"), ("qpfin", "qspfin"),
@@ -389,6 +539,128 @@ def _write_qblk(s, curiyr, curcalyr, msedyr, sedslastyr, steolastyr, iy):
             s["qrlin"][d, iy] = s["qrsin"][d, iy]
             s["qlgin"][d, iy] = f32(s["qslgin"][d, iy]) + f32(s["qsppin"][d, iy])
             s["qciin"][d, iy] = f32(s["qsciin"][11, iy]) * f32(COALCOKEIMPORT[d])
+    for nm in ("qh2inpf", "qh2inhp", "qh2in", "byprdh2in"):
+        s[nm][11, iy] = np.add.reduce(np.asarray([f32(s[nm][d, iy]) for d in range(1, 10)], dtype=f32), dtype=f32)
     for nm in ("qelin", "qgfin", "qgiin", "inqngpf", "qngin", "qclin", "qmcin", "qciin", "qrsin", "qdsin", "qlgin", "inqlgpf", "inqlghp",
                "qmgin", "qsgin", "qpcin", "qasin", "qluin", "qpfin", "qksin", "qotin", "qhoin", "qbmin", "qmsin", "qtrin"):
         s[nm][11, iy] = np.add.reduce(np.asarray([f32(s[nm][d, iy]) for d in range(1, 10)], dtype=f32), dtype=f32)
+
+
+def _hgl_and_electricity_groups(s, curiyr, curcalyr, msedyr, sedslastyr, feedyears, fi, bmain):
+    """The end of WEXOG: split HGL feedstock into ethane, propane, propylene, butanes and natural gasoline; heat and
+    power HGL; hydrogen byproduct; the purchased-electricity groups (QELINP, QELINS, QELINM) that next year's price
+    weights use; the feedstock calibration factors."""
+    iy = curiyr
+    last_read_in = msedyr + feedyears
+    cfeeq = f32(s["cfeeq"])
+    ethaneproduction = f32(f32(f32(f32(f32(s["rfqngpl"][10, curiyr, 1]) * cfeeq) * f32(365.0)) * f32(1000.0)) / f32(1000000.0))
+    qe, qpr, qprol, qbu, qis, qpp = (s[n] for n in ("qetinpf", "qprinpf", "qprolenerf", "qbuinpf", "qisinpf", "qppinpf"))
+    inqlgpf, inqlghp, qlgin = s["inqlgpf"], s["inqlghp"], s["qlgin"]
+    heattemp2 = s["heattemp2"]
+    if curcalyr > sedslastyr + feedyears:
+        qlgin[11, curiyr] = f32(inqlgpf[11, curiyr] + inqlghp[11, curiyr])
+        for d in range(1, 10):
+            qlgin[d, curiyr] = f32(inqlgpf[d, curiyr] + inqlghp[d, curiyr])
+    if ICURIYR <= curiyr <= last_read_in:
+        qe[11, curiyr] = s["feedethtotal"][fi]
+        qpr[11, curiyr] = s["feedpropanetotal"][fi]
+        qprol[11, curiyr] = s["feedpropylenetotal"][fi]
+        qbu[11, curiyr] = s["feednormbutanetotal"][fi]
+        qis[11, curiyr] = s["feedisobutanetotal"][fi]
+        qpp[11, curiyr] = f32(0.0)
+    elif curiyr > last_read_in:
+        qprol[11, curiyr] = f32(f32(f32(302000 * 365) * f32(3.835)) / f32(1000000.0))
+        if qe[11, curiyr] > ethaneproduction:
+            heattemp2[curiyr] = f32(qe[11, curiyr] - ethaneproduction)
+            qe[7, curiyr] = f32(qe[7, curiyr] - heattemp2[curiyr])
+            qe[11, curiyr] = f32(qe[11, curiyr] - heattemp2[curiyr])
+        else:
+            heattemp2[curiyr] = f32(0.0)
+        base = f32(f32(f32(inqlgpf[11, curiyr] - qe[11, curiyr]) - qprol[11, curiyr]) - heattemp2[curiyr])
+        den = f32(f32(f32(inqlgpf[11, last_read_in] - qe[11, last_read_in]) - qprol[11, last_read_in]) - heattemp2[last_read_in])
+        qpr[11, curiyr] = f32(f32(f32(base * qpr[11, last_read_in]) / den) + f32(f32(0.83) * heattemp2[curiyr]))
+        qbu[11, curiyr] = f32(f32(f32(base * qbu[11, last_read_in]) / den) + f32(f32(0.17) * heattemp2[curiyr]))
+        qis[11, curiyr] = f32(f32(base * qis[11, last_read_in]) / den)
+        qpp[11, curiyr] = f32(f32(base * qpp[11, last_read_in]) / den)
+        if qpp[11, curiyr] < 0.0:
+            qbu[11, curiyr] = f32(qbu[11, curiyr] + qpp[11, curiyr])
+            qpp[11, curiyr] = f32(0.0)
+        if qis[11, curiyr] < 0.0:
+            qbu[11, curiyr] = f32(qbu[11, curiyr] + qis[11, curiyr])
+            qis[11, curiyr] = f32(0.0)
+        if qbu[11, curiyr] < 0.0:
+            qpr[11, curiyr] = f32(qpr[11, curiyr] + qbu[11, curiyr])
+            qbu[11, curiyr] = f32(0.0)
+    pdf, edf = s["propanedivfrac"], s["ethanedivfrac"]
+    for icd in range(1, 10):
+        qprol[icd, curiyr] = f32(PROPYLENE_DIV_FRAC[icd] * qprol[11, curiyr])
+        if curiyr > MAX_FRAC_YEARS:
+            qpr[icd, curiyr] = f32(pdf[icd, MAX_FRAC_YEARS] * qpr[11, curiyr])
+        else:
+            qpr[icd, curiyr] = f32(pdf[icd, curiyr] * qpr[11, curiyr])
+        if curcalyr <= sedslastyr + feedyears:
+            qe[icd, curiyr] = f32(edf[icd, curiyr] * qe[11, curiyr])
+        if icd == 7:
+            qis[icd, curiyr] = qis[11, curiyr]
+            qbu[icd, curiyr] = qbu[11, curiyr]
+            qpp[icd, curiyr] = qpp[11, curiyr]
+        else:
+            qis[icd, curiyr] = f32(0.0)
+            qbu[icd, curiyr] = f32(0.0)
+            qpp[icd, curiyr] = f32(0.0)
+    if curcalyr <= sedslastyr + feedyears:
+        for icd in list(range(1, 10)) + [11]:
+            v = f32(qe[icd, curiyr] + qpr[icd, curiyr])
+            v = f32(v + qprol[icd, curiyr])
+            v = f32(v + qbu[icd, curiyr])
+            v = f32(v + qis[icd, curiyr])
+            inqlgpf[icd, curiyr] = f32(v + qpp[icd, curiyr])
+    for icd in range(1, 10):
+        inqlghp[icd, iy] = f32(qlgin[icd, iy] - inqlgpf[icd, iy])
+    heattemp = s["heattemp"]
+    heattemp[curiyr] = f32(0.0)
+    for icd in range(1, 10):
+        if inqlghp[icd, iy] < 0.0:
+            for icr in range(1, 10):
+                if icd != icr:
+                    heattemp[curiyr] = f32(inqlghp[11, iy] - inqlghp[icd, iy])
+                    inqlghp[icr, iy] = f32(inqlghp[icr, iy] + f32(f32(inqlghp[icd, iy] * inqlghp[icr, iy]) / heattemp[curiyr]))
+            inqlghp[icd, iy] = f32(0.0)
+    for icd in range(1, 10):
+        qlgin[icd, iy] = f32(inqlghp[icd, iy] + inqlgpf[icd, iy])
+    inqlghp[11, iy] = _sum32([inqlghp[d, iy] for d in range(1, 10)])
+    qlgin[11, iy] = _sum32([qlgin[d, iy] for d in range(1, 10)])
+    qetin, qbuin, qisin, qppin, qprin = (s[n] for n in ("qetin", "qbuin", "qisin", "qppin", "qprin"))
+    for icd in range(1, 10):
+        qetin[icd, iy] = qe[icd, iy]
+        qbuin[icd, iy] = qbu[icd, iy]
+        qisin[icd, iy] = qis[icd, iy]
+        qppin[icd, iy] = qpp[icd, iy]
+        if iy > msedyr:
+            qprin[icd, iy] = f32(qpr[icd, iy] + inqlghp[icd, iy])
+
+    electricity_groups(s, curiyr)
+    if curcalyr <= sedslastyr + feedyears:
+        s["inqngpf"][11, iy] = _sum32([s["inqngpf"][d, iy] for d in range(1, 10)])
+        inqlgpf[11, iy] = _sum32([inqlgpf[d, iy] for d in range(1, 10)])
+        s["ngfeedcalibfact"] = f32(s["inqngpf"][11, iy] / bmain[5, 5])
+        s["hglfeedcalibfact"] = f32(inqlgpf[11, iy] / bmain[13, 5])
+
+
+def electricity_groups(s, curiyr):
+    """Purchased electricity by load type (QELINP, QELINS, QELINM): QELIN less refinery, ethanol, hydrogen, mining
+    and other module electricity, split with the load-type shares XELINSHR."""
+    xs = s["xelinshr"]
+    div_to_reg = (None, 1, 1, 2, 2, 3, 3, 3, 4, 4)
+    scale = f32(10.0 ** 9)
+    cfelq = f32(s["cfelq"])
+    for d in range(1, 10):
+        co2 = f32(f32(s["co2_elec"][d, curiyr] * cfelq) / scale)
+        base = f32(f32(f32(f32(f32(s["qelin"][d, curiyr] - s["qelrf"][d, curiyr]) - s["qeleth"][curiyr, d]) - s["qelhm"][d, curiyr])
+                       - s["qngpin"][d, curiyr]) - co2)
+        r = div_to_reg[d]
+        s["qelinp"][d, curiyr] = f32(f32(base * xs[1, r]) + f32(f32(s["qelrf"][d, curiyr] + s["qeleth"][curiyr, d]) + s["qelinh2ng"][d, curiyr]))
+        s["qelins"][d, curiyr] = f32(base * xs[2, r])
+        s["qelinm"][d, curiyr] = f32(f32(base * xs[3, r]) + f32(s["qngpin"][d, curiyr] + co2))
+    for nm in ("qelinp", "qelins", "qelinm"):
+        s[nm][11, curiyr] = _sum32([s[nm][d, curiyr] for d in range(1, 10)])

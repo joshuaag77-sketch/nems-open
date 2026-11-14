@@ -1,9 +1,8 @@
-"""WEXOG port (benchmark to SEDS/STEO and QBLK writes) vs the industrial oracle, through 2027.
+"""WEXOG port (benchmark to SEDS/STEO, cracking model, HGL split and QBLK writes) vs the industrial oracle, 2025 to 2050.
 
 The state before and after CALL WEXOG; the port runs on the first and its QBLK industrial
 fuels and benchmark factors for the year are compared with the second. The benchmark
 factors BF_SEDS and BF_STEO are carried locals of the Fortran routine; the dump holds them.
-Later years need the petrochemical cracking model and are not ported.
 """
 
 import numpy as np
@@ -12,9 +11,11 @@ import pytest
 from nems_open import oracle_state
 from nems_open.industrial.wexog import wexog
 
-YEARS = [36, 37, 38]
+YEARS = [36, 37, 38, 41, 51, 61]
 QOUT = ["qelin", "qgfin", "qgiin", "inqngpf", "qngin", "qclin", "qmcin", "qciin", "qrsin", "qdsin",
-        "qmgin", "qsgin", "qpcin", "qasin", "qluin", "qpfin", "qksin", "qotin", "qhoin", "qbmin", "qmsin", "qtrin"]
+        "qmgin", "qsgin", "qpcin", "qasin", "qluin", "qpfin", "qksin", "qotin", "qhoin", "qbmin", "qmsin", "qtrin",
+        "qlgin", "inqlgpf", "inqlghp", "qetinpf", "qprinpf", "qprolenerf", "qbuinpf", "qetin", "qprin", "qh2inpf", "qh2in",
+        "byprdh2in", "qelinp", "qelins", "qelinm"]
 TOL = 1e-4
 
 pytestmark = pytest.mark.skipif(not oracle_state.available("wx_out", 38, "ind"), reason="oracle state not dumped")
