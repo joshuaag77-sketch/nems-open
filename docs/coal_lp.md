@@ -24,8 +24,20 @@ CSAPR start year (2015), and the regional Copy_SULFPNConstraint allows Tso2_lim_
 145,000) against a regional sulfur load in the tens. Their escape variables are commented out of EIA's
 variable set, so they are hard limits when active.
 
+Contracts are in (`electric.contract_floor`, `lp.solve(contracts=...)`, `lp_report --contracts`): floors per curve
+and region from cmmProfiles.txt, matching the positive part of EFD_CONT cell by cell (5,810 TBtu in 2024, 1,477 in
+2027, 350 in 2030), with EIA's quirk that every unit of a plant carries the plant's whole contract. EIA's 999
+ContractEscape is used for 7 to 64 TBtu in some years. They barely move production (Interior stays 89 Mt in
+2027-2030) and they turn the raw electricity demand duals negative, so they are off by default until EIA's
+electricity pricing procedure (CalculationOfElectricityPricingEquation) is ported.
+
+Why Interior is high in 2027-2030: both Interior curves produce at capacity (70.1 of 70.8 and 18.5 of 18.6 Mt
+in 2028), while EIA's run produces 54 to 63 Mt. So in EIA's run Interior coal is dearer relative to PRB than in
+ours. The suspects are the forecast-year supply curves, which here run on substitutes for the lagged state in
+the AIMMS case files (FY_PROD_CAP, LAG_PRI, QTarget; table below). The AIMMS reference export settles that.
+
 ## What it leaves out (the real model has 125 equation families)
-Contracts, mercury and activated carbon, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
+Mercury and activated carbon, activated carbon, SO2 and mercury, Trate4x limits, coal-to-liquids, imports, the international export network and ICMM matching, STEO coke, industrial and import calibration, and every escape variable. Prices are LP duals of the demand constraints, without EIA's postprocessing (the demand shadow-price scaling and the electricity pricing procedure).
 
 ## Substitutions for the AIMMS case-file lag state
 | Quantity | Where the model gets it | What is used here |
@@ -57,8 +69,8 @@ Against the one-demand-per-region LP below: total absolute regional miss falls f
 111 to 51 in 2026, 93 to 82 in 2030, 46 to 16 in 2035, 44 to 31 in 2040. Lignite (4LGN) is within 3 Mt in every year
 (it was 50% high in 2030 and 21 Mt where EIA has 0 in 2035). Worse: 2027 (44 to 95), and from 2027 to 2030
 Interior (3INR) is 30 to 60% high and PRB 15 to 20% low, with the electric price about 20% high. The likely
-cause is contracts (ContractsScrubbed/Unscrubbed: minimum deliveries from named curves to plants); SO2 and
-second-tier transport were checked and do not bind in cb2026 (below). Contracts are the next family to port.
+cause is the forecast-year supply curves (see "Why Interior is high" above); SO2, second-tier transport and
+contracts were checked and do not explain it.
 
 ## Results against cb2026, one electricity demand per region (earlier reduced LP)
 | year | production Mt (model / EIA); by region 1APN, 2APR, 3INR, 4LGN, 5PRB, 6WSR | delivered price 1987$/MMBtu (model / EIA) |

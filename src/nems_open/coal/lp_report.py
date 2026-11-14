@@ -14,9 +14,12 @@ EAST = ("1APN", "2APR", "3INR")
 SECTORS = {"PCLEL": ("E",), "PCLIN": ("I1", "I2", "I3"), "PMCIN": ("C1", "C2"), "PCLRS": ("R1", "R2")}
 
 
-def run(years, steo_years=(2025, 2026), by_type: bool = True, tiers: bool = True):
+def run(years, steo_years=(2025, 2026), by_type: bool = True, tiers: bool = True, contracts: bool = False):
     """by_type: electricity demand per plant type with EIA's diversity caps (electric.py); False: one per region.
-    tiers: with by_type, the second-tier electricity transport premium above EIA's tier-1 bound."""
+    tiers: with by_type, the second-tier electricity transport premium above EIA's tier-1 bound.
+    contracts: with by_type, EIA's contract floors on electricity deliveries (electric.contract_floor). Off by
+    default: they make the raw electricity demand duals negative, and EIA's electricity pricing procedure,
+    which turns duals into prices, is not ported yet."""
     s = Snapshot()
     ch = supply.Chain()
     btu, keys = ch.c.v["btu"], ch.keys
@@ -31,7 +34,8 @@ def run(years, steo_years=(2025, 2026), by_type: bool = True, tiers: bool = True
             bands = dict(Appalachia=st["appalachialimit"][y], Interior=st["interiorlimit"][y], West=st["westlimit"][y])
         power = electric.power_demand(y) if by_type else None
         tier1 = electric.tier1_bound(y, keys) if by_type and tiers else None
-        r = lp.solve(y, step, btu, keys, dem, steo=bands, power=power, tier1=tier1)
+        cont = electric.contract_floor(y, keys) if by_type and contracts else None
+        r = lp.solve(y, step, btu, keys, dem, steo=bands, power=power, tier1=tier1, contracts=cont)
         if r["status"] != "ok":
             rows.append(dict(year=y, status=r["status"]))
             break
@@ -53,6 +57,7 @@ def run(years, steo_years=(2025, 2026), by_type: bool = True, tiers: bool = True
                     num, den = num + v * w, den + w
             out[name] = (num / den if den else np.nan, float(s[f"MPBLK/{name}"][10, yi]))
         out["slack"] = sum(r.get("slack", {}).values())
+        out["contract_escape"] = sum(r.get("contract_escape", {}).values())
         rows.append(out)
     return rows
 
@@ -66,11 +71,14 @@ def table(rows) -> str:
         pm, pr = r["prod_mt"].sum(), r["ref_mt"].sum()
         pr_s = ", ".join(f"{a:.0f}/{b:.0f}" for a, b in zip(r["prod_mt"], r["ref_mt"]))
         pcs = "; ".join(f"{n} {r[n][0]:.2f}/{r[n][1]:.2f}" for n in ("PCLEL", "PCLIN", "PMCIN"))
-        lines.append(f"| {r['year']} | {pm:.0f} / {pr:.0f} ({pr_s}) | {pcs} |")
+        esc = r.get("contract_escape", 0.0)
+        tail = f"; contract escape {esc:.0f} TBtu" if esc > 0.5 else ""
+        lines.append(f"| {r['year']} | {pm:.0f} / {pr:.0f} ({pr_s}) | {pcs}{tail} |")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
     flags = {a for a in sys.argv[1:] if a.startswith("--")}
     ys = [int(a) for a in sys.argv[1:] if not a.startswith("--")] or [2025, 2026, 2030, 2035]
-    print(table(run(ys, by_type="--flat" not in flags, tiers="--no-tiers" not in flags)))
+    print(table(run(ys, by_type="--flat" not in flags, tiers="--no-tiers" not in flags,
+                    contracts="--contracts" in flags)))

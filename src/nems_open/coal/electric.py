@@ -119,3 +119,38 @@ def tier1_bound(year: int, keys: list, macro: Macro | None = None, data=None) ->
         for ci, tnum in by_unit.get(pu, ()):
             out[ci, r - 1] += prof.get((tnum, year), 0.0) * btus[u]
     return out
+
+
+def contract_floor(year: int, keys: list, macro: Macro | None = None, data=None) -> np.ndarray:
+    """Copy8c_CdyrsScrubbed + Copy9c_CdyrsUnscrubbed (coal.ams 13193-13245): minimum electricity deliveries
+    by supply curve and demand region, (len(keys), 16) TBtu, from the contracts in cmmProfiles.txt.
+
+        ActiveCont(pu_id, curve, yr) = ContSupCrvBtus_B(pu_id, nci) * ContractProfile(Plant_C_Prof(pltnum, nci), yr)
+        for units in an active plant group that year, summed over units in each demand region (EMM_CL_CLRG).
+
+    EIA's quirk kept: ContSupCrvBtus_B gives every unit of a plant the plant's whole contract quantity
+    (sum over pltnum, not a unit share), so a plant's contract counts once per active unit. The scrubbed
+    and unscrubbed floors bind only through their sum (the split of deliveries floats), so the sum is
+    returned. Contracts on curves beyond the 14 domestic ones (imports) are left out."""
+    macro, data = macro or Macro(), data or inputs.load()
+    s, yi = macro.s, year - 1990
+    names = unit_names(s)
+    n = int(np.asarray(s["COALEMM/num_cmm_units"]))
+    ecpt = np.asarray(s["COALEMM/emm_cl_ecpt"])[:, yi].astype(int)
+    clrg = np.asarray(s["COALEMM/emm_cl_clrg"]).astype(int)
+    curve = {tuple(k[1:]): i for i, k in enumerate(keys)}
+    nci = {k[0]: curve[tuple(k[1:])] for k in data.param("map_mxnci_coaltype") if tuple(k[1:]) in curve}
+    plant = {pu: plt for (pu, plt) in data.param("map_pltnum_puid")}
+    prof, cprof = data.param("contractprofile"), data.param("plant_c_prof")
+    by_plant: dict = {}
+    for (plt, c), q in data.param("contsupcrvbtus").items():
+        if c in nci:
+            by_plant.setdefault(plt, []).append((nci[c], q, int(cprof.get((plt, c), 0))))
+    out = np.zeros((len(keys), NREG))
+    for u in range(n):
+        pu, t, r = names[u], ecpt[u], clrg[u]
+        if not pu or t < 1 or t > NTYPE or not 1 <= r <= NREG or pu not in plant:
+            continue
+        for ci, q, cnum in by_plant.get(plant[pu], ()):
+            out[ci, r - 1] += q * prof.get((cnum, year), 0.0)
+    return out

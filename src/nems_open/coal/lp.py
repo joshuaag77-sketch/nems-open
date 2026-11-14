@@ -60,7 +60,7 @@ def demands(year: int, macro: Macro | None = None, data=None) -> Demand:
 
 def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=None, rcaf: float | None = None,
           solver: str = "highs", steo: dict | None = None, tolerance: float = 0.02, power=None,
-          tier1: np.ndarray | None = None) -> dict:
+          tier1: np.ndarray | None = None, contracts: np.ndarray | None = None) -> dict:
     """Solve one year. `step` has sc_quan, sc_1_price87 and cap (tons) as from supply.base_year/Chain.year.
     power: an electric.PowerDemand. Given, electricity demand is met per plant type and region and the
     sub-bituminous and lignite diversity caps apply (coal.ams SubbituminousDiversity, LigniteDiversity),
@@ -68,7 +68,10 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
     ignored. Without it, one electricity demand per region as before.
     tier1: electric.tier1_bound, (curves, 16) TBtu. Given, electricity deliveries from a curve to a region
     above it pay the second-tier premium max(trate3 - trate2, 0) * RCAF per MMBtu (coal.ams
-    TransportationBound*, BalanceScrubUnscrubTier*, MakeSureSecondTierGetsFirstTierPrice)."""
+    TransportationBound*, BalanceScrubUnscrubTier*, MakeSureSecondTierGetsFirstTierPrice).
+    contracts: electric.contract_floor, (curves, 16) TBtu. Given, electricity deliveries from each curve to
+    each region are at least the contract (ContractsScrubbed + ContractsUnScrubbed), with EIA's
+    ContractEscape at 999 per MMBtu for what cannot be delivered; the escape used is reported."""
     data = data or inputs.load()
     rcaf = rcaf if rcaf is not None else float(transport.rcaf()["cum"][year - 1990])
     nc, nd = len(keys), len(dem.regions)
@@ -153,6 +156,19 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             groups.setdefault((ship_keys[k][1], ship_keys[k][2]), []).append(k)
         for (ci, di), ks in groups.items():
             m.add_constraints(X.sel(k=ks).sum() - X2.sel(k=ks).sum() <= tier1[ci, di], name=f"trubnd_{ci}_{di}")
+    contract_cost, cescape = 0, {}
+    if contracts is not None:
+        e_idx = np.where(sec_c == "E")[0]
+        groups: dict = {}
+        for k in e_idx:
+            groups.setdefault((ship_keys[k][1], ship_keys[k][2]), []).append(k)
+        for ci, di in zip(*np.nonzero(contracts > 1e-9)):
+            esc = m.add_variables(lower=0, name=f"cesc_{ci}_{di}")
+            ks = groups.get((ci, di), [])
+            lhs = (X.isel(k=ks).sum() + esc) if ks else (1 * esc)
+            m.add_constraints(lhs >= float(contracts[ci, di]), name=f"contract_{ci}_{di}")
+            contract_cost = contract_cost + 999.0 * esc
+            cescape[(int(ci), int(di))] = esc
     for sec in (() if power is not None else ("E",)) + NON_ELEC:
         target = dem.elec if sec == "E" else dem.other[sec]
         for di in range(nd):
@@ -177,13 +193,14 @@ def solve(year: int, step: dict, btu: np.ndarray, keys: list, dem: Demand, data=
             m.add_constraints(prod_mt + hi - lo >= steo[g] * (1 - tolerance), name=f"steo_lo_{g}")
             m.add_constraints(prod_mt + hi - lo <= steo[g] * (1 + tolerance), name=f"steo_hi_{g}")
             stock_cost = stock_cost + cost * (hi + lo)
-    obj = stock_cost + slack_cost + tier_cost + (P * price).sum() + (X * xr.DataArray(np.array(list(ship.values())), coords=[idx])).sum()
+    obj = stock_cost + slack_cost + tier_cost + contract_cost + (P * price).sum() + (X * xr.DataArray(np.array(list(ship.values())), coords=[idx])).sum()
     m.add_objective(obj)
     status, cond = m.solve(solver_name=solver, io_api="lp")
     out = dict(status=status, cond=cond, objective=float(m.objective.value) if status == "ok" else np.nan)
     if status != "ok":
         return out
     p = P.solution.values
+    out["contract_escape"] = {k: float(v.solution.values) for k, v in cescape.items()}
     x = pd.Series(X.solution.values, index=pd.MultiIndex.from_tuples(list(ship), names=['sec', 'c', 'd', 't']))
     dual = {k: float(c.dual.values) for k, c in demand_cons.items()}
     if power is not None:   # one electricity price per region: the plant-type duals weighted by demand

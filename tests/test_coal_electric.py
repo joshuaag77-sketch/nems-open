@@ -59,3 +59,16 @@ def test_tier1_bound_matches_what_cmm_wrote_back(macro, year):
     ref = np.asarray(macro.s["USO2GRP/efd_tier1_lim"], float)[:, :, :, year - 1990].sum(axis=2)
     assert abs(mine.sum() / ref.sum() - 1) < 0.002
     assert np.abs(mine - ref).max() < 6.0
+
+
+@pytest.mark.parametrize("year", [2024, 2025, 2026, 2027, 2030])
+def test_contract_floor_matches_what_cmm_wrote_back(macro, year):
+    """Contract floors against the positive part of USO2GRP EFD_CONT (26 curves, region, scrub, year);
+    its negative entries are not contract floors on the 14 domestic curves."""
+    from nems_open.coal import supply
+    keys = supply.Chain().keys
+    mine = electric.contract_floor(year, keys, macro)
+    ref = np.asarray(macro.s["USO2GRP/efd_cont"], float)[:, :, :, year - 1990]
+    pos = np.where(ref > 0, ref, 0.0).sum(axis=2)
+    assert mine.sum() == pytest.approx(pos.sum(), rel=1e-4)
+    np.testing.assert_allclose(mine, pos[:len(keys)], atol=0.05)
