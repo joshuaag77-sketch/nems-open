@@ -133,12 +133,19 @@ def rows(r: dict, eia: dict) -> list[dict]:
     return out
 
 
+EL_FUELS = tuple(f"QBLK/q{f}el" for f in ("cl", "ng", "rs", "ds", "ur", "tr", "pc"))   # power-plant fuels, no overlap
+
+
 def numbers(prices, q, co2, base, homes, gen: dict | None, extra: dict) -> dict:
     """Headline series (61 years) from loop arrays. gen: LP groups -> (61,) TWh, or EIA's own (already grouped)."""
     import build_ux2050 as ux
     k = ux.to_2024(base)
     full = lambda a: np.asarray(a, dtype=np.float64)
-    out = {"energy": full(q["QBLK/qtsas"][US]) / 1000,
+    # The loop updates sector totals and power-plant fuels but not the grand totals (QTSAS, QTSEL), so rebuild
+    # NEMS's identity QTSAS = QTSRS + QTSCM + QTSIN + QTSTR + QTSEL - QELAS, with QTSEL moved by its fuels' change.
+    el = full(base["QBLK/qtsel"][US]) + sum(full(q[f][US]) - full(base[f][US]) for f in EL_FUELS if f in q and f in base)
+    total = sum(full(q[f"QBLK/qts{s}"][US]) for s in ("rs", "cm", "in", "tr")) + el - full(q["QBLK/qelas"][US])
+    out = {"energy": total / 1000,
            "co2": sum(full(v[US]) for v in co2.values())}
     for name, (v, per) in ux.PRICES.items():
         out[name] = full(prices[v][US]) * k * per
