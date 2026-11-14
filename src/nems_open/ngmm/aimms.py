@@ -334,6 +334,32 @@ def reference(first: int = 2024, last: int = 2050, case: str = "cb2026") -> dict
     return {"outputs": out, "seconds": times}
 
 
+HEADLINE = ("NGTDMREP_OGHHPRNG", "MPBLK_PNGRS", "MPBLK_PNGCM", "MPBLK_PNGIN", "MPBLK_PNGEL", "MPBLK_PNGTR",
+            "NGTDMREP_NGSCRV_P", "NGTDMREP_NGSCRV_Q")
+
+
+def compare(res: dict, case: str = "cb2026", names=HEADLINE) -> dict:
+    """{name: {year: NGMM's value over EIA's restart value - 1}} for each year's own column (US row where regional)."""
+    from nems_open.supply_standin.data import restart_path
+    z = np.load(restart_path(case), allow_pickle=False)
+    keys = {k.lower(): k for k in z.files}
+    out = {}
+    for name in names:
+        block, var = name.split("_", 1)
+        eia = z[keys[f"{block}/{var}".lower()]]
+        rows = {}
+        for y, outputs in res["outputs"].items():
+            vals = outputs.get(name)
+            if not vals:
+                continue
+            ours = to_array(vals, eia.shape)
+            j = y - 1990
+            o, e = (ours[10, j], eia[10, j]) if eia.ndim == 2 else (ours[j], eia[j])
+            rows[y] = float(o / e - 1) if e else float("nan")
+        out[name] = rows
+    return out
+
+
 if __name__ == "__main__":
     a = sys.argv[1:]
     res = reference(int(a[0]) if a else 2024, int(a[1]) if len(a) > 1 else 2050)
