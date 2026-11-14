@@ -59,6 +59,24 @@ def ported_sectors() -> tuple[str, ...]:
     return tuple(out)
 
 
+def preflight(switches: dict, ported=()) -> list[str]:
+    """Inputs the run needs that are missing here, found in seconds instead of an hour in."""
+    missing = []
+    if switches.get("macro") == "frbus":
+        from nems_open.macro import frbus_core
+        if not frbus_core.FRBUS_DIR.exists():
+            missing.append(f"pyfrbus (set NEMS_FRBUS_DIR; looked in {frbus_core.FRBUS_DIR})")
+    if switches.get("elec_price") == "efp":
+        from nems_open.emm import retail
+        if not retail.available():
+            missing.append("EFP oracle state (oracle/run_emm/efp_books and the emm dumps' fp_out)")
+    if "industrial" in ported:
+        from nems_open import run_demand
+        if run_demand.IndustrialSector.oracle_out() is None:
+            missing.append("industrial oracle output (oracle-cache/ind/out)")
+    return missing
+
+
 def plan() -> dict:
     from nems_open import run_model
     params = inspect.signature(run_model.run).parameters
@@ -258,8 +276,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     p = plan()
     if a.plan:
-        print(json.dumps(p, indent=1))
+        print(json.dumps({**p, "missing": preflight(p["switches"], p["ported"])}, indent=1))
         return 0
+    if not a.src and (missing := preflight(p["switches"], p["ported"])):
+        print("Cannot run, missing: " + "; ".join(missing))
+        return 2
     if a.src:
         r, minutes = load_run(a.src), None
     else:
