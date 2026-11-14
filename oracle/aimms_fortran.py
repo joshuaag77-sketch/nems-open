@@ -53,7 +53,8 @@ def ecp_pass(path: Path) -> None:
     k = 0
     def g(m):
         nonlocal k
-        new = re.sub(r"(?<![A-Za-z0-9_])F(\d+\.\d+)", r"G\1", m.group(1))
+        new = re.sub(r"(?<![A-Za-z0-9_])F(\d+)\.(\d+)",            # G needs at least one digit after the point
+                     lambda f: f"G{f.group(1)}.{max(int(f.group(2)), 1)}", m.group(1))
         k += new != m.group(1)
         return new
     text = tagged.sub(g, text)
