@@ -91,7 +91,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
-        macro: str | None = None, ogs: str = "standin", record=None) -> RunResult:
+        macro: str | None = None, ogs: str = "standin", record=None, lfmm: str | None = None) -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
@@ -106,11 +106,17 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     record("supply", ...) after supply answered (prices and power-sector fuel updated, plus co2, the
     convergence test and its worst change). Keyword arguments: cycle, year, itr, fcrl, j, prices, q, and
     for "supply" also co2, converged, dp, dq, worst. The arrays are the loop's own, live: copy what you keep.
-    It reads only; the run is the same with or without it (scripts/think_runs.py uses it)."""
+    It reads only; the run is the same with or without it (scripts/think_runs.py uses it).
+    lfmm: None keeps refined product prices on the supply stand-in and refinery fuel at the baseline;
+    "standin" runs the fitted LFMM stand-in (nems_open/lfmm, docs/lfmm_plan.md) each iteration: refinery
+    fuel use (QBLK q*rf, folded into industrial use) from the loop's product demand, Brent and gas price,
+    and gasoline, diesel, jet and residual prices in place of the supply stand-in's. Off by default."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
     if macro not in (None, "frbus"):
         raise ValueError("macro must be None or 'frbus'")
+    if lfmm not in (None, "standin"):
+        raise ValueError("lfmm must be None or 'standin'")
     if ogs not in ("standin", "hsm"):
         raise ValueError("ogs must be 'standin' or 'hsm'")
     if ogs == "hsm" and baseline != "cb2026":
@@ -132,6 +138,11 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     co2 = None
     passes, stable = [], {}
     lp = None
+    lf, lf_prices = None, {}
+    if lfmm == "standin":
+        from nems_open.lfmm import LfmmStandin
+        lf = LfmmStandin(baseline, base=base)
+    brent_path = base["INTOUT/brent_price"] if oil is None else np.asarray(oil, dtype=np.float64)
     wholesale = wholesale_us = generation = unserved = curtailed = None
     if elec == "lp":
         from nems_open.emm.couple import ElectricityLP
@@ -155,6 +166,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             from nems_open.snapshot import Snapshot
             efp = EfpPrices(Snapshot(), start_year)
         routines = demand.routines + ["supply stand-in" if lp is None else "supply stand-in + dispatch LP"]
+        if lf is not None:
+            routines.append("LFMM stand-in")
         if efp is not None:
             routines.append("EFP retail prices")
         before = {k: v[:, years].copy() for k, v in {**prices, **q}.items()}
@@ -176,6 +189,12 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 else:
                     pf = r.power_fuel
                 s = supply.solve(q, oil, carbon, power_fuel=pf, co2_el=r.co2_el, shifts=shifts)
+            if lf_prices:   # refined product prices from the LFMM stand-in, with the supply side's carbon adders and levers
+                mult = shifts.price if shifts else {}
+                for k, v in lf_prices.items():
+                    if k in s.prices:
+                        p = v * (mult[k][:, j] if k in mult else 1.0)
+                        s.prices[k][:, j] = p + (s.carbon_adders[k][:, j] if k in s.carbon_adders else 0.0)
             if efp is not None:   # retail electricity prices from EFP on this iteration's sales
                 for k, v in efp.price_pass(FIRST_YEAR + j, q, itr, fcrl).items():
                     s.prices[k][:, j] = v
@@ -190,6 +209,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                     # Demand: quantities in, tested against what it saw.
                     q_old = {k: v[:, j].copy() for k, v in q.items()}
                     col = demand.solve_year(year, prices, itr)
+                    if lf is not None:   # refinery fuel from this demand, folded into industrial use before the test
+                        r_lf = lf.solve_year(j, q, col, float(brent_path[j]), float(prices["MPBLK/pngin"][US, j]))
+                        col = {**col, **r_lf.industry, **r_lf.refinery}
+                        lf_prices = r_lf.prices
                     if tested and relax:
                         col = within.relaxed(q_old, col)
                     bad = within.failing(q_old, col, q_old, {**q_old, **col}) if tested else {}
@@ -280,6 +303,8 @@ def main(argv=None) -> None:
                          "default efp with --elec lp on cb2026, else the stand-in")
     ap.add_argument("--ogs", choices=("standin", "hsm"), default="standin",
                     help="oil and gas production: none (stand-in), or EIA's HSM on the run's prices (9 min extra)")
+    ap.add_argument("--lfmm", choices=("standin",), default=None,
+                    help="refining: the fitted LFMM stand-in for product prices and refinery fuel (docs/lfmm_plan.md)")
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
     ap.add_argument("--macro", choices=("frbus",), default=None,
                     help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
@@ -296,7 +321,7 @@ def main(argv=None) -> None:
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs,
-            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro)
+            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro, lfmm=a.lfmm)
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
