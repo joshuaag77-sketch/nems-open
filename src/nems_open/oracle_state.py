@@ -20,7 +20,11 @@ ORACLE_DIR = Path(os.environ.get("NEMS_ORACLE_DIR", Path.home() / "dev" / "oracl
 
 
 def out_dir(module: str = "comm") -> Path:
-    """The folder holding this module's oracle output: the shared cache if it has state, else the clone's own."""
+    """The folder holding this module's oracle output: NEMS_ORACLE_OUT_<MODULE> if set (pins one module's dumps to a
+    folder, e.g. another clone's oracle/run_emm/out), else the shared cache if it has state, else the clone's own."""
+    pinned = os.environ.get(f"NEMS_ORACLE_OUT_{module.upper()}")
+    if pinned:
+        return Path(pinned)
     shared = ORACLE_DIR / module / "out"
     local = REPO_ROOT / "oracle" / RUN_DIRS.get(module, f"run_{module}") / "out"
     if (shared / "state").is_dir() or not (local / "state").is_dir():

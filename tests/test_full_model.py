@@ -54,3 +54,9 @@ def test_watch_mode_narrates_each_pass_and_each_settled_year():
     text = "\n".join(lines)
     assert "2027" in text and "2028" in text and "asked for" in text and "cents/kWh" in text
     assert "settled in" in text or "not settled yet" in text
+
+
+def test_one_modules_dumps_can_be_pinned_to_another_folder(monkeypatch, tmp_path):
+    from nems_open import oracle_state
+    monkeypatch.setenv("NEMS_ORACLE_OUT_EMM", str(tmp_path))
+    assert oracle_state.out_dir("emm") == tmp_path and oracle_state.out_dir("comm") != tmp_path
