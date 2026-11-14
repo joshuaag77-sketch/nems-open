@@ -442,12 +442,12 @@
   }
   async function startRun() {
     const levers = Object.fromEntries(LEVERS.map((l) => [l.key, S.x[l.key]]));
-    const res = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ levers }) });
+    const res = await fetch("api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ levers }) });
     const body = await res.json();
     if (!res.ok) { $("run-note").textContent = body.error || "The server refused the run."; return; }
     S.job = { id: body.id, sig: sig(S.x), x: { ...S.x }, elapsed: 0 }; paintMode();
     const poll = async () => {
-      const j = await (await fetch(`/api/run/${S.job.id}`)).json();
+      const j = await (await fetch(`api/run/${S.job.id}`)).json();
       S.job.elapsed = j.elapsed_s;
       if (j.status === "running") { paintMode(); setTimeout(poll, 3000); return; }
       const s = S.job.sig, ran = S.job.x; S.job = null;
@@ -568,9 +568,9 @@
 
   async function checkServer() {
     try {
-      const h = await Promise.race([fetch("/api/health", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 2500))]);
+      const h = await Promise.race([fetch("api/health", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 2500))]);
       const hj = await h.json();
-      S.server = h.ok && hj.ok === true; S.key = S.server && hj.ask === true;
+      S.server = h.ok && hj.ok === true && hj.run !== false; S.key = S.server && hj.ask === true;
     } catch (e) { S.server = false; S.key = false; }
     S.checked = true;
     if (S.out) paintMode();

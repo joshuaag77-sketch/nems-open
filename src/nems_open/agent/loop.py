@@ -49,6 +49,8 @@ class AgentAnswer:
     model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read_tokens: int = 0                  # billed at a tenth of the input price
+    cache_write_tokens: int = 0                 # billed at 1.25x the input price
     error: str = ""
     runs: list = field(default_factory=list)    # lever settings of every scenario the question ran, in order
     body: str = ""                              # the prose with numbers filled in (text adds sources and basis)
@@ -67,12 +69,19 @@ def make_client():
 
 class PolicyAgent:
     def __init__(self, client=None, model: str | None = None, fallbacks: bool = True,
-                 max_turns: int = MAX_TURNS, effort: str = "medium"):
+                 max_turns: int = MAX_TURNS, effort: str = "medium", max_tokens: int = 16000,
+                 output_budget: int | None = None, cache: bool = False):
+        """max_tokens caps each model call; output_budget caps output tokens summed over the whole question (checked
+        between turns, so one call can overshoot it by at most max_tokens). cache turns on automatic prompt caching:
+        each turn resends the conversation so far, and cached input costs a tenth."""
         self._client = client
         self.model = model or os.environ.get("NEMS_AGENT_MODEL") or DEFAULT_MODEL
         self.fallbacks = fallbacks
         self.max_turns = max_turns
         self.effort = effort
+        self.max_tokens = max_tokens
+        self.output_budget = output_budget
+        self.cache = cache
 
     @property
     def client(self):
@@ -81,10 +90,12 @@ class PolicyAgent:
         return self._client
 
     def _create(self, messages):
-        kw = dict(model=self.model, max_tokens=16000, system=SYSTEM, tools=SCHEMAS + [rules.SUBMIT], messages=messages,
+        kw = dict(model=self.model, max_tokens=self.max_tokens, system=SYSTEM, tools=SCHEMAS + [rules.SUBMIT], messages=messages,
                   thinking={"type": "adaptive"})
         # output_config and fallbacks go through extra_body so older SDK releases accept them
         extra = {"output_config": {"effort": self.effort}}
+        if self.cache:
+            extra["cache_control"] = {"type": "ephemeral"}
         headers = {}
         if self.fallbacks:             # a refusal is retried on a fallback model chosen by the API, same call
             extra["fallbacks"] = "default"
@@ -106,6 +117,8 @@ class PolicyAgent:
             resp = self._create(messages)
             out.input_tokens += getattr(resp.usage, "input_tokens", 0) or 0
             out.output_tokens += getattr(resp.usage, "output_tokens", 0) or 0
+            out.cache_read_tokens += getattr(resp.usage, "cache_read_input_tokens", 0) or 0
+            out.cache_write_tokens += getattr(resp.usage, "cache_creation_input_tokens", 0) or 0
             if resp.stop_reason == "refusal":
                 out.text, out.declined = ("The model provider's safety system declined this request, so there is no "
                                           "answer to give."), True
@@ -152,6 +165,10 @@ class PolicyAgent:
             if repairs > MAX_REPAIRS:
                 out.error = "answer rejected too many times"
                 out.text = "The model could not produce an answer that passes the citation rules, so none is given."
+                return out
+            if self.output_budget and out.output_tokens >= self.output_budget:
+                out.error = "output budget spent"
+                out.text = "This question needed more work than one answer is allowed here, so none is given. Try a narrower question."
                 return out
             messages.append({"role": "user", "content": results})
         out.error = "too many turns"
