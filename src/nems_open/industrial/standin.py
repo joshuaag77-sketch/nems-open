@@ -12,7 +12,7 @@ the region to the reference run's output (fuel use proportional to output). So:
   carbon prices and efficiency choices is NOT modeled: energy intensity is frozen at EIA's reference path.
 
 The reference record comes from the industrial oracle's REFQM, REFQI, REFQR, REFELOWN and REFELSALE arrays (the last
-iteration of each year) and its OUTIND (see oracle/patch_intel.py), saved in industrial_reference.npz.
+iteration of each year) and its OUTIND (see oracle/patch_intel.py), saved in reference.npz (scripts/pack_industrial_reference.py).
 """
 
 from pathlib import Path
@@ -29,7 +29,7 @@ REPLAYED = (4,) + PROCESS_FLOW   # oil and gas mining (its CALCSC needs OGSM wel
 FIRST_YEAR = 33  # index year 2022: the first model year after the ISEAM start year
 LAST_YEAR = 61
 REGION_DIVISIONS = {1: (1, 2), 2: (3, 4), 3: (5, 6, 7), 4: (8, 9)}
-DATA = Path(__file__).resolve().parent.parent / "data" / "industrial_reference.npz"
+DATA = Path(__file__).resolve().parent / "reference.npz"
 
 
 class Reference:

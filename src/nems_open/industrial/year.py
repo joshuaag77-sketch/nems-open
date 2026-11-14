@@ -333,6 +333,7 @@ def run_iteration(s: dict, bufs: dict, itr: int, last: bool, standin=None) -> No
     from nems_open.industrial.wexog import wexog
     s["curitr"] = np.int32(itr)
     s["fcrl"] = np.int32(1 if last else 0)
+    s["iyr"] = np.int32(s["curcalyr"])  # IND sets IYR = CURCALYR after its early-year exit
     for d in range(1, 12):
         if s["ph2in"][d, int(s["curiyr"])] <= 0:
             s["ph2in"][d, int(s["curiyr"])] = f32(2.0) * s["pngin"][d, int(s["curiyr"])]

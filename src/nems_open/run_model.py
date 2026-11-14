@@ -91,9 +91,11 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         baseline: str = "cb2026", ported: tuple[str, ...] = PORTED, maxitr: int = MAXITR,
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
-        macro: str | None = None, ogs: str = "standin") -> RunResult:
+        macro: str | None = None, ogs: str = "standin", ind: str = "oracle") -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
-    baseline's prices and quantities. elec: "standin" or "lp" (the dispatch LP).
+    baseline's prices and quantities. ind: with "industrial" in ported, "oracle" supplies EIA's industrial fuel use
+    (fixed), "ported" runs the ported industrial year loop (industrial/year.py; needs the industrial oracle's dumps).
+    elec: "standin" or "lp" (the dispatch LP).
     elec_price: retail electricity prices from the "standin" or from the ported "efp"
     (about 10 s an iteration, plus a pre-roll from 2021 to start_year); None picks
     default_elec_price(elec, baseline). maxitr, cycles: NEMS's MAXITR and NRUNS.
@@ -142,7 +144,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         if macro == "frbus":
             from nems_open.macro.drive import scenario_macro
             path = scenario_macro(base, oil, prices if cycle > 1 else None)
-        demand = DemandAdapter(base, policy, start_year, ported, macro=path)
+        demand = DemandAdapter(base, policy, start_year, ported, macro=path, ind=ind)
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -269,6 +271,8 @@ def main(argv=None) -> None:
                          "default efp with --elec lp on cb2026, else the stand-in")
     ap.add_argument("--ogs", choices=("standin", "hsm"), default="standin",
                     help="oil and gas production: none (stand-in), or EIA's HSM on the run's prices (9 min extra)")
+    ap.add_argument("--ind", choices=("oracle", "ported"), default="oracle",
+                    help="with industrial in --ported: EIA's fixed industrial fuel use, or the ported year loop")
     ap.add_argument("--maxitr", type=int, default=MAXITR, help=f"iterations per year before the final loop (EIA cb2026: {MAXITR})")
     ap.add_argument("--macro", choices=("frbus",), default=None,
                     help="run the economy module (FRB/US) and feed GDP, floorspace and industry output to demand")
@@ -285,7 +289,7 @@ def main(argv=None) -> None:
     policy = Policy(a.carbon, a.ev, a.efficiency, a.start, commercial=commercial,
                     **{k: getattr(a, k) for k in levers.LEVERS if k not in ("carbon_price", "ev_share")})
     r = run(policy, a.start, a.end, a.baseline, tuple(a.ported), elec=a.elec, elec_price=a.elec_price, ogs=a.ogs,
-            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro)
+            maxitr=a.maxitr, cycles=a.cycles, macro=a.macro, ind=a.ind)
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
