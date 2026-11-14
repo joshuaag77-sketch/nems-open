@@ -50,6 +50,9 @@ and demand changes, whether every step passed, and which variables failed.
 What differs from NEMS, and why:
 
 - One cycle by default (see 5).
+- The integrated runner allows 20 iterations before the final pass, so a new policy
+  shock can settle within that one cycle. `maxitr=2` restores cb2026's limit; the
+  convergence tests and relaxation factors are unchanged. See [convergence.md](convergence.md).
 - Only the price and quantity tables are used. The loop has no endogenous GDP, world oil
   price, coal-unit or seasonal gas-to-utility variables (conv_Other, conv_Coal*,
   conv_*GasToUtilities), so those are not tested.
@@ -70,7 +73,7 @@ What differs from NEMS, and why:
 | Carbon $50/t, MAXITR = 6 | 4 | 24 of 24 | identical |
 | Carbon $50/t, MAXITR = 2, 2 cycles | 3 | 24 of 24 | residential electricity +0.002% |
 
-With EIA's settings the stub loop converges every year inside cb2026's limit; EIA's 1%
+For the reference and carbon cases above, the stub loop converges every year inside cb2026's limit; EIA's 1%
 tolerance leaves the answer within 0.01% of a run to full convergence. The old loop
 (0.1% on prices, up to 20 passes) took 5 to 10 passes a year with a policy on.
 

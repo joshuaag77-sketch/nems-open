@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "web",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [{ "source": "/", "destination": "/2050.html" }],
+  "git": { "deploymentEnabled": false },
+  "functions": {
+    "api/ask.py": {
+      "maxDuration": 60,
+      "includeFiles": "{src/**,web/data/fidelity.json,web/data/engine.json,web/data/meta.json,web/data/uncertainty.json,web/data/ux2050/emulator.json}"
+    },
+    "api/health.py": { "maxDuration": 10, "includeFiles": "src/**" }
+  },
+  "headers": [
+    { "source": "/data/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },
+    { "source": "/(.*).(js|css|png|svg)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=3600" }] },
+    { "source": "/(.*)", "headers": [
+      { "key": "X-Content-Type-Options", "value": "nosniff" },
+      { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+      { "key": "X-Frame-Options", "value": "SAMEORIGIN" }
+    ] }
+  ]
+}

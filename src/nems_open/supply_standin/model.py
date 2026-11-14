@@ -184,11 +184,13 @@ class SupplyStandin:
 
     # Prices ----------------------------------------------------------------
 
-    def _prices(self, totals: dict, brent, mult: dict | None = None) -> dict[str, np.ndarray]:
+    def _prices(self, totals: dict, brent, mult: dict | None = None, gas=None) -> dict[str, np.ndarray]:
         """Every MPBLK price before carbon adders. mult: multipliers from a lever, applied to gas
-        before electricity reads the gas price to power plants."""
+        before electricity reads the gas price to power plants. gas: a gas market (nems_open.ngmm) whose
+        prices(US gas use) replace the fitted curves for every gas price."""
         base = self.base
         prices = {}
+        market = gas.prices(totals["QBLK/qngas"][US]) if gas is not None else {}
         names = sorted(k for k in base if k.startswith("MPBLK/p"))
         # Gas first: electricity prices respond to the price of gas to power plants.
         regs = {}   # the regressors depend on the fuel only (the gas price to power plants is settled before electricity)
@@ -196,6 +198,9 @@ class SupplyStandin:
             fuel, _ = parse_price(name)
             if fuel not in DRIVERS:
                 prices[name] = base[name].copy()
+                continue
+            if name in market:
+                prices[name] = market[name] * mult[name] if mult and name in mult else market[name]
                 continue
             if fuel not in regs:
                 regs[fuel] = regressors(fuel, totals, base, brent, prices.get("MPBLK/pngel"))
@@ -282,7 +287,7 @@ class SupplyStandin:
 
     def solve(self, demand: dict | None = None, brent=None, carbon_price=None,
               power_fuel: dict | None = None, co2_el: np.ndarray | None = None,
-              shifts: SupplyShifts | None = None) -> Result:
+              shifts: SupplyShifts | None = None, gas=None) -> Result:
         """Prices and emissions for one set of end-use demands.
 
         demand: QBLK-style arrays for the residential, commercial, industrial and
@@ -299,6 +304,7 @@ class SupplyStandin:
             stand-in's value. Gas and coal prices then respond to that fuel use.
         co2_el: power-sector CO2 (11, 61), million metric tons, replacing the stand-in's own.
         shifts: SupplyShifts, moves in prices and power-sector fuel that levers ask for.
+        gas: a gas market (nems_open.ngmm.GasMarket); its prices replace the fitted gas price curves.
         """
         base = self.base
         q = self._demand(demand or {})
@@ -317,7 +323,7 @@ class SupplyStandin:
             power = {**power0, **{k: np.asarray(v, dtype=np.float64) for k, v in power_fuel.items()}}
         for _ in range(0 if power_fuel is not None else SWITCH_ROUNDS):
             totals = self._totals(q, power)
-            prices = self._prices(totals, brent, mult)
+            prices = self._prices(totals, brent, mult, gas)
             new = self._switch(power0, prices, cp87)
             change = max(float(np.max(np.abs(new[k] - power[k]) / (np.abs(power[k]) + 1.0))) for k in new)
             # Damped steps: gas burn and the gas price pull against each other, and a full
@@ -326,7 +332,7 @@ class SupplyStandin:
             if change < SWITCH_TOL:
                 break
         totals = self._totals(q, power)
-        prices = self._prices(totals, brent, mult)
+        prices = self._prices(totals, brent, mult, gas)
 
         all_q = {**{k: v for k, v in base.items() if k.startswith("QBLK/")}, **q, **power}
         co2 = {}

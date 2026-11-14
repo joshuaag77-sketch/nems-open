@@ -1,7 +1,7 @@
 // One shared navigation bar, footer and grade dot for every page. Plain DOM, no dependencies.
 (function () {
   // Three places for everyone; the rest lives under "For experts" (experts.html).
-  const PAGES = [["2050.html", "Your 2050"], ["think.html", "Watch it think"], ["ask.html", "Ask"]];
+  const PAGES = [["2050.html", "Your 2050"], ["think.html", "Watch it think"], ["ask.html", "Ask"], ["how.html", "How it's built"]];
   const EXPERT = ["experts.html", "engine3d.html", "index.html", "scoreboard.html", "datacenter.html", "switches.html", "about.html"];
   const here = (location.pathname.split("/").pop() || "2050.html").toLowerCase().replace(/\.html$/, "") + ".html";
   const css = document.createElement("style");
@@ -22,7 +22,7 @@ body.fixed-page:not(.flat) .site-foot{display:none}
 .gd-legend{display:flex;flex-wrap:wrap;gap:4px 14px;font:12px system-ui,-apple-system,"Segoe UI",sans-serif;color:#a9a79f;align-items:center}
 .gd-legend .gd{margin:0 5px 0 0}
 .gd-tip{position:absolute;z-index:90;background:#0f1419;color:#e8e6df;border:1px solid #3a4351;border-radius:8px;padding:8px 10px;font:12.5px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.5)}
-@media(max-width:640px){.site-nav{gap:2px;padding:6px 10px;overflow-x:auto}.site-nav b{display:none}.site-nav a{padding:5px 8px}}`;
+@media(max-width:640px){.site-nav{gap:2px;padding:6px 10px;overflow-x:auto}.site-nav b{display:none}.site-nav a{padding:11px 8px}}`;
   document.head.appendChild(css);
   const nav = document.createElement("nav");
   nav.className = "site-nav";
@@ -45,6 +45,22 @@ body.fixed-page:not(.flat) .site-foot{display:none}
   window.NEMSDot = {
     dot: (grade, why) => { const k = norm(grade); return `<span class="gd ${k}" role="img" aria-label="${esc(WORDS[k])}" title="${esc(WORDS[k] + (why ? ". " + why : ""))}"></span>`; },
     legend: () => `<div class="gd-legend"><span><span class="gd match"></span>EIA's own code</span><span><span class="gd stand"></span>Our estimate</span><span><span class="gd data"></span>EIA's published number</span><span>Hover or tap a dot for the detail.</span></div>`,
+  };
+  // The part behind an engine piece in a run, from fidelity.json's registry (src/nems_open/ports.json): its port when
+  // the run ported it and the port is graded, our own model when the run used the LP, else the stand-in. A module that
+  // lands later flips here from data alone: no page names a port.
+  const FALLBACK = { residential: "stand:demand_stub", commercial: "stand:demand_stub", industrial: "stand:demand_stub",
+    transportation: "stand:demand_stub", electricity: "stand:electricity", "electricity:price": "stand:electricity",
+    natural_gas: "stand:natural_gas", oil: "stand:oil", coal: "stand:coal", emissions: "stand:emissions" };
+  window.NEMSGrade = {
+    part: (fid, module, ported, elec) => {
+      const r = fid && fid.registry && fid.registry[module];
+      if (!r) return FALLBACK[module] || "stand:demand_stub";
+      const on = (ported || []).some((p) => p === module || `port:${p}` === r.port);
+      if (r.port && on && fid.parts[r.port]) return r.port;
+      if (r.own && elec === "lp" && fid.parts[r.own]) return r.own;
+      return r.fallback;
+    },
   };
   // Touch screens have no hover: a tap on a dot shows its detail in a small card; a tap elsewhere closes it.
   let tip = null;

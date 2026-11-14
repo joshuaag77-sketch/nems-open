@@ -12,3 +12,4 @@ oracle/cycle.sh
 /data/
 web/data/real_build/
 third_party/
+dist/

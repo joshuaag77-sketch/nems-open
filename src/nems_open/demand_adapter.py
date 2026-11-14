@@ -187,14 +187,14 @@ class PortedSectors:
     """EIA's ported modules through the demand runner (branch demand-runner)."""
 
     def __init__(self, start_year: int, sectors: tuple[str, ...], base: dict, parallel: bool = True,
-                 commercial_levers=None, ev_share: dict | None = None, residential_levers=None):
+                 commercial_levers=None, ev_share: dict | None = None, residential_levers=None, ind: str = "oracle"):
         from nems_open.run_demand import EQUIVALENCED, SECTOR_QUANTITIES, DemandRunner, sum_quantities
         self._equivalenced = EQUIVALENCED
         self._names = SECTOR_QUANTITIES
         self._sum = sum_quantities
         self.runner = DemandRunner(start_year, sectors=sectors, parallel=parallel and len(sectors) > 1,
                                    commercial_levers=commercial_levers, ev_share=ev_share,
-                                   residential_levers=residential_levers)
+                                   residential_levers=residential_levers, ind=ind)
         self.inputs = self.runner.inputs
         self.base = base
         self.suffixes = [SECTORS[s] for s in sectors]
@@ -249,7 +249,8 @@ class PortedSectors:
 
 
 class DemandAdapter:
-    def __init__(self, base: dict, policy: Policy, start_year: int, ported: tuple[str, ...] = (), macro=None):
+    def __init__(self, base: dict, policy: Policy, start_year: int, ported: tuple[str, ...] = (), macro=None,
+                 ind: str = "oracle"):
         """macro: a nems_open.macro.drive.MacroPath. GDP moves the stub sectors (industrial output for
         industry) and the scenario floorspace feeds the ported commercial module."""
         self.base = base
@@ -265,7 +266,7 @@ class DemandAdapter:
             target = by_year(policy.ev_share, policy.start_year, np.nan)
             ev_by_year = {FIRST_YEAR + j: float(v) for j, v in enumerate(target) if not np.isnan(v)}
         self.ported = (PortedSectors(start_year, ported, base, commercial_levers=policy.commercial_levers(),
-                                     ev_share=ev_by_year, residential_levers=policy.residential_levers())
+                                     ev_share=ev_by_year, residential_levers=policy.residential_levers(), ind=ind)
                        if ported else None)
         ported_sfx = {SECTORS[s] for s in ported}
         self.stubs = {sfx: StubSector(sfx, base) for sfx in SECTORS.values() if sfx not in ported_sfx}

@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>About NEMS Open</title>
 <meta name="description" content="What NEMS Open is, where its data comes from, and credit to the U.S. Energy Information Administration.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NEMS Open">
+<meta property="og:title" content="About NEMS Open">
+<meta property="og:description" content="What NEMS Open is, where its data comes from, and credit to the U.S. Energy Information Administration.">
+<meta property="og:image" content="https://nems.joshagarwal.com/og.png">
+<meta property="og:url" content="https://nems.joshagarwal.com/about">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%235DCAA5'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 <script>
   try { const t = localStorage.getItem("nems-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage blocked */ }
@@ -29,10 +37,9 @@
   <section class="card">
     <h2>What this is, and is not</h2>
     <ul>
-      <li>The residential and commercial demand modules are ported line by line from EIA's Fortran and checked array by array against EIA's code compiled with free gfortran.</li>
-      <li>Industrial and transportation demand are being ported. Until then a stub stands in, with price responses fitted to EIA's own side runs.</li>
-      <li>Electricity, natural gas, oil and refining, and coal are stand-ins: reduced-form curves fitted to EIA's AEO2026 runs, to be replaced by ports module by module. Several of EIA's versions run on paid optimization software (AIMMS, GAMS); the ports will need open solvers.</li>
-      <li>The sandbox's 144 scenarios were run ahead of time with the stubs and stand-ins. They show how the pieces fit together and roughly how the system responds. They are not forecasts and should not be cited as EIA analysis.</li>
+      <li>Modules are ported line by line from EIA's Fortran and checked array by array against EIA's code compiled with free gfortran. Which ones are ported today, and how close each number is, is on <a href="how.html">How it was built</a> and the <a href="scoreboard.html">scoreboard</a>; both read the current grades.</li>
+      <li>Pieces not yet ported are stand-ins: curves fitted to EIA's AEO2026 runs, or our own model of the piece measured against EIA, to be replaced by ports module by module. Several of EIA's versions run on paid optimization software (AIMMS, GAMS); the ports will need open solvers.</li>
+      <li>The site's runs were made ahead of time, and the instant numbers are a fit to them. They show how the pieces fit together and roughly how the system responds. They are not forecasts and should not be cited as EIA analysis.</li>
     </ul>
   </section>
 
@@ -50,6 +57,6 @@
 <footer class="foot">
   <p>Data: U.S. Energy Information Administration, Annual Energy Outlook 2026 and the NEMS AEO2026 release. NEMS Open is an independent project, not affiliated with or endorsed by EIA.</p>
 </footer>
-<script src="site.js?v=11"></script>
+<script src="site.js?v=12"></script>
 </body>
 </html>
