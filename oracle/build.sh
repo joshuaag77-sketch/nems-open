@@ -72,6 +72,7 @@ if [ "$MOD" = emm ]; then
     $PY -I "$ORACLE/aimms_fortran.py" --pre uaimms_pre.f     # Intel variable formats, before patch_intel.py
     $PY -I "$ORACLE/patch_intel.py" uaimms_pre.f uaimms.f90
     $PY -I "$ORACLE/aimms_fortran.py" uaimms.f90
+    $PY -I "$ORACLE/aimms_fortran.py" --ecp uecp.f90
     $PY -I "$ORACLE/aimms_paths.py" uaimms.f90 uecp.f90 uefd.f90     # Windows paths of files shared with AIMMS
     sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
     STUBS=emm_stubs_aimms.f90
