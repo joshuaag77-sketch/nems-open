@@ -26,8 +26,8 @@ def rel(a, b):
 
 @pytest.fixture(scope="module")
 def reference():
-    final = oracle_state.load("final", 61, "ind", only=["refqm", "refqi", "refqr", "refelown", "refelsale", "outind"])
-    return Reference.from_final(final)
+    final = oracle_state.load("wx_out", 61, "ind", only=["refqm", "refqi", "refqr", "refelown", "refelsale", "outind"])
+    return Reference.from_dump(final)
 
 
 @pytest.mark.parametrize("y", YEARS, ids=lambda y: str(1989 + y))

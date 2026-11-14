@@ -7,7 +7,7 @@ Runs at the top of every iteration of every year, before ISEAM:
 - Division prices by fuel (DPRCX: carbon-adjusted (1) and unadjusted (2), this year and lagged),
   weighted into census-region prices (PRCX, PRCXLAG) by last year's consumption (or SEDS in
   history years), and the same for region 5 (US) from division 11.
-- PRCXYR (price history by year) and, in the base year, PRCXIBYR. BUSHEL (corn) is not ported.
+- PRCXYR (price history by year) and, in the base year, PRCXIBYR; BUSHEL (corn for ethanol) from CORNCD.
 
 California carbon (AB 32, ab32=True; the oracle's reference case has it on): division 9 carbon-adjusted
 prices add the allowance price (ab_allow_p) times each fuel's emission factor.
@@ -338,3 +338,11 @@ def setup_mac_and_price(s: dict, ab32: bool = True) -> None:
         for r in range(1, 5):
             for ib in (1, 2):
                 s["prcxyr"][f, r, curiyr, ib] = prcx[f, r, ib]
+
+    # corn consumed by ethanol plants, by census region (million bushels), for the ethanol fuel in CALPATOT
+    cd, b = s["corncd"], s["bushel"]
+    b[curiyr, 1] = f32(cd[1, 1, curiyr] + cd[1, 2, curiyr])
+    b[curiyr, 2] = f32(cd[1, 3, curiyr] + cd[1, 4, curiyr])
+    b[curiyr, 3] = f32(f32(cd[1, 5, curiyr] + cd[1, 6, curiyr]) + cd[1, 7, curiyr])
+    b[curiyr, 4] = f32(cd[1, 8, curiyr] + cd[1, 9, curiyr])
+    b[curiyr, 5] = f32(f32(f32(b[curiyr, 1] + b[curiyr, 2]) + b[curiyr, 3]) + b[curiyr, 4])

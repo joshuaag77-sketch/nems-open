@@ -1,4 +1,4 @@
-"""Stand-in for EIA's five process-flow industries (paper 8, glass 10, cement and lime 11, iron and steel 12, aluminum 13).
+"""Stand-in for oil and gas mining (4) and EIA's five process-flow industries (paper 8, glass 10, cement and lime 11, iron and steel 12, aluminum 13).
 
 EIA models these with their own technology-choice models (about 5,000 lines of Fortran: kiln allocation, steel
 routes, pulp and paper steam, aluminum smelting, the logit technology share model). They are not ported. This module
@@ -25,6 +25,7 @@ from nems_open.industrial.national import nattotal
 from nems_open.industrial.totals import add_to_electricity_groups
 
 f32 = np.float32
+REPLAYED = (4,) + PROCESS_FLOW   # oil and gas mining (its CALCSC needs OGSM well and production data) and the process-flow industries
 FIRST_YEAR = 33  # index year 2022: the first model year after the ISEAM start year
 LAST_YEAR = 61
 REGION_DIVISIONS = {1: (1, 2), 2: (3, 4), 3: (5, 6, 7), 4: (8, 9)}
@@ -38,16 +39,16 @@ class Reference:
         self.qm, self.qi, self.qr, self.elown, self.elsale, self.prodvx = qm, qi, qr, elown, elsale, prodvx
 
     @classmethod
-    def from_final(cls, final: dict) -> "Reference":
+    def from_dump(cls, final: dict) -> "Reference":
         n = LAST_YEAR - FIRST_YEAR + 1
         mf = final["refqm"].a.shape[0]
-        qm = np.zeros((5, 5, mf, n), dtype=f32)   # [industry slot, region, fuel-1, year]
-        qi = np.zeros((5, 5, 7, n), dtype=f32)
-        qr = np.zeros((5, 5, 9, n), dtype=f32)
-        elown = np.zeros((5, 5, n), dtype=f32)
-        elsale = np.zeros((5, 5, n), dtype=f32)
-        prodvx = np.zeros((5, 5, n), dtype=f32)
-        for k, d in enumerate(PROCESS_FLOW):
+        qm = np.zeros((len(REPLAYED), 5, mf, n), dtype=f32)   # [industry slot, region, fuel, year]
+        qi = np.zeros((len(REPLAYED), 5, 7, n), dtype=f32)
+        qr = np.zeros((len(REPLAYED), 5, 9, n), dtype=f32)
+        elown = np.zeros((len(REPLAYED), 5, n), dtype=f32)
+        elsale = np.zeros((len(REPLAYED), 5, n), dtype=f32)
+        prodvx = np.zeros((len(REPLAYED), 5, n), dtype=f32)
+        for k, d in enumerate(REPLAYED):
             for r in range(1, 5):
                 for j, y in enumerate(range(FIRST_YEAR, LAST_YEAR + 1)):
                     qm[k, r, :, j] = final["refqm"].a[:, r - 1, d - 1, y - 1]
@@ -77,7 +78,7 @@ def make_standin(ref: Reference):
 
     def standin(s: dict, inddir: int, indreg: int) -> None:
         curiyr = int(s["curiyr"])
-        k, j = PROCESS_FLOW.index(inddir), curiyr - FIRST_YEAR
+        k, j = REPLAYED.index(inddir), curiyr - FIRST_YEAR
         r = indreg
         base = ref.prodvx[k, r, j]
         scale = f32(s["prodvx"] / base) if base > 0 else f32(1.0)

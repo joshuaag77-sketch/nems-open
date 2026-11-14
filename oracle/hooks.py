@@ -605,11 +605,11 @@ IND_STATE_EXTRA = ["inddir", "indreg", "iyr", "curiyr", "curcalyr", "ibyr", "iby
                    "qetin", "qpvin", "byprdh2in", "mc_gslgisnhwyr",
                    "em_elec", "ab_allow_p", "engin", "eclin", "emcin", "erlin", "edsin", "elgin", "emgin", "esgin", "epcin",
                    "epfin", "eksin", "eotin", "enqngpf", "enqlgpf",
-                   "qbuin", "qisin", "qppin", "rfqngpl", "cfeeq", "qelrf", "qeleth", "qelhm", "qngpin", "co2_elec", "xelinshr",
+                   "corncd", "qbuin", "qisin", "qppin", "rfqngpl", "cfeeq", "qelrf", "qeleth", "qelhm", "qngpin", "co2_elec", "xelinshr",
                    "pngin", "hist_bench", "icalibrate", "iprice", "elec", "fgas", "intgas", "coal", "resid", "dist", "lpg", "qcrdata", "asmdata",
                    "qcleth", "indmax", "carbshrca", "carbshrcadata"]
 IND_DECL_FILES = ["ccatsdat", "ngtdmrep", "convfact", "wrenew", "hmmblk", "parametr", "indrep", "indout", "cogen", "indepm", "bifurc", "ghgrep", "qblk", "apq",
-                  "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk", "intout", "pmmout", "ab32", "emeblk", "ghgrep"]
+                  "ampblk", "qsblk", "mpblk", "eusprc", "macout", "ncntrl", "emmparm", "epmmpblk", "intout", "pmmout", "lfmmout", "ab32", "emeblk", "ghgrep"]
 MODULES["ind"] = dict(build="build_ind", run="run_ind", years=IND_DUMP_YEARS, targets=IND_TARGETS,
                       includes=["hmmblk", "ghgrep"], use="I_", block_files=IND_STATE_BLOCK_FILES, extra=IND_STATE_EXTRA,
                       decl_files=IND_DECL_FILES, module_text=True, module_name="I_", decls_only=True)

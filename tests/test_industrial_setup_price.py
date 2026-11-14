@@ -8,7 +8,7 @@ from nems_open.industrial.setup_price import setup_mac_and_price
 
 YEARS = [36, 37, 38, 41, 51, 61]
 CHECK = ["outind", "empind", "chemship", "foodship", "dprcx", "dprcxlag", "dconx", "prcx", "prcxlag", "prcxyr",
-         "pelinp", "pelins", "pelinm", "pelinh2e", "limeoutput"]
+         "pelinp", "pelins", "pelinm", "pelinh2e", "limeoutput", "bushel"]
 TOL = 1e-5
 
 pytestmark = pytest.mark.skipif(not oracle_state.available("smp_out", 61, "ind"), reason="oracle state not dumped")

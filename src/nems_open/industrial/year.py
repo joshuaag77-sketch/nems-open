@@ -56,7 +56,7 @@ def start_state(ys: dict) -> tuple[dict, dict]:
                     b[name] = v[()]
                 else:
                     b[name] = FArray(np.array(v), a.lb[:-2])
-    s["_stepnames9"] = [str(x).strip() for x in np.asarray(ys["cb_indstepname9"])] if "cb_indstepname9" in ys else None
+    s["_stepnames9"] = [None] + [x.decode("latin-1").strip() for x in np.asarray(ys["cb_indstepname9"].a)] if "cb_indstepname9" in ys else None
     return s, bufs
 
 
@@ -138,7 +138,12 @@ def iseam(s: dict, bufs: dict, standin=None) -> None:
                 rexog(s)
                 set_electricity_price(s)
                 indbifurc(s)
-                modcal(s, base, s["_stepnames9"], "original")
+                if inddir == 4:
+                    if standin is None:
+                        raise NotImplementedError("oil and gas mining needs a stand-in (standin.py)")
+                    standin(s, inddir, ireg)
+                else:
+                    modcal(s, base, s["_stepnames9"], "original")
                 wrbin(s, bufs)
         else:
             for ireg in range(1, 5):
@@ -302,6 +307,28 @@ def _sum_cg(s, divs, curiyr, k):
     return t
 
 
+def addupcogs(s: dict) -> None:
+    """ADDUPCOGS: totals of the CHP arrays (capacity, generation, thermal output, fuel for electricity) over fuels
+    (slot numflchp+1), then census divisions (row 11), then industries (slot numind+1), for the current year."""
+    cur, numind, nf = int(s["curiyr"]), 24, 10
+    names = ("coggen", "cogcap", "cogthr", "cogelf")
+    for n in names:
+        a = s[n]
+        for ir in range(1, 10):
+            for i in range(1, numind + 1):
+                a[ir, cur, i, nf + 1] = a[ir, cur, i, 1:nf].sum(dtype=f32)
+    for n in ("coggen", "cogcap", "cogelf"):
+        a = s[n]
+        for i in range(1, numind + 1):
+            for f in range(1, nf + 2):
+                a[11, cur, i, f] = a[1:9, cur, i, f].sum(dtype=f32)
+    for f in range(1, nf + 2):
+        for ir in range(1, 12):
+            for n in names:
+                a = s[n]
+                a[ir, cur, numind + 1, f] = a[ir, cur, 1:numind, f].sum(dtype=f32)
+
+
 def run_iteration(s: dict, bufs: dict, itr: int, last: bool, standin=None) -> None:
     from nems_open.industrial.wexog import wexog
     s["curitr"] = np.int32(itr)
@@ -309,6 +336,7 @@ def run_iteration(s: dict, bufs: dict, itr: int, last: bool, standin=None) -> No
     for d in range(1, 12):
         if s["ph2in"][d, int(s["curiyr"])] <= 0:
             s["ph2in"][d, int(s["curiyr"])] = f32(2.0) * s["pngin"][d, int(s["curiyr"])]
+    addupcogs(s)
     setup_mac_and_price(s)
     iseam(s, bufs, standin)
     calibrate_coal_elec(s, bufs)
