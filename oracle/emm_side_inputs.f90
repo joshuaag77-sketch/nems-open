@@ -29,3 +29,26 @@
         ENDDO
       ENDDO
       END
+
+!     Mercury switch USW_HG (COMMON /ECP_D_CNTL/), for the EMM oracle. In NEMS, EIA's
+!     Python emissions module sets it at start-up (models/epm/epm_read.py): 1 when any
+!     mercury rule applies (a cap below 100 tons, mercury limits by class, MATS or
+!     CAMR), else 0. Not in the restart file or EMM's inputs, so 0 in the oracle,
+!     and EFD's AIMMS model then asks for activated carbon it cannot buy. Same test
+!     as epm_read.py, run before each UTIL call (USW_MACT is read by EMM's setup).
+      SUBROUTINE ORACLE_HG_SWITCH
+      IMPLICIT NONE
+      include 'parametr'
+      include 'ncntrl'
+      include 'emmparm'
+      include 'ecpcntl'
+      include 'emission'
+      INTEGER IYE
+      LOGICAL ON
+      IYE = MAX(1, MIN(IJUMPYR, MNUMYR))
+      ON = ANY(EMLIM(4,1:IYE) .LT. 100.0)
+      ON = ON .OR. ANY(HG_GRAMS_MWH(1,1:IYE) .GT. 0.0) .OR. ANY(HG_OUTPUT(1,:,1:IYE) .GT. 0.0)
+      ON = ON .OR. ANY(HG_INPUT(1,:,1:IYE) .GT. 0.0) .OR. ANY(HG_MEF(1,:,1:IYE) .GT. 0.0)
+      ON = ON .OR. USW_MACT .GT. 0 .OR. USW_CAMR .GT. 0
+      USW_HG = MERGE(1, 0, ON)
+      END

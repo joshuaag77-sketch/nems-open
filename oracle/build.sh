@@ -67,7 +67,7 @@ if [ "$MOD" = emm ]; then
   # AIMMS-coupled variant (NEMS_ORACLE_AIMMS=1): EIA's own AIMMS interface (uaimms.f) replaces the stubs, ECP
   # runs, and each year's solve goes to Windows aimms.exe through run_aimms.sh (docs/aimms_needs.md).
   AIMMS_OBJS=""; STUBS="$ORACLE/emm_stubs.f90"
-  DPV_SRC="$ORACLE/dpv_off.f90"   # renew.f's DPV totals: only the AIMMS build fills them (ECP divides by them)
+  DPV_SRC="$ORACLE/emm_side_inputs_off.f90"   # renew.f's DPV totals and epm_read.py's mercury switch: only the AIMMS build sets them
   if [ "${NEMS_ORACLE_AIMMS:-0}" = 1 ]; then
     cp "$U/source/uaimms.f" uaimms_pre.f
     $PY -I "$ORACLE/aimms_fortran.py" --pre uaimms_pre.f     # Intel variable formats, before patch_intel.py
@@ -78,7 +78,7 @@ if [ "$MOD" = emm ]; then
     sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
     STUBS=emm_stubs_aimms.f90
     gfortran $FLAGS -c "$ORACLE/oracle_vfe.f90"
-    DPV_SRC="$ORACLE/dpv_renew.f90"
+    DPV_SRC="$ORACLE/emm_side_inputs.f90"
     AIMMS_OBJS="uaimms.o oracle_vfe.o"   # Intel ifcore/ifport stand-ins are already in emm_modules.f90
   fi
   # Modules first: udat.f holds two that uldsm.f and util.f use.
