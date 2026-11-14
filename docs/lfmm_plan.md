@@ -159,6 +159,30 @@ the free GAMS Personal licence and installs GAMS; then `run(lfmm="gams")` writes
 loop (gams.transfer, now able to load the GDX library), runs lfshell.gms with HiGHS, and reads prices and refinery fuel
 back. Check HiGHS against cb2026 first. The HiGHS translation stays the open fallback, as for coal.
 
+## run(lfmm="gams"): status (2026-11-14)
+
+GAMS 54 with Josh's free Personal licence runs from `~/dev/gams-venv` (gamspy_base: gams.exe, the GDX library; no
+GDXXRW). gams.transfer reads EIA's GDX there (`system_directory=` gamspy_base): lfminset.gdx holds 165 symbols, e.g.
+9 refining regions, 2 refinery types, 55 processes, 816 process modes, 569 streams, 3 periods.
+
+How NEMS feeds LFMM (refine.f): FILER writes every array in varlistl.txt (1,071 after ALL blocks expand, all present in
+the cb2026 restart) to NEM_TO_LFMM1.gdx; refine.f also writes E85.gdx (E85 supply curves it computes) and STEO_Hist.gdx
+(STEO and history from rfhist.txt); lfprep.gms runs GDXXRW on input/CoalD2RefMap.xls and input/intcrdshr.xls (the
+latter ships in input/iem/); lfshell keeps its own state between years in LFMM_Builds.gdx, GrossCapacity.gdx,
+Grossdumfact.gdx and LFMM_p1.gdx. Then `gams LFshell.gms`; EIA's shell sets Xpress as LP solver.
+
+Built (`src/nems_open/lfmm/gams_io.py`, tests/test_lfmm_gams_io.py): NEM_TO_LFMM1.gdx from restart-style arrays with
+FILER's element labels and record rules (DIM/DIMD records of dict.txt; zeros skipped; size-1 dimensions kept up to
+the last dimension above 1). Written in about 6 s (17 MB) through the GAMS venv's Python. A compile-only pass of
+LFshell.gms (`gams LFshell.gms a=c`, no solve) now gets through LF_NEM's $Loads; remaining errors are the missing side
+files above.
+
+Next: (1) CoalDRefMap.gdx and crudeshares.gdx from the two .xls files (Excel through pywin32 reads them; GDXXRW
+ranges are in the xls's IndexData sheet and lfprep.gms 1440-1474); (2) port refine.f's E85.gdx and STEO_Hist.gdx
+writers (refine.f about 1550-1830 and 3880-3950); (3) set the LP solver to HiGHS; (4) solve one year standalone on
+cb2026 (heavy: under HEAVY.lock, after the integration run) and compare MPBLK product prices; (5) the reader for
+LFMM_TO_NEMS.gdx and run(lfmm="gams") with showreel logging, as coal and gas.
+
 ## Full port, later
 
 1. GDX reader. GAMS publishes its GDX library as open source; a small reader (or a one-time
