@@ -1,1 +1,2 @@
 - 2026-11-14 merged integration (d1a3072): whole-model 2-cycle reference run, 145 min, 23/24 years converged, most gaps within 3%; misses coal gen 2040-45 and Henry Hub 2045.
+- 2026-11-14 merged lfmm-gams (2b5904c): EIA's real LFMM (GAMS, HiGHS in WSL) solves 2010-2035 optimal on cb2026 with FCRL=1. 2035 prices vs cb2026: diesel -0.1%, jet +1.1%, resid -1.9%, gasoline -13.3% (open). Not yet coupled: run(lfmm='gams') next.
