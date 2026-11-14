@@ -97,7 +97,13 @@ def indtotal(s: dict, inddir: int, indreg: int, indnum: int) -> None:
     for f in range(1, 9):
         qr[9, indreg] = qr[9, indreg] + qr[f, indreg]
 
-    # Electricity groups: process industries, equipment makers, everything else
+    add_to_electricity_groups(s, inddir, indreg)
+
+
+def add_to_electricity_groups(s: dict, inddir: int, indreg: int) -> None:
+    """Electricity groups: process industries, equipment makers, everything else."""
+    curiyr = int(s["curiyr"])
+    qm, xelin, xelinshr = s["qtymain"], s["xelin"], s["xelinshr"]
     if inddir == 1:
         xelin[1, indreg] = s["refcon"][1, indreg, curiyr]
     if inddir in (7, 8, 9, 12, 13):
