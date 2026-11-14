@@ -89,7 +89,11 @@ MODULES = {
                        "FINANCIAL", "RESCES", "FUELTRAN", "SPNRSV", "HTRTIMP")]
                   + [("input/emm/finregy.xlsx", s) for s in (
                        "headers_ntl", "ntl_eovdef", "ntl_eovyrs", "ntl_eslcp", "ntl_life", "ntl_bypass",
-                       "headers_reg")],
+                       "headers_reg")]
+                  # The AIMMS-coupled build runs ECP and EFD's AIMMS interface (uaimms.f), which reads these.
+                  + ([("input/emm/aimecp.xlsx", s) for s in ("col_row", "parameter", "ecpSetMatch", "ecpTransfer")]
+                     + [("input/emm/aimefd.xlsx", s) for s in ("col_row", "parameter", "efdSetMatch", "efdTransfer")]
+                     if os.environ.get("NEMS_ORACLE_AIMMS") == "1" else []),
         skip_blocks=["UEFPOUT"],
         # ORACLESW writes EMM's results database (Oracle/Access era name). Output only.
         options={"ORACLESW": 0},
