@@ -1,0 +1,1 @@
+- 2026-11-14 merged integration (d1a3072): whole-model 2-cycle reference run, 145 min, 23/24 years converged, most gaps within 3%; misses coal gen 2040-45 and Henry Hub 2045.
