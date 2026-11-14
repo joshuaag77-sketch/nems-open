@@ -69,6 +69,28 @@ def ecp_pass(path: Path) -> None:
     print(f"aimms_fortran.py --ecp: {path.name}: {k} tagged debug format(s) with F edits as G edits")
 
 
+def stops_pass(paths) -> None:
+    """Bare STOPs (no code, no message) end the run silently with status 0. Each becomes ERROR STOP naming its
+    file and line, so a stop shows in the log and fails the run. Messages and codes are untouched."""
+    for path in map(Path, paths):
+        lines = path.read_text(encoding="latin-1").split("\n")
+        k = 0
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("!"):
+                continue
+            new = re.sub(r"(?i)^(\s*(?:\d+\s+)?|.*\)\s*)STOP\s*(!.*)?$",
+                         lambda m: f"{m.group(1)}ERROR STOP 'oracle: bare STOP at {path.name}:{i + 1}'", line)
+            if new != line:
+                lines[i] = new
+                k += 1
+        path.write_text("\n".join(lines), encoding="latin-1")
+        print(f"aimms_fortran.py --stops: {path.name}: {k} bare STOP(s) name their line")
+
+
+if sys.argv[1] == "--stops":
+    stops_pass(sys.argv[2:])
+    sys.exit(0)
+
 if sys.argv[1] == "--ecp":
     ecp_pass(Path(sys.argv[2]))
     sys.exit(0)
