@@ -33,7 +33,9 @@ MODULE IFCORE
 CONTAINS
       LOGICAL(4) FUNCTION COMMITQQ(UNIT)
       INTEGER(4) UNIT
-      FLUSH(UNIT)
-      COMMITQQ = .TRUE.
+      LOGICAL OPN
+      INQUIRE(UNIT=UNIT, OPENED=OPN)   ! Intel returns .FALSE. for a unit not open; gfortran's FLUSH would stop
+      COMMITQQ = OPN
+      IF (OPN) FLUSH(UNIT)
       END FUNCTION
 END MODULE
