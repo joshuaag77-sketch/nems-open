@@ -1,5 +1,18 @@
 # LFMM: scope and the smallest path
 
+> **Hand-off (lfmm-gams lane, 2026-11-14).** Goal: `run(lfmm="gams")`, EIA's real LFMM (GAMS) solved with HiGHS under
+> Josh's free Personal licence (`~/dev/gams-venv`, gams.exe in `Lib/site-packages/gamspy_base`, licence passed with
+> `license=`; never copy it into the repo). Branch `lfmm-gams` in `C:/Users/joshu/dev/nems-open-coal`.
+> Done: `src/nems_open/lfmm/gams_io.py` (NEM_TO_LFMM1.gdx like FILER; write step runs under the GAMS venv Python:
+> `PYTHONPATH=src <venv>/Scripts/python.exe -m nems_open.lfmm.gams_io write payload.pkl out.gdx`),
+> `src/nems_open/lfmm/side_files.py` (CoalDRefMap.gdx, crudeshares.gdx from the .xls through Excel). Run folder
+> `C:/Users/joshu/dev/oracle-cache/lfmm-gams` holds LF*.gms, input/ (plus intcrdshr.xls), NEM_TO_LFMM1.gdx (cb2026,
+> 2030, itr 1), the two side files. Next: (1) E85.gdx: port refine.f `E85_Demand_Curve` (design 2 only); (2) STEO_Hist.gdx:
+> the RFHIST1 part of refine.f (3880-3950); (3) run-folder edits: comment out `$call GDXXRW` in LFprep.gms (1440, 1466),
+> LPsolver HiGHS; (4) `gams LFshell.gms a=c` clean; (5) solve 2030 under `scripts/with_heavy_lock.sh`, compare MPBLK
+> pmgtr, pdstr, pjftr, prltr with the restart. Inputs and labels for (1) and (2): shared notes `lfmm-gams-handover.md`.
+
+
 EIA's Liquid Fuels Market Module (LFMM) models US refining, biofuels and product trade. It is the
 largest supply module we have not ported. This note sizes it, lists what crosses the restart
 file, and records the path taken in this push: a fitted stand-in, graded amber, behind
