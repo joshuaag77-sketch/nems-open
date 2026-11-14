@@ -6,8 +6,8 @@ crude prices (LFMMOUT/rfcrudewhp) from the restart. We scale the cb2026 values b
 prices moved from the baseline (US power-sector gas price for gas, Brent for crude) and run HSM once over
 the whole horizon (about 9 minutes, one core). Results are cached by their inputs.
 
-What this is not: a market clearing. Natural gas prices still come from the stand-in; HSM's
-production does not feed back into them, because the gas market model (NGMM, AIMMS) is not here.
+The gas market (nems_open/ngmm) closes the loop: run_model(ogs="hsm") runs HSM between cycles on the
+cycle's wellhead prices and hands expected_ratio() to the market as next cycle's expected production.
 """
 import hashlib
 import os
@@ -65,3 +65,11 @@ def production(gas_ratio=None, oil_ratio=None, scedes: str = "scedes.cb2026.csv"
             part.replace(out) if part.drive == out.drive else out.write_bytes(part.read_bytes())
     with np.load(out) as z:
         return {k: z[k] for k in z.files}
+
+
+def expected_ratio(gas_ratio=None, oil_ratio=None, scedes: str = "scedes.cb2026.csv") -> np.ndarray:
+    """HSM's expected lower-48 natural gas production (OGSMOUT/ogenagprd, gas types 1-4, what NGMM centres
+    its supply curve on) for prices moved by the ratios, over the same on cb2026's prices. (61,)"""
+    run = production(gas_ratio, oil_ratio, scedes)["ogenagprd"][:, :4].sum(axis=(0, 1))
+    ref = production(None, None, scedes)["ogenagprd"][:, :4].sum(axis=(0, 1))
+    return np.divide(run, ref, out=np.ones(61), where=ref > 0)
