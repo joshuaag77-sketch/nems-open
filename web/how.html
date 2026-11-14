@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How This Was Built</title>
+<meta name="description" content="NEMS Open rebuilds EIA's National Energy Modeling System in Python and checks each piece against EIA's own Fortran. What is ported, what is still an estimate, and how the site answers.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="NEMS Open">
+<meta property="og:title" content="How this was built: EIA's energy model, rebuilt in open Python">
+<meta property="og:description" content="Each piece is checked against EIA's own Fortran, number by number. What is ported, what is still an estimate.">
+<meta property="og:image" content="https://nems.joshagarwal.com/og.png">
+<meta property="og:url" content="https://nems.joshagarwal.com/how">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%235DCAA5'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#0b0e13;--panel:#131820;--line:#252c37;--ink:#ece9e1;--ink2:#b3b0a7;--ink3:#86847c;--accent:#5DCAA5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:26px 16px 10px}
+h1{font-size:28px;line-height:1.2;margin:0 0 8px}
+h2{font-size:18px;margin:28px 0 6px}
+p{margin:0 0 12px;color:var(--ink2)}
+p b{color:var(--ink)}
+a{color:var(--accent)}
+.lead{font-size:17px;color:var(--ink)}
+.mods{list-style:none;padding:0;margin:8px 0 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mods li{display:flex;gap:10px;align-items:baseline;padding:9px 12px;border-top:1px solid var(--line);background:var(--panel);font-size:14.5px}
+.mods li:first-child{border-top:0}
+.mods .n{flex:1;color:var(--ink)}
+.mods .g{color:var(--ink3);font-size:13px;text-align:right}
+.mods .gd{margin:0}
+.fine{font-size:13px;color:var(--ink3)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:10px 0 4px}
+.steps div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;font-size:14px;color:var(--ink2)}
+.steps b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
+</style>
+<script defer src="site.js?v=12"></script>
+</head>
+<body>
+<main>
+  <h1>How this was built</h1>
+  <p class="lead">NEMS Open is an open rebuild, in Python, of the model the U.S. government uses for its long-term energy forecast. This page says what was rebuilt, how each piece was checked, and what is still an estimate.</p>
+
+  <h2>The model it rebuilds</h2>
+  <p>The U.S. Energy Information Administration (EIA) forecasts America's energy to 2050 every year in its Annual Energy Outlook. The forecast comes from the National Energy Modeling System (NEMS): a large Fortran program with a module for each part of the economy. Homes, businesses, factories and vehicles decide how much energy to buy at given prices; power plants, gas, oil and coal markets set prices for that demand. Each year the modules pass numbers back and forth until they agree.</p>
+  <p>EIA publishes the code. Running it takes paid optimization software and an old Windows build, so almost nobody outside EIA does. NEMS Open makes it something anyone can run, read and change.</p>
+
+  <h2>Checked against EIA's own code</h2>
+  <div class="steps">
+    <div><b>1. Run EIA's Fortran</b>EIA's code is compiled with free tools and run as an "oracle" that records every array at every step.</div>
+    <div><b>2. Port one routine</b>Each routine is translated to Python with EIA's quirks kept, even the odd ones.</div>
+    <div><b>3. Compare every number</b>Tests compare the Python with the oracle's arrays, usually to within a millionth and a thousandth at worst. A module counts as ported only when they pass.</div>
+  </div>
+  <p id="tests" class="fine"></p>
+
+  <h2>What is ported today</h2>
+  <p>A green dot means EIA's own code, ported and checked. Amber means our estimate: a curve fitted to EIA's published runs, or our own model of the piece, measured against EIA. Every number on the site takes the grade of the weakest piece behind it.</p>
+  <ul id="mods" class="mods"><li><span class="n">Loading the current grades...</span></li></ul>
+  <p class="fine">Read live from the scoreboard (<a href="scoreboard.html">every grade with its evidence</a>). It changes as modules are ported.</p>
+
+  <h2>Where the instant numbers come from</h2>
+  <p>A full run with the ported modules takes about 12 minutes, too long for a slider. So <a href="2050.html">Your 2050</a> answers from a fitted estimate: a smooth formula fitted to 257 runs of the model's fast loop, shifted so EIA's own settings give EIA's own forecast. On runs left out of the fit it lands within about 1% of a full run. <a href="think.html">Watch it think</a> replays recorded full runs, pass by pass.</p>
+
+  <h2>How the Ask box answers</h2>
+  <p>Questions go to Claude, an AI model from Anthropic, which drives the same tools the site uses: it sets levers, runs the estimate and reads results. A program then checks the answer: every number must come from a tool call, and each one gets its source and grade attached. Claude cannot make up a figure, and questions the model cannot answer (a single state, a single plant, a lever that does not exist) are declined.</p>
+
+  <h2>Who built it</h2>
+  <p>Josh Agarwal, with Claude Code agents working in parallel, one lane per module, each port held to the oracle before it merged. The code is open under the Apache 2.0 license at <a href="https://github.com/joshuaag77-sketch/nems-open">github.com/joshuaag77-sketch/nems-open</a>.</p>
+  <p><b>Not EIA's results.</b> NEMS Open is independent. EIA has not reviewed or endorsed it, and where it differs from EIA, EIA's published Outlook is the authority. <a href="about.html">Credits and sources</a>.</p>
+</main>
+<script>
+addEventListener("DOMContentLoaded", () => {
+  const NAMES = { residential: "Homes", commercial: "Businesses", industrial: "Factories and farms", transportation: "Vehicles and freight",
+    electricity: "Power plants", "electricity:price": "Power prices", natural_gas: "Natural gas", oil: "Oil and refining", coal: "Coal", emissions: "Emissions" };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  fetch("data/fidelity.json").then((r) => r.json()).then((f) => {
+    const set = f.sets.real || f.sets.fast;
+    document.getElementById("mods").innerHTML = Object.keys(NAMES).filter((k) => set.modules[k]).map((k) => {
+      const m = set.modules[k], p = f.parts[m.part];
+      return `<li>${NEMSDot.dot(m.grade, `${p.name}: ${p.summary}`)}<span class="n">${NAMES[k]}</span><span class="g">${esc(m.grade === "match" ? "EIA's code, checked" : m.grade === "within" ? `our model, ${m.label}` : "fitted estimate")}</span></li>`;
+    }).join("");
+    document.getElementById("tests").textContent = `${f.tests_collected.toLocaleString()} tests in the repository as of ${f.generated}.`;
+  }).catch(() => { document.getElementById("mods").innerHTML = '<li><span class="n">The grades could not be loaded. See the scoreboard.</span></li>'; });
+});
+</script>
+</body>
+</html>

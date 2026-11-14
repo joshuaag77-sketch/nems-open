@@ -1,7 +1,7 @@
 // One shared navigation bar, footer and grade dot for every page. Plain DOM, no dependencies.
 (function () {
   // Three places for everyone; the rest lives under "For experts" (experts.html).
-  const PAGES = [["2050.html", "Your 2050"], ["think.html", "Watch it think"], ["ask.html", "Ask"]];
+  const PAGES = [["2050.html", "Your 2050"], ["think.html", "Watch it think"], ["ask.html", "Ask"], ["how.html", "How it was built"]];
   const EXPERT = ["experts.html", "engine3d.html", "index.html", "scoreboard.html", "datacenter.html", "switches.html", "about.html"];
   const here = (location.pathname.split("/").pop() || "2050.html").toLowerCase().replace(/\.html$/, "") + ".html";
   const css = document.createElement("style");

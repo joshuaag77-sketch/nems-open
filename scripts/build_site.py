@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc", "real_build")
+SITE = "https://nems.joshagarwal.com"     # the address link previews point at (og:url, og:image)
 PATHS_SHIM = '''"""Hosted copy: only the repo root is needed (the agent reads web/data). EIA's checkout is not deployed."""
 from pathlib import Path
 
@@ -23,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 '''
 
 
-def build(out: Path) -> Path:
+def build(out: Path, base_url: str = SITE) -> Path:
     if out.exists():
         shutil.rmtree(out)
     shutil.copytree(ROOT / "web", out / "web", ignore=SKIP)
@@ -34,13 +35,18 @@ def build(out: Path) -> Path:
     shutil.copytree(ROOT / "src" / "nems_open" / "agent", pkg / "agent", ignore=SKIP)
     (pkg / "__init__.py").write_text("", encoding="utf-8")
     (pkg / "paths.py").write_text(PATHS_SHIM, encoding="utf-8")
+    if base_url.rstrip("/") != SITE:          # a preview elsewhere: link previews point at it instead
+        for f in (out / "web").glob("*.html"):
+            f.write_text(f.read_text(encoding="utf-8").replace(SITE, base_url.rstrip("/")), encoding="utf-8")
     return out
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=ROOT / "dist" / "site")
-    out = build(ap.parse_args(argv).out)
+    ap.add_argument("--base-url", default=SITE, help=f"public address of the site (default {SITE})")
+    a = ap.parse_args(argv)
+    out = build(a.out, a.base_url)
     size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
     print(f"{out}: {size / 1e6:.1f} MB")
     return 0
