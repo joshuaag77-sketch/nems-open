@@ -11,7 +11,7 @@ REQ='main/endpoint_p2_caller.txt'
 [ -f "$REQ" ] || { echo "run_aimms.sh: no $REQ" >&2; exit 1; }
 field() { grep -i "^$1" "$REQ" | head -1 | sed 's/.*: *//' | tr -d '\r '; }
 MOD=$(field my_module); YEAR=$(field year); ITR=$(field iter)
-case "$MOD" in ecp|efd) ;; *) echo "run_aimms.sh: module '$MOD' not wired" >&2; exit 1 ;; esac
+case "$MOD" in ecp|efd|rest) ;; *) echo "run_aimms.sh: module '$MOD' not wired" >&2; exit 1 ;; esac
 AIMMS="${AIMMS_EXE:-/mnt/c/Users/joshu/AppData/Local/AIMMS/IFA/Aimms/25.5.7.1-x64-VS2022/Bin/aimms.exe}"
 WRAPPER_WIN="$(wslpath -w "$(readlink -f main)/wrapper/wrapper.aimms")"
 printf 'req_year := %s ;\nreq_itr := %s ;\n' "$YEAR" "$ITR" > "$MOD/request.txt"

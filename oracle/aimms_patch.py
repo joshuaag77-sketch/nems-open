@@ -19,7 +19,8 @@ import sys
 from pathlib import Path
 
 UPSTREAM = Path(__file__).resolve().parent.parent / "nems-upstream" / "models"
-LIBRARIES = {"ecp": ("ecp/MainProject/ecp.ams", "ec", "ECP"), "efd": ("efd/MainProject/efd.ams", "ed", "EFD")}
+LIBRARIES = {"ecp": ("ecp/MainProject/ecp.ams", "ec", "ECP"), "efd": ("efd/MainProject/efd.ams", "ed", "EFD"),
+             "rest": ("rest/MainProject/EMM_renewable.ams", "re", "REST")}
 COPY = ["ecp", "efd", "rest", "coal", "ngas", "hmm"]
 
 FILE_CALL = """	Procedure File_Call {{
@@ -69,6 +70,23 @@ FILE_CALL = """	Procedure File_Call {{
 	}}
 """
 
+REST_FILE_CALL = """	Procedure File_Call {{
+		Body: {{
+			! Oracle entry point (nems-open oracle/aimms_patch.py): REST_API_Call without the DEX request read.
+			ErrorOut_file_name := "../../rest/log/aimmsRunOnly.err";
+			if fileexists(ErrorOut_file_name) then
+			    FileDelete(ErrorOut_file_name, 0);
+			endif;
+			block
+			MainExecution;
+			 Onerror err do
+			   ErrorHandler(err);
+			endblock;
+			write done to file "../../rest/done.txt";
+		}}
+	}}
+"""
+
 WRAPPER_REFS = """<?xml version="1.0"?>
 <References AIMMS_Version="25.5.7.1 (x64)">
 	<MainProject Path="MainProject" />
@@ -112,6 +130,14 @@ Model Main_wrapper {
             ed::File_Call;
         }
     }
+    Procedure run_rest {
+        Body: {
+            read from file "../../rest/request.txt";
+            re::api_curcalyr := req_year;
+            re::api_curitr := req_itr;
+            re::File_Call;
+        }
+    }
     Procedure MainTermination {
         Body: {
             return 1;
@@ -130,7 +156,8 @@ def add_file_call(ams: Path, prefix: str, mod: str) -> None:
         raise SystemExit(f"{ams}: no Interface block")
     text = text[:iface.end(2)] + ", File_Call" + text[iface.end(2):]
     anchor = text.index(f"\tProcedure {mod}_API_Call {{")
-    text = text[:anchor] + FILE_CALL.format(mod=mod, low=mod.lower()) + text[anchor:]
+    tmpl = REST_FILE_CALL if mod == "REST" else FILE_CALL
+    text = text[:anchor] + tmpl.format(mod=mod, low=mod.lower()) + text[anchor:]
     ams.write_text(text, encoding="utf-8")
 
 
@@ -143,6 +170,8 @@ def prepare(run: Path) -> None:
     for low, (rel, prefix, mod) in LIBRARIES.items():
         add_file_call(run / rel, prefix, mod)
         (run / low / "log").mkdir(exist_ok=True)
+    for sub in ("toAIMMS", "fromAIMMS"):          # ReStore's hand-over folders
+        (run / "rest" / sub).mkdir(exist_ok=True)
     w = run / "main" / "wrapper"
     (w / "MainProject").mkdir(parents=True, exist_ok=True)
     (w / "wrapper.aimms").write_text(WRAPPER_REFS)

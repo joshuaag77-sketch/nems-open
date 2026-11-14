@@ -72,6 +72,7 @@ if [ "$MOD" = emm ]; then
     $PY -I "$ORACLE/aimms_fortran.py" --pre uaimms_pre.f     # Intel variable formats, before patch_intel.py
     $PY -I "$ORACLE/patch_intel.py" uaimms_pre.f uaimms.f90
     $PY -I "$ORACLE/aimms_fortran.py" uaimms.f90
+    $PY -I "$ORACLE/aimms_paths.py" uaimms.f90 uecp.f90 uefd.f90     # Windows paths of files shared with AIMMS
     sed '/^      SUBROUTINE MAKMSK/,$d' "$ORACLE/emm_stubs.f90" > emm_stubs_aimms.f90
     STUBS=emm_stubs_aimms.f90
     gfortran $FLAGS -c "$ORACLE/oracle_vfe.f90"
@@ -97,6 +98,8 @@ if [ "$MOD" = emm ]; then
     $PY -I "$ORACLE/aimms_patch.py" "$AIMMS_RUN"
     for d in ecp efd rest coal ngas hmm main; do rm -rf "$WORK/run_emm/$d"; ln -s "$AIMMS_RUN/$d" "$WORK/run_emm/$d"; done
     tr -d '\r' < "$ORACLE/run_aimms.sh" > "$WORK/run_emm/run_aimms.sh"
+    # Folders NEMS's setup makes: storage valuation output, under both spellings EIA's code uses.
+    mkdir -p "$WORK/run_emm/EMM_VALSTO"; ln -sfn EMM_VALSTO "$WORK/run_emm/EMM_ValSto"
     echo "AIMMS folders linked from $AIMMS_RUN"
   fi
   echo "built $WORK/run_emm/oracle$EXE"

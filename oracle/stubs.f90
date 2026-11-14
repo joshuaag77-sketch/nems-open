@@ -280,7 +280,10 @@ subroutine callsys(iret, cmd)
   implicit none
   integer iret
   character(*) cmd
-  call execute_command_line(trim(cmd), exitstat=iret)
+  integer cstat
+  ! cmdstat: a command that fails (EIA's Windows "del ..." clean-ups under Linux) returns its status, as Intel's
+  ! CALLSYS does, instead of stopping the program.
+  call execute_command_line(trim(cmd), exitstat=iret, cmdstat=cstat)
 end subroutine callsys
 
 ! gfortran's newunit hands out negative numbers; EIA's code tests unit .le. 0 as
