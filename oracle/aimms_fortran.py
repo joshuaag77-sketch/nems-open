@@ -46,12 +46,19 @@ def pre_pass(path: Path) -> None:
 
 
 def ecp_pass(path: Path) -> None:
-    """uecp.f's debug writes that print INTEGER items under F edits (Intel writes them, gfortran stops): G edits,
-    which take both. Only debug files change; ECP's matrix does not."""
+    """Debug writes in uecp.f / uefd.f (FORMATs tagged 1X,"NAME",...) that print INTEGER items under F edits: Intel
+    writes them, gfortran stops. Their F edits become G edits, which take both. Only those debug lines change."""
     text = path.read_text(encoding="latin-1")
-    text, k = re.subn(r'(FORMAT\(1X,"PMLF_HTRT",7\(":",I5\),13\(":",)F20\.6\)\)', r"\1G20.6))", text)
+    tagged = re.compile(r'^(\s*\d+\s+FORMAT\(\s*1X\s*,\s*"[A-Za-z0-9_$]+".*)$', re.I | re.M)
+    k = 0
+    def g(m):
+        nonlocal k
+        new = re.sub(r"(?<![A-Za-z0-9_])F(\d+\.\d+)", r"G\1", m.group(1))
+        k += new != m.group(1)
+        return new
+    text = tagged.sub(g, text)
     path.write_text(text, encoding="latin-1")
-    print(f"aimms_fortran.py --ecp: {k} debug format(s) with mixed INTEGER/REAL items as G edits")
+    print(f"aimms_fortran.py --ecp: {path.name}: {k} tagged debug format(s) with F edits as G edits")
 
 
 if sys.argv[1] == "--ecp":
