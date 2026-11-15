@@ -101,7 +101,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         cycles: int = 1, relax: bool = True, verbose: bool = False,
         elec: str = "standin", elec_price: str | None = None, base: dict | None = None,
         macro: str | None = None, ogs: str = "standin", record=None, lfmm: str | None = None,
-        ind: str = "oracle", coal: str | None = None, elec_cap: str = "eia") -> RunResult:
+        ind: str = "oracle", coal: str | None = None, elec_cap: str = "eia", checkpoint=None) -> RunResult:
     """Run the loop from start_year to end_year. Years before start_year keep the
     baseline's prices and quantities. ind: with "industrial" in ported, "oracle" supplies EIA's industrial fuel use
     (fixed), "ported" runs the ported industrial year loop (industrial/year.py; needs the industrial oracle's dumps).
@@ -132,7 +132,12 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     the stand-in's (nems_open/coal/aimms_couple.py; needs AIMMS and, once, its cb2026 reference run).
     elec_cap: "eia" keeps EIA's capacity path (cb2026) under the dispatch LP; "lp" builds and retires plants
     with the capacity expansion LP each year (nems_open.emm.capacity, about 2 minutes a year; needs elec="lp").
-    Not the default until its scorecard passes (docs/capacity.md)."""
+    Not the default until its scorecard passes (docs/capacity.md).
+    checkpoint: None, or (path, tag). After each cycle but the last the loop's state goes to path (pickle: prices,
+    quantities, results so far, the capacity path, NGMM's next expected production); a run whose path holds a
+    checkpoint with the same tag starts at the cycle after it. The tag names the run's inputs (scripts/showroom_scenarios.py
+    uses the scenario and its switches); a different tag is ignored. Not for ogs "ngmm" or "hsm" (their market
+    state is not saved)."""
     if elec not in ("standin", "lp"):
         raise ValueError("elec must be 'standin' or 'lp'")
     if elec_cap not in ("eia", "lp"):
@@ -196,8 +201,25 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         generation = {}
         cp87 = supply._cp87(carbon)
     years = slice(start_year - FIRST_YEAR, end_year - FIRST_YEAR + 1)
+    if checkpoint is not None and ogs in ("ngmm", "hsm"):
+        raise ValueError("checkpoint does not keep the ngmm/hsm gas market's state; use ogs='aimms' or 'standin'")
+    first_cycle = 1
+    if checkpoint is not None:
+        st = _load_checkpoint(*checkpoint)
+        if st is not None and st["cycle"] < cycles:
+            first_cycle = st["cycle"] + 1
+            prices, q, co2, expected = st["prices"], st["q"], st["co2"], st["expected"]
+            passes, stable = st["passes"], st["stable"]
+            wholesale, wholesale_us, generation = st["wholesale"], st["wholesale_us"], st["generation"]
+            unserved, curtailed = st["unserved"], st["curtailed"]
+            if lp is not None:
+                lp.last = st["lp_last"]
+                if lp.capacity_path is not None and st["capacity_path"] is not None:
+                    lp.capacity_path.__dict__.update(st["capacity_path"])
+            if verbose:
+                print(f"checkpoint: cycle {st['cycle']} done, starting at cycle {first_cycle}")
 
-    for cycle in range(1, cycles + 1):
+    for cycle in range(first_cycle, cycles + 1):
         path = None
         if macro == "frbus":
             from nems_open.macro.drive import scenario_macro
@@ -354,6 +376,13 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 for k in d:
                     if k in between.relax:
                         d[k][:, years] = before[k] + between.relax[k] * (d[k][:, years] - before[k])
+        if checkpoint is not None and cycle < cycles:
+            cp = lp.capacity_path if lp is not None else None
+            _save_checkpoint(*checkpoint, {
+                "cycle": cycle, "prices": prices, "q": q, "co2": co2, "expected": expected, "passes": passes,
+                "stable": stable, "wholesale": wholesale, "wholesale_us": wholesale_us, "generation": generation,
+                "unserved": unserved, "curtailed": curtailed, "lp_last": getattr(lp, "last", None),
+                "capacity_path": None if cp is None else {k: v for k, v in cp.__dict__.items() if k != "snapshot"}})
     hsm = gas = None
     if aimms_gas is not None:
         gas = {"henry_hub": aimms_gas.henry_hub.copy(), "ngmm_seconds": aimms_gas.seconds,
@@ -369,6 +398,28 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     cap_results = dict(lp.capacity_path.results) if lp is not None and lp.capacity_path is not None else None
     return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm, gas,
                      coal_out, cap_results)
+
+
+def _save_checkpoint(path, tag, state) -> None:
+    import pickle
+    from pathlib import Path
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "wb") as f:
+        pickle.dump({"tag": tag, **state}, f, protocol=pickle.HIGHEST_PROTOCOL)
+    tmp.replace(path)
+
+
+def _load_checkpoint(path, tag):
+    import pickle
+    from pathlib import Path
+    path = Path(path)
+    if not path.exists():
+        return None
+    with open(path, "rb") as f:
+        st = pickle.load(f)
+    return st if st.get("tag") == tag else None
 
 
 def _oil_ratio(oil, base):

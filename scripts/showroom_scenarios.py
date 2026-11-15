@@ -275,8 +275,11 @@ def run_one(sc: Scenario, run=None, log=print) -> None:
         from nems_open import run_model
         run = run_model.run
     args = run_args(sc)
+    ckpt = OUT / f"{sc.key}.checkpoint.pkl"   # a crash in cycle 2 or later restarts at that cycle, not from the start
+    tag = json.dumps({"scenario": sc.key, "switches": {k: args[k] for k in SWITCHES}, "cycles": args.get("cycles")},
+                     sort_keys=True, default=str)
     t0 = time.time()
-    r = run(**args)
+    r = run(**args, checkpoint=(ckpt, tag))
     mins = (time.time() - t0) / 60
     OUT.mkdir(parents=True, exist_ok=True)
     WEB.mkdir(parents=True, exist_ok=True)
@@ -286,6 +289,7 @@ def run_one(sc: Scenario, run=None, log=print) -> None:
     t.update({"scenario": sc.key, "title": sc.title, "story": sc.story,
               "levers": {k: ("custom" if isinstance(v, dict) else v) for k, v in sc.levers.items()}})
     (WEB / f"{sc.key}.json").write_text(json.dumps(t, indent=1))
+    ckpt.unlink(missing_ok=True)
     log(f"{sc.key}: done in {mins:.0f} min")
 
 
