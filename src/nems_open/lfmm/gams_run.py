@@ -14,12 +14,13 @@ The GDX writes run under the GAMS venv's Python (gams_io.GAMS_PYTHON), so this m
 import os
 import pickle
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 from nems_open.lfmm import gams_io, refine_side, side_files
-from nems_open.paths import REPO_ROOT, UPSTREAM
+from nems_open.paths import UPSTREAM
 
 GAMS_EXE = gams_io.GAMS_SYSDIR / "gams.exe"
 LICENCE = Path(os.environ.get("GAMS_LICENSE", Path.home() / "Documents" / "GAMSPy" / "gamspy_license.txt"))
@@ -30,9 +31,7 @@ def _write(payload: dict, gdx: Path) -> None:
     pk = gdx.with_suffix(".pkl")
     with open(pk, "wb") as f:
         pickle.dump(payload, f)
-    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
-    subprocess.run([str(gams_io.GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", "write", str(pk), str(gdx)],
-                   check=True, env=env)
+    gams_io.helper("write", pk, gdx)
     pk.unlink()
 
 
@@ -57,9 +56,12 @@ def prepare(run: Path, year: int, arrays: dict, itr: int = 1, fcrl: int = 0, ncr
         run.mkdir(parents=True, exist_ok=True)
         for f in (SRC / "source").glob("*.gms"):
             shutil.copy(f, run / f.name)
-        if (run / "input").exists():
-            shutil.rmtree(run / "input")
+        if (run / "input").exists():   # source copies can be read-only; clear the flag and retry
+            shutil.rmtree(run / "input", onexc=lambda f, path, _: (os.chmod(path, stat.S_IWRITE), f(path)))
         shutil.copytree(SRC / "input", run / "input")
+        for d in (run / "input").rglob("*"):
+            if getattr(d.stat(), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_READONLY", 0):
+                os.chmod(d, stat.S_IWRITE | stat.S_IREAD)
         shutil.copy(Path(UPSTREAM) / "input" / "iem" / "intcrdshr.xls", run / "input" / "intcrdshr.xls")
         patch(run)
         for gdx, payload in side_files.xls_payloads(run).items():
@@ -68,9 +70,7 @@ def prepare(run: Path, year: int, arrays: dict, itr: int = 1, fcrl: int = 0, ncr
     _write(refine_side.e85_payload(arrays, year), run / "E85.gdx")
     pk = run / "NEM_TO_LFMM1.pkl"
     gams_io.to_npz(arrays, year, itr, fcrl, ncrl, cycle, pk)
-    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
-    subprocess.run([str(gams_io.GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", "write", str(pk), str(run / "NEM_TO_LFMM1.gdx")],
-                   check=True, env=env)
+    gams_io.helper("write", pk, run / "NEM_TO_LFMM1.gdx")
     pk.unlink()
     return run
 

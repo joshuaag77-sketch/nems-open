@@ -125,7 +125,7 @@ def policy(sc: Scenario):
         kw["carbon_price"] = carbon_path(lv.pop("carbon_price"))
     if "lng_bcfd" in lv:
         from nems_open.ngmm import lng
-        kw["lng_exports"] = lng.path(lv.pop("lng_bcfd"), START)
+        kw["lng_exports"] = lng.path(lv.pop("lng_bcfd"))
     return Policy(**kw, **lv)
 
 

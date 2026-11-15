@@ -13,8 +13,8 @@ TX_E 1524). Canada and Alaska stay as they are.
 ogs='hsm' / 'ngmm': GasMarket adds the path's difference from cb2026's LNG row (NGTDMREP/ngexpvol) to exports, at any
 price, so the gas market has to produce it.
 
-path(): a 2035 level as a path. The difference from EIA's reference in 2035 ramps in linearly from start_year and is
-held after, so the path keeps EIA's shape (EIA's reference is 26.8 Bcf/d in 2035 and 30.7 in 2050).
+path(): a 2035 level as a path. The difference from EIA's reference in 2035 ramps in linearly from 2030 (NGMM's
+first LNG build year) and is held after, so the path keeps EIA's shape (EIA's reference is 26.8 Bcf/d in 2035 and 30.7 in 2050).
 """
 
 import re
@@ -36,7 +36,7 @@ def eia_bcfd() -> np.ndarray:
     return np.asarray(Snapshot()["NGTDMREP/ngexpvol"], dtype=np.float64)[LNG_ROW] / DAYS
 
 
-def path(bcfd_2035: float, start_year: int = 2027, by: int = 2035, eia: np.ndarray | None = None) -> np.ndarray:
+def path(bcfd_2035: float, start_year: int = 2030, by: int = 2035, eia: np.ndarray | None = None) -> np.ndarray:
     """US LNG exports by year, Bcf/d (61,): EIA's reference plus (bcfd_2035 - EIA's 2035), ramped in from start_year."""
     eia = eia_bcfd() if eia is None else np.asarray(eia, dtype=np.float64)
     delta = bcfd_2035 - eia[by - FIRST_YEAR]
@@ -94,3 +94,32 @@ def added_bcf(bcfd, base_exports) -> np.ndarray:
     base = np.asarray(base_exports, dtype=np.float64)[LNG_ROW]
     d = np.asarray(bcfd, dtype=np.float64) * DAYS - base
     return np.where(np.isnan(d), 0.0, d)
+
+
+# In EIA's LNGExports_Initialize, Initialize_LNGCapacity runs after the fixed/endogenous branch and rebuilds
+# LNG_ExportCapacity from the trains under construction, so the fixed table never reaches the solve (exports stop at
+# the under-construction total, 25.3 Bcf/d). Re-apply it after, from LNG_FirstBuildYear (2030) on; earlier years keep
+# the trains (NGMM builds nothing before then in either mode).
+CAPACITY_CALL = "Initialize_LNGCapacity;"
+REAPPLY = [
+    "! nems-open: fixed LNG exports (nems_open/ngmm/lng.py) after the trains, from the first build year",
+    "if (LNG_FixedExports_Switch = 1) then",
+    "    Set_Exogenous_LNGExports;",
+    "    for (year | year >= LNG_FirstBuildYear) do",
+    "        LNGExports((mon,lngexp_qp) | map_month_year(mon,year)) := LNG_ExportCapacity(year,lngexp_qp) / 12;",
+    "    endfor;",
+    "    LNG_ExportCapacity((year,lngexp_qp) | year < LNG_FirstBuildYear) := "
+    "sum(mon|map_month_year(mon,year), LNGExports(mon,lngexp_qp));",
+    "endif;",
+]
+
+
+def patch_model(ams: str) -> str:
+    """natgas.ams with the fixed table re-applied after the one Initialize_LNGCapacity call (see REAPPLY)."""
+    lines = ams.split("\n")
+    hits = [i for i, ln in enumerate(lines) if ln.strip() == CAPACITY_CALL]
+    if len(hits) != 1:
+        raise ValueError("natgas.ams: expected one Initialize_LNGCapacity call")
+    i = hits[0]
+    indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+    return "\n".join(lines[:i + 1] + [indent + ln for ln in REAPPLY] + lines[i + 1:])

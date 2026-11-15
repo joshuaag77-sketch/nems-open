@@ -93,3 +93,15 @@ def test_lfmm_and_coal_inputs_carry_the_carbon_arrays():
     out = carbon_inputs.arrays(np.full(61, 30.0), a)
     assert {"EMISSION/EMETAX", "EMABLK/JMGTR", "EMABLK/JDSTR", "EMABLK/JJFTR"} <= set(out)
     assert out["EMABLK/JDSTR"][50] == pytest.approx(30 * 44 / 12 / 1000 * a["EMEBLK/EDSTR"][50], rel=1e-6)
+
+
+def test_patch_model_reapplies_the_table_after_the_trains():
+    from nems_open.ngmm import aimms
+    f = aimms.SRC / "nems_ngmm.ams"
+    if not f.exists():
+        pytest.skip("NGMM source not here")
+    text = f.read_text(encoding="utf-8")
+    out = lng.patch_model(text)
+    i = out.index("Initialize_LNGCapacity;")
+    assert out.index("Set_Exogenous_LNGExports;", i) < out.index("endif;", i)
+    assert len(out.splitlines()) == len(text.splitlines()) + len(lng.REAPPLY)

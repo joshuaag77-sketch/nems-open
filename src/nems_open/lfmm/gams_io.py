@@ -32,6 +32,52 @@ FMAXDIMS = 101          # includes/fdict: FMaxDims
 LABEL_LEN = 25          # FDimStrs is CHARACTER*25: longer labels are cut ("11_Petrochemical_feedstoc")
 GAMS_SYSDIR = Path.home() / "dev" / "gams-venv" / "Lib" / "site-packages" / "gamspy_base"
 GAMS_PYTHON = Path.home() / "dev" / "gams-venv" / "Scripts" / "python.exe"
+WSL_PYTHON = "/root/gams-venv/bin/python"   # the GAMS venv in WSL, which also runs the LFMM solve
+
+
+def _sysdir() -> str:
+    """GAMS's system directory for gams.transfer: the Windows venv's, or gamspy_base's own when run in WSL."""
+    if sys.platform != "win32":
+        import gamspy_base
+        return str(Path(gamspy_base.__file__).parent)
+    return str(GAMS_SYSDIR)
+
+
+@lru_cache(maxsize=1)
+def use_wsl() -> bool:
+    """Run the GDX helper in WSL? NEMS_GAMS_IO=wsl or windows decides; otherwise WSL when Windows will not load
+    GAMS's GDX library (an Application Control policy blocked gmdcclib64.dll on 2026-11-15)."""
+    import os
+    mode = os.environ.get("NEMS_GAMS_IO", "").lower()
+    if mode in ("wsl", "windows"):
+        return mode == "wsl"
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    try:
+        ctypes.WinDLL(str(GAMS_SYSDIR / "gmdcclib64.dll"))
+        return False
+    except OSError:
+        return True
+
+
+def _wsl_path(p) -> str:
+    p = Path(p).resolve()
+    return f"/mnt/{p.drive[0].lower()}{p.as_posix()[2:]}"
+
+
+def helper(action: str, *paths, extra=()) -> None:
+    """Run this module's write or read step under GAMS's Python (Windows venv, or WSL's; see use_wsl)."""
+    import os
+    import subprocess
+    from nems_open.paths import REPO_ROOT
+    if use_wsl():
+        args = ["wsl", "-d", "Ubuntu", "--", "env", f"PYTHONPATH={_wsl_path(REPO_ROOT / 'src')}", WSL_PYTHON, "-m",
+                "nems_open.lfmm.gams_io", action, *(_wsl_path(p) for p in paths), *extra]
+        subprocess.run(args, check=True)
+    else:
+        subprocess.run([str(GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", action, *(str(p) for p in paths), *extra],
+                       check=True, env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
 
 
 def _width(n: int) -> int:
@@ -158,7 +204,7 @@ def write_gdx(payload_path: Path, gdx_path: Path) -> None:
     import gams.transfer as gt
     with open(payload_path, "rb") as f:
         p = pickle.load(f)
-    m = gt.Container(system_directory=str(GAMS_SYSDIR))
+    m = gt.Container(system_directory=_sysdir())
     for name, labs in p["sets"].items():
         gt.Set(m, name, records=pd.DataFrame({"uni": labs}))
     for name, v in p["scalars"].items():
@@ -174,7 +220,7 @@ def read_gdx(gdx_path: Path, out_path: Path, names=None) -> None:
     {name: {label tuple: value}}, for the project Python to read (read_outputs)."""
     import pickle
     import gams.transfer as gt
-    m = gt.Container(str(gdx_path), system_directory=str(GAMS_SYSDIR))
+    m = gt.Container(str(gdx_path), system_directory=_sysdir())
     out = {}
     for name, sym in m.data.items():
         if names and name.upper() not in {n.upper() for n in names}:
@@ -194,15 +240,11 @@ def read_gdx(gdx_path: Path, out_path: Path, names=None) -> None:
 
 def read_outputs(gdx_path: Path, names=None) -> dict:
     """LFMM's output GDX (LFMM_to_NEMS.gdx) as {name: {label tuple: value}}, through the GAMS venv."""
-    import os
     import pickle
-    import subprocess
     import tempfile
-    from nems_open.paths import REPO_ROOT
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "out.pkl"
-        args = [str(GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", "read", str(gdx_path), str(out)] + list(names or [])
-        subprocess.run(args, check=True, env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
+        helper("read", gdx_path, out, extra=list(names or []))
         with open(out, "rb") as f:
             return pickle.load(f)
 

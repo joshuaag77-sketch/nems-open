@@ -201,6 +201,8 @@ def prepare(run: Path = RUN_DIR, scenario: str = "cb2026", lng=None) -> Path:
         f = ng / "input" / "nglngexp.txt"
         text = f.read_text(encoding="latin-1")
         f.write_text(lng_lever.patch_input(text, lng_lever.terminal_table(lng, outs)), encoding="latin-1")
+        ams = ng / "nems_ngmm.ams"   # the library AIMMS loads (mainproject/natgas.ams is not used)
+        ams.write_text(lng_lever.patch_model(ams.read_text(encoding="utf-8-sig")), encoding="utf-8")
     w = run / "main" / "wrapper"
     (w / "MainProject").mkdir(parents=True, exist_ok=True)
     (w / "wrapper.aimms").write_text(WRAPPER_REFS)
