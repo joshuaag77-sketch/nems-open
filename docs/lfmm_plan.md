@@ -1,10 +1,10 @@
 # LFMM: scope and the smallest path
 
-> **Hand-off (lfmm-gams lane, 2026-11-14).** EIA's real LFMM solves 2010-2035 in sequence on cb2026, every year
-> optimal (HiGHS, GAMS's Linux build in WSL; about 2-4 min a year, about 300 MB). Run:
-> `PYTHONPATH=src python -m nems_open.lfmm.gams_run <run folder> 2010 2035`. 2035 US prices vs cb2026: diesel -0.1%,
-> jet +1.1%, industrial diesel +0.7%, resid -1.9%, heating oil -1.9%, gasoline -13.3% (open). Next: the gasoline gap,
-> then run(lfmm="gams") with showreel logging, as coal and gas. Details below.
+> **Hand-off (lfmm-gams lane, 2026-11-14).** EIA's real LFMM solves 2010-2050 in sequence on cb2026, every year
+> optimal (HiGHS, GAMS's Linux build in WSL; about 2-4 min a year, about 300 MB). Reference run:
+> `PYTHONPATH=src python -m nems_open.lfmm.gams_run <run folder> 2010 2050` (keeps state/<year> for coupled runs).
+> 2035 US prices vs cb2026: gasoline -6.8%, diesel +1.1%, Brent -1.3%. In the loop: `run(lfmm="gams")` or
+> `--lfmm gams`, calibrated to cb2026, one line per solve in aimms-showreel/lfmm.jsonl. Details below.
 
 
 EIA's Liquid Fuels Market Module (LFMM) models US refining, biofuels and product trade. It is the
@@ -197,12 +197,26 @@ Two things every year needs, as NEMS calls LFMM (`gams_run.sequence`):
   capacity and saves PriorBuilds. With FCRL=0 nothing is ever built (pseudo-units like FUM have no existing
   capacity) and every year from 2011 is infeasible.
 
-Result (2035, United States, 1987$/MMBtu, LFMM vs cb2026): PMGTR 8.02 vs 9.26 (-13.3%), PDSTR 10.58 vs 10.59,
-PJFTR 7.26 vs 7.18, PRLTR 5.95 vs 6.07, PDSIN 8.83 vs 8.77, PRHTR 4.76 vs 4.85. Gasoline is the open gap; one pass
-per year here against NEMS's several iterations with demand feedback is one suspect, the E85 and RFS inputs another.
+Switches. E85.gdx carries LFMM's scenario switches; they now come from cb2026's scedes file (refine_side.scedes_switches):
+CRUDEXP 1, LCFSOPT 1, AB32SW 1, CO2PLFMM 0, LEGIRA 1. The first runs had CRUDEXP 0, which lets US crude go only to
+Canada (lfshell.gms 1514-1550): gross crude trade fell, Brent came out 10% low and gasoline 13% low.
 
-Next: the gasoline gap; then the LFMM_TO_NEMS.gdx reader into the restart arrays and run(lfmm="gams") with showreel
-logging, as coal and gas.
+Result with cb2026's switches (United States, 1987$/MMBtu, LFMM vs cb2026):
+
+| Year | Brent | PMGTR | PDSTR |
+|---|---|---|---|
+| 2027 | 23.70 vs 24.32 | 8.62 vs 9.66 | 9.28 vs 10.34 |
+| 2030 | 26.55 vs 27.69 | 8.94 vs 9.47 | 10.10 vs 10.46 |
+| 2035 | 29.20 vs 29.57 | 8.63 vs 9.26 (-6.8%) | 10.71 vs 10.59 |
+
+The rest of the gap (gasoline 5-11% low, narrowing with time) is one LFMM pass per year against EIA's several
+iterations and cycles solved with Xpress, plus refine.f's adjSTEO price adders (phased out by 2031) that sit outside
+LFMM. RIN D6 prices match exactly. Calibration in the loop takes the level from cb2026 and the moves from LFMM.
+
+run(lfmm="gams") (gams_couple.LfmmGams): years before start_year come from the reference sequence's state snapshots;
+LFMM runs on each year's first iteration and on its final one (FCRL=1, where it builds); iterations in between reuse the
+first answer. Outputs are EIA's value times LFMM-now over LFMM-reference. Every solve appends a line (size, HiGHS
+status, objective, times, headline US prices) to aimms-showreel/lfmm.jsonl; 2030's input and output GDX are kept once.
 
 ## Full port, later
 
