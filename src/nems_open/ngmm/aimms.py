@@ -23,6 +23,7 @@ Here the same, without the web service or the Fortran:
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -178,9 +179,12 @@ def prepare(run: Path = RUN_DIR, scenario: str = "cb2026", lng=None) -> Path:
     fixed in NGMM (nems_open/ngmm/lng.py); None leaves NGMM building LNG trains itself as in cb2026."""
     run = Path(run)
     ng = run / "ngas"
-    if ng.exists():
-        shutil.rmtree(ng)
+    if ng.exists():   # the copy can carry read-only folders from the source tree; clear the flag and retry
+        shutil.rmtree(ng, onexc=lambda f, path, _: (os.chmod(path, stat.S_IWRITE), f(path)))
     shutil.copytree(SRC, ng, ignore=shutil.ignore_patterns("_GIS", "*.aimmspack", "Pages", "Templates"))
+    for d in [ng, *ng.rglob("*")]:   # AIMMS writes into data/cases and log; a read-only copy makes it exit
+        if getattr(d.stat(), "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_READONLY", 0) or not os.access(d, os.W_OK):
+            os.chmod(d, stat.S_IWRITE | stat.S_IREAD | (stat.S_IEXEC if d.is_dir() else 0))
     add_file_call(ng / "nems_ngmm.ams")
     for d in ("toAIMMS", "fromAIMMS", "log", "log/ProfilerResults"):
         (ng / d).mkdir(parents=True, exist_ok=True)
