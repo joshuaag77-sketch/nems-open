@@ -289,6 +289,19 @@ def run_one(sc: Scenario, run=None, log=print) -> None:
     log(f"{sc.key}: done in {mins:.0f} min")
 
 
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+
+
+def stay_awake(on: bool = True) -> bool:
+    """Ask Windows not to idle-sleep while this process runs (SetThreadExecutionState, ES_CONTINUOUS |
+    ES_SYSTEM_REQUIRED). The request ends with the process or with stay_awake(False); no power setting changes."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    flags = ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0)
+    return bool(ctypes.windll.kernel32.SetThreadExecutionState(ctypes.c_uint(flags)))
+
+
 def run_tier(tier: int, run=None, lock: bool = True, log=print) -> int:
     """Every scenario in the tier not done yet, one at a time, each under its own hold of HEAVY.lock.
     A failure is recorded in status.json and the queue goes on; a rerun retries it. Returns the number failed."""
@@ -332,7 +345,12 @@ def main(argv=None) -> int:
     if a.run:
         if not a.tier:
             ap.error("--run needs --tier")
-        return 1 if run_tier(a.tier, log=lambda s: print(s, flush=True)) else 0
+        say = lambda s: print(s, flush=True)
+        say(f"wake request held: {stay_awake(True)}")
+        try:
+            return 1 if run_tier(a.tier, log=say) else 0
+        finally:
+            stay_awake(False)
     if a.list or not a.estimate:
         print(f"Switches for every run: {SWITCHES}, ported {PORTED}, cycles {CYCLES}")
         for s in SCENARIOS:

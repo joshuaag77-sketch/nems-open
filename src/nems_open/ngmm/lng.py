@@ -81,9 +81,10 @@ def patch_input(text: str, table: dict[int, dict[str, float]]) -> str:
     m = TABLE.search(text)
     if not m:
         raise ValueError("nglngexp.txt: ExogenousAnnualLNGExports table not found")
-    tab = "\t"
-    body = tab + tab.join(TERMINALS) + "\n" + "".join(
-        f"{y}{tab}" + tab.join(f"{table[y][t]:.3f}" for t in TERMINALS) + "\n" for y in sorted(table))
+    # AIMMS reads a data table by column position: right-align every entry under its header, spaces only.
+    w = 14
+    body = " " * 6 + "".join(f"{t:>{w}}" for t in TERMINALS) + "\n" + "".join(
+        f"{y:<6}" + "".join(f"{table[y][t]:>{w}.3f}" for t in TERMINALS) + "\n" for y in sorted(table))
     new = "ExogenousAnnualLNGExports := data table\n! nems-open: Policy.lng_exports (nems_open/ngmm/lng.py)\n" + body + ";"
     return text[:m.start()] + new + text[m.end():]
 
