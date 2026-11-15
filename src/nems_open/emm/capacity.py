@@ -53,7 +53,15 @@ REAL_DISCOUNT_RATE = 0.065       # only for the 45Q credit-life share (_credit_l
 ANNUAL_BUILD_LIMIT_GW = {"gas_cc_new": 30.0, "gas_ccs": 10.0, "gas_ct_new": 30.0, "wind": 30.0, "solar": 60.0, "battery": 30.0}
 CREDIT_YEARS = 12.0              # years a plant earns the 45Q credit (TCS45Q/I_45Q_DURATION)
 CCS_CAPACITY_FACTOR = 0.8        # assumed, to value the credit when deciding to build
+# ECP's planning horizon (emmcntl.txt %ECP PARAMS%: UNFPH 30 years, UNXPH 3 explicit). The third explicit year
+# stands for years 3 to 30; it is modelled as the year TAIL_OFFSET out (see solve_year).
+HORIZON = False                   # off: see docs/capacity.md (horizon runs did not close the build gap)
+HORIZON_YEARS = 30
+TAIL_OFFSET = 10
+LAST_MODEL_YEAR = 2050
+HORIZON_SOLVER_OPTIONS = {"user_objective_scale": -2}   # HiGHS: the weighted tail costs are large
 BLOCK_HOURS = 3
+FUTURE_BLOCK_HOURS = 6         # the horizon's later periods in 6-hour blocks (half the size; this year keeps 3)
 BLOCKS = 24 // BLOCK_HOURS
 
 TG = ("coal", "coal_ccs", "gas_cc", "gas_cc_new", "gas_ccs", "gas_ct", "gas_ct_new", "steam", "gas_conv")
@@ -258,9 +266,9 @@ def capacity_credits(case, cap0: dict, load_hr: np.ndarray, month_of_day: np.nda
     return credits
 
 
-def _blocks(a: np.ndarray) -> np.ndarray:
-    """Average the 24 hours of a (..., 36, 24) array into BLOCKS blocks."""
-    return a.reshape(a.shape[:-1] + (BLOCKS, BLOCK_HOURS)).mean(axis=-1)
+def _blocks(a: np.ndarray, hours: int = BLOCK_HOURS) -> np.ndarray:
+    """Average the 24 hours of a (..., 36, 24) array into blocks of `hours` hours."""
+    return a.reshape(a.shape[:-1] + (24 // hours, hours)).mean(axis=-1)
 
 
 def unit_costs(case, group: str) -> np.ndarray:
@@ -276,34 +284,25 @@ def unit_costs(case, group: str) -> np.ndarray:
     return hr / 1000.0 * (fuel[r0] + case.carbon_price * tons) + u.vom
 
 
-def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progress: bool = False,
-               groups: dict | None = None, decide: bool = True, case=None) -> YearResult:
-    """One year of the loop. `groups` (dispatch group -> retire_groups.Groups) splits retirements into ECP's
-    retirement groups; without it a whole region and type retires at one cost. decide=False solves dispatch
-    only (no builds, retirements, retrofits or conversions), to get prices."""
-    y = year - history.FIRST_YEAR
-    case = case if case is not None else dispatch.build_case(snapshot, year, "none")
-    adds, rets = dated_changes(year)
-    cap0 = {g: np.maximum(cap_in[g] + adds[g] - rets[g], 0.0) for g in STATE_GROUPS}
-
-    # --- costs of building ---
+def capital_costs(snapshot, year: int, case) -> dict:
+    """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
+    and PTC, with ECP's learned overnight cost and the year's discount rate."""
     params = technology.type_parameters()
     codes = technology.ecp_codes()
     reg = technology.regional_costs()
     sub = named_ranges(technology.ECPDATY, "SUBSIDY")
     itc_tab = np.array(sub["UPCSBYR"]).reshape(80, -1)
     ptc_tab = np.array(sub["UPGSUBYR"]).reshape(80, -1)
-    col = year - 2010
-    hr_new_all = np.array(named_ranges(technology.ECPDATY, "OPTLRN")["UPPHRTN"])
-
-    capital = {}      # group -> (25,) k$ per GW-year, net of ITC and PTC
+    col = min(year, 2050) - 2010
+    cost_year = min(year, 2050)
+    capital = {}
     for g, code in BUILDS.items():
         i = codes.index(code)
-        ovn = learned_overnight(snapshot, code, year)
+        ovn = learned_overnight(snapshot, code, cost_year)
         if ovn is None:
             ovn = params["overnight_cost"][i] * reg["regional_multiplier"][:NUM_R, i] * reg["area_multiplier"][:NUM_R, i]
         itc = max(itc_tab[i, col], 0.0)
-        rate = discount_rate(snapshot, year) + risk_premium(snapshot, year, code)
+        rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
         ptc = max(ptc_tab[i, col], 0.0)
         if g in ("wind", "solar"):
@@ -313,6 +312,63 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
             annual = annual + _credit_overpaid(case, g, params["economic_life"][i], year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
         capital[g] = annual * 1.0e3                   # $/kW-year -> k$ per GW-year
+    return capital
+
+
+def future_case(snapshot, year: int, future: int, case):
+    """The dispatch case ECP expects for a later planning year: the reference run's case for that year (its load,
+    fuel prices, profiles and links), moved by how far this year's case (the loop's own demand and prices) is from
+    the reference's this year, so a shock now persists in what the plan expects. Past the last model year the load
+    keeps the reference's growth of its last five years and prices stay at the last year's."""
+    last = min(future, LAST_MODEL_YEAR)
+    ref = _reference_case(snapshot, last)
+    ref_now = _reference_case(snapshot, year)
+    load_ratio = np.divide(case.net_load_twh, ref_now.net_load_twh, out=np.ones(NUM_R), where=ref_now.net_load_twh > 0)
+    net = ref.net_load_twh * load_ratio
+    if future > last:
+        back = _reference_case(snapshot, last - 5).net_load_twh
+        growth = np.divide(ref.net_load_twh, back, out=np.ones(NUM_R), where=back > 0) ** (1.0 / 5.0)
+        net = net * growth ** (future - last)
+    price = {}
+    for k, v in ref.price.items():
+        r = np.divide(case.price[k], ref_now.price[k], out=np.ones_like(np.asarray(v, dtype=float)), where=np.asarray(ref_now.price[k]) > 0)
+        price[k] = v * r
+    rule = dispatch.credit_rule(snapshot)
+    share = None
+    if case.credit_share is not None:
+        # capacity credited now: what is left of it in the later year (cohorts age out); nothing new is credited
+        share = {g: np.clip(case.credit_share[g] * (1.0 if future < year + rule[2] else 0.0), 0.0, 1.0)
+                 for g in case.credit_share}
+    return replace(ref, net_load_twh=net, price=price, carbon_price=case.carbon_price, credit_share=share)
+
+
+_REF_CASES: dict = {}
+
+
+def _reference_case(snapshot, year: int):
+    key = (id(snapshot), year)
+    if key not in _REF_CASES:
+        _REF_CASES[key] = dispatch.build_case(snapshot, year, "none")
+    return _REF_CASES[key]
+
+
+def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progress: bool = False,
+               groups: dict | None = None, decide: bool = True, case=None, horizon: bool | None = None) -> YearResult:
+    """One year of the loop. `groups` (dispatch group -> retire_groups.Groups) splits retirements into ECP's
+    retirement groups; without it a whole region and type retires at one cost. decide=False solves dispatch
+    only (no builds, retirements, retrofits or conversions), to get prices. horizon: plan over ECP's horizon
+    (HORIZON, the default) or this year only."""
+    horizon = HORIZON if horizon is None else horizon
+    y = year - history.FIRST_YEAR
+    case = case if case is not None else dispatch.build_case(snapshot, year, "none")
+    adds, rets = dated_changes(year)
+    cap0 = {g: np.maximum(cap_in[g] + adds[g] - rets[g], 0.0) for g in STATE_GROUPS}
+
+    # --- costs of building ---
+    params = technology.type_parameters()
+    codes = technology.ecp_codes()
+    hr_new_all = np.array(named_ranges(technology.ECPDATY, "OPTLRN")["UPPHRTN"])
+    capital = capital_costs(snapshot, year, case)
 
     # --- characteristics of the groups ---
     heat, vom, oil_share = dict(case.heat_rate), dict(case.vom), dict(case.oil_share)
@@ -365,22 +421,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     T = pd.Index(list(TG), name="group")
     MO = pd.Index(np.arange(12), name="month")
     month_of_day = np.repeat(np.arange(12), 3)
-    hours_w = xr.DataArray(case.weights * BLOCK_HOURS, coords=[D])       # hours per year each slice stands for
     ones = xr.DataArray(np.ones((NUM_R, 36, BLOCKS)), coords=[R, D, Bk])
 
     def by_region(a):
         return xr.DataArray(np.asarray(a, dtype=float), coords=[R]) * ones
-
-    load_hr = case.net_load_twh[:, None, None] * 1000.0 * case.shapes            # GW in each hour
-    # EIA sets reserve margins region by region, so the capacity to cover is the sum of the regions' own peaks
-    # (about 6% above the national coincident peak), not the coincident peak.
-    peak_gw = float(load_hr.max(axis=(1, 2)).sum())
-    credits = capacity_credits(case, cap0, load_hr, np.repeat(np.arange(12), 3))
-    load_gw = xr.DataArray(_blocks(load_hr), coords=[R, D, Bk])
-    prof = {k: xr.DataArray(_blocks(v), coords=[R, D, Bk]) for k, v in case.profile.items()}
-
-    def cf_of(group):
-        return xr.DataArray(case.monthly_cf[group][:, month_of_day], coords=[R, D]) * ones
 
     m = linopy.Model()
     cap_const = xr.DataArray(np.stack([cap0[g] for g in TG], axis=1), coords=[R, T])
@@ -446,88 +490,184 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         m.add_constraints((capv * coal_only).sum("group") == 0, name="coal_rule")
 
     one_minus_for = xr.DataArray(np.array([1.0 - avail[g][0] for g in TG]), coords=[T])
-    g_th = m.add_variables(lower=0, coords=[R, T, D, Bk], name="gen")
-    m.add_constraints(g_th - capv * one_minus_for <= 0, name="gen_limit")
     mcf = xr.DataArray(np.stack([max_cf[g] for g in TG], axis=1), coords=[R, T])
-    m.add_constraints((g_th * hours_w).sum(["day", "block"]) - capv * (mcf * 8760.0) <= 0, name="energy_limit")
-
-    cost = np.zeros((NUM_R, len(TG)))
-    for k, g in enumerate(TG):
-        oil_price = case.price["residual"] if g == "steam" else case.price["distillate"]
-        is_coal = g.startswith("coal")
-        fuel = (1 - oil_share[g]) * case.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
-        cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
-        if g in dispatch.CAPTURE_GROUPS:
-            share = case.credit_share[g] if case.credit_share is not None else 1.0
-            cost[:, k] -= case.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
-    cost_da = xr.DataArray(cost, coords=[R, T])
-
-    # wind, solar, battery: existing plus new
-    wind_out = (bw + xr.DataArray(cap0["wind"], coords=[R])) * prof["wind"]
-    solar_out = (bs + xr.DataArray(cap0["solar"], coords=[R])) * prof["solar"]
-    fixed = by_region(cap0["nuclear"]) * cf_of("nuclear") + by_region(cap0["other"]) * cf_of("other")
-
-    hy_cap = by_region(cap0["hydro"])
-    g_hy = m.add_variables(lower=0, upper=hy_cap, name="hydro")
-    month_w = xr.DataArray(np.eye(12)[month_of_day], coords=[D, MO])
-    days_in_month = np.array([case.weights[month_of_day == mo].sum() for mo in range(12)])
-    budget = xr.DataArray(case.monthly_cf["hydro"] * cap0["hydro"][:, None] * days_in_month[None, :] * 24.0, coords=[R, MO])
-    m.add_constraints((g_hy * (hours_w * month_w)).sum(["day", "block"]) <= budget, name="hydro_budget")
-
-    net_storage = 0
-    sto_cap = {"battery": xr.DataArray(cap0["battery"], coords=[R]) + bb, "pumped": xr.DataArray(cap0["pumped"], coords=[R])}
-    for name, (dur, rte) in STORAGE_HOURS.items():
-        eta = np.sqrt(rte)
-        ch = m.add_variables(lower=0, coords=[R, D, Bk], name=f"{name}_charge")
-        di = m.add_variables(lower=0, coords=[R, D, Bk], name=f"{name}_discharge")
-        soc = m.add_variables(lower=0, coords=[R, D, Bk], name=f"{name}_soc")
-        m.add_constraints(ch - sto_cap[name] <= 0, name=f"{name}_ch_cap")
-        m.add_constraints(di - sto_cap[name] <= 0, name=f"{name}_di_cap")
-        m.add_constraints(soc - dur * sto_cap[name] <= 0, name=f"{name}_soc_cap")
-        m.add_constraints(soc - soc.roll(block=1) - BLOCK_HOURS * eta * ch + BLOCK_HOURS * di / eta == 0, name=f"{name}_balance")
-        net_storage = net_storage + di - ch
-
-    links = case.links
-    L = pd.Index(np.arange(len(links["exporter"])), name="link")
-    cap_l = xr.DataArray(links["capacity_gw"], coords=[L, D]) * xr.DataArray(np.ones(BLOCKS), coords=[Bk])
-    trade = m.add_variables(lower=0, upper=cap_l.transpose("link", "day", "block"), name="trade")
-    into = np.zeros((NUM_R, len(L)))
-    outof = np.zeros((NUM_R, len(L)))
-    into[links["importer"], np.arange(len(L))] = 1.0 - links["loss"]
-    outof[links["exporter"], np.arange(len(L))] = 1.0
-    trade_in = (trade * xr.DataArray(into, coords=[R, L])).sum("link")
-    trade_out = (trade * xr.DataArray(outof, coords=[R, L])).sum("link")
-
-    spill = m.add_variables(lower=0, coords=[R, D, Bk], name="spill")
-    unserved = m.add_variables(lower=0, coords=[R, D, Bk], name="unserved")
-    m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill + trade_in - trade_out
-                      + wind_out + solar_out + fixed == load_gw, name="balance")
-
-    # Reserve margin region by region, as ECP writes it (uecp.f EP$MRM): capacity >= EPMRM x peak + net peak.
-    # Dispatchable capacity counts in full; wind and solar at EPIRCCR (capacity_credit, CAP_CREDIT's variance
-    # method); storage and hydro at the load-shape credits above. A region can count firm capacity lent by a
-    # neighbour, up to FIRM_TRANSFER_SHARE of the link, less line losses.
     tab = db.table("V_EMM_ECPDAT_REG")
     order = np.argsort(tab["EMM_REG"])
     keep = order[tab["EMM_REG"][order] <= NUM_R]
     margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[keep])
-    icc = capacity_credit.credits(load_hr, cap0, case.profile, case.weights)
-    credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
-    requirement = xr.DataArray(margin * icc["peak"] + icc["net_peak"], coords=[R])
-    firm = capv.sum("group")
-    firm = firm + (bw + xr.DataArray(cap0["wind"], coords=[R])) * xr.DataArray(icc["wind"], coords=[R])
-    firm = firm + (bs + xr.DataArray(cap0["solar"], coords=[R])) * xr.DataArray(icc["solar"], coords=[R])
-    firm = firm + (bb + xr.DataArray(cap0["battery"], coords=[R])) * credits["battery"]
-    const_firm = cap0["nuclear"] + cap0["other"] + cap0["hydro"] * credits["hydro"] + cap0["pumped"] * credits["pumped"]
-    lend = m.add_variables(lower=0, upper=xr.DataArray(FIRM_TRANSFER_SHARE * links["capacity_gw"].mean(axis=1), coords=[L]),
-                           name="firm_transfer")
-    into_f = np.zeros((NUM_R, len(L)))
-    out_f = np.zeros((NUM_R, len(L)))
-    into_f[links["importer"], np.arange(len(L))] = 1.0 - links["loss"]
-    out_f[links["exporter"], np.arange(len(L))] = 1.0
-    lent = (lend * xr.DataArray(into_f, coords=[R, L])).sum("link") - (lend * xr.DataArray(out_f, coords=[R, L])).sum("link")
-    shortfall = m.add_variables(lower=0, coords=[R], name="reserve_shortfall")
-    m.add_constraints(firm + lent + shortfall >= requirement - xr.DataArray(const_firm, coords=[R]), name="reserve_margin")
+
+    def operate(tag: str, cs, c0: dict, capv_p, wind_tot, solar_tot, batt_tot, bh: int = BLOCK_HOURS):
+        """Dispatch and reserve margin of one planning period: case `cs` (its load, fuel prices and profiles),
+        existing capacity `c0`, thermal capacity `capv_p` and wind, solar and battery totals (expressions in the
+        decision variables). Returns its operating cost (1987 k$ for one year) and the pieces the result needs."""
+        Bk = pd.Index(np.arange(24 // bh), name="block")
+        ones = xr.DataArray(np.ones((NUM_R, 36, 24 // bh)), coords=[R, D, Bk])
+        hours_w = xr.DataArray(cs.weights * bh, coords=[D])                    # hours per year each slice stands for
+
+        def by_region(a):
+            return xr.DataArray(np.asarray(a, dtype=float), coords=[R]) * ones
+
+        def cf_of(group):
+            return xr.DataArray(cs.monthly_cf[group][:, month_of_day], coords=[R, D]) * ones
+
+        load_hr = cs.net_load_twh[:, None, None] * 1000.0 * cs.shapes           # GW in each hour
+        credits = capacity_credits(cs, c0, load_hr, np.repeat(np.arange(12), 3))
+        load_gw = xr.DataArray(_blocks(load_hr, bh), coords=[R, D, Bk])
+        prof = {k: xr.DataArray(_blocks(v, bh), coords=[R, D, Bk]) for k, v in cs.profile.items()}
+
+        g_th = m.add_variables(lower=0, coords=[R, T, D, Bk], name=f"gen{tag}")
+        m.add_constraints(g_th - capv_p * one_minus_for <= 0, name=f"gen_limit{tag}")
+        m.add_constraints((g_th * hours_w).sum(["day", "block"]) - capv_p * (mcf * 8760.0) <= 0, name=f"energy_limit{tag}")
+
+        cost = np.zeros((NUM_R, len(TG)))
+        for k, g in enumerate(TG):
+            oil_price = cs.price["residual"] if g == "steam" else cs.price["distillate"]
+            is_coal = g.startswith("coal")
+            fuel = (1 - oil_share[g]) * cs.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
+            cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
+            if g in dispatch.CAPTURE_GROUPS:
+                share = cs.credit_share[g] if cs.credit_share is not None else 1.0
+                cost[:, k] -= cs.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
+        cost_da = xr.DataArray(cost, coords=[R, T])
+
+        wind_out = wind_tot * prof["wind"]
+        solar_out = solar_tot * prof["solar"]
+        fixed = by_region(c0["nuclear"]) * cf_of("nuclear") + by_region(c0["other"]) * cf_of("other")
+
+        g_hy = m.add_variables(lower=0, upper=by_region(c0["hydro"]), name=f"hydro{tag}")
+        month_w = xr.DataArray(np.eye(12)[month_of_day], coords=[D, MO])
+        days_in_month = np.array([cs.weights[month_of_day == mo].sum() for mo in range(12)])
+        budget = xr.DataArray(cs.monthly_cf["hydro"] * c0["hydro"][:, None] * days_in_month[None, :] * 24.0, coords=[R, MO])
+        m.add_constraints((g_hy * (hours_w * month_w)).sum(["day", "block"]) <= budget, name=f"hydro_budget{tag}")
+
+        net_storage = 0
+        sto_cap = {"battery": batt_tot, "pumped": xr.DataArray(c0["pumped"], coords=[R])}
+        for name, (dur, rte) in STORAGE_HOURS.items():
+            eta = np.sqrt(rte)
+            ch = m.add_variables(lower=0, coords=[R, D, Bk], name=f"{name}_charge{tag}")
+            di = m.add_variables(lower=0, coords=[R, D, Bk], name=f"{name}_discharge{tag}")
+            soc = m.add_variables(lower=0, coords=[R, D, Bk], name=f"{name}_soc{tag}")
+            m.add_constraints(ch - sto_cap[name] <= 0, name=f"{name}_ch_cap{tag}")
+            m.add_constraints(di - sto_cap[name] <= 0, name=f"{name}_di_cap{tag}")
+            m.add_constraints(soc - dur * sto_cap[name] <= 0, name=f"{name}_soc_cap{tag}")
+            m.add_constraints(soc - soc.roll(block=1) - bh * eta * ch + bh * di / eta == 0,
+                              name=f"{name}_balance{tag}")
+            net_storage = net_storage + di - ch
+
+        links = cs.links
+        L = pd.Index(np.arange(len(links["exporter"])), name="link")
+        cap_l = xr.DataArray(links["capacity_gw"], coords=[L, D]) * xr.DataArray(np.ones(24 // bh), coords=[Bk])
+        trade = m.add_variables(lower=0, upper=cap_l.transpose("link", "day", "block"), name=f"trade{tag}")
+        into = np.zeros((NUM_R, len(L)))
+        outof = np.zeros((NUM_R, len(L)))
+        into[links["importer"], np.arange(len(L))] = 1.0 - links["loss"]
+        outof[links["exporter"], np.arange(len(L))] = 1.0
+        trade_in = (trade * xr.DataArray(into, coords=[R, L])).sum("link")
+        trade_out = (trade * xr.DataArray(outof, coords=[R, L])).sum("link")
+
+        spill = m.add_variables(lower=0, coords=[R, D, Bk], name=f"spill{tag}")
+        unserved = m.add_variables(lower=0, coords=[R, D, Bk], name=f"unserved{tag}")
+        m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved - spill + trade_in - trade_out
+                          + wind_out + solar_out + fixed == load_gw, name=f"balance{tag}")
+
+        # Reserve margin region by region, as ECP writes it (uecp.f EP$MRM): capacity >= EPMRM x peak + net peak.
+        # Dispatchable capacity counts in full; wind and solar at EPIRCCR (capacity_credit, CAP_CREDIT's variance
+        # method); storage and hydro at the load-shape credits above. A region can count firm capacity lent by a
+        # neighbour, up to FIRM_TRANSFER_SHARE of the link, less line losses.
+        icc = capacity_credit.credits(load_hr, c0, cs.profile, cs.weights)
+        credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
+        requirement = xr.DataArray(margin * icc["peak"] + icc["net_peak"], coords=[R])
+        firm = capv_p.sum("group")
+        firm = firm + wind_tot * xr.DataArray(icc["wind"], coords=[R])
+        firm = firm + solar_tot * xr.DataArray(icc["solar"], coords=[R])
+        firm = firm + batt_tot * credits["battery"]
+        const_firm = c0["nuclear"] + c0["other"] + c0["hydro"] * credits["hydro"] + c0["pumped"] * credits["pumped"]
+        lend = m.add_variables(lower=0, upper=xr.DataArray(FIRM_TRANSFER_SHARE * links["capacity_gw"].mean(axis=1), coords=[L]),
+                               name=f"firm_transfer{tag}")
+        into_f = np.zeros((NUM_R, len(L)))
+        out_f = np.zeros((NUM_R, len(L)))
+        into_f[links["importer"], np.arange(len(L))] = 1.0 - links["loss"]
+        out_f[links["exporter"], np.arange(len(L))] = 1.0
+        lent = (lend * xr.DataArray(into_f, coords=[R, L])).sum("link") - (lend * xr.DataArray(out_f, coords=[R, L])).sum("link")
+        shortfall = m.add_variables(lower=0, coords=[R], name=f"reserve_shortfall{tag}")
+        m.add_constraints(firm + lent + shortfall >= requirement - xr.DataArray(const_firm, coords=[R]), name=f"reserve_margin{tag}")
+        operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
+            + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum() \
+            + (shortfall * RESERVE_SHORTFALL_COST).sum()
+        return {"operating": operating, "g_th": g_th, "unserved": unserved, "shortfall": shortfall, "credits": credits}
+
+    def totals(c0, extra_w, extra_s, extra_b):
+        return (xr.DataArray(c0["wind"], coords=[R]) + extra_w, xr.DataArray(c0["solar"], coords=[R]) + extra_s,
+                xr.DataArray(c0["battery"], coords=[R]) + extra_b)
+
+    p1 = operate("", case, cap0, capv, *totals(cap0, bw, bs, bb))
+    g_th, unserved, shortfall, credits = p1["g_th"], p1["unserved"], p1["shortfall"], p1["credits"]
+    operating = p1["operating"]
+    weight_now = 1.0                       # present-value weight of the annual costs of this year's decisions
+    future_capex = 0
+    coal_weight = 1.0
+
+    # ECP's planning horizon (UNXPH = 3 explicit years of UNFPH = 30, emmcntl.txt %ECP PARAMS%): the next year and a
+    # tail year that stands for years 3 to 30, weighted by present value, each with its own load, fuel prices,
+    # dispatch, reserve margin and builds. Only this year's decisions are carried out; the later periods make a
+    # plant built now pay for itself over the load growth and prices it will see. In EIA's 2030 run the tail's
+    # reserve requirement (1,120 GW) is about this model's 2040 one, hence a tail TAIL_OFFSET years out.
+    if horizon and decide:
+        rate = discount_rate(snapshot, year)
+        weights = {1: 1.0 / (1.0 + rate), TAIL_OFFSET: sum((1.0 + rate) ** -k for k in range(2, HORIZON_YEARS))}
+        # coal without CCS saves its fixed costs by retiring only until the rule would retire it anyway
+        coal_weight = 1.0 + sum(w for o, w in weights.items() if year + o < RULE_YEAR)
+        later_th = later_w = later_s = later_b = 0
+        c0f = dict(cap0)
+        done = year
+        for offset, wgt in weights.items():
+            yf = year + offset
+            cs = future_case(snapshot, year, yf, case)
+            for yy in range(done + 1, yf + 1):                 # plant-file changes up to the period's year
+                a, r_ = dated_changes(yy)
+                c0f = {g: np.maximum(c0f[g] + a[g] - r_[g], 0.0) for g in STATE_GROUPS}
+            # ECP builds only in its explicit years: the last chance is year 3 (this year + 2), and what is built by
+            # then must serve the tail's load. So the tail's builds happen in year + 2, at that year's cost and limits.
+            yb = min(yf, year + 2)
+            span = 1
+            done = yf
+            okb = {g: yb >= START_YEAR + lead[codes.index(c)] for g, c in BUILDS.items()}
+            fb = m.add_variables(lower=0, upper=xr.DataArray(np.stack([np.full(NUM_R, 100.0 * span if okb.get(g) else 0.0)
+                                                                         for g in TG], axis=1), coords=[R, T]),
+                                 name=f"build_p{offset}")
+            fw = m.add_variables(lower=0, upper=100.0 * span * okb["wind"], coords=[R], name=f"build_wind_p{offset}")
+            fs = m.add_variables(lower=0, upper=100.0 * span * okb["solar"], coords=[R], name=f"build_solar_p{offset}")
+            fbb = m.add_variables(lower=0, upper=100.0 * span * okb["battery"], coords=[R], name=f"build_battery_p{offset}")
+            for g, limit in ANNUAL_BUILD_LIMIT_GW.items():
+                v = {"wind": fw, "solar": fs, "battery": fbb}.get(g)
+                expr = v.sum() if v is not None else fb.sel(group=g).sum()
+                m.add_constraints(expr <= limit * span, name=f"limit_{g}_p{offset}")
+            later_th = later_th + fb
+            later_w, later_s, later_b = later_w + fw, later_s + fs, later_b + fbb
+            # this year's thermal capacity carries forward, plus later builds and the plant file's dated changes
+            # At most this year's capacity carried forward plus the plant file's later additions, and at most the
+            # plant file's own path (its dated retirements) plus what the LP adds; capacity the 2032 rule or an early
+            # retirement takes out is simply not there. Both bounds stay at or above zero, so the period is feasible.
+            added = xr.DataArray(np.stack([np.maximum(c0f[g] - cap0[g], 0.0) for g in TG], axis=1), coords=[R, T])
+            path = xr.DataArray(np.stack([c0f[g] for g in TG], axis=1), coords=[R, T])
+            capv_f = m.add_variables(lower=0, coords=[R, T], name=f"capacity_p{offset}")
+            m.add_constraints(capv_f - capv - later_th <= added, name=f"capacity_def_p{offset}")
+            m.add_constraints(capv_f - build - later_th - retrofit * to_ccs.clip(min=0) - convert * to_gas.clip(min=0) <= path,
+                              name=f"capacity_path_p{offset}")
+            if yf >= RULE_YEAR:
+                coal_only = xr.DataArray(np.array([1.0 if g == "coal" else 0.0 for g in TG]), coords=[T])
+                m.add_constraints((capv_f * coal_only).sum("group") <= 0, name=f"coal_rule_p{offset}")
+            ren = totals(c0f, bw + later_w, bs + later_s, bb + later_b)
+            pf = operate(f"_p{offset}", cs, c0f, capv_f, *ren, bh=FUTURE_BLOCK_HOURS)
+            operating = operating + wgt * pf["operating"]
+            weight_now += wgt
+            # a plant built in this period pays its annual capital charge from here to the end of the horizon
+            cap_f = capital_costs(snapshot, yb, cs)
+            rest = sum(w2 for o2, w2 in weights.items() if o2 >= offset)
+            future_capex = future_capex + rest * (
+                (fb * xr.DataArray(np.stack([cap_f.get(g, np.zeros(NUM_R)) for g in TG], axis=1), coords=[R, T])).sum()
+                + (fw * xr.DataArray(cap_f["wind"], coords=[R])).sum() + (fs * xr.DataArray(cap_f["solar"], coords=[R])).sum()
+                + (fbb * xr.DataArray(cap_f["battery"], coords=[R])).sum())
 
     capex = (build * xr.DataArray(np.stack([capital.get(g, np.zeros(NUM_R)) for g in TG], axis=1), coords=[R, T])).sum()
     capex = capex + (bw * xr.DataArray(capital["wind"], coords=[R])).sum() + (bs * xr.DataArray(capital["solar"], coords=[R])).sum()
@@ -535,15 +675,17 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     if use_groups:
         saved = (rg * xr.DataArray(gcost, coords=[R, TR, K])).sum() + (forced * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
         saved = saved + sum((retire.sel(group=g) * xr.DataArray(fom_made[g], coords=[R])).sum() for g in RETIRABLE_MADE)
+        saved_coal = (rg.sel(group="coal") * xr.DataArray(gcost[:, RETIRABLE.index("coal"), :], coords=[R, K])).sum() \
+            + (forced * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
     else:
         saved = (retire * xr.DataArray(np.stack([fom_exist.get(g, fom_made.get(g, np.zeros(NUM_R))) for g in TG], axis=1), coords=[R, T])).sum()
+        saved_coal = (retire.sel(group="coal") * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
     conv_cost = CONVERT_COST_KW * _crf(discount_rate(snapshot, year), 20.0) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
     retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
-    operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
-        + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum()
-    m.add_objective(operating + capex - saved + retro + (shortfall * RESERVE_SHORTFALL_COST).sum())
-    status, cond = m.solve(solver_name=solver, progress=progress)
+    m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal)
+    opts = HORIZON_SOLVER_OPTIONS if (solver == "highs" and horizon and decide) else {}
+    status, cond = m.solve(solver_name=solver, progress=progress, **opts)
 
     out = YearResult(year, f"{status}:{cond}", {}, {}, adds, rets, {}, np.zeros(NUM_R))
     if status != "ok":

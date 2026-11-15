@@ -107,3 +107,16 @@ What still misses, and why it is now a question for the AIMMS reference run rath
 - No new turbines (156 vs 260 GW in 2035): with the risk premium combined cycle costs about 48 $/kW-year against turbines' 40, but combined cycle also earns enough energy margin to win.
 - No solar or battery builds after the tax credits end (solar 337 GW flat from 2030; EIA keeps building).
 ECP's own LP, solved in AIMMS on the same inputs, shows which of its terms we are missing (docs/aimms_needs.md).
+
+## ECP's planning horizon (2026-11-15, branch emm-capacity3)
+`capacity.HORIZON` (off by default) plans each year over ECP's horizon (emmcntl.txt UNXPH 3 of UNFPH 30): this year, next year, and a tail year 10 years out that stands for years 3 to 30, weighted by present value. Each period has its own load, fuel prices (the reference run's, moved by the loop's own shock), dispatch in 6-hour blocks and reserve margin. Only this year's decisions are carried out. In EIA's 2030 ECP the tail's reserve row (1,120 GW) is about this model's 2040 requirement, hence the 10 years. A year takes about 115 s (40 s without).
+
+Cells inside 5% of 175 against the AIMMS oracle (2027 / 2030 / 2035 / 2050):
+
+| version | vs oracle | vs cb2026 |
+|---|---|---|
+| one year (default) | 109 / 66 / 59 / 58 | 113 / 78 / 58 / 59 |
+| horizon, later builds in the tail year | 107 / 69 / 65 / 59 | 112 / 81 / 67 / 59 |
+| horizon, last builds in year 3 (as ECP) | 105 / 67 / 65 / 60 | 111 / 78 / 64 / 57 |
+
+The horizon does not end the post-2030 stall in wind, storage and turbines, and it makes coal-to-gas conversion far too large (steam 158 GW in 2050 vs 49 in the oracle), so it stays off. The stall is not myopia: this model meets its reserve requirement (1,245 GW in 2050) with no shortfall, while EIA's ECP keeps 1,463 GW of dispatchable capacity. ECP's reserve rows (rRXXXXXge in OutToNEMS_YYYY.txt) for planning year 3 sit about 250 GW above year 2 in every year, far more than a year's load growth, so how ECP writes the requirement (uecp.f EP$MRM: which capacity moves to the right-hand side, the planning reserve on top) is the next thing to port.
