@@ -1071,6 +1071,11 @@ def write_state_routine_emm(inc_dir):
                   f"        if ({when}) {call}\n        return\n      endif")
         (rg_branches if isinstance(tg["region"], str) else branches).append(branch)
         total += n
+    # The restart's EMM outputs (UDATOUT: capacity, generation and prices by region and year, which EMMCAPO and
+    # the other report routines fill) go into 'final' whole, so a full run can be scored against EIA's restart.
+    if "udatout" not in all_incs:
+        all_incs.append("udatout")
+    all_used |= {v.lower() for v in common_names((inc_dir / "udatout").read_text(encoding="latin-1"))}
     src, n, _ = emm_dump_routine("oracle_state_final", all_incs, inc_dir, all_used, "tag")
     routines.append(src)
     # Per-region EFD output and build blocks, called from efd_standin.f90.

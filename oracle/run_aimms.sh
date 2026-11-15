@@ -29,6 +29,9 @@ RESULT=failed; [ -f "$MOD/done.txt" ] && RESULT=ok
 python3 "$SHOWREEL_PY" "$MOD" "$YEAR" "$ITR" "$((t1 - t0))" "$RESULT" || echo "run_aimms.sh: showreel record skipped" >&2
 if [ -f "$MOD/done.txt" ]; then
   echo "run_aimms.sh: $MOD $YEAR done in $((t1 - t0)) s"
+  # The composite input (60 to 70 MB a solve, 3 GB a full run) is rewritten from scratch by every call
+  # (uaimms.f opens it with rewind), so once AIMMS has solved it goes. Kept when a solve fails.
+  [ "${KEEP_COMPOSITE:-0}" = 1 ] || rm -f "$MOD"/composite_"$YEAR"*.txt
   [ -s "$MOD/log/aimmsRunOnly.err" ] && { echo "run_aimms.sh: AIMMS reported errors:"; head -5 "$MOD/log/aimmsRunOnly.err"; }
   exit 0
 fi
