@@ -64,6 +64,10 @@ STATE_GROUPS = TG + FIXED + ("wind", "solar", "battery")
 # Plant types that can be built, their ECP type, and the dispatch group the new capacity joins.
 BUILDS = {"gas_cc_new": "AC", "gas_ccs": "CS", "gas_ct_new": "AT", "wind": "WN", "solar": "PV", "battery": "DS"}
 RETIRABLE = ("coal", "gas_cc", "gas_ct", "steam")
+# Capacity the LP itself made (CCS retrofits, coal converted to gas): no plant-file units, so no retirement groups;
+# it retires as a whole, saving what it costs to keep (the coal plant's cost plus the capture plant's fixed O&M, or
+# the converted plant's lower fixed O&M). EIA's run retires all of its CCS coal by 2050 once 45Q has ended.
+RETIRABLE_MADE = ("coal_ccs", "gas_conv")
 
 # Plant-file EFD type -> group, for dated additions and retirements.
 FILE_GROUP = {}
@@ -160,6 +164,19 @@ def _credit_lost_share(life: float) -> float:
     decision spreads the capital cost over the whole life, so the unpaid part is charged back."""
     annuity = lambda n: (1.0 - (1.0 + REAL_DISCOUNT_RATE) ** -n)
     return 1.0 - annuity(CREDIT_YEARS) / annuity(life)
+
+
+def learned_overnight(snapshot, code: str, year: int):
+    """ECP's overnight cost for a new plant of `code` in `year`, by region (1987$/kW): the COSTPERF cost with the
+    regional and area multipliers and ECP's technology learning, as the reference run records it
+    (UECPOUT/UP<code>CCST). Learning cuts batteries by about a quarter by 2027 and solar by a third by 2050, so a
+    fixed COSTPERF cost stops renewable and storage builds once the tax credits end. None where the run has no
+    cost for the type and year (the caller then uses COSTPERF)."""
+    try:
+        a = np.asarray(snapshot[f"UECPOUT/up{code.lower()}ccst"], dtype=float)[:NUM_R, year - history.FIRST_YEAR]
+    except (KeyError, IndexError):
+        return None
+    return a if np.all(a > 0) else None
 
 
 def _credit_overpaid(case, group: str, life: float, year: int, snapshot):
@@ -282,7 +299,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     capital = {}      # group -> (25,) k$ per GW-year, net of ITC and PTC
     for g, code in BUILDS.items():
         i = codes.index(code)
-        ovn = params["overnight_cost"][i] * reg["regional_multiplier"][:NUM_R, i] * reg["area_multiplier"][:NUM_R, i]
+        ovn = learned_overnight(snapshot, code, year)
+        if ovn is None:
+            ovn = params["overnight_cost"][i] * reg["regional_multiplier"][:NUM_R, i] * reg["area_multiplier"][:NUM_R, i]
         itc = max(itc_tab[i, col], 0.0)
         rate = discount_rate(snapshot, year) + risk_premium(snapshot, year, code)
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
@@ -336,6 +355,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     retro_tons = case.heat_rate["coal_ccs"] / 1000.0 * dispatch.CO2_PER_TBTU["coal"] * dispatch.CAPTURE_RATE
     retro_lost = _credit_overpaid(case, "coal_ccs", 20.0, year, snapshot) * case.credit_45q * retro_tons * 0.6 * 8.76     # coal runs about 60%
     retro_annual = (retro_cost * _crf(discount_rate(snapshot, year), 20.0) + retro_fom + retro_lost) * 1.0e3
+    fom_made = {"coal_ccs": fom_exist["coal"] + retro_fom * 1.0e3 * (1.0 - RETIREMENT_HURDLE),
+                "gas_conv": fom_exist["coal"] * CONVERT_FOM_ADJ}
 
     # --- time slices ---
     R = pd.Index(np.arange(1, NUM_R + 1), name="region")
@@ -369,7 +390,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     lead = params["construction_lead_years"]
     can_build = {g: year >= START_YEAR + lead[codes.index(c)] for g, c in BUILDS.items()}
     buildable = xr.DataArray(np.stack([np.full(NUM_R, room if can_build.get(g) else 0.0) for g in TG], axis=1), coords=[R, T])
-    retirable = xr.DataArray(np.stack([cap0[g] if (g in RETIRABLE and decide) else np.zeros(NUM_R) for g in TG], axis=1),
+    retirable = xr.DataArray(np.stack([cap0[g] if ((g in RETIRABLE or g in RETIRABLE_MADE) and decide) else np.zeros(NUM_R) for g in TG], axis=1),
                              coords=[R, T])
     build = m.add_variables(lower=0, upper=buildable, name="build")
     retire = m.add_variables(lower=0, upper=retirable, name="retire")
@@ -513,8 +534,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     capex = capex + (bb * xr.DataArray(capital["battery"], coords=[R])).sum()
     if use_groups:
         saved = (rg * xr.DataArray(gcost, coords=[R, TR, K])).sum() + (forced * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
+        saved = saved + sum((retire.sel(group=g) * xr.DataArray(fom_made[g], coords=[R])).sum() for g in RETIRABLE_MADE)
     else:
-        saved = (retire * xr.DataArray(np.stack([fom_exist.get(g, np.zeros(NUM_R)) for g in TG], axis=1), coords=[R, T])).sum()
+        saved = (retire * xr.DataArray(np.stack([fom_exist.get(g, fom_made.get(g, np.zeros(NUM_R))) for g in TG], axis=1), coords=[R, T])).sum()
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
     conv_cost = CONVERT_COST_KW * _crf(discount_rate(snapshot, year), 20.0) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
     retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
