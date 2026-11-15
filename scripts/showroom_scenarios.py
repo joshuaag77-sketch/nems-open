@@ -309,6 +309,9 @@ def run_tier(tier: int, run=None, lock: bool = True, log=print) -> int:
     import full_model as fm
     if run is None:
         missing = fm.preflight({**SWITCHES, "lfmm": "gams"}, PORTED)
+        from nems_open.ngmm import aimms
+        if any("lng_bcfd" in BY_KEY[k].levers for k in TIERS[tier]) and not (aimms.RUN_DIR / "reference_fixed.pkl").exists():
+            missing.append(f"{aimms.RUN_DIR / 'reference_fixed.pkl'} (python -m nems_open.ngmm.aimms fixed, about 3 min)")
         if missing:
             log("Cannot run, missing: " + "; ".join(missing))
             return 1

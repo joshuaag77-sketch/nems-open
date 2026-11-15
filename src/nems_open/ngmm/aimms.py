@@ -443,12 +443,12 @@ class Ngmm:
                     shutil.copy(f, logs / name)
 
 
-def reference(first: int = 2024, last: int = 2050, case: str = "cb2026") -> dict:
+def reference(first: int = 2024, last: int = 2050, case: str = "cb2026", lng=None, run: Path = RUN_DIR) -> dict:
     """EIA's NGMM year by year on one case's final inputs: {year: outputs}, plus timings. Two calls a year as
     NEMS's last pass makes them: the solve (itr 1) and the reporting call (NCRL = 1) that rolls NGMM to the next year."""
     from nems_open.supply_standin.data import restart_path
     arrays = restart_arrays(restart_path(case))
-    m = Ngmm()
+    m = Ngmm(run, lng=lng)
     out, times = {}, {}
     try:
         for y in range(first, last + 1):
@@ -497,9 +497,12 @@ class AimmsGas:
         self.hh_factor = np.ones(61)
         self.wellhead_ref = z[names["ngtdmrep/ogwprng"]].astype(np.float64)[13].copy()   # NGMM's own on cb2026, below
         if calibrate:
-            ref = run / "reference.pkl"
+            # Fixed LNG exports change how NGMM forms prices even at the same volumes (the export curve no longer
+            # sets the Gulf price), so an LNG case calibrates on NGMM in fixed mode at its own cb2026 volumes.
+            ref = run / ("reference.pkl" if lng is None else "reference_fixed.pkl")
             if not ref.exists():
-                raise FileNotFoundError(f"{ref}: run python -m nems_open.ngmm.aimms first (about 3 min)")
+                how = "python -m nems_open.ngmm.aimms" + ("" if lng is None else " fixed")
+                raise FileNotFoundError(f"{ref}: run {how} first (about 3 min)")
             import pickle
             with open(ref, "rb") as f:
                 outs = pickle.load(f)["outputs"]
@@ -625,8 +628,17 @@ def compare(res: dict, case: str = "cb2026", names=HEADLINE) -> dict:
 
 
 if __name__ == "__main__":
-    a = sys.argv[1:]
-    res = reference(int(a[0]) if a else 2024, int(a[1]) if len(a) > 1 else 2050)
     import pickle
-    with open(RUN_DIR / "reference.pkl", "wb") as f:
+    a = sys.argv[1:]
+    if a and a[0] == "fixed":   # NGMM in fixed-exports mode at its own cb2026 LNG volumes: the LNG cases' calibration
+        from nems_open.ngmm import lng as lng_lever
+        with open(RUN_DIR / "reference.pkl", "rb") as f:
+            own = lng_lever.own_path(pickle.load(f)["outputs"])
+        res = reference(2024, 2050, lng=own)
+        res["lng_bcfd"] = own
+        name = "reference_fixed.pkl"
+    else:
+        res = reference(int(a[0]) if a else 2024, int(a[1]) if len(a) > 1 else 2050)
+        name = "reference.pkl"
+    with open(RUN_DIR / name, "wb") as f:
         pickle.dump(res, f)

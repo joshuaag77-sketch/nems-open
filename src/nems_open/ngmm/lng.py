@@ -36,6 +36,20 @@ def eia_bcfd() -> np.ndarray:
     return np.asarray(Snapshot()["NGTDMREP/ngexpvol"], dtype=np.float64)[LNG_ROW] / DAYS
 
 
+def own_path(reference: dict, history=None) -> np.ndarray:
+    """NGMM's own cb2026 LNG exports, Bcf/d by year (61,): reference.pkl's "outputs" where it has the year, the
+    restart's NGTDMREP/ngexpvol before that."""
+    if history is None:
+        from nems_open.snapshot import Snapshot
+        history = np.asarray(Snapshot()["NGTDMREP/ngexpvol"], dtype=np.float64)
+    out = np.asarray(history, dtype=np.float64)[LNG_ROW] / DAYS
+    for y, o in reference.items():
+        v = o["NGTDMREP_NGEXPVOL"].get((LNG_ROW + 1, y - FIRST_YEAR + 1))
+        if v is not None:
+            out[y - FIRST_YEAR] = v / DAYS
+    return out
+
+
 def path(bcfd_2035: float, start_year: int = 2030, by: int = 2035, eia: np.ndarray | None = None) -> np.ndarray:
     """US LNG exports by year, Bcf/d (61,): EIA's reference plus (bcfd_2035 - EIA's 2035), ramped in from start_year."""
     eia = eia_bcfd() if eia is None else np.asarray(eia, dtype=np.float64)
