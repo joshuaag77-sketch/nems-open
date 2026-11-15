@@ -21,6 +21,12 @@ carbon: the loop's carbon price (1987 $ per metric ton CO2, by year) is written 
 adders (nems_open/carbon_inputs.py), so LFMM prices its own refinery emissions; CO2PLFMM stays cb2026's 0, so carbon
 is added to product prices outside LFMM, by the supply side, as in NEMS.
 
+Infeasible solves: EIA's shell keeps going when LFMM is infeasible (it copies the listing to INFEAS.<year>.<cycle>.<itr>.lst
+and NEMS uses what it had). Here an infeasible solve on a year that already has a solve this cycle keeps that solve,
+saves the listing the same way, puts back the carried state (LFMM_Builds.gdx, GrossCapacity.gdx, Grossdumfact.gdx)
+from before the solve, and is counted in self.infeasible ((year, itr) pairs). A year's first solve that is
+infeasible still raises: there is nothing to keep.
+
 Not passed: Brent. LFMM prices crude on the international model's supply curves (INTOUT), which stay cb2026's; an
 oil price lever moves product prices through the supply stand-in, not here.
 """
@@ -79,6 +85,13 @@ def columns(o: dict, year: int) -> dict[str, np.ndarray]:
     return out
 
 
+STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx")
+
+
+class LfmmInfeasible(RuntimeError):
+    """LFMM solved but the model is infeasible."""
+
+
 class LfmmGams:
     """EIA's LFMM for the loop, one run folder, one GAMS process per call (single process: RAM is the limit)."""
 
@@ -93,7 +106,7 @@ class LfmmGams:
             self.arrays.update(carbon_inputs.arrays(carbon, self.arrays))
         gams_run.prepare(self.run, start_year, self.arrays)
         gams_run.load_state(self.run, self.reference, start_year - 1)
-        self._ref, self._last = {}, {}
+        self._ref, self._last, self.infeasible = {}, {}, []
 
     def reference_columns(self, year: int) -> dict[str, np.ndarray]:
         if year not in self._ref:
@@ -117,11 +130,19 @@ class LfmmGams:
         gams_run.prepare(self.run, year, arrays, itr=itr, fcrl=fcrl, cycle=self.cycle, fresh=False)
         (self.run / "LFMM.log").unlink(missing_ok=True)
         (self.run / "LFMM_to_NEMS.gdx").unlink(missing_ok=True)
+        kept = {f: (self.run / f).read_bytes() for f in STATE if (self.run / f).exists()}
         t = time.time()
         rc = gams_run.gams(self.run, timeout=self.timeout)
         sec = time.time() - t
         info = solve_info(self.run / "LFMM.log")
         gams_run.clean_dumps(self.run)
+        if rc == 0 and info.get("modelstat") == 4:
+            lst = self.run / "LFshell.lst"
+            if lst.exists():
+                shutil.copy(lst, self.run / f"INFEAS.{year}.{self.cycle}.{itr}.lst")
+            for f, b in kept.items():
+                (self.run / f).write_bytes(b)
+            raise LfmmInfeasible(f"LFMM {year} itr {itr}: infeasible; see {self.run / 'LFMM.log'}")
         if rc != 0 or info.get("modelstat") != 1 or not (self.run / "LFMM_to_NEMS.gdx").exists():
             raise RuntimeError(f"LFMM {year} itr {itr}: rc {rc}, {info.get('status')}; see {self.run / 'LFMM.log'}")
         out = columns(gams_io.read_outputs(self.run / "LFMM_to_NEMS.gdx"), year)
@@ -134,7 +155,12 @@ class LfmmGams:
         refinery fuel (QBLK q*rf) and industrial fuel with the refinery change folded in."""
         year = 1990 + j
         if itr == 1 or fcrl == 1 or year not in self._last:
-            self._last[year] = self.call(year, itr, fcrl, self._inputs(j, q, col, prices))
+            try:
+                self._last[year] = self.call(year, itr, fcrl, self._inputs(j, q, col, prices))
+            except LfmmInfeasible:
+                if year not in self._last:
+                    raise
+                self.infeasible.append((year, itr))
         now = self._last[year]
         b = self.base
         out = {}

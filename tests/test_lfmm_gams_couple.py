@@ -1,5 +1,6 @@
 """run(lfmm="gams") plumbing that needs no GAMS: log parsing, output columns, calibration and when LFMM is called."""
 
+import pytest
 import numpy as np
 
 from nems_open.lfmm import gams_couple
@@ -80,3 +81,43 @@ def test_run_model_accepts_gams():
     with pytest.raises(ValueError, match="baseline must be cb2026"):
         run_model.run(lfmm="gams", baseline="hm2026")
     assert gams_couple.SAMPLE_YEAR == 2030
+
+
+def test_infeasible_keeps_last_solve():
+    from nems_open.lfmm.gams_couple import LfmmInfeasible
+    lf, j, base = _fake()
+    lf.infeasible = []
+    ok = lf.call
+    q = {k: v.copy() for k, v in base.items() if k.startswith("QBLK/")}
+    first = lf.solve_year(j, q, {}, {}, 1, 0)
+
+    def bad(year, itr, fcrl, arrays):
+        raise LfmmInfeasible("infeasible")
+    lf.call = bad
+    again = lf.solve_year(j, q, {}, {}, 9, 1)
+    assert np.allclose(again.prices["MPBLK/pmgtr"], first.prices["MPBLK/pmgtr"])
+    assert lf.infeasible == [(2035, 9)]
+    lf._last.clear()
+    with pytest.raises(LfmmInfeasible):
+        lf.solve_year(j, q, {}, {}, 1, 0)
+    lf.call = ok
+
+
+def test_infeasible_restores_state(tmp_path, monkeypatch):
+    from nems_open.lfmm import gams_couple as gc
+    lf = object.__new__(gc.LfmmGams)
+    lf.run, lf.cycle, lf.timeout, lf.showreel = tmp_path, 1, 1, False
+    (tmp_path / "LFMM_Builds.gdx").write_bytes(b"before")
+    monkeypatch.setattr(gc.gams_run, "prepare", lambda *a, **k: None)
+    monkeypatch.setattr(gc.gams_run, "clean_dumps", lambda *a: None)
+
+    def gams(run, timeout):
+        (run / "LFMM_Builds.gdx").write_bytes(b"after")
+        (run / "LFshell.lst").write_text("listing")
+        (run / "LFMM.log").write_text("    (solvestat, modelstat): (1, 4)\n")
+        return 0
+    monkeypatch.setattr(gc.gams_run, "gams", gams)
+    with pytest.raises(gc.LfmmInfeasible):
+        lf.call(2041, 9, 1, {})
+    assert (tmp_path / "LFMM_Builds.gdx").read_bytes() == b"before"
+    assert (tmp_path / "INFEAS.2041.1.9.lst").read_text() == "listing"
