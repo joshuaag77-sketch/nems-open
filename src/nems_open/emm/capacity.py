@@ -631,7 +631,12 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             yb = min(yf, year + 2)
             span = 1
             done = yf
-            okb = {g: yb >= START_YEAR + lead[codes.index(c)] for g, c in BUILDS.items()}
+            # A type chosen in a later explicit year comes online only after its lead time, so it can serve this
+            # period only if the lead fits: batteries (1 year) in year 2; batteries, turbines and solar (2) in year 3.
+            # Combined cycle, wind and CCS (3 to 4 years) for these periods must be chosen now, which is how ECP
+            # commits capacity ahead of the tail's peak.
+            okb = {g: yb >= START_YEAR + lead[codes.index(c)] and lead[codes.index(c)] <= yb - year
+                   for g, c in BUILDS.items()}
             fb = m.add_variables(lower=0, upper=xr.DataArray(np.stack([np.full(NUM_R, 100.0 * span if okb.get(g) else 0.0)
                                                                          for g in TG], axis=1), coords=[R, T]),
                                  name=f"build_p{offset}")
