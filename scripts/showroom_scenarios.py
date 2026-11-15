@@ -1,11 +1,17 @@
 """The showroom's precomputed scenarios: 30 whole-model runs, defined here, run later (one heavy job at a time).
 
-    python scripts/showroom_scenarios.py --list        # every scenario, its levers, and whether it can run today
-    python scripts/showroom_scenarios.py --estimate    # runtime at one heavy job at a time
+    python scripts/showroom_scenarios.py --list               # every scenario, its levers, and whether it can run
+    python scripts/showroom_scenarios.py --estimate --tier 1  # runtime at one heavy job at a time
+    python scripts/showroom_scenarios.py --tier 1 --run       # the launch set, one run at a time under HEAVY.lock
 
-Nothing here runs the model. Each scenario maps to run_model.run arguments: one Policy plus the same switches for
-all of them (every finished module on). A scenario whose lever run_model cannot take yet says what is missing
-(NOT_YET below) instead of being approximated with a different lever.
+Each scenario maps to run_model.run arguments: one Policy plus the same switches for all of them (every finished
+module on), except lfmm: EIA's LFMM (GAMS, about 2.4 hours a run) only where oil products matter (LFMM_GAMS), the
+LFMM stand-in elsewhere. A scenario whose lever run_model cannot take yet says what is missing (NOT_YET) instead of
+being approximated with a different lever.
+
+The runner takes HEAVY.lock for one scenario at a time and gives it back between runs. Each finished run is saved to
+data/showroom/<key>.npz with its headline table in web/data/showroom/<key>.json, and data/showroom/status.json records
+every start, finish and error. Run it again after a crash: finished scenarios are skipped.
 
 Data center load is added average load above EIA's own data center path (AEO2026 reference), flat across the year,
 reaching the stated GW in 2035 linearly from 2027 and held after. 1 GW of average load is 8.76 TWh a year. The
@@ -14,7 +20,11 @@ electricity in its high electricity demand case (higheldmd minus cb2026, 2040).
 """
 
 import argparse
+import json
+import os
 import sys
+import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,18 +54,14 @@ DC_SHARES_CLUSTERED = dict(zip(DIVISIONS, (0.01, 0.04, 0.05, 0.03, 0.40, 0.03, 0
 EV_EIA_2030 = 0.49   # EIA's reference plug-in share of new light-duty sales in 2030 (levers.py); 0.65 in 2035
 
 # Levers run_model cannot take yet, and what each needs.
-NOT_YET = {
-    "lng_bcfd": ("LNG exports. No lever: run(ogs='aimms') takes NGMM's export volumes from cb2026. Needs a Policy "
-                 "field (Bcf/d by year) written into NGMM's LNG export input in ngmm/aimms.py, and the same path as "
-                 "the LNG row of Xb (NGTDMREP/ngexpvol) in ngmm/market.py for ogs='hsm'/'ngmm'. EIA's reference: "
-                 "26.8 Bcf/d in 2035, 30.7 in 2050."),
-}
+NOT_YET: dict[str, str] = {}
 PARTIAL = {
     "gas_supply": ("Gas resource. The lever exists but shifts delivered gas and retail electricity prices by EIA's "
                    "lowogs/highogs price ratios; under ogs='aimms' HSM's resource base and NGMM do not see it. A real "
-                   "resource case needs HSM's resource inputs from those side cases."),
-    "carbon_price": ("Carbon price reaches power plants' costs (dispatch and capacity LP) and delivered prices; "
-                     "EIA's LFMM (CO2PLFMM 0) and coal model (AIMMS) do not see it inside their solves."),
+                   "resource case needs HSM's resource inputs from those side cases (tier 2)."),
+    "lng_bcfd": ("LNG exports (Policy.lng_exports, ngmm/lng.py) run NGMM in its fixed-exports mode, while the "
+                 "calibration factors come from NGMM's endogenous cb2026 run: check once that fixed exports at EIA's "
+                 "own path reproduce the reference (one NGMM headless run, about 3 min)."),
 }
 
 
@@ -117,13 +123,21 @@ def policy(sc: Scenario):
         kw["ev_share"] = ev_path(lv.pop("ev_2035"))
     if "carbon_price" in lv:
         kw["carbon_price"] = carbon_path(lv.pop("carbon_price"))
+    if "lng_bcfd" in lv:
+        from nems_open.ngmm import lng
+        kw["lng_exports"] = lng.path(lv.pop("lng_bcfd"), START)
     return Policy(**kw, **lv)
+
+
+def lfmm_for(sc: Scenario) -> str:
+    """EIA's LFMM where refined products move (reference, carbon, EVs), the stand-in elsewhere."""
+    return "gams" if sc.key in LFMM_GAMS else "standin"
 
 
 def run_args(sc: Scenario) -> dict:
     """Keyword arguments for run_model.run."""
     return {"policy": policy(sc), "start_year": START, "end_year": LAST_YEAR, "baseline": "cb2026",
-            "ported": PORTED, "cycles": CYCLES, **SWITCHES}
+            "ported": PORTED, "cycles": CYCLES, **SWITCHES, "lfmm": lfmm_for(sc)}
 
 
 S = Scenario
@@ -184,19 +198,141 @@ MINUTES = {
 }
 
 
-def estimate() -> dict:
-    per = sum(MINUTES.values())
-    ready = [s for s in SCENARIOS if not s.not_yet()]
-    return {"per_scenario_min": round(per), "scenarios": len(SCENARIOS), "ready": len(ready),
-            "all_hours": round(per * len(SCENARIOS) / 60, 1), "ready_hours": round(per * len(ready) / 60, 1),
-            "parts_min": MINUTES}
+BY_KEY = {s.key: s for s in SCENARIOS}
+TIERS = {1: ("reference", "dc50", "dc100", "dc150", "lng30", "lng35", "lng40", "dc100_lng35", "co2_50", "co2_100",
+             "ev75")}
+LFMM_GAMS = {"reference", "co2_25", "co2_50", "co2_100", "ev50", "ev75", "ev75_co2_50", "co2_100_nuclear"}
+
+
+def minutes(sc: Scenario) -> float:
+    return sum(v for k, v in MINUTES.items() if k != "lfmm_gams" or lfmm_for(sc) == "gams")
+
+
+def estimate(tier: int | None = None) -> dict:
+    pick = [s for s in SCENARIOS if tier is None or s.key in TIERS[tier]]
+    return {"scenarios": len(pick), "hours": round(sum(minutes(s) for s in pick) / 60, 1),
+            "with_gams_lfmm": sum(lfmm_for(s) == "gams" for s in pick), "parts_min": MINUTES}
+
+
+# ---- the runner -----------------------------------------------------------------------------------
+
+LOCK = Path(os.environ.get("NEMS_HEAVY_LOCK", Path.home() / "dev" / "HEAVY.lock"))
+HOLDER = "showroom"
+OUT = ROOT / "data" / "showroom"
+WEB = ROOT / "web" / "data" / "showroom"
+
+
+def take_lock(wait_s: float = 120.0, log=print) -> None:
+    """Wait until HEAVY.lock is free, then create it holding HOLDER (no clobber)."""
+    said = False
+    while True:
+        try:
+            fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(fd, HOLDER.encode())
+            os.close(fd)
+            return
+        except FileExistsError:
+            if not said:
+                try:
+                    who = LOCK.read_text(errors="replace").strip()
+                except FileNotFoundError:
+                    who = "?"
+                log(f"waiting for {LOCK} (held by {who})")
+                said = True
+            time.sleep(wait_s)
+
+
+def give_lock() -> None:
+    """Remove HEAVY.lock only if this runner holds it."""
+    try:
+        if LOCK.read_text(errors="replace").strip() == HOLDER:
+            LOCK.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def status() -> dict:
+    f = OUT / "status.json"
+    return json.loads(f.read_text()) if f.exists() else {}
+
+
+def _set_status(key: str, **kw) -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    st = status()
+    st[key] = {**st.get(key, {}), **kw}
+    (OUT / "status.json").write_text(json.dumps(st, indent=1))
+
+
+def done(key: str) -> bool:
+    return (OUT / f"{key}.npz").exists() and (WEB / f"{key}.json").exists()
+
+
+def run_one(sc: Scenario, run=None, log=print) -> None:
+    """One scenario: run it, then save the run (npz) and its headline table (json). run: run_model.run, or a stub."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import full_model as fm
+    if run is None:
+        from nems_open import run_model
+        run = run_model.run
+    args = run_args(sc)
+    t0 = time.time()
+    r = run(**args)
+    mins = (time.time() - t0) / 60
+    OUT.mkdir(parents=True, exist_ok=True)
+    WEB.mkdir(parents=True, exist_ok=True)
+    fm.save_run(r, OUT / f"{sc.key}.npz")
+    p = {"switches": {k: args[k] for k in SWITCHES}, "not_landed": [], "ported": list(PORTED), "cycles": CYCLES}
+    t = fm.table(r, p, mins)
+    t.update({"scenario": sc.key, "title": sc.title, "story": sc.story,
+              "levers": {k: ("custom" if isinstance(v, dict) else v) for k, v in sc.levers.items()}})
+    (WEB / f"{sc.key}.json").write_text(json.dumps(t, indent=1))
+    log(f"{sc.key}: done in {mins:.0f} min")
+
+
+def run_tier(tier: int, run=None, lock: bool = True, log=print) -> int:
+    """Every scenario in the tier not done yet, one at a time, each under its own hold of HEAVY.lock.
+    A failure is recorded in status.json and the queue goes on; a rerun retries it. Returns the number failed."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import full_model as fm
+    if run is None:
+        missing = fm.preflight({**SWITCHES, "lfmm": "gams"}, PORTED)
+        if missing:
+            log("Cannot run, missing: " + "; ".join(missing))
+            return 1
+    failed = 0
+    for key in TIERS[tier]:
+        sc = BY_KEY[key]
+        if done(key):
+            log(f"{key}: already done, skipped")
+            continue
+        if lock:
+            take_lock(log=log)
+        try:
+            _set_status(key, started=time.strftime("%Y-%m-%d %H:%M"), lfmm=lfmm_for(sc), error=None)
+            log(f"{key}: {sc.title} (lfmm={lfmm_for(sc)}, about {minutes(sc) / 60:.1f} h)")
+            run_one(sc, run, log)
+            _set_status(key, finished=time.strftime("%Y-%m-%d %H:%M"))
+        except Exception as e:
+            failed += 1
+            _set_status(key, error=f"{type(e).__name__}: {e}", trace=traceback.format_exc()[-2000:])
+            log(f"{key}: FAILED {type(e).__name__}: {e}")
+        finally:
+            if lock:
+                give_lock()
+    return failed
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--estimate", action="store_true")
+    ap.add_argument("--tier", type=int, choices=sorted(TIERS))
+    ap.add_argument("--run", action="store_true", help="run --tier, one scenario at a time under HEAVY.lock")
     a = ap.parse_args(argv)
+    if a.run:
+        if not a.tier:
+            ap.error("--run needs --tier")
+        return 1 if run_tier(a.tier, log=lambda s: print(s, flush=True)) else 0
     if a.list or not a.estimate:
         print(f"Switches for every run: {SWITCHES}, ported {PORTED}, cycles {CYCLES}")
         for s in SCENARIOS:
@@ -206,7 +342,7 @@ def main(argv=None) -> int:
         for k, v in {**NOT_YET, **PARTIAL}.items():
             print(f"\n{k}: {v}")
     if a.estimate:
-        print(estimate())
+        print(estimate(a.tier))
     return 0
 
 

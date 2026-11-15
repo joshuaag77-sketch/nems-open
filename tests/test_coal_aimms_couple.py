@@ -58,3 +58,14 @@ def test_cmm_serves_two_years(tmp_path):
         assert abs(pr["MPBLK/pclel"][10] / eia - 1) < 0.25
     finally:
         p.close()
+
+
+def test_inputs_carry_the_carbon_tax_the_cmm_reads():
+    from nems_open import carbon_inputs
+    c = bare()
+    cp = np.zeros(61)
+    cp[2030 - 1990:] = 40.0
+    c.carbon = carbon_inputs.arrays(cp, {"EMISSION/EMETAX": np.asarray(Snapshot()["EMISSION/EMETAX"], dtype=np.float64)})
+    a = c.inputs(2035, {}, {})
+    assert a["EMISSION/EMETAX"][0, 2035 - 1990] == pytest.approx(40.0 * 44 / 12 / 1000)
+    assert a["EMISSION/EMETAX"][0, 2029 - 1990] == 0.0

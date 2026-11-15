@@ -17,8 +17,9 @@ end of several iterations and five cycles). With calibrate each price is multipl
 cb2026's inputs (reference.pkl, built on first use by `python -m nems_open.coal.aimms_couple`), so the baseline is EIA's
 and a run's moves are the CMM's.
 
-Not passed: the carbon tax the CMM reads (EMISSION EMETAX) stays cb2026's (zero); the loop's carbon price reaches coal
-prices through the supply stand-in's carbon adders, and coal demand through power-sector switching.
+carbon: the loop's carbon price (1987 $ per metric ton CO2, by year) is written as the carbon tax the CMM reads
+(EMISSION EMETAX row 1, nems_open/carbon_inputs.py). Delivered coal prices also carry the supply side's carbon adders,
+as NEMS adds them outside the CMM, and coal demand moves with power-sector switching.
 """
 
 import json
@@ -208,8 +209,12 @@ def reference(first: int = FIRST, last: int = 2050, itrs: int = 2, run: Path = R
 class AimmsCoal:
     """EIA's CMM as run_model's coal market (coal="aimms"). One AIMMS process per cycle."""
 
-    def __init__(self, start_year: int = 2027, calibrate: bool = True, run: Path = RUN_DIR, cycle: int = 1):
+    def __init__(self, start_year: int = 2027, calibrate: bool = True, run: Path = RUN_DIR, cycle: int = 1,
+                 carbon=None):
         self.snap = Snapshot()
+        from nems_open import carbon_inputs
+        self.carbon = {} if carbon is None else carbon_inputs.arrays(
+            carbon, {"EMISSION/EMETAX": np.asarray(self.snap["EMISSION/EMETAX"], dtype=np.float64)})
         self.start = start_year
         self.eia = {k: np.asarray(self.snap[k], dtype=np.float64) for k in PRICE_OUT}
         self.factor = {k: np.ones((11, 61)) for k in PRICE_OUT}
@@ -271,6 +276,7 @@ class AimmsCoal:
             a = self.base[k].copy()
             a[:, j, ...] *= ratio
             arrays[k] = a
+        arrays.update(getattr(self, "carbon", {}))
         return arrays
 
     def begin(self, year: int, itr: int, q: dict, prices: dict, fcrl: int = 0):

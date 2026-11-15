@@ -24,8 +24,9 @@ no web service and no Fortran:
 - 2024 (the CMM's base year) to start_year - 1 run first on cb2026's inputs.
 - Calibration: each price is multiplied by EIA's restart value over the CMM's own on cb2026's inputs (`reference.pkl`,
   built once by `python -m nems_open.coal.aimms_couple`, about 5 minutes), so the baseline is EIA's and moves are the CMM's.
-- Not passed: the carbon tax the CMM reads (EMETAX) stays cb2026's (zero). A carbon price reaches coal through
-  power-sector switching (less coal burned) and the carbon adders on delivered prices.
+- Carbon: the loop's carbon price is written as the tax the CMM reads (EMISSION EMETAX row 1, 1987 $ per kg C;
+  `nems_open/carbon_inputs.py`). It also reaches coal through power-sector switching and the carbon adders on
+  delivered prices, which NEMS adds outside the CMM. LFMM gets the same EMETAX and the EMABLK J adders.
 
 Run folder `~/dev/oracle-cache/coal-aimms` (`NEMS_COAL_RUN`). AIMMS jobs go one at a time under `HEAVY.lock`
 (`scripts/with_heavy_lock.sh`). Each CMM call takes about 7 s (2027-2050 with three iterations a year: about 9 minutes).

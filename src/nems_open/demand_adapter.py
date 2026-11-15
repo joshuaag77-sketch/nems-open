@@ -100,6 +100,7 @@ class Policy:
     gas_supply: float = 0.0             # -1 EIA's low oil and gas supply case, +1 its high case
     oil_price: object = 1.0             # multiple of EIA's Brent price
     nuclear: object = 1.0               # multiple of EIA's nuclear output, reached by 2040
+    lng_exports: object = None          # US LNG exports, Bcf/d by year (61,); None = EIA's (ngmm/lng.py, needs ogs)
 
     def carbon(self) -> np.ndarray:
         return by_year(self.carbon_price, self.start_year, 0.0)

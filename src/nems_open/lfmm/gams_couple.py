@@ -17,6 +17,10 @@ reference sequence, so the baseline is EIA's and a run's moves are LFMM's.
 Every solve appends one line to SHOWREEL/lfmm.jsonl (size, solver, time, objective, headline prices); the sample
 year's input and output GDX files are kept once. The log never feeds back into results.
 
+carbon: the loop's carbon price (1987 $ per metric ton CO2, by year) is written as NEMS's EMETAX and EMABLK J
+adders (nems_open/carbon_inputs.py), so LFMM prices its own refinery emissions; CO2PLFMM stays cb2026's 0, so carbon
+is added to product prices outside LFMM, by the supply side, as in NEMS.
+
 Not passed: Brent. LFMM prices crude on the international model's supply curves (INTOUT), which stay cb2026's; an
 oil price lever moves product prices through the supply stand-in, not here.
 """
@@ -79,10 +83,14 @@ class LfmmGams:
     """EIA's LFMM for the loop, one run folder, one GAMS process per call (single process: RAM is the limit)."""
 
     def __init__(self, start_year: int, base: dict, cycle: int = 1, calibrate: bool = True,
-                 run: Path = RUN_DIR, reference: Path = REFERENCE, showreel: bool = True, timeout: float = 1800):
+                 run: Path = RUN_DIR, reference: Path = REFERENCE, showreel: bool = True, timeout: float = 1800,
+                 carbon=None):
         self.start, self.base, self.cycle, self.calibrate = start_year, base, cycle, calibrate
         self.run, self.reference, self.showreel, self.timeout = Path(run), Path(reference), showreel, timeout
         self.arrays = gams_run.restart_arrays()
+        if carbon is not None:
+            from nems_open import carbon_inputs
+            self.arrays.update(carbon_inputs.arrays(carbon, self.arrays))
         gams_run.prepare(self.run, start_year, self.arrays)
         gams_run.load_state(self.run, self.reference, start_year - 1)
         self._ref, self._last = {}, {}

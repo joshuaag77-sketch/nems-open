@@ -41,7 +41,10 @@ def gas_price_names(arrays: dict) -> list[str]:
 
 
 class GasMarket:
-    def __init__(self, baseline: str = "cb2026", coefficients: Path = COEFFICIENTS, base: dict | None = None):
+    def __init__(self, baseline: str = "cb2026", coefficients: Path = COEFFICIENTS, base: dict | None = None,
+                 lng=None):
+        """lng: Policy.lng_exports, US LNG exports in Bcf/d by year; the difference from the baseline's is exported
+        at any price (nems_open/ngmm/lng.py)."""
         b = data.load(baseline)
         c = json.loads(Path(coefficients).read_text())
         self.k, self.hh_per_wellhead = c["k"], c["hh_per_wellhead"]
@@ -52,6 +55,8 @@ class GasMarket:
         self.Qb, self.Q0b, self.Pb, self.P0b = g("ngscrv_q"), g("ngscrv_q0"), g("ngscrv_p"), g("ngscrv_p0")
         self.HHb = g("oghhprng")
         self.Xb = b[EXPORTS][3]
+        from nems_open.ngmm.lng import added_bcf
+        self.lng_add = np.zeros(61) if lng is None else added_bcf(lng, b[EXPORTS])
         self.cf = b["CONVFACT/cfngc"]
         # The delivered prices and gas use the loop starts from (a blend of cases may replace cb2026's).
         src = base if base is not None else b
@@ -108,7 +113,7 @@ class GasMarket:
     def exports(self, p) -> np.ndarray:
         ratio = np.divide(p, self.Pb, out=np.ones(61), where=self.Pb > 0)
         ex = np.where(ratio > 1, self.ex_up, self.ex_down)
-        return self.Xb * ratio ** ex
+        return self.Xb * ratio ** ex + self.lng_add
 
     def clear(self, qngas_us) -> dict:
         """Wellhead price, Henry Hub, production and exports for US gas use qngas_us (61,), trillion Btu."""

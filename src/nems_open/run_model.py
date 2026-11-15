@@ -162,6 +162,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if elec_price == "efp" and baseline != "cb2026":
         raise ValueError("elec_price='efp' starts from the cb2026 oracle state, so the baseline must be cb2026")
     policy = policy or Policy(start_year=start_year)
+    if getattr(policy, "lng_exports", None) is not None and ogs == "standin":
+        raise ValueError("Policy.lng_exports needs a gas market: ogs='ngmm', 'hsm' or 'aimms'")
     supply = SupplyStandin(baseline, base=base)
     base = supply.base
     carbon = policy.carbon()
@@ -169,7 +171,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     market = None
     if ogs in ("ngmm", "hsm"):
         from nems_open.ngmm import GasMarket
-        market = GasMarket(baseline, base=base)
+        market = GasMarket(baseline, base=base, lng=policy.lng_exports)
     aimms_gas = expected = None
     aimms_coal = None
     within, between = Settings.load("conv"), Settings.load("icnv")
@@ -203,10 +205,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         demand = DemandAdapter(base, policy, start_year, ported, macro=path, ind=ind)
         if ogs == "aimms":   # EIA's NGMM in AIMMS (nems_open/ngmm/aimms.py), one process per cycle
             from nems_open.ngmm.aimms import AimmsGas
-            market = aimms_gas = AimmsGas(start_year, expected=expected, cycle=cycle)
+            market = aimms_gas = AimmsGas(start_year, expected=expected, cycle=cycle, lng=policy.lng_exports)
         if coal == "aimms":   # EIA's coal model in AIMMS (nems_open/coal/aimms_couple.py), one process per cycle
             from nems_open.coal.aimms_couple import AimmsCoal
-            aimms_coal = AimmsCoal(start_year, cycle=cycle)
+            aimms_coal = AimmsCoal(start_year, cycle=cycle, carbon=supply._cp87(carbon))
         efp = None
         if elec_price == "efp":
             from nems_open.emm.retail import EfpPrices
@@ -215,7 +217,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         routines = demand.routines + ["supply stand-in" if lp is None else "supply stand-in + dispatch LP"]
         if lfmm == "gams":   # EIA's LFMM in GAMS (nems_open/lfmm/gams_couple.py), fresh from the reference each cycle
             from nems_open.lfmm.gams_couple import LfmmGams
-            lf = LfmmGams(start_year, base, cycle=cycle)
+            lf = LfmmGams(start_year, base, cycle=cycle, carbon=supply._cp87(carbon))
         if lf is not None:
             routines.append("LFMM stand-in" if lfmm == "standin" else "LFMM (EIA, GAMS)")
         if efp is not None:

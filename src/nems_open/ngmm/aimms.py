@@ -173,8 +173,9 @@ def ngsteo_text() -> str:
         sys.path.remove(str(upstream / "models" / "main"))
 
 
-def prepare(run: Path = RUN_DIR, scenario: str = "cb2026") -> Path:
-    """A fresh run folder: run/ngas (EIA's, patched) and run/main/wrapper."""
+def prepare(run: Path = RUN_DIR, scenario: str = "cb2026", lng=None) -> Path:
+    """A fresh run folder: run/ngas (EIA's, patched) and run/main/wrapper. lng: US LNG exports, Bcf/d by year (61,),
+    fixed in NGMM (nems_open/ngmm/lng.py); None leaves NGMM building LNG trains itself as in cb2026."""
     run = Path(run)
     ng = run / "ngas"
     if ng.exists():
@@ -185,6 +186,17 @@ def prepare(run: Path = RUN_DIR, scenario: str = "cb2026") -> Path:
         (ng / d).mkdir(parents=True, exist_ok=True)
     (ng / "ng_runval.txt").write_text(runval_text(scenario))
     (ng / "ngsteo.txt").write_text(ngsteo_text())
+    if lng is not None:
+        from nems_open.ngmm import lng as lng_lever
+        ref = run / "reference.pkl"
+        outs = None
+        if ref.exists():
+            import pickle
+            with open(ref, "rb") as f:
+                outs = pickle.load(f)["outputs"]
+        f = ng / "input" / "nglngexp.txt"
+        text = f.read_text(encoding="latin-1")
+        f.write_text(lng_lever.patch_input(text, lng_lever.terminal_table(lng, outs)), encoding="latin-1")
     w = run / "main" / "wrapper"
     (w / "MainProject").mkdir(parents=True, exist_ok=True)
     (w / "wrapper.aimms").write_text(WRAPPER_REFS)
@@ -333,13 +345,14 @@ def headline(out: dict, year: int) -> dict:
 class Ngmm:
     """One AIMMS process serving NGMM calls (single process: RAM is the limit on this machine)."""
 
-    def __init__(self, run: Path = RUN_DIR, fresh: bool = True, timeout: float = 900, showreel: Path | None = SHOWREEL):
+    def __init__(self, run: Path = RUN_DIR, fresh: bool = True, timeout: float = 900, showreel: Path | None = SHOWREEL,
+                 lng=None):
         self.run = Path(run)
         self.showreel = Path(showreel) if showreel else None
         self.run_id = time.strftime("%Y%m%d-%H%M%S")
         self._calls = {}   # QP -> its SolverCalls count at the last record, to tell whether this call solved it
-        if fresh or not (self.run / "ngas").exists():
-            prepare(self.run)
+        if fresh or not (self.run / "ngas").exists() or lng is not None:
+            prepare(self.run, lng=lng)
         self.timeout = timeout
         self.ng = self.run / "ngas"
         for f in ("request.txt", "done.txt"):
@@ -462,9 +475,9 @@ class AimmsGas:
     EIA's and a run's moves are NGMM's."""
 
     def __init__(self, start_year: int = 2027, case: str = "cb2026", calibrate: bool = True, run: Path = RUN_DIR,
-                 expected: dict | None = None, cycle: int = 1):
+                 expected: dict | None = None, cycle: int = 1, lng=None):
         """expected: HSM's expected production arrays ("ogsmout/ogenagprd", ...) to use from start_year on,
-        in place of cb2026's (see hsm_expected)."""
+        in place of cb2026's (see hsm_expected). lng: Policy.lng_exports, Bcf/d by year, fixed in NGMM."""
         from nems_open.supply_standin.data import restart_path
         self.base = restart_arrays(restart_path(case))
         self.start = start_year
@@ -496,7 +509,7 @@ class AimmsGas:
                     self.hh_factor[j] = self.eia_hh[j] / mine if mine > 0 else 1.0
                 if "NGTDMREP_OGWPRNG" in o:
                     self.wellhead_ref[j] = to_array(o["NGTDMREP_OGWPRNG"], (14, 61))[13, j]
-        self.ngmm = Ngmm(run, fresh=True)
+        self.ngmm = Ngmm(run, fresh=True, lng=lng)
         self.out = {k: v.copy() for k, v in self.eia.items()}
         self.henry_hub = self.eia_hh.copy()
         self.wellhead = self.wellhead_ref.copy()   # NGMM's lower-48 average wellhead price, uncalibrated

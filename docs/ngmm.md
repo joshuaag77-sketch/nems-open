@@ -130,3 +130,13 @@ recommended setting for gas: EIA's market model and EIA's supply model, both on 
 - The gas supply lever still multiplies prices toward lowogs/highogs on top of the market; moving Q0
   toward those cases' expected production would be more faithful.
 - Imports, Alaska, RNG and supplemental supplies are held at cb2026.
+
+## LNG export lever
+
+`Policy.lng_exports` (US LNG exports, Bcf/d by year; `nems_open/ngmm/lng.py`). With `ogs='aimms'` it runs NGMM in
+EIA's own fixed-exports mode (`LNG_FixedExports_Switch 1` in `nglngexp.txt`), with the path written into
+`ExogenousAnnualLNGExports` across the four lower-48 terminals: split between the two terminal groups as NGMM's
+cb2026 run splits it, and within a group by EIA's shares in that file. With `ogs='hsm'` or `'ngmm'` the gas market
+exports the path's difference from cb2026's LNG row at any price. `lng.path(35)` reaches 35 Bcf/d in 2035 (EIA:
+26.8) by ramping the difference in from 2027 and holding it. Not yet checked under AIMMS: that fixed exports at EIA's
+own path reproduce the endogenous reference that the calibration factors come from.

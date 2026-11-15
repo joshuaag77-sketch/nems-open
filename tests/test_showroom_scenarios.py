@@ -22,14 +22,67 @@ def test_switches_are_run_model_arguments():
     assert set(sc.SWITCHES) <= set(params)
 
 
-def test_every_ready_scenario_builds_a_policy_and_the_rest_say_why():
+def test_every_scenario_builds_run_model_arguments():
+    params = set(inspect.signature(run_model.run).parameters)
     for s in sc.SCENARIOS:
-        if s.not_yet():
-            with pytest.raises(NotImplementedError, match="LNG"):
-                sc.policy(s)
-        else:
-            args = sc.run_args(s)
-            assert set(args) <= set(inspect.signature(run_model.run).parameters)
+        assert not s.not_yet()
+        args = sc.run_args(s)
+        assert set(args) <= params
+        assert args["lfmm"] == ("gams" if s.key in sc.LFMM_GAMS else "standin")
+    lng = sc.run_args(sc.BY_KEY["lng35"])["policy"].lng_exports
+    assert lng[2035 - 1990] == pytest.approx(35.0)
+
+
+def test_tier_one_is_the_launch_set():
+    t = sc.TIERS[1]
+    assert len(t) == 11 and set(t) <= set(sc.BY_KEY)
+    assert [k for k in t if sc.lfmm_for(sc.BY_KEY[k]) == "gams"] == ["reference", "co2_50", "co2_100", "ev75"]
+
+
+@pytest.fixture
+def stub(tmp_path, monkeypatch):
+    try:
+        r = run_model.run(None, 2027, 2028, "cb2026", ported=())
+    except FileNotFoundError as e:
+        pytest.skip(f"reference data missing: {e}")
+    monkeypatch.setattr(sc, "OUT", tmp_path / "out")
+    monkeypatch.setattr(sc, "WEB", tmp_path / "web")
+    monkeypatch.setattr(sc, "LOCK", tmp_path / "HEAVY.lock")
+    calls = []
+
+    def run(**kw):
+        calls.append(kw)
+        if kw["policy"].carbon_price is not None and np.max(kw["policy"].carbon_price) >= 100:
+            raise RuntimeError("boom")
+        assert (tmp_path / "HEAVY.lock").read_text() == "showroom"
+        return r
+    return run, calls, tmp_path
+
+
+def test_runner_saves_each_run_records_failures_and_resumes(stub):
+    run, calls, tmp = stub
+    assert sc.run_tier(1, run=run, log=lambda s: None) == 1          # co2_100 fails, the rest go on
+    assert len(calls) == 11 and not (tmp / "HEAVY.lock").exists()
+    st = sc.status()
+    assert st["co2_100"]["error"].startswith("RuntimeError") and st["ev75"]["finished"]
+    assert sc.done("dc100") and not sc.done("co2_100")
+    calls.clear()
+    sc.run_tier(1, run=run, log=lambda s: None)                      # a rerun retries only what is not done
+    assert [c["policy"].carbon_price.max() for c in calls] == [100.0]
+
+
+def test_runner_waits_for_another_holder(stub, monkeypatch):
+    run, calls, tmp = stub
+    (tmp / "HEAVY.lock").write_text("emm-capacity3")
+    waits = []
+
+    def sleep(s):
+        waits.append(s)
+        (tmp / "HEAVY.lock").unlink()
+    monkeypatch.setattr(sc.time, "sleep", sleep)
+    monkeypatch.setitem(sc.TIERS, 9, ("reference",))
+    sc.run_tier(9, run=run, log=lambda s: None)
+    assert waits and len(calls) == 1 and not (tmp / "HEAVY.lock").exists()
 
 
 def test_data_center_gw_becomes_twh_and_reaches_target_in_2035():
