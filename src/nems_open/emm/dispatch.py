@@ -91,7 +91,7 @@ class DispatchCase:
     oil_share: dict           # thermal group -> (25,) share of that group's fuel that is oil
     avail: dict               # thermal group -> (forced outage rate, max capacity factor)
     max_cf: dict              # thermal group -> (25,) maximum capacity factor (pltdata.txt MCF)
-    credit_45q: float         # 1987$ per metric ton of CO2 captured
+    credit_45q: float         # 1987$ per metric ton of CO2 captured (credit_share says which capacity earns it)
     monthly_cf: dict          # nuclear, hydro, other -> (25, 12)
     profile: dict             # wind, solar -> (25, 36, 24) capacity factor in each typical hour
     net_load_twh: np.ndarray  # (25,)
@@ -104,6 +104,7 @@ class DispatchCase:
     ignition_share: float = 0.0          # share of coal Btu that is distillate (plant file fuel 2, T_FSHR_2)
     flat_twh: np.ndarray = None          # (25,) part of net_load_twh that runs flat across the year (data centers)
     flex_share: float = 0.0              # share of flat_twh that can be curtailed over the year
+    credit_share: dict = None            # capture group -> (25,) share of capacity still earning 45Q (None: all)
 
 
 @dataclass
@@ -261,6 +262,39 @@ def benchmark_weight(year: int) -> float:
     return float(np.clip(1.0 - (year - BENCHMARK_LAST) / BENCHMARK_FADE, 0.0, 1.0))
 
 
+def credit_share(year_end: dict, year: int, rule: tuple) -> dict:
+    """Share of each capture group's capacity that still earns 45Q in `year`, by region.
+
+    EIA's rule (udat.f, UL_45Q_YR and EC_45Q): a unit group earns the credit from the year it starts capturing,
+    if that year is between I_45Q_SYR and I_45Q_LYR_RET (retrofits; LYR_NEW for new plants, the same 2038 in
+    cb2026), for I_45Q_DURATION (12) years. Capacity has no unit dates here, so each year's increase in a group's
+    year-end capacity is a cohort that started capturing that year.
+    year_end: {year: {group: (25,) GW at year end}}, covering the years before `year` that have capacity.
+    rule: (first year, last start year, duration).
+    """
+    first, last, duration = rule
+    out = {}
+    for g in CAPTURE_GROUPS:
+        now = year_end[year][g]
+        credited = np.zeros(NUM_R)
+        for t in range(max(first, year - duration + 1), min(year, last) + 1):
+            if t in year_end and t - 1 in year_end:
+                credited += np.maximum(year_end[t][g] - year_end[t - 1][g], 0.0)
+        out[g] = np.clip(credited / np.maximum(now, 1e-9), 0.0, 1.0)
+    return out
+
+
+def credit_rule(snapshot) -> tuple:
+    return (int(snapshot["TCS45Q/i_45q_syr"]), int(snapshot["TCS45Q/i_45q_lyr_ret"]),
+            int(snapshot["TCS45Q/i_45q_duration"]))
+
+
+def restart_capture_capacity(snapshot, year: int) -> dict:
+    """Year-end capacity of the capture groups in the reference run: {group: (25,) GW}."""
+    y = year - history.FIRST_YEAR
+    return {g: _ucap(snapshot, CAPACITY_PREFIXES[g], y) for g in CAPTURE_GROUPS}
+
+
 def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     """Assemble a year's inputs from the reference run's capacity and fuel prices.
 
@@ -362,8 +396,11 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     coal_on = on & np.isin(u.efd_type, EXISTING_TYPES["coal"])
     second = np.array([x.strip() for x in tb["CFL_2"]], dtype=object)
     ignition = float(np.average(np.where(second == "DS", tb["T_FSHR_2"], 0.0)[coal_on], weights=u.summer_mw[coal_on])) if coal_on.any() else 0.0
+    rule = credit_rule(snapshot)
+    year_end = {t: restart_capture_capacity(snapshot, t) for t in range(rule[0] - 1, year + 1)}
     return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf,
-                        profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition)
+                        profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
+                        credit_share=credit_share(year_end, year, rule))
 
 
 def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
@@ -428,7 +465,8 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         if g in CAPTURE_GROUPS:
             # 45Q pays per ton captured; tons per MWh = MMBtu per MWh x tons of CO2 per MMBtu.
             tons = case.heat_rate[g] / 1000.0 * CO2_PER_TBTU[CAPTURE_GROUPS[g]] * CAPTURE_RATE
-            cost[:, k] -= case.credit_45q * tons
+            share = case.credit_share[g] if case.credit_share is not None else 1.0
+            cost[:, k] -= case.credit_45q * share * tons
     cost_da = xr.DataArray(cost, coords=[R, TH])
 
     # Fixed-profile plants

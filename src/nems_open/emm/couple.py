@@ -107,6 +107,7 @@ class ElectricityLP:
         fleet = case0.capacity
         if self.capacity_path is not None:
             fleet = self.capacity_fleet(year, net, prices, j, cp87)
+            extra["credit_share"] = self.capacity_path.credit_share(year)    # the path's own CCS cohorts
         capacity = {g: v * scale.get(g, 1.0) for g, v in fleet.items()}
         case = replace(case0, capacity=capacity, net_load_twh=net, price=self._scaled_prices(case0, prices, j),
                        carbon_price=float(cp87), **extra)

@@ -20,7 +20,7 @@ run: net load from sales, fuel prices from the supply modules.
 Money is 1987 dollars. Power is GW, energy TWh.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import linopy
 import numpy as np
@@ -162,6 +162,16 @@ def _credit_lost_share(life: float) -> float:
     return 1.0 - annuity(CREDIT_YEARS) / annuity(life)
 
 
+def _credit_overpaid(case, group: str, life: float, year: int, snapshot):
+    """Share of the annual 45Q credit that the dispatch pays a new plant (or retrofit) of `group` built in `year`
+    but that the plant does not earn, charged back in its annual cost. Dispatch pays the group's credited share
+    (case.credit_share) every year; the plant earns the credit for its first I_45Q_DURATION years if it starts by
+    I_45Q_LYR_NEW / _RET (2038), and nothing if it starts later."""
+    paid = case.credit_share[group] if case.credit_share is not None else 1.0
+    earned = 1.0 - _credit_lost_share(life) if year <= dispatch.credit_rule(snapshot)[1] else 0.0
+    return paid - earned
+
+
 def initial_capacity(snapshot, year_before: int) -> dict:
     """Year-end capacity by group in the year before the first solve, from the reference run."""
     y = year_before - history.FIRST_YEAR
@@ -282,7 +292,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             annual = annual - ptc * cf * 8.76         # $/MWh x GWh per MW-year -> $/kW-year
         if g in dispatch.CAPTURE_GROUPS:
             tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
-            annual = annual + _credit_lost_share(params["economic_life"][i]) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
+            annual = annual + _credit_overpaid(case, g, params["economic_life"][i], year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
         capital[g] = annual * 1.0e3                   # $/kW-year -> k$ per GW-year
 
     # --- characteristics of the groups ---
@@ -324,7 +334,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     retro_cost = _weighted_by_region(tb["T_CCSROV"], u.summer_mw, elig, 1100.0)
     retro_fom = _weighted_by_region(tb["T_CCSF"], u.summer_mw, elig, 8.0)
     retro_tons = case.heat_rate["coal_ccs"] / 1000.0 * dispatch.CO2_PER_TBTU["coal"] * dispatch.CAPTURE_RATE
-    retro_lost = _credit_lost_share(20.0) * case.credit_45q * retro_tons * 0.6 * 8.76     # coal runs about 60%
+    retro_lost = _credit_overpaid(case, "coal_ccs", 20.0, year, snapshot) * case.credit_45q * retro_tons * 0.6 * 8.76     # coal runs about 60%
     retro_annual = (retro_cost * _crf(discount_rate(snapshot, year), 20.0) + retro_fom + retro_lost) * 1.0e3
 
     # --- time slices ---
@@ -427,7 +437,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         fuel = (1 - oil_share[g]) * case.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
         cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
         if g in dispatch.CAPTURE_GROUPS:
-            cost[:, k] -= case.credit_45q * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
+            share = case.credit_share[g] if case.credit_share is not None else 1.0
+            cost[:, k] -= case.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
     cost_da = xr.DataArray(cost, coords=[R, T])
 
     # wind, solar, battery: existing plus new
@@ -594,6 +605,7 @@ class CapacityPath:
             raise ValueError(f"capacity path is at {self.next_year}, asked for {year}")
         snap, u = self.snapshot, plants.load_units()
         case = case if case is not None else dispatch.build_case(snap, year, "none")
+        case = replace(case, credit_share=self.credit_share(year))
         grp = None
         if self.groups:
             if self.price is None:
@@ -617,6 +629,25 @@ class CapacityPath:
         self.results[year] = res
         self.next_year = year + 1
         return res
+
+    def credit_share(self, year: int) -> dict:
+        """Share of each capture group's capacity still earning 45Q in `year` (dispatch.credit_share), from this
+        path's own year-end capacity, and the reference run's before the path starts. A year not yet solved counts
+        at last year's capacity: its own retrofits start in it and earn the credit only up to 2038, when no
+        retrofit after that earns any."""
+        rule = dispatch.credit_rule(self.snapshot)
+        first = min(self.results, default=self.next_year)
+        year_end = {}
+        for t in range(rule[0] - 1, year + 1):
+            if t in self.results:
+                c = dispatch_capacity(self.results[t].capacity)
+                year_end[t] = {g: c[g] for g in dispatch.CAPTURE_GROUPS}
+            elif t < first:
+                year_end[t] = dispatch.restart_capture_capacity(self.snapshot, t)
+        if year not in year_end:
+            c = dispatch_capacity(self.cap)
+            year_end[year] = {g: c[g] for g in dispatch.CAPTURE_GROUPS}
+        return dispatch.credit_share(year_end, year, rule)
 
 
 def run(snapshot, first: int = START_YEAR, last: int = 2035, solver: str = "highs", groups: bool = True,
