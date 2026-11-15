@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 
 from nems_open.demand_adapter import Policy
-from nems_open.converge import MAXITR
-from nems_open.run_model import run
+from nems_open.run_model import DEFAULT_MAXITR, run
 from nems_open.supply_standin.data import US, available, load_case
 
 pytestmark = pytest.mark.skipif(not available(), reason="AEO2026 runs not available")
@@ -53,7 +52,7 @@ def test_every_year_converges(no_policy, carbon50):
         assert sorted(last) == list(range(2027, 2051))
         assert all(p.converged and p.fcrl == 1 for p in last.values())
         assert all(r.stable[y] for y in last)
-        assert max(p.number for p in r.passes) <= MAXITR + 1
+        assert max(p.number for p in r.passes) <= DEFAULT_MAXITR + 1
 
 
 def test_carbon_price_raises_prices(carbon50, base):

@@ -29,8 +29,24 @@ def test_base_year_lp_is_optimal_and_meets_demand():
 
 
 def test_national_production_tracks_the_restart_after_the_steo_years():
-    rows = {r["year"]: r for r in lp_report.run([2030])}
+    """One electricity demand per region (the earlier reduced LP)."""
+    rows = {r["year"]: r for r in lp_report.run([2030], by_type=False)}
     r = rows[2030]
     assert r["status"] == "ok"
     assert abs(r["prod_mt"].sum() / r["ref_mt"].sum() - 1) < 0.05
     assert abs(r["PCLEL"][0] / r["PCLEL"][1] - 1) < 0.10
+
+
+def test_plant_type_demand_and_diversity_caps():
+    """Electricity demand per plant type with EIA's sub-bituminous and lignite caps (electric.py).
+    Lignite lands within 3 Mt and national production within 2% every year; Interior's 2025 miss
+    falls from 38 Mt to 11. Electric price is about 20% high in 2027-2030 (no SO2 equations yet),
+    and 25 to 32% high in the STEO years 2025-2026, so it is held to 35% here; docs/coal_lp.md has the table."""
+    rows = {r["year"]: r for r in lp_report.run([2025, 2026, 2027, 2030])}
+    for y, r in rows.items():
+        assert r["status"] == "ok"
+        assert abs(r["prod_mt"].sum() / r["ref_mt"].sum() - 1) < 0.02, y
+        assert abs(r["prod_mt"][3] - r["ref_mt"][3]) < 3.0, y            # 4LGN lignite
+        assert r["slack"] < 1.0, y                                        # diversity slack, TBtu
+        assert abs(r["PCLEL"][0] / r["PCLEL"][1] - 1) < 0.35, y
+    assert abs(rows[2025]["prod_mt"][2] - rows[2025]["ref_mt"][2]) < 12   # 3INR

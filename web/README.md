@@ -70,6 +70,8 @@ QBLK); and the household energy bill against EIA's reference.
   national total. Region borders are approximate (each point takes its nearest plant's region).
 - "How did it get that?" opens `engine3d.html`.
 
-Vercel preview: `vercel.json` serves `web/` with `/` going to `2050.html`; `.vercelignore` uploads
-only `web/`; git deploys are off. A preview is `vercel deploy` (never `--prod`) from the repo root.
-The preview has no `/api`, so it shows instant estimates only. Nothing is deployed yet.
+Hosting: `python scripts/build_site.py` assembles `dist/site` (these pages, the hosted Ask function in
+`site/api/`, `site/vercel.json`); deploy from there. The hosted function answers `api/ask` behind per-visitor and
+daily spend limits; there is no real-run server on the host (`api/health` says `"run": false`). Plan, limits, cost
+per 1,000 questions and the go-live steps: `docs/hosting.md`. Nothing is deployed yet.
+`how.html` explains the project for newcomers; `og.png` is the link preview (`python scripts/make_og.py`).

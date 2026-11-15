@@ -27,7 +27,7 @@ Be careful quoting results from this model until these are replaced.
 - **Macroeconomy** is EIA's own path from the restart file. EIA's macro model uses a licensed S&P Global model, so we have none. Changing the policy does not change GDP.
 - **Electricity capacity is fixed** at EIA's reference path in the dispatch LP. A carbon price moves coal to gas in dispatch but does not build or retire plants, so the response to a carbon price is stronger than a full model would show. The capacity-expansion LP exists but misses EIA on many technologies ([docs/capacity_results.md](docs/capacity_results.md)).
 - **Coal** is a reduced LP: it leaves out most of the 125 equation families in EIA's AIMMS model ([docs/coal_lp.md](docs/coal_lp.md)).
-- **Oil, gas, refining, renewable fuels, international and hydrogen** are not ported. Their prices come from the supply stand-in ([docs/supply_standin.md](docs/supply_standin.md)) and their quantities from EIA's restart file.
+- **Oil, gas, refining, renewable fuels, international and hydrogen** are not ported. Their prices come from the supply stand-in ([docs/supply_standin.md](docs/supply_standin.md)) and their quantities from EIA's restart file. With `--ogs ngmm` or `--ogs hsm`, natural gas prices come from a gas market on NGMM's own supply curve, closed with EIA's HSM ([docs/ngmm.md](docs/ngmm.md)).
 - **Alaska and Hawaii** are not in the power model.
 
 ## Run it

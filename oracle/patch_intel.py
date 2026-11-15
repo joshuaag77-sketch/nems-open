@@ -101,11 +101,49 @@ RULES = [
     (re.compile(r"^\s*REAL,ALLOCATABLE::feedngtotal\(:\).*$", re.I | re.M), ""),
     (re.compile(r"^\s*REAL,ALLOCATABLE::FEEDHGLtotal\(:\).*$", re.I | re.M), ""),
     (re.compile(r"^\s*REAL,ALLOCATABLE::feednaphtotal\(:\).*$", re.I | re.M), ""),
+    # The cracking model and HGL split keep series between years in more WEXOG locals: move them too.
+    (re.compile(r"^\s*real Ethylene_slope.*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Ethylene_intercept.*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Ethylene_benchmark.*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Ethylene_demand\(MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Base_ethane_demand\(MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Naphtha_flex_consumption\(5, MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Slow_flex_capacity\(5, MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Quick_flex_capacity\(5, MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Naphtha_price_mass\(5,MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Ethane_price_mass\(5,MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Cost_ethylene_from_ethane\(5,MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Cost_ethylene_from_naphtha\(5,MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real Naphtha_to_HGL\(5,MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL HGL_recycle_rate\(mnumyr\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*real heattemp\(MNUMYR\),heattemp2\(MNUMYR\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL H2_byp_index\(mnumcr,mnumyr\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::(feedethtotal|feedpropanetotal|feednormbutanetotal|feedisobutanetotal|feedpropylenetotal|"
+                r"feedH2fertilizer)\(:\).*$", re.I | re.M), ""),
+    (re.compile(r"^\s*REAL,ALLOCATABLE::(EthaneDivFrac|PropaneDivFrac)\(:, :\).*$", re.I | re.M), ""),
+    # CALIBRATE_COAL_ELEC keeps its benchmark factors by year in a local array
+    (re.compile(r"^\s*REAL hist_bench\(mnumyr,numind,5,mainfuels-1\).*$", re.I | re.M), ""),
     (re.compile(r"^(\s*)REAL FIRMSHR\(5\),SUMCDIV", re.I | re.M), r"\1REAL SUMCDIV"),
     (re.compile(r"^(\s*REAL PRODXIBYR\(numind,4\))$", re.I | re.M),
      r"\1" + chr(10) + "      REAL BF_SEDS(mainfuels-1,4), RBF_SEDS(8,4), BF_STEO(mainfuels-1), RBF_STEO(8), FIRMSHR(5)" + chr(10)
      + "      REAL BMAIN_ADJUSTED(mainfuels-1,5), BRENEW_ADJUSTED(8,5), asphalttarget(5), asphaltpercent(5)" + chr(10)
-     + "      REAL,ALLOCATABLE::feedngtotal(:), FEEDHGLtotal(:), feednaphtotal(:)"),
+     + "      REAL,ALLOCATABLE::feedngtotal(:), FEEDHGLtotal(:), feednaphtotal(:)" + chr(10)
+     + "      real Ethylene_slope, Ethylene_intercept, Ethylene_benchmark, Ethylene_demand(MNUMYR), Base_ethane_demand(MNUMYR)" + chr(10)
+     + "      real Naphtha_flex_consumption(5,MNUMYR), Slow_flex_capacity(5,MNUMYR), Quick_flex_capacity(5,MNUMYR)" + chr(10)
+     + "      real Naphtha_price_mass(5,MNUMYR), Ethane_price_mass(5,MNUMYR), Cost_ethylene_from_ethane(5,MNUMYR)" + chr(10)
+     + "      real Cost_ethylene_from_naphtha(5,MNUMYR), Naphtha_to_HGL(5,MNUMYR), HGL_recycle_rate(mnumyr)" + chr(10)
+     + "      real heattemp(MNUMYR), heattemp2(MNUMYR), H2_byp_index(mnumcr,mnumyr)" + chr(10)
+     + "      REAL,ALLOCATABLE::feedethtotal(:), feedpropanetotal(:), feednormbutanetotal(:), feedisobutanetotal(:)" + chr(10)
+     + "      REAL,ALLOCATABLE::feedpropylenetotal(:), feedH2fertilizer(:), EthaneDivFrac(:,:), PropaneDivFrac(:,:)" + chr(10)
+     + "      REAL REFQM(mainfuels,4,numind,mnumyr), REFQI(7,4,numind,mnumyr), REFQR(9,4,numind,mnumyr)" + chr(10)
+     + "      REAL REFELOWN(4,numind,mnumyr), REFELSALE(4,numind,mnumyr)" + chr(10)
+     + "      REAL hist_bench(mnumyr,numind,5,mainfuels-1)"),
+    # Reference record of every industry-region's result after INDTOTAL, by year (the last iteration wins). The
+    # port replays these for the process-flow industries it does not model.
+    (re.compile(r"^(\s*)CALL INDTOTAL\(INDREG\)\s*$", re.I | re.M),
+     r"\1CALL INDTOTAL(INDREG)" + chr(10) + r"\1REFQM(:,INDREG,INDDIR,CURIYR)=QTYMAIN(:,INDREG)" + chr(10)
+     + r"\1REFQI(:,INDREG,INDDIR,CURIYR)=QTYINTR(:,INDREG)" + chr(10) + r"\1REFQR(:,INDREG,INDDIR,CURIYR)=QTYRENW(:,INDREG)" + chr(10)
+     + r"\1REFELOWN(INDREG,INDDIR,CURIYR)=ELOWN" + chr(10) + r"\1REFELSALE(INDREG,INDDIR,CURIYR)=ELSALE"),
     # NaN report format (format 2336) gives an I4 edit descriptor to a REAL; Intel prints it, gfortran stops.
     (re.compile(r'6\(":",I4\),2\(":",F21\.6\)'), '5(":",I4),3(":",F21.6)'),
     # INDSIC and INDGRP only write EIA's internal spreadsheet reports (indsic.csv, indreg*.csv,

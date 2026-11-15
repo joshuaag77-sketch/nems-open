@@ -36,20 +36,10 @@ from build_engine_catalog import markdown_table  # noqa: E402
 FIRST, LAST = 2027, 2050          # the years the demo's levers act on
 SAME = 0.005                      # a ported module's demo number counts as matching within 0.5%
 
-# Ported modules: test files (by name prefix), the harnesses they run through, and the
-# SCOPE.md table that lists their routines (heading, state column, match column).
-PORTS = {
-    "residential": {"name": "Residential demand", "tests": ["test_residential_", "test_oracle_residential"],
-                    "harness": ["resd_oracle.py"], "table": ("### Routine map", "State", "State")},
-    "commercial": {"name": "Commercial demand", "tests": ["test_commercial_", "test_oracle.py"],
-                   "harness": ["oracle_harness.py"], "table": ("## Pilot progress", "State", "Match vs EIA")},
-    "transportation": {"name": "Transportation demand", "tests": ["test_tran_"],
-                       "harness": ["tran_harness.py"], "table": ("### Port progress", "State", "Match vs oracle")},
-    "ldsm": {"name": "Electricity load and demand (LDSM)", "tests": ["test_ldsm_"], "harness": ["emm_oracle.py"],
-             "table": ("## LDSM port", "Python", "Check")},
-    "efp": {"name": "Electricity finance and pricing (EFP)", "tests": ["test_efp_"], "harness": ["emm_oracle.py"],
-            "table": ("## EFP port", "Python", "Checked")},
-}
+# Ported modules, which engine piece each one replaces, and what each run set ported: src/nems_open/ports.json.
+# A port is graded once its tests exist; a run set uses it once the set's metadata lists it (see that file's _doc).
+REGISTRY = json.loads((SRC / "ports.json").read_text(encoding="utf-8"))
+PORTS = REGISTRY["ports"]
 # Rows that are not part of a module's yearly path (reports, switched-off features).
 NOT_COUNTED = re.compile(r"^(skip|not ported)", re.I)
 NOT_DONE = re.compile(r"^(to do|not yet)", re.I)
@@ -74,19 +64,28 @@ STANDINS = {
                     "doc": "docs/demand_elasticities.md"},
 }
 
-# The engine view's modules (web/data/engine.js keys) and what stands behind each in each set.
-# "port:<key>" uses PORTS, "own:<key>" OWN, "stand:<key>" STANDINS.
-ENGINE = {
-    "residential": {"fast": "stand:demand_stub", "real": "port:residential", "datacenter": "port:residential"},
-    "commercial": {"fast": "stand:demand_stub", "real": "port:commercial", "datacenter": "port:commercial"},
-    "industrial": {"fast": "stand:demand_stub", "real": "stand:demand_stub", "datacenter": "stand:demand_stub"},
-    "transportation": {"fast": "stand:demand_stub", "real": "stand:demand_stub", "datacenter": "port:transportation"},
-    "electricity": {"fast": "stand:electricity", "real": "own:dispatch", "datacenter": "own:dispatch"},
-    "natural_gas": {"fast": "stand:natural_gas", "real": "stand:natural_gas", "datacenter": "stand:natural_gas"},
-    "oil": {"fast": "stand:oil", "real": "stand:oil", "datacenter": "stand:oil"},
-    "coal": {"fast": "stand:coal", "real": "stand:coal", "datacenter": "stand:coal"},
-    "emissions": {"fast": "stand:emissions", "real": "stand:emissions", "datacenter": "stand:emissions"},
-}
+
+
+def set_info(name: str) -> dict:
+    """{ported: [...], elec: ...} for a run set, from its run metadata where it has some (ports.json "sets")."""
+    spec = REGISTRY["sets"][name]
+    if "meta" in spec:
+        meta = json.loads((ROOT / spec["meta"]).read_text(encoding="utf-8"))
+        return {"ported": list(meta.get("ported", [])), "elec": meta.get("elec", "standin")}
+    return {"ported": list(spec.get("ported", [])), "elec": spec.get("elec", "standin")}
+
+
+def resolve(module: str, info: dict, parts: dict) -> str:
+    """The part behind an engine piece in a run: its port if graded and the run ported it, else our own model if the
+    run used it, else the stand-in."""
+    m = REGISTRY["modules"][module]
+    port = m.get("port")
+    if port and f"port:{port}" in parts and (module in info["ported"] or port in info["ported"]):
+        return f"port:{port}"
+    if m.get("own") and info["elec"] == "lp" and f"own:{m['own']}" in parts:
+        return f"own:{m['own']}"
+    return m["fallback"]
+
 
 # Numbers on the demo page: how to read them from a run, and the modules that produce them.
 DEMAND = ["residential", "commercial", "industrial", "transportation"]
@@ -145,8 +144,8 @@ def tolerances(files: list[Path]) -> tuple[list[float], list[float]]:
 
 def port_grade(key: str, scope: str, tests: list[str]) -> dict:
     m = PORTS[key]
-    heading, state_col, match_col = m["table"]
-    rows = markdown_table(scope, heading)
+    heading, state_col, match_col = m["table"] or ("", "State", "State")
+    rows = markdown_table(scope, heading) if heading else []
     counted = [r for r in rows if not NOT_COUNTED.match(r.get(state_col, ""))]
     done = [r for r in counted if r.get(state_col) and not NOT_DONE.match(r[state_col])]
     files = sorted({t.split("::")[0] for t in tests if any(t.startswith(p) for p in m["tests"])})
@@ -160,7 +159,8 @@ def port_grade(key: str, scope: str, tests: list[str]) -> dict:
     first = lambda r: next(iter(r.values()))  # noqa: E731
     return {
         "name": m["name"], "grade": "match", "label": "matches EIA",
-        "summary": (f"Ported from EIA's code: {len(done)} of {len(counted)} routines in SCOPE.md done. Tests compare "
+        "summary": ((f"Ported from EIA's code: {len(done)} of {len(counted)} routines in SCOPE.md done. " if counted
+                     else f"Ported from EIA's code ({len(files)} test files). ") + "Tests compare "
                     f"its arrays with EIA's Fortran, run as the oracle"
                     + (f", to {common:g} relative typically and {loosest:g} at worst" if tols else "")
                     + (f"; against EIA's published run, within {max(pub):g} per cell" if pub else "") + "."),
@@ -239,7 +239,8 @@ def main() -> None:
     if dc_reference.exists():
         runs["datacenter"] = json.loads(dc_reference.read_text())
 
-    parts = {f"port:{k}": port_grade(k, scope, tests) for k in PORTS}
+    live = [k for k in PORTS if any(t.split("::")[0].startswith(tuple(PORTS[k]["tests"])) for t in tests)]
+    parts = {f"port:{k}": port_grade(k, scope, tests) for k in live}
     parts.update({f"stand:{k}": stand_grade(k, coef, elast) for k in STANDINS})
     if "real" in runs:
         # the worst of every run the LP is in
@@ -248,14 +249,9 @@ def main() -> None:
 
     sets = {}
     for name, run in runs.items():
-        mods = {}
-        for key, by_set in ENGINE.items():
-            part = by_set[name]
-            if part not in parts:          # the dispatch LP only runs in the real sets
-                part = by_set["fast"]
-            mods[key] = {"part": part, **{k: parts[part][k] for k in ("grade", "label")}}
-        # retail power prices come from the stand-in in both sets
-        mods["electricity:price"] = {"part": "stand:electricity", "grade": "stand", "label": "stand-in"}
+        info = set_info(name)
+        mods = {key: {"part": (part := resolve(key, info, parts)), **{k: parts[part][k] for k in ("grade", "label")}}
+                for key in REGISTRY["modules"]}
         outs = {}
         for key, (label, get, producers) in OUTPUTS.items():
             if key in REAL_ONLY and name == "fast":
@@ -281,7 +277,12 @@ def main() -> None:
                                      if out["grade"] == "match" else f"Weakest piece behind it: {weakest} ({worst['label']})."))
             outs[key] = out
         outs["cum"] = {**outs["co2"], "label": "CO2 avoided, 2027-2050"}
-        sets[name] = {"modules": mods, "outputs": outs}
+        sets[name] = {"modules": mods, "outputs": outs, "ported": info["ported"], "elec": info["elec"]}
+    used = {m["part"] for st in sets.values() for m in st["modules"].values()}
+    for k, p in parts.items():
+        if k.startswith("port:") and k not in used:
+            p["summary"] = "Being ported; no run on the site uses it yet. " + p["summary"]
+            p["in_use"] = False
 
     data = {
         "generated": str(date.today()),
@@ -292,6 +293,10 @@ def main() -> None:
             "stand": "A curve or elasticity fitted to EIA's AEO2026 runs.",
         },
         "parts": parts, "sets": sets, "tests_collected": len(tests),
+        # for pages that resolve a run's own ported list (web/site.js NEMSGrade.part): engine piece -> port, own, fallback
+        "registry": {k: {"port": f"port:{m['port']}" if m.get("port") and f"port:{m['port']}" in parts else None,
+                         "own": f"own:{m['own']}" if m.get("own") and f"own:{m['own']}" in parts else None,
+                         "fallback": m["fallback"]} for k, m in REGISTRY["modules"].items()},
     }
     WEB.mkdir(parents=True, exist_ok=True)
     (WEB / "fidelity.json").write_text(json.dumps(data, indent=1))

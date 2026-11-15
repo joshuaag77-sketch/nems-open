@@ -1,5 +1,6 @@
-// Ask the model (ask.html): a question goes to POST /api/ask (scripts/serve_2050.py), which runs the policy
-// agent. That endpoint exists only on the local server with ANTHROPIC_API_KEY set; elsewhere the page says so.
+// Ask the model (ask.html): a question goes to POST api/ask, which runs the policy agent. Two places serve it: the
+// local server (scripts/serve_2050.py, ANTHROPIC_API_KEY set) and the hosted function (site/api/ask.py, with per-visitor
+// and daily limits). api/health says which ("hosted": true) and whether it can answer now.
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -10,14 +11,15 @@
     "If data centers add 600 TWh a year by 2050, what happens to electricity prices?",
     "What does a $100 carbon price do to a household's energy bill in 2040?",
   ];
-  const ASK_TIMEOUT_MS = 90000;
-  const S = { checked: false, server: false, key: false, asking: false };
+  const ASK_TIMEOUT_MS = 75000;
+  const S = { checked: false, server: false, key: false, hosted: false, asking: false };
 
   function paint() {
     const note = $("ask-note"), off = !S.checked || !S.server || !S.key;
     $("ask-q").disabled = off || S.asking; $("ask-go").disabled = off || S.asking;
     for (const b of document.querySelectorAll("#ask-ex button")) b.disabled = off || S.asking;
     if (!S.checked) note.textContent = "";
+    else if (S.hosted && !S.key) note.textContent = "Questions are switched off on this copy of the site right now. The levers in Your 2050 still work.";
     else if (!S.server) note.innerHTML = "Asking needs the model running on your own computer: <code>python scripts/serve_2050.py</code> with ANTHROPIC_API_KEY set, then open this page from it. This copy of the site cannot answer questions.";
     else if (!S.key) note.innerHTML = "The local server has no ANTHROPIC_API_KEY, so it cannot answer. Set it and restart <code>python scripts/serve_2050.py</code>.";
     else if (!S.asking) note.textContent = "Answers use only numbers the model produced, each with where it came from. Policies start in 2027 and cover the whole US.";
@@ -59,25 +61,25 @@
     q = q.trim(); if (!q || S.asking) return;
     $("ask-q").value = q; S.asking = true; paint();
     const out = $("ask-out"), t0 = Date.now(); out.hidden = false;
-    const tick = () => { out.innerHTML = `<p class="fine"><span class="spin"></span>Working on it: ${Math.round((Date.now() - t0) / 1000)} s. The model runs scenarios and checks every number, usually 20 to 60 seconds.</p>`; };
+    const tick = () => { out.innerHTML = `<p class="fine"><span class="spin"></span>Working on it: ${Math.round((Date.now() - t0) / 1000)} s. The model runs scenarios and checks every number, usually under a minute.</p>`; };
     tick(); const timer = setInterval(tick, 1000);
     const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), ASK_TIMEOUT_MS);
     let a;
     try {
-      const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }), signal: ctl.signal });
+      const res = await fetch("api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }), signal: ctl.signal });
       try { a = await res.json(); } catch (e) { a = { error: "bad_reply", message: "The server sent something the page could not read." }; }
       if (!res.ok) a = { error: a.error || "failed", message: a.message || "The server could not answer." };
     } catch (e) {
-      a = { error: "network", message: e.name === "AbortError" ? "That took longer than 90 seconds, so the page stopped waiting. Try a simpler question." : "The local server did not respond. Is scripts/serve_2050.py still running?" };
+      a = { error: "network", message: e.name === "AbortError" ? "That took too long, so the page stopped waiting. Try a simpler question." : S.hosted ? "The site did not respond. Try again in a minute." : "The local server did not respond. Is scripts/serve_2050.py still running?" };
     }
     clearTimeout(to); clearInterval(timer); S.asking = false;
     show(a); paint();
   }
   async function check() {
     try {
-      const h = await Promise.race([fetch("/api/health", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 2500))]);
+      const h = await Promise.race([fetch("api/health", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("timeout")), 2500))]);
       const j = await h.json();
-      S.server = h.ok && j.ok === true; S.key = S.server && j.ask === true;
+      S.server = h.ok && j.ok === true; S.key = S.server && j.ask === true; S.hosted = S.server && j.hosted === true;
     } catch (e) { S.server = false; S.key = false; }
     S.checked = true; paint();
   }

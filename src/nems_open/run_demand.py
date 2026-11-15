@@ -203,6 +203,15 @@ class IndustrialSector:
     name = "industrial"
     suffix = "in"
     ported = ("CALBSC", "CALSTOT", "INDTOTAL", "COGINIT", "EVALCOGEN", "CALGEN")
+    DUMP_YEARS = (2025, 2026, 2027, 2030, 2040, 2050)  # years the oracle dumped IND's state at the top of the first iteration
+
+    def __init__(self, ind: str = "oracle"):
+        """ind="oracle": EIA's fuel use from the industrial oracle, fixed. ind="ported": the ported year loop
+        (industrial/year.py): end-use industries computed, process-flow industries and oil and gas mining
+        replayed from EIA's reference path scaled by output (industrial/standin.py)."""
+        if ind not in ("oracle", "ported"):
+            raise ValueError(f"ind must be 'oracle' or 'ported', not {ind!r}")
+        self.ind = ind
 
     @staticmethod
     def oracle_out():
@@ -218,7 +227,9 @@ class IndustrialSector:
     def available(cls, year: int) -> bool:
         return cls.oracle_out() is not None
 
-    def start(self, year: int, inputs=None) -> dict:
+    def start(self, year: int, inputs=None):
+        if self.ind == "ported":
+            return self._start_ported(year, inputs)
         d = self.oracle_out()
         if d is None:
             raise FileNotFoundError("industrial oracle output not found (oracle/run_ind/out/q*in.bin)")
@@ -228,11 +239,55 @@ class IndustrialSector:
             rows[k] = FArray(raw.reshape((MNUMCR, raw.size // MNUMCR), order="F"))
         return rows
 
-    def iteration(self, rows, year: int, itr: int, inputs: Inputs) -> None:
-        pass  # fixed at the oracle's values until IND's year loop is ported
+    def _start_ported(self, year: int, inputs=None):
+        from nems_open import oracle_state
+        from nems_open.industrial.standin import Reference, make_standin
+        from nems_open.industrial.year import run_year, start_state
+        dumps = [y for y in self.DUMP_YEARS if y <= year and oracle_state.available("ys_in", y - BASEYR + 1, "ind")]
+        if not dumps:
+            raise FileNotFoundError("the ported industrial year loop starts from the oracle's IND state (oracle/build_wsl.sh ind): "
+                                    f"no 'ys_in' dump at or before {year}")
+        first = max(dumps)
+        s, bufs = start_state(oracle_state.load("ys_in", first - BASEYR + 1, "ind"))
+        standin = make_standin(Reference.load())
+        state = IndustrialState(s, bufs, standin)
+        for y in range(first, year):  # years between the dump and the start year, with EIA's inputs
+            _set_year(s, y)
+            inputs.apply(s) if inputs is not None else None
+            run_year(s, bufs, 2, standin)
+        state.needs_first_iteration = True
+        return state
+
+    def iteration(self, state, year: int, itr: int, inputs: Inputs) -> None:
+        if self.ind != "ported":
+            return  # fixed at the oracle's values
+        from nems_open.industrial.year import calibrate, run_iteration
+        _set_year(state.s, year)
+        inputs.apply(state.s)
+        run_iteration(state.s, state.bufs, itr, itr == 2, state.standin)
+        if itr == 2:
+            state.s["ncrl"] = np.int32(1)
+            calibrate(state.s, state.bufs)  # the reporting call that leaves next year's starting state
 
     def quantities(self, rows) -> dict:
-        return rows
+        if self.ind != "ported":
+            return rows
+        s = rows.s
+        return {k: s[k] for k in SECTOR_QUANTITIES["in"] if k in s}
+
+
+class IndustrialState:
+    """The ported industrial module's state: the working variables and the per-industry-region buffers."""
+
+    def __init__(self, s: dict, bufs: dict, standin):
+        self.s, self.bufs, self.standin = s, bufs, standin
+        self.needs_first_iteration = False
+
+
+def _set_year(s: dict, year: int) -> None:
+    s["curiyr"] = np.int32(year - BASEYR + 1)
+    s["curcalyr"] = np.int32(year)
+    s["iyr"] = np.int32(year)
 
 
 class InProcess:
@@ -506,7 +561,7 @@ class DemandRunner:
     def __init__(self, year: int, inputs: Inputs | None = None,
                  sectors=("residential", "commercial"), parallel: bool = False,
                  commercial_from_files: bool = False, commercial_levers=None, ev_share: dict | None = None,
-                 residential_levers=None):
+                 residential_levers=None, ind: str = "oracle"):
         self.inputs = inputs or Inputs()
         self.year = year
         self.first_iteration = 2
@@ -519,7 +574,7 @@ class DemandRunner:
         # it loads while this process starts the last one). Results are the same.
         options = {"residential": {"levers": residential_levers},
                    "commercial": {"from_files": commercial_from_files, "levers": commercial_levers},
-                   "transportation": {"ev_share": ev_share}}
+                   "transportation": {"ev_share": ev_share}, "industrial": {"ind": ind}}
         workers = {name: InProcess(name, year, self.inputs.snapshot.path, options.get(name))
                    for name in names[:-1]} if parallel else {}
         for name in names:

@@ -1,0 +1,47 @@
+{
+ "_doc": [
+  "Which ported module stands behind each piece of the engine, read by scripts/fidelity.py. Data, not code: a lane that",
+  "lands a port changes nothing here if its entry exists, and the grade turns green on its own once both are true:",
+  "(1) pytest collects at least one test file starting with one of the port's test prefixes (its oracle comparisons);",
+  "(2) a run set lists the module (or the port key) in its 'ported' list, read from the run's own metadata.",
+  "Then rerun the runs and `python scripts/fidelity.py`. Until (1), the port is not graded; until (2), pages keep the",
+  "fallback. 'table' is the SCOPE.md heading whose first table lists the port's routines, with the column that holds",
+  "each routine's state and the one that says how it matches; leave it null if there is none yet.",
+  "modules: engine piece -> {port: a key of ports, own: a key of fidelity.py OWN used when the set runs elec='lp',",
+  "fallback: the stand-in part}. sets: where each precomputed run set says what it ported."
+ ],
+ "ports": {
+  "residential": {"name": "Residential demand", "tests": ["test_residential_", "test_oracle_residential"],
+                  "harness": ["resd_oracle.py"], "table": ["### Routine map", "State", "State"]},
+  "commercial": {"name": "Commercial demand", "tests": ["test_commercial_", "test_oracle.py"],
+                 "harness": ["oracle_harness.py"], "table": ["## Pilot progress", "State", "Match vs EIA"]},
+  "transportation": {"name": "Transportation demand", "tests": ["test_tran_"],
+                     "harness": ["tran_harness.py"], "table": ["### Port progress", "State", "Match vs oracle"]},
+  "ldsm": {"name": "Electricity load and demand (LDSM)", "tests": ["test_ldsm_"], "harness": ["emm_oracle.py"],
+           "table": ["## LDSM port", "Python", "Check"]},
+  "efp": {"name": "Electricity finance and pricing (EFP)", "tests": ["test_efp_"], "harness": ["emm_oracle.py"],
+          "table": ["## EFP port", "Python", "Checked"]},
+  "industrial": {"name": "Industrial demand", "tests": ["test_industrial_"], "harness": [], "table": null},
+  "ecp": {"name": "Electricity capacity planning (ECP)", "tests": ["test_ecp_"], "harness": ["emm_oracle.py"], "table": null},
+  "ngmm": {"name": "Natural gas markets (NGMM)", "tests": ["test_ngmm_"], "harness": [], "table": null},
+  "lfmm": {"name": "Liquid fuels and refining (LFMM)", "tests": ["test_lfmm_"], "harness": [], "table": null},
+  "coal": {"name": "Coal market (CMM)", "tests": ["test_coal_"], "harness": [], "table": null}
+ },
+ "modules": {
+  "residential": {"port": "residential", "fallback": "stand:demand_stub"},
+  "commercial": {"port": "commercial", "fallback": "stand:demand_stub"},
+  "industrial": {"port": "industrial", "fallback": "stand:demand_stub"},
+  "transportation": {"port": "transportation", "fallback": "stand:demand_stub"},
+  "electricity": {"port": "ecp", "own": "dispatch", "fallback": "stand:electricity"},
+  "electricity:price": {"port": "efp", "fallback": "stand:electricity"},
+  "natural_gas": {"port": "ngmm", "fallback": "stand:natural_gas"},
+  "oil": {"port": "lfmm", "fallback": "stand:oil"},
+  "coal": {"port": "coal", "fallback": "stand:coal"},
+  "emissions": {"fallback": "stand:emissions"}
+ },
+ "sets": {
+  "fast": {"ported": [], "elec": "standin"},
+  "real": {"meta": "web/data/real_meta.json"},
+  "datacenter": {"ported": ["residential", "commercial", "transportation"], "elec": "lp"}
+ }
+}
