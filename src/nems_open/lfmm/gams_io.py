@@ -71,13 +71,26 @@ def helper(action: str, *paths, extra=()) -> None:
     import os
     import subprocess
     from nems_open.paths import REPO_ROOT
+    import time
+    wsl = ["wsl", "-d", "Ubuntu", "--", "env", f"PYTHONPATH={_wsl_path(REPO_ROOT / 'src')}", WSL_PYTHON, "-m",
+           "nems_open.lfmm.gams_io", action, *(_wsl_path(p) for p in paths), *extra]
     if use_wsl():
-        args = ["wsl", "-d", "Ubuntu", "--", "env", f"PYTHONPATH={_wsl_path(REPO_ROOT / 'src')}", WSL_PYTHON, "-m",
-                "nems_open.lfmm.gams_io", action, *(_wsl_path(p) for p in paths), *extra]
-        subprocess.run(args, check=True)
-    else:
-        subprocess.run([str(GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", action, *(str(p) for p in paths), *extra],
-                       check=True, env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
+        subprocess.run(wsl, check=True)
+        return
+    win = [str(GAMS_PYTHON), "-m", "nems_open.lfmm.gams_io", action, *(str(p) for p in paths), *extra]
+    # Windows Application Control once refused to load _gams2numpy.pyd mid-run (2030 cycle 2, after thousands of
+    # clean loads): retry after a pause, then fall back to WSL's GAMS Python on the same files.
+    for wait in (0, 5, 30):
+        time.sleep(wait)
+        try:
+            subprocess.run(win, check=True, env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")})
+            return
+        except subprocess.CalledProcessError as e:
+            err = e
+    try:
+        subprocess.run(wsl, check=True)
+    except (subprocess.CalledProcessError, OSError):
+        raise err
 
 
 def _width(n: int) -> int:
