@@ -97,9 +97,11 @@ def test_infeasible_keeps_last_solve():
     again = lf.solve_year(j, q, {}, {}, 9, 1)
     assert np.allclose(again.prices["MPBLK/pmgtr"], first.prices["MPBLK/pmgtr"])
     assert lf.infeasible == [(2035, 9)]
-    lf._last.clear()
-    with pytest.raises(LfmmInfeasible):
-        lf.solve_year(j, q, {}, {}, 1, 0)
+    lf._last.clear()   # 2041 cycle 2 itr 1: first solve of the year infeasible, falls back to the reference solve
+    lf.fallbacks = []
+    fb = lf.solve_year(j, q, {}, {}, 1, 0)
+    assert np.allclose(fb.prices["MPBLK/pmgtr"], 10.0)   # calibrated: reference over reference = EIA's own value
+    assert lf.fallbacks == [(2035, 1)]
     lf.call = ok
 
 

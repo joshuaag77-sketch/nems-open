@@ -116,6 +116,7 @@ class LfmmGams:
         gams_run.load_state(self.run, self.reference, start_year - 1)
         self._ref, self._last, self.infeasible = {}, {}, []
         self.solver_failures = []
+        self.fallbacks = []   # (year, itr) whose first solve this cycle failed and used the reference sequence's
 
     def reference_columns(self, year: int) -> dict[str, np.ndarray]:
         if year not in self._ref:
@@ -184,8 +185,9 @@ class LfmmGams:
             try:
                 self._last[year] = self.call(year, itr, fcrl, self._inputs(j, q, col, prices))
             except LfmmInfeasible:
-                if year not in self._last:
-                    raise
+                if year not in self._last:   # nothing solved yet this cycle: fall back to EIA's own reference solve
+                    self._last[year] = self.reference_columns(year)
+                    self.fallbacks.append((year, itr))
                 self.infeasible.append((year, itr))
         now = self._last[year]
         b = self.base
