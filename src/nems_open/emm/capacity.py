@@ -162,6 +162,45 @@ def max_retirement_rate(year: int) -> float:
     return rate if rate <= last + 1e-9 else float("inf")        # uecp.f 1176: past UPRETRTL the limit is switched off (RETYR = 0)
 
 
+def epa111() -> dict:
+    """EPA's 2024 power plant rule as EMM applies it (emmcntl.txt %EPA 111 SW%, read in udat.f): switch, last year coal
+    can switch to gas (UEPA_GSYR), coal's largest share in a coal-gas cofiring plant from then (UEPA_CGSH), last year
+    a plant may cofire coal (UEPA_CLCFYR: cofiring plants retire at the end of it, udat.f 6451), the year existing
+    coal must retire or add CCS (UEPA_CLYR), and the year from which new gas combined cycle without CCS is held to a
+    capacity factor of UEPA_NWGSCF (udat.f 6446)."""
+    lines = (INPUT / "emm" / "emmcntl.txt").read_text(encoding="latin-1").splitlines()
+    row = next(l for l in lines if l.lstrip().startswith("'EPA111 SW'")).split()[2:]
+    keys = ("switch", "gas_switch_last", "cofire_coal_share", "cofire_last", "coal_rule", "new_cc_year", "new_cc_cf")
+    vals = [float(v) for v in row[:7]]
+    out = dict(zip(keys, vals))
+    for k in ("switch", "gas_switch_last", "cofire_last", "coal_rule", "new_cc_year"):
+        out[k] = int(out[k])
+    return out
+
+
+def cofiring_existing(snapshot, start_year: int) -> np.ndarray:
+    """Coal-gas cofiring capacity already in the reference run's steam (restart prefix ng) when the loop starts, that
+    EPA 111 retires after its last cofiring year: what the reference run itself still has in that prefix the year
+    after (full gas conversions) stays. GW by region."""
+    e = epa111()
+    at_start = dispatch._ucap(snapshot, ("ng",), start_year - 1 - history.FIRST_YEAR)
+    after = dispatch._ucap(snapshot, ("ng",), e["cofire_last"] + 1 - history.FIRST_YEAR)
+    return np.maximum(at_start - after, 0.0) if e["switch"] else np.zeros(NUM_R)
+
+
+def epa111_retirements(snapshot, year: int, cap_in: dict, rets: dict) -> dict:
+    """`rets` plus EPA 111's cofiring retirements in `year`: plants still cofiring coal retire at the end of UEPA_CLCFYR.
+    The LP's own conversions (gas_conv) cofire, and so do the reference run's existing ones in steam (prefix ng, less
+    the full gas conversions it keeps)."""
+    rule = epa111()
+    if not rule["switch"] or year != rule["cofire_last"] + 1:
+        return rets
+    rets = dict(rets)
+    rets["gas_conv"] = rets["gas_conv"] + cap_in["gas_conv"]
+    rets["steam"] = rets["steam"] + np.minimum(cofiring_existing(snapshot, START_YEAR), cap_in["steam"])
+    return rets
+
+
 def _crf(rate: float, years: float) -> float:
     return rate / (1.0 - (1.0 + rate) ** -years)
 
@@ -362,6 +401,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     y = year - history.FIRST_YEAR
     case = case if case is not None else dispatch.build_case(snapshot, year, "none")
     adds, rets = dated_changes(year)
+    rule = epa111()
+    rets = epa111_retirements(snapshot, year, cap_in, rets)
     cap0 = {g: np.maximum(cap_in[g] + adds[g] - rets[g], 0.0) for g in STATE_GROUPS}
 
     # --- costs of building ---
@@ -386,6 +427,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     heat["gas_ccs"] = np.full(NUM_R, float(hr_new_all[codes.index("CS")]))
     vom["gas_ccs"] = np.full(NUM_R, float(params["vom"][codes.index("CS")]))
     max_cf = {g: np.full(NUM_R, avail[g][1]) for g in TG}
+    if rule["switch"] and year >= rule["new_cc_year"]:
+        max_cf["gas_cc_new"] = np.minimum(max_cf["gas_cc_new"], rule["new_cc_cf"])     # EPA 111: new CC without CCS
 
     # --- existing plant fixed O&M, CCS retrofit data ---
     u = plants.load_units()
@@ -462,7 +505,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     bw = m.add_variables(lower=0, upper=room * can_build["wind"], coords=[R], name="build_wind")
     bs = m.add_variables(lower=0, upper=room * can_build["solar"], coords=[R], name="build_solar")
     bb = m.add_variables(lower=0, upper=room * can_build["battery"], coords=[R], name="build_battery")
-    convert = m.add_variables(lower=0, upper=xr.DataArray(cap0["coal"] * (year >= START_YEAR and decide), coords=[R]),
+    can_convert = year >= START_YEAR and decide and (not rule["switch"] or year <= rule["gas_switch_last"])
+    convert = m.add_variables(lower=0, upper=xr.DataArray(cap0["coal"] * can_convert, coords=[R]),
                               name="convert")
     m.add_constraints(retrofit.sum() <= RETROFIT_LIMIT_GW, name="retrofit_limit")
     m.add_constraints(bw.sum() <= ANNUAL_BUILD_LIMIT_GW["wind"], name="limit_build_wind")
@@ -524,6 +568,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             oil_price = cs.price["residual"] if g == "steam" else cs.price["distillate"]
             is_coal = g.startswith("coal")
             fuel = (1 - oil_share[g]) * cs.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
+            if g == "gas_conv" and rule["switch"]:
+                # EPA 111 cofiring: at most UEPA_CGSH of the fuel is coal (udat.f 6457), the rest gas
+                fuel = rule["cofire_coal_share"] * cs.price["coal"] + (1.0 - rule["cofire_coal_share"]) * cs.price["gas"]
             cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
             if g in dispatch.CAPTURE_GROUPS:
                 share = cs.credit_share[g] if cs.credit_share is not None else 1.0
@@ -662,6 +709,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             if yf >= RULE_YEAR:
                 coal_only = xr.DataArray(np.array([1.0 if g == "coal" else 0.0 for g in TG]), coords=[T])
                 m.add_constraints((capv_f * coal_only).sum("group") <= 0, name=f"coal_rule_p{offset}")
+            if rule["switch"] and yf > rule["cofire_last"]:      # EPA 111: no coal cofiring after UEPA_CLCFYR
+                conv_only = xr.DataArray(np.array([1.0 if g == "gas_conv" else 0.0 for g in TG]), coords=[T])
+                m.add_constraints((capv_f * conv_only).sum("group") <= 0, name=f"cofire_rule_p{offset}")
             ren = totals(c0f, bw + later_w, bs + later_s, bb + later_b)
             pf = operate(f"_p{offset}", cs, c0f, capv_f, *ren, bh=FUTURE_BLOCK_HOURS)
             operating = operating + wgt * pf["operating"]
