@@ -107,6 +107,7 @@ def test_infeasible_restores_state(tmp_path, monkeypatch):
     from nems_open.lfmm import gams_couple as gc
     lf = object.__new__(gc.LfmmGams)
     lf.run, lf.cycle, lf.timeout, lf.showreel = tmp_path, 1, 1, False
+    lf.solver_failures = []
     (tmp_path / "LFMM_Builds.gdx").write_bytes(b"before")
     monkeypatch.setattr(gc.gams_run, "prepare", lambda *a, **k: None)
     monkeypatch.setattr(gc.gams_run, "clean_dumps", lambda *a: None)
@@ -121,3 +122,56 @@ def test_infeasible_restores_state(tmp_path, monkeypatch):
         lf.call(2041, 9, 1, {})
     assert (tmp_path / "LFMM_Builds.gdx").read_bytes() == b"before"
     assert (tmp_path / "INFEAS.2041.1.9.lst").read_text() == "listing"
+
+
+def _bare(tmp_path):
+    from nems_open.lfmm import gams_couple as gc
+    lf = object.__new__(gc.LfmmGams)
+    lf.run, lf.cycle, lf.timeout, lf.showreel = tmp_path, 2, 1, False
+    lf.solver_failures = []
+    (tmp_path / "LFMM_Builds.gdx").write_bytes(b"before")
+    return lf
+
+
+def test_solver_failure_retries_with_ipm(tmp_path, monkeypatch):
+    """2039 cycle 2: dual simplex lost stability (Not Set, solvestat 13). Retry restores state and uses highs.opt."""
+    from nems_open.lfmm import gams_couple as gc
+    lf = _bare(tmp_path)
+    monkeypatch.setattr(gc.gams_run, "prepare", lambda *a, **k: None)
+    monkeypatch.setattr(gc.gams_run, "clean_dumps", lambda *a: None)
+    monkeypatch.setattr(gc.gams_io, "read_outputs", lambda p: {})
+    seen = []
+
+    def gams(run, timeout):
+        opt = run / "highs.opt"
+        seen.append((opt.read_text() if opt.exists() else None, (run / "LFMM_Builds.gdx").read_bytes()))
+        (run / "LFMM_Builds.gdx").write_bytes(b"after")
+        if len(seen) == 1:
+            (run / "LFMM.log").write_text("Model status        : Not Set\n    (solvestat, modelstat): (13, 13)\n")
+        else:
+            (run / "LFMM.log").write_text("    (solvestat, modelstat): (1, 1)\n")
+            (run / "LFMM_to_NEMS.gdx").write_bytes(b"x")
+        return 0
+    monkeypatch.setattr(gc.gams_run, "gams", gams)
+    lf.call(2039, 12, 1, {})
+    assert seen[0] == (None, b"before")
+    assert "ipm" in seen[1][0] and seen[1][1] == b"before"
+    assert lf.solver_failures == [(2039, 12, 0)]
+    assert not (tmp_path / "highs.opt").exists()
+
+
+def test_solver_failure_on_every_option_keeps_last_solve(tmp_path, monkeypatch):
+    from nems_open.lfmm import gams_couple as gc
+    lf = _bare(tmp_path)
+    monkeypatch.setattr(gc.gams_run, "prepare", lambda *a, **k: None)
+    monkeypatch.setattr(gc.gams_run, "clean_dumps", lambda *a: None)
+
+    def gams(run, timeout):
+        (run / "LFMM_Builds.gdx").write_bytes(b"after")
+        (run / "LFMM.log").write_text("Model status        : Not Set\n    (solvestat, modelstat): (13, 13)\n")
+        return 0
+    monkeypatch.setattr(gc.gams_run, "gams", gams)
+    with pytest.raises(gc.LfmmInfeasible):
+        lf.call(2039, 12, 1, {})
+    assert (tmp_path / "LFMM_Builds.gdx").read_bytes() == b"before"
+    assert len(lf.solver_failures) == len(gc.RETRY_OPTIONS)

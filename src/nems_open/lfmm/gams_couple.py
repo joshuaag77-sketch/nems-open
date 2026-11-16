@@ -87,6 +87,14 @@ def columns(o: dict, year: int) -> dict[str, np.ndarray]:
 
 STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx")
 
+# HiGHS options per attempt: defaults first, then interior point with crossover, then primal simplex.
+RETRY_OPTIONS = (None, "solver = ipm\nrun_crossover = on\n", "solver = simplex\nsimplex_strategy = 4\n")
+
+
+def solver_failed(rc: int, info: dict) -> bool:
+    """GAMS ran but the solver gave no answer (solvestat 13 or model status Not Set), as in the 2039 cycle 2 crash."""
+    return rc == 0 and (info.get("solvestat") == 13 or info.get("status") == "Not Set")
+
 
 class LfmmInfeasible(RuntimeError):
     """LFMM solved but the model is infeasible."""
@@ -107,6 +115,7 @@ class LfmmGams:
         gams_run.prepare(self.run, start_year, self.arrays)
         gams_run.load_state(self.run, self.reference, start_year - 1)
         self._ref, self._last, self.infeasible = {}, {}, []
+        self.solver_failures = []
 
     def reference_columns(self, year: int) -> dict[str, np.ndarray]:
         if year not in self._ref:
@@ -131,11 +140,28 @@ class LfmmGams:
         (self.run / "LFMM.log").unlink(missing_ok=True)
         (self.run / "LFMM_to_NEMS.gdx").unlink(missing_ok=True)
         kept = {f: (self.run / f).read_bytes() for f in STATE if (self.run / f).exists()}
-        t = time.time()
-        rc = gams_run.gams(self.run, timeout=self.timeout)
-        sec = time.time() - t
-        info = solve_info(self.run / "LFMM.log")
-        gams_run.clean_dumps(self.run)
+        opt = self.run / "highs.opt"
+        for attempt, options in enumerate(RETRY_OPTIONS):
+            if options is None:
+                opt.unlink(missing_ok=True)
+            else:   # dual simplex lost numerical stability: restore the build state and retry with sturdier options
+                for f, b in kept.items():
+                    (self.run / f).write_bytes(b)
+                opt.write_text(options)
+                (self.run / "LFMM.log").unlink(missing_ok=True)
+            t = time.time()
+            rc = gams_run.gams(self.run, timeout=self.timeout)
+            sec = time.time() - t
+            info = solve_info(self.run / "LFMM.log")
+            gams_run.clean_dumps(self.run)
+            if not solver_failed(rc, info):
+                break
+            self.solver_failures.append((year, itr, attempt))
+        opt.unlink(missing_ok=True)
+        if solver_failed(rc, info):   # every option set failed: treat as EIA's shell treats an infeasible solve
+            for f, b in kept.items():
+                (self.run / f).write_bytes(b)
+            raise LfmmInfeasible(f"LFMM {year} itr {itr}: solver failed ({info.get('status')}); see {self.run / 'LFMM.log'}")
         if rc == 0 and info.get("modelstat") == 4:
             lst = self.run / "LFshell.lst"
             if lst.exists():
