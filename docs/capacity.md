@@ -131,3 +131,20 @@ Not explained yet:
 - 2040 coal (dispatch on EIA's capacity 93 TWh vs 63). After 2038 all of EIA's coal is 16.2 GW of CCS retrofits running at a 45% capacity factor (63 TWh, 861 trillion Btu, 13.7 MMBtu/MWh: partly below full capture, whose heat rate is 14.8). The dispatch runs them at EFD's 65% cap because 45Q makes them the cheapest plant. Ruled out from saved outputs: the credit value (the oracle's EFD sees 33-36 $/t, CENS_VAL_45Q in PassBack_2040), its eligibility (retrofit records get the retrofit year as W_SYR), the capacity factor cap (pltdata CSC 0.65, the same in EFD), capture O&M (T_CCSV 1.2 $/MWh), must-run flags and the unit CF fade (ends 2030). Next: EFD's EP_MRM/BTU debug lines (unit 18) for a CCS group in 2040, which needs an oracle rerun with EMM_EMMPRNT kept, under HEAVY.lock.
 - The oracle's missing CCS retrofits (0 vs EIA's 16.3 GW) and cofiring (oracle steam 79 vs EIA 110 GW in 2030): both are coal-configuration choices in ECP (uecp.f EP$COAL, configurations from udat.f). The oracle loads the CCATS prices and RUN45Q and its ECP has retrofit columns at their bounds in OutToNEMS_2030; why the configurations are not taken needs ECP's CCATS_RETRO_CL / config debug lines from the same rerun.
 - One-step solves retire almost all steam at once (9 GW in 2035 vs EIA's 101) once the retirement rate cap lapses after 2034: steam's cost of staying exceeds what the LP values it at. Worth porting ECP's steam retirement economics next.
+
+## Steam retirements in one-step solves (2026-11-15, branch steam-retire)
+`python oracle/score_onestep.py` solves each year once from EIA's own fleet of the year before. With the one-year LP the 2035 step retires 52 GW of steam, 49 GW of combined cycle and 30 GW of turbines (EIA: almost none), and the 2050 step 334 GW. Cause: from 2035 the retirement rate cap has lapsed, EIA's fleet carries a reserve surplus that ECP built for its tail year's peak, and a one-year LP prices that capacity at almost nothing. ECP's retirement test sees the horizon: with capacity.HORIZON the 2035 step retires 11 GW and keeps 93 GW of steam (EIA 101).
+
+Cells inside 5% of 175, one step (2027 / 2030 / 2035 / 2050):
+
+| | vs cb2026 | vs oracle |
+|---|---|---|
+| one year | 124 / 112 / 120 / 117 | 115 / 74 / 54 / 65 |
+| horizon | 112 / 108 / 141 / 123 | 99 / 70 / 63 / 69 |
+
+The horizon fixes the mid-period steam dump but retires coal early in 2027 (92 vs 153 GW) and still retires 240 GW in 2050 (steam 10 vs 51), so it is +11 cells against cb2026 and -7 against the oracle. It stays off. Next: the horizon's retirement value. ECP's tail requirement grows with load past 2050 and its retirement groups pay EPGFOM net of the margin over all horizon years; this LP's tail holds 2050 prices and only the group's first-year margin. Port both before switching it on.
+
+## Queued for the next oracle rerun (needs HEAVY.lock)
+Rerun the AIMMS oracle 2020-2050 with EMM's debug print kept (do not delete run_emm/EMM_EMMPRNT, unit 18; about 4 GB) and keep ECP and EFD's OutToNEMS / PassBack files for 2027-2032 and 2040. Then:
+1. CCS coal capacity factor in 2040 (EIA 45%, our dispatch 65%). Read EFD's BTU and 45Q lines for a coal CCS group (uefd.f OPBSLD, formats 6317 and 2316/2317: SHR_NOCCS, ADJ_FAC, EOR_REV, CENS_VAL_45Q) and the group's cost column in the 2040 EFD solution. Question: what makes EIA's EFD hold full-capture coal to 45% when 45Q makes it the cheapest plant?
+2. The oracle's 0 CCS retrofits and 0 coal-gas cofiring conversions (EIA: 16.3 GW and 36 GW by 2032). Read ECP's coal configuration lines for 2027-2031 (uecp.f EP$COAL: CCATS_RETRO_CL, T_RETRO2, the retrofit configuration columns cRETRO / cRETROHTRT and their reduced costs in OutToNEMS). Question: which configuration costs or bounds keep ECP from choosing CCS or cofiring standalone, when EIA's coupled run chooses both?
