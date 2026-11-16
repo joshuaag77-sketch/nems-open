@@ -6,7 +6,8 @@ that turns the supply-side levers into moves on the stand-in or the dispatch LP.
 
 Three grades, the words the fidelity scoreboard uses for pieces of the model:
 
-  ported      edits a real input table of a routine ported from EIA's Fortran; the routines respond
+  ported      edits a real input table of a routine ported from EIA's Fortran, or sets a switch of EIA's own
+              code run as is (HSM's supply case); the routines respond
   own model   acts on our dispatch LP, built on EIA's data but not EIA's electricity model
   stand-in    moves a curve fitted to EIA's runs, or scales EIA's side cases; no EIA routine responds
 
@@ -32,6 +33,14 @@ COAL_HEAT_RATIO = 10500.0 / 3412.0
 TBTU_PER_TWH = 3.412
 GAS_FUELS = ("ng", "gf", "gi")
 GROUPS_OF_REFERENCE_ROW = {"wind": "QBLK/qwiel", "solar": "QBLK/qpvel"}
+# gas_supply where EIA's HSM sets expected gas production (run_model ogs="hsm" or "aimms"): HSM runs EIA's own side
+# case. Its scedes sets OGTECH (30 low, 23 high), and HSM turns that into one factor (0.5 or 1.5, module_unf.py) on
+# onshore project EURs and technology rates (onshore.py), offshore undiscovered resources, initial rates and technology
+# rates (offshore.py), Alaska's resources and technology rate (alaska.py), plus the low or high Gulf projection file and,
+# in the low case, no new Northern Great Plains gas projects. No resource or EUR file is swapped. HSM has only these two
+# cases, so the lever takes -1, 0 or +1 there.
+GAS_MODELS = ("hsm", "aimms")
+HSM_SCEDES = {-1.0: "scedes.lowogs.csv", 0.0: "scedes.cb2026.csv", 1.0: "scedes.highogs.csv"}
 
 
 @dataclass(frozen=True)
@@ -71,8 +80,8 @@ LEVERS = {v.name: v for v in (
 PORTED, OWN_MODEL, STAND_IN = "ported", "own model", "stand-in"
 
 
-def fidelity(name: str, ported: tuple = (), elec: str = "standin") -> tuple[str, str]:
-    """(grade, why) for this lever in a run with these ported sectors and this electricity model."""
+def fidelity(name: str, ported: tuple = (), elec: str = "standin", ogs: str = "standin") -> tuple[str, str]:
+    """(grade, why) for this lever in a run with these ported sectors, this electricity model and this gas model."""
     if name not in LEVERS:
         raise KeyError(name)
     lp = elec == "lp"
@@ -108,6 +117,9 @@ def fidelity(name: str, ported: tuple = (), elec: str = "standin") -> tuple[str,
             return OWN_MODEL, "Extra sales added by hand; the dispatch LP serves them, the stand-in prices them"
         return STAND_IN, "Extra sales added by hand; a fitted mix and fitted prices respond"
     if name == "gas_supply":
+        if ogs in GAS_MODELS:
+            return PORTED, ("EIA's HSM runs its own low or high supply case (EURs and technology rates x0.5 or x1.5) "
+                            "and the gas market clears on that production")
         return STAND_IN, "Scales delivered gas prices toward EIA's side case; no gas market model runs"
     return STAND_IN, "Crude passes through to product prices dollar for dollar; no world oil or refining model runs"
 
@@ -180,13 +192,24 @@ def _add(into: dict, more: dict) -> None:
         into[k] = into[k] + v if k in into else v
 
 
-def supply_shifts(policy, supply) -> SupplyShifts | None:
-    """The stand-in's moves for this policy, or None if it asks for none."""
+def hsm_scedes(policy) -> str:
+    """The scedes file HSM runs for this policy: EIA's low or high oil and gas supply case for gas_supply -1 or +1,
+    cb2026 for 0. Anything in between raises: HSM has no case there (see GAS_MODELS)."""
+    w = float(getattr(policy, "gas_supply", 0.0) or 0.0)
+    if w not in HSM_SCEDES:
+        raise ValueError(f"with EIA's HSM, gas_supply is -1, 0 or 1 (its low case, reference, high case), got {w}")
+    return HSM_SCEDES[w]
+
+
+def supply_shifts(policy, supply, ogs: str = "standin") -> SupplyShifts | None:
+    """The stand-in's moves for this policy, or None if it asks for none. With ogs in GAS_MODELS, gas_supply moves
+    nothing here: HSM's side case reaches the gas market instead (hsm_scedes), and scaling its prices too would count
+    the case twice."""
     base, start = supply.base, policy.start_year
     price, power = {}, {}
     from_start = np.zeros(NYEARS, dtype=bool)
     from_start[start - FIRST_YEAR:] = True
-    if policy.gas_supply:
+    if policy.gas_supply and ogs not in GAS_MODELS:
         case, w = _side_case(policy.gas_supply, "lowogs", "highogs")
         ref = load_case(REFERENCE)
         for name in base:

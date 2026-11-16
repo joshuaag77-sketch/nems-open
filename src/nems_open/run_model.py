@@ -172,12 +172,21 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     supply = SupplyStandin(baseline, base=base)
     base = supply.base
     carbon = policy.carbon()
-    oil, shifts = levers.brent(policy, base), levers.supply_shifts(policy, supply)
+    oil, shifts = levers.brent(policy, base), levers.supply_shifts(policy, supply, ogs)
+    # gas_supply under HSM: HSM runs EIA's low or high supply case from cycle 1 (levers.hsm_scedes)
+    hsm_case = levers.hsm_scedes(policy) if ogs in levers.GAS_MODELS else levers.HSM_SCEDES[0.0]
+    side_case = hsm_case != levers.HSM_SCEDES[0.0]
     market = None
     if ogs in ("ngmm", "hsm"):
         from nems_open.ngmm import GasMarket
         market = GasMarket(baseline, base=base, lng=policy.lng_exports)
     aimms_gas = expected = None
+    if side_case and ogs == "aimms":   # cycle 1: the side case's production on cb2026's prices
+        from nems_open.ngmm.aimms import hsm_expected
+        expected = hsm_expected(None, None, scedes=hsm_case)
+    if side_case and ogs == "hsm":
+        from nems_open.ogsm import couple
+        market.set_hsm(couple.expected_ratio(None, None, scedes=hsm_case))
     aimms_coal = None
     within, between = Settings.load("conv"), Settings.load("icnv")
     prices = {k: v.copy() for k, v in base.items() if k.startswith("MPBLK/")}
@@ -367,10 +376,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                              generation={k: v.copy() for k, v in (generation or {}).items()}, henry_hub=hub, stable=dict(stable))
         if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production
             from nems_open.ngmm.aimms import hsm_expected
-            expected = hsm_expected(aimms_gas.wellhead_ratio(), _oil_ratio(oil, base))
+            expected = hsm_expected(aimms_gas.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case)
         if ogs == "hsm" and cycle < cycles:   # HSM on this cycle's wellhead prices sets next cycle's expected production
             from nems_open.ogsm import couple
-            market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base)), market.P)
+            market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case), market.P)
         if cycle < cycles and relax:   # IRELAX = 2: relax every year between cycles
             for d in (prices, q):
                 for k in d:
@@ -391,7 +400,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         gas = {k: v.copy() for k, v in market.clear(q["QBLK/qngas"][US]).items()}
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)
         from nems_open.ogsm import couple
-        hsm = couple.production(market.wellhead_ratio(), _oil_ratio(oil, base))
+        hsm = couple.production(market.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case)
     coal_out = None
     if aimms_coal is not None:
         coal_out = {"production": aimms_coal.production, "cmm_seconds": aimms_coal.seconds}
@@ -484,7 +493,7 @@ def main(argv=None) -> None:
     print(r.report())
     for name, v in levers.LEVERS.items():
         if getattr(policy, {"carbon_price": "carbon_price", "ev_share": "ev_share"}.get(name, name)) != v.off:
-            grade, why = levers.fidelity(name, tuple(a.ported), a.elec)
+            grade, why = levers.fidelity(name, tuple(a.ported), a.elec, a.ogs)
             print(f"{levers.label(name, tuple(a.ported), a.elec)}: {grade}. {why}")
     if r.gas is not None and "wellhead" not in r.gas:
         print(f"\nNGMM (AIMMS) {a.end}: Henry Hub {r.gas['henry_hub'][a.end - FIRST_YEAR]:.2f} 1987 $/MMBtu, "
