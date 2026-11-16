@@ -56,9 +56,11 @@ EV_EIA_2030 = 0.49   # EIA's reference plug-in share of new light-duty sales in 
 # Levers run_model cannot take yet, and what each needs.
 NOT_YET: dict[str, str] = {}
 PARTIAL = {
-    "gas_supply": ("Gas resource. The lever exists but shifts delivered gas and retail electricity prices by EIA's "
-                   "lowogs/highogs price ratios; under ogs='aimms' HSM's resource base and NGMM do not see it. A real "
-                   "resource case needs HSM's resource inputs from those side cases (tier 2)."),
+    "gas_supply": ("Gas resource. EIA's HSM runs its own low or high oil and gas supply case (OGTECH 30 or 23: EURs "
+                   "and technology rates x0.5 or x1.5) and NGMM clears on that production. EIA's side cases also "
+                   "swap world oil (intallin_logs/hogs), LFMM (lfminput_hogs.gdx, lfshell_hogs.gms, rfhist_ogs.txt) "
+                   "and STEO benchmark settings; those stay at the reference here, and HSM's crude output does not "
+                   "reach the refinery model."),
     "lng_bcfd": ("LNG exports (Policy.lng_exports, ngmm/lng.py) run NGMM in its fixed-exports mode, while the "
                  "calibration factors come from NGMM's endogenous cb2026 run: check once that fixed exports at EIA's "
                  "own path reproduce the reference (one NGMM headless run, about 3 min)."),
@@ -200,7 +202,8 @@ MINUTES = {
 
 BY_KEY = {s.key: s for s in SCENARIOS}
 TIERS = {1: ("reference", "dc50", "dc100", "dc150", "lng30", "lng35", "lng40", "dc100_lng35", "co2_50", "co2_100",
-             "ev75")}
+             "ev75"),
+         2: ("gas_low", "gas_high", "dc100_gas_low", "dc100_gas_high", "lng40_gas_low", "lng35_gas_high", "stress")}
 LFMM_GAMS = {"reference", "co2_25", "co2_50", "co2_100", "ev50", "ev75", "ev75_co2_50", "co2_100_nuclear"}
 
 

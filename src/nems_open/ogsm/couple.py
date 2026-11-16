@@ -67,9 +67,13 @@ def production(gas_ratio=None, oil_ratio=None, scedes: str = "scedes.cb2026.csv"
         return {k: z[k] for k in z.files}
 
 
-def expected_ratio(gas_ratio=None, oil_ratio=None, scedes: str = "scedes.cb2026.csv") -> np.ndarray:
+REFERENCE_SCEDES = "scedes.cb2026.csv"
+
+
+def expected_ratio(gas_ratio=None, oil_ratio=None, scedes: str = REFERENCE_SCEDES) -> np.ndarray:
     """HSM's expected lower-48 natural gas production (OGSMOUT/ogenagprd, gas types 1-4, what NGMM centres
-    its supply curve on) for prices moved by the ratios, over the same on cb2026's prices. (61,)"""
+    its supply curve on) for prices moved by the ratios and case `scedes` (levers.hsm_scedes), over HSM's
+    reference run on cb2026's prices. (61,)"""
     run = production(gas_ratio, oil_ratio, scedes)["ogenagprd"][:, :4].sum(axis=(0, 1))
-    ref = production(None, None, scedes)["ogenagprd"][:, :4].sum(axis=(0, 1))
+    ref = production(None, None, REFERENCE_SCEDES)["ogenagprd"][:, :4].sum(axis=(0, 1))
     return np.divide(run, ref, out=np.ones(61), where=ref > 0)

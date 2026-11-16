@@ -587,12 +587,14 @@ class AimmsGas:
 EXPECTED = ("ogenagprd", "ogadgprd", "ogprcoak", "ogshaleng", "ogngplprd", "cnenagprd", "cnadgprd")
 
 
-def hsm_expected(gas_ratio, oil_ratio=None, case: str = "cb2026") -> dict:
+def hsm_expected(gas_ratio, oil_ratio=None, case: str = "cb2026", scedes: str = "scedes.cb2026.csv") -> dict:
     """HSM's expected production on prices moved by the ratios, as NGMM reads it (OGSMOUT arrays): cb2026's
-    restart values times HSM's run over HSM's own cb2026 run, so HSM's small reproduction error cancels."""
+    restart values times HSM's run over HSM's own cb2026 run, so HSM's small reproduction error cancels.
+    scedes: the case HSM runs (levers.hsm_scedes; EIA's lowogs or highogs for the gas_supply lever)."""
     from nems_open.ogsm import couple
     from nems_open.supply_standin.data import restart_path
-    run, ref = couple.production(gas_ratio, oil_ratio), couple.production(None, None)
+    run = couple.production(gas_ratio, oil_ratio, scedes)
+    ref = couple.production(None, None, couple.REFERENCE_SCEDES)
     z = np.load(restart_path(case), allow_pickle=False)
     out = {}
     for k in EXPECTED:
