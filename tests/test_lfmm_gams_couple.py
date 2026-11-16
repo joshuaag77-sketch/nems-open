@@ -156,7 +156,7 @@ def test_solver_failure_retries_with_ipm(tmp_path, monkeypatch):
         return 0
     monkeypatch.setattr(gc.gams_run, "gams", gams)
     lf.call(2039, 12, 1, {})
-    assert seen[0] == (None, b"before")
+    assert seen[0] == (f"time_limit = {gc.TIME_LIMIT}\n", b"before")
     assert "ipm" in seen[1][0] and seen[1][1] == b"before"
     assert lf.solver_failures == [(2039, 12, 0)]
     assert not (tmp_path / "highs.opt").exists()
@@ -177,3 +177,32 @@ def test_solver_failure_on_every_option_keeps_last_solve(tmp_path, monkeypatch):
         lf.call(2039, 12, 1, {})
     assert (tmp_path / "LFMM_Builds.gdx").read_bytes() == b"before"
     assert len(lf.solver_failures) == len(gc.RETRY_OPTIONS)
+
+
+def test_solver_crash_mid_solve_retries(tmp_path, monkeypatch):
+    """2030 cycle 2: dual simplex stalled, then HiGHS died with bad_alloc (GAMS rc 6, no solve summary)."""
+    from nems_open.lfmm import gams_couple as gc
+    lf = _bare(tmp_path)
+    monkeypatch.setattr(gc.gams_run, "prepare", lambda *a, **k: None)
+    monkeypatch.setattr(gc.gams_run, "clean_dumps", lambda *a: None)
+    monkeypatch.setattr(gc.gams_io, "read_outputs", lambda p: {})
+    calls = []
+
+    def gams(run, timeout):
+        calls.append((run / "highs.opt").read_text())
+        if len(calls) == 1:
+            (run / "LFMM.log").write_text("Running HiGHS 1.7\nUsing dual simplex solver\n")
+            return 6
+        (run / "LFMM.log").write_text("    (solvestat, modelstat): (1, 1)\n")
+        (run / "LFMM_to_NEMS.gdx").write_bytes(b"x")
+        return 0
+    monkeypatch.setattr(gc.gams_run, "gams", gams)
+    lf.call(2030, 20, 1, {})
+    assert lf.solver_failures == [(2030, 20, 0)]
+    assert all(c.startswith("time_limit") for c in calls) and "ipm" in calls[1]
+
+
+def test_compile_error_is_not_a_solver_failure():
+    from nems_open.lfmm import gams_couple as gc
+    assert not gc.solver_failed(2, {}, "*** Error 140 in LFshell.gms")
+    assert gc.solver_failed(0, {"solvestat": 3, "status": "Time limit reached"})
