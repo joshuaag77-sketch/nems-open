@@ -18,10 +18,12 @@ CHECK_YEARS = (2027, 2030, 2035)
 BASE_YEAR = 2024
 
 # Category -> restart capacity prefixes (UECPOUT/UADD<prefix><u|n>, planned plus unplanned builds), and the model groups.
+# UADDCC already holds the ac, as and a2 builds and UADDCT the at and t2 builds (util.f; dispatch.CAPACITY_SUBGROUPS),
+# so only the main arrays are read and CCS ("-as") is taken out of combined cycle.
 ADD_CATEGORIES = {
-    "Gas combined cycle": (("cc", "ac", "a2"), ("gas_cc", "gas_cc_new")),
+    "Gas combined cycle": (("cc", "-as"), ("gas_cc", "gas_cc_new")),
     "Gas combined cycle with CCS": (("as",), ("gas_ccs",)),
-    "Gas turbines": (("ct", "at", "ic", "t2"), ("gas_ct", "gas_ct_new")),
+    "Gas turbines": (("ct", "ic"), ("gas_ct", "gas_ct_new")),
     "Wind": (("wn", "wf", "wl"), ("wind",)),
     "Solar": (("pv", "pt", "st"), ("solar",)),
     "Batteries": (("ds",), ("battery",)),
@@ -39,12 +41,13 @@ def eia_additions(snapshot, year: int, prefixes) -> float:
     y = year - history.FIRST_YEAR
     total = 0.0
     for p in prefixes:
+        sign = -1.0 if p.startswith("-") else 1.0
         for o in ("u", "n"):
             try:
-                a = snapshot[f"UECPOUT/uadd{p}{o}"]
+                a = snapshot[f"UECPOUT/uadd{p.lstrip('-')}{o}"]
             except KeyError:
                 continue
-            total += float(a[:, 27, y].sum())
+            total += sign * float(a[:, 27, y].sum())
     return total
 
 
