@@ -206,3 +206,8 @@ def test_compile_error_is_not_a_solver_failure():
     from nems_open.lfmm import gams_couple as gc
     assert not gc.solver_failed(2, {}, "*** Error 140 in LFshell.gms")
     assert gc.solver_failed(0, {"solvestat": 3, "status": "Time limit reached"})
+
+
+def test_time_limit_with_nonzero_rc_is_a_solver_failure():
+    from nems_open.lfmm import gams_couple as gc
+    assert gc.solver_failed(6, {"solvestat": 3, "modelstat": 6, "status": "Time limit reached"}, "HiGHS")
