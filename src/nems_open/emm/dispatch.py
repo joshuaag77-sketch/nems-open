@@ -27,18 +27,12 @@ RENEWABLE = ("wind", "solar", "other")
 GROUPS = THERMAL + ("nuclear", "hydro") + RENEWABLE + ("battery", "pumped")
 
 # Restart capacity arrays (UDATOUT/UCAP<prefix><u|n>) that make up each group.
-# util.f (the UCAP tally) adds each unit to its main group's array and, for some types, to a subgroup array as
-# well: UCAPCS holds every coal unit (CAV -> ig, COQ -> pq, CAS -> is are subgroups of it), UCAPCC every combined
-# cycle (ACC -> ac, ACS -> as, AC2 -> a2) and UCAPCT every turbine (ACT -> at, CTA -> t2). Summing a main group
-# with its subgroups counts those units twice (by 2049: 161 GW of ac, 52 of as and 133 of at). Each group reads
-# the main arrays only; a prefix written "-xx" is subtracted, which takes CCS out of combined cycle.
-CAPACITY_SUBGROUPS = {"cs": ("ig", "pq", "is"), "cc": ("ac", "as", "a2"), "ct": ("at", "t2")}
 CAPACITY_PREFIXES = {
-    "coal": ("cs", "oc"),                     # less coal_ccs: sq (retrofits) is a subset of cs, not extra capacity
+    "coal": ("cs", "ig", "pq", "is", "oc"),   # less coal_ccs: sq (retrofits) is a subset of cs, not extra capacity
     "coal_ccs": ("sq",),
-    "gas_cc": ("cc", "-as", "fc"),
+    "gas_cc": ("cc", "ac", "a2", "fc"),
     "gas_ccs": ("as",),
-    "gas_ct": ("ct", "ic", "i2"),
+    "gas_ct": ("ct", "at", "ic", "t2", "i2"),
     "steam": ("os", "ng"),
     "nuclear": ("nu", "sm"),
     "hydro": ("hy",),
@@ -169,17 +163,14 @@ def _in_service(snapshot, prefixes, types, year) -> np.ndarray:
 
 
 def _ucap(snapshot, prefixes, y) -> np.ndarray:
-    """Year-end restart capacity (UDATOUT/UCAP<prefix><u|n>) summed over `prefixes`, GW by region. A prefix
-    written "-xx" is subtracted (a subgroup already inside a main group, see CAPACITY_SUBGROUPS)."""
     total = np.zeros(NUM_R)
     for p in prefixes:
-        sign = -1.0 if p.startswith("-") else 1.0
         for o in ("u", "n"):
             try:
-                total += sign * np.nan_to_num(snapshot[f"UDATOUT/ucap{p.lstrip('-')}{o}"][:NUM_R, y].astype(float))
+                total += np.nan_to_num(snapshot[f"UDATOUT/ucap{p}{o}"][:NUM_R, y].astype(float))
             except KeyError:
                 pass
-    return np.maximum(total, 0.0) if any(p.startswith("-") for p in prefixes) else total
+    return total
 
 
 def _weighted(values, weights, types, region_arr, year, fallback):
