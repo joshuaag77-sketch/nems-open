@@ -90,15 +90,17 @@ STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx")
 # HiGHS options per attempt: defaults first, then interior point with crossover, then primal simplex.
 # Every attempt gets a time limit: a healthy LFMM solve takes under three minutes, while the 2030 cycle 2 dual
 # simplex stalled for 15 minutes and then crashed the solver with bad_alloc.
-TIME_LIMIT = 900
+TIME_LIMIT = 300   # healthy solves finish in under 90 s; the 2049 stall sat 1,400 s on 300 iterations
 RETRY_OPTIONS = ("", "solver = ipm\nrun_crossover = on\n", "solver = simplex\nsimplex_strategy = 4\n")
 
 
 def solver_failed(rc: int, info: dict, log: str = "") -> bool:
     """The solver gave no answer: solvestat 13 or Not Set (2039 crash), solvestat 3 (time limit hit), or the
     solver process died mid-solve (GAMS rc != 0, no solve summary, HiGHS output in the log: 2030 bad_alloc)."""
+    if info.get("solvestat") == 3:   # 2049 cycle 2: time limit hit, GAMS rc 6
+        return True
     if rc == 0:
-        return info.get("solvestat") in (3, 13) or info.get("status") == "Not Set"
+        return info.get("solvestat") == 13 or info.get("status") == "Not Set"
     return info.get("status") is None and ("HiGHS" in log or "bad_alloc" in log)
 
 
