@@ -296,16 +296,19 @@ def run_one(sc: Scenario, run=None, log=print) -> None:
     log(f"{sc.key}: done in {mins:.0f} min")
 
 
-ES_CONTINUOUS, ES_SYSTEM_REQUIRED = 0x80000000, 0x00000001
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x00000001, 0x00000002
 
 
 def stay_awake(on: bool = True) -> bool:
     """Ask Windows not to idle-sleep while this process runs (SetThreadExecutionState, ES_CONTINUOUS |
-    ES_SYSTEM_REQUIRED). The request ends with the process or with stay_awake(False); no power setting changes."""
+    ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED). On a Modern Standby laptop the display timing out drops the machine
+    into standby, which throttled the 2026-11-16 overnight run and cut the network the GAMS license needs, so the
+    display is held on too. A closed lid still sleeps. The request ends with the process or with stay_awake(False);
+    no power setting changes."""
     if sys.platform != "win32":
         return False
     import ctypes
-    flags = ES_CONTINUOUS | (ES_SYSTEM_REQUIRED if on else 0)
+    flags = ES_CONTINUOUS | (ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED if on else 0)
     return bool(ctypes.windll.kernel32.SetThreadExecutionState(ctypes.c_uint(flags)))
 
 

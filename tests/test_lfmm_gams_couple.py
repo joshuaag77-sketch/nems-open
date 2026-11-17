@@ -130,7 +130,7 @@ def _bare(tmp_path):
     from nems_open.lfmm import gams_couple as gc
     lf = object.__new__(gc.LfmmGams)
     lf.run, lf.cycle, lf.timeout, lf.showreel = tmp_path, 2, 1, False
-    lf.solver_failures = []
+    lf.solver_failures, lf.license_retries = [], 0
     (tmp_path / "LFMM_Builds.gdx").write_bytes(b"before")
     return lf
 
@@ -211,3 +211,12 @@ def test_compile_error_is_not_a_solver_failure():
 def test_time_limit_with_nonzero_rc_is_a_solver_failure():
     from nems_open.lfmm import gams_couple as gc
     assert gc.solver_failed(6, {"solvestat": 3, "modelstat": 6, "status": "Time limit reached"}, "HiGHS")
+
+
+def test_license_error_waits_and_reruns(tmp_path, monkeypatch):
+    from nems_open.lfmm import gams_couple as gc
+    lf = _bare(tmp_path)
+    monkeypatch.setattr(gc.time, "sleep", lambda s: None)
+    rcs = iter([7, 7, 0])
+    monkeypatch.setattr(gc.gams_run, "gams", lambda run, timeout: next(rcs))
+    assert lf._gams_licensed() == 0 and lf.license_retries == 2

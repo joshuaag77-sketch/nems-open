@@ -90,6 +90,7 @@ STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx")
 # HiGHS options per attempt: defaults first, then interior point with crossover, then primal simplex.
 # Every attempt gets a time limit: a healthy LFMM solve takes under three minutes, while the 2030 cycle 2 dual
 # simplex stalled for 15 minutes and then crashed the solver with bad_alloc.
+LICENSE_WAITS = (0, 30, 120, 300, 600)
 TIME_LIMIT = 300   # healthy solves finish in under 90 s; the 2049 stall sat 1,400 s on 300 iterations
 RETRY_OPTIONS = ("", "solver = ipm\nrun_crossover = on\n", "solver = simplex\nsimplex_strategy = 4\n")
 
@@ -124,6 +125,7 @@ class LfmmGams:
         gams_run.load_state(self.run, self.reference, start_year - 1)
         self._ref, self._last, self.infeasible = {}, {}, []
         self.solver_failures = []
+        self.license_retries = 0
         self.fallbacks = []   # (year, itr) whose first solve this cycle failed and used the reference sequence's
 
     def reference_columns(self, year: int) -> dict[str, np.ndarray]:
@@ -144,6 +146,17 @@ class LfmmGams:
                 a[K] = x
         return a
 
+    def _gams_licensed(self) -> int:
+        """One GAMS run. rc 7 is a license error: the GAMSPy network license could not reach its server
+        (2041 cycle 2, a brief DNS outage). Wait and run again, up to about 20 minutes, before giving up."""
+        for wait in LICENSE_WAITS:
+            time.sleep(wait)
+            rc = gams_run.gams(self.run, timeout=self.timeout)
+            if rc != 7:
+                return rc
+            self.license_retries += 1
+        return rc
+
     def call(self, year: int, itr: int, fcrl: int, arrays: dict) -> dict[str, np.ndarray]:
         gams_run.prepare(self.run, year, arrays, itr=itr, fcrl=fcrl, cycle=self.cycle, fresh=False)
         (self.run / "LFMM.log").unlink(missing_ok=True)
@@ -157,7 +170,7 @@ class LfmmGams:
                 (self.run / "LFMM.log").unlink(missing_ok=True)
             opt.write_text(f"time_limit = {TIME_LIMIT}\n" + options)
             t = time.time()
-            rc = gams_run.gams(self.run, timeout=self.timeout)
+            rc = self._gams_licensed()
             sec = time.time() - t
             info = solve_info(self.run / "LFMM.log")
             log = (self.run / "LFMM.log").read_text(errors="replace") if (self.run / "LFMM.log").exists() else ""
