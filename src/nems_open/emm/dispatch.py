@@ -28,13 +28,15 @@ GROUPS = THERMAL + ("nuclear", "hydro") + RENEWABLE + ("battery", "pumped")
 
 # Restart capacity arrays (UDATOUT/UCAP<prefix><u|n>) that make up each group.
 # util.f (the UCAP tally) adds each unit to its main group's array and, for some types, to a subgroup array as
-# well: UCAPCS holds every coal unit (CAV -> ig, COQ -> pq, CAS -> is are subgroups of it), UCAPCC every combined
-# cycle (ACC -> ac, ACS -> as, AC2 -> a2) and UCAPCT every turbine (ACT -> at, CTA -> t2). Summing a main group
-# with its subgroups counts those units twice (by 2049: 161 GW of ac, 52 of as and 133 of at). Each group reads
-# the main arrays only; a prefix written "-xx" is subtracted, which takes CCS out of combined cycle.
-CAPACITY_SUBGROUPS = {"cs": ("ig", "pq", "is"), "cc": ("ac", "as", "a2"), "ct": ("at", "t2")}
+# well: UCAPCC holds every combined cycle (ACC -> ac, ACS -> as, AC2 -> a2) and UCAPCT every turbine (ACT -> at,
+# CTA -> t2). Summing a main group with its subgroups counts those units twice (by 2049: 161 GW of ac, 52 of as and
+# 133 of at). Each group reads the main arrays only; a prefix written "-xx" is subtracted, which takes CCS out of
+# combined cycle. Coal is different in this restart: upstream util.f nests CAV/COQ/CAS (ig/pq/is) inside UCAPCS,
+# but the cb2026 restart keeps ig outside cs (2024: cs 162.8 GW = plant-file coal 163.5 less the 0.71 GW CAV unit),
+# so coal still sums them.
+CAPACITY_SUBGROUPS = {"cc": ("ac", "as", "a2"), "ct": ("at", "t2")}
 CAPACITY_PREFIXES = {
-    "coal": ("cs", "oc"),                     # less coal_ccs: sq (retrofits) is a subset of cs, not extra capacity
+    "coal": ("cs", "ig", "pq", "is", "oc"),   # less coal_ccs: sq (retrofits) is a subset of cs, not extra capacity
     "coal_ccs": ("sq",),
     "gas_cc": ("cc", "-as", "fc"),
     "gas_ccs": ("as",),

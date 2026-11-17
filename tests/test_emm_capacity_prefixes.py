@@ -2,7 +2,7 @@
 
 EIA's UCAP tally (util.f) adds each unit to its main group's array and, for some types, to a subgroup array too
 (UCAPCC holds ACC, ACS and AC2 units, which also go to UCAPAC, UCAPAS and UCAPA2; UCAPCT holds ACT and CTA, also in
-UCAPAT and UCAPT2; UCAPCS holds CAV, COQ and CAS). Reading main and subgroup together counted about 345 GW of gas
+UCAPAT and UCAPT2). Coal is the exception: the cb2026 restart keeps ig outside cs, unlike upstream util.f. Reading main and subgroup together counted about 345 GW of gas
 capacity twice by 2049, which is where the capacity LP's 380 GW reserve surplus in 2050 came from.
 """
 
@@ -74,6 +74,23 @@ def test_restart_subgroups_sit_inside_their_main_group():
         for main, subs in dispatch.CAPACITY_SUBGROUPS.items():
             gap = dispatch._ucap(s, (main,), y) - dispatch._ucap(s, subs, y)
             assert (gap > -1e-3).all(), f"{year}: {subs} exceed {main}"
+
+
+@needs_inputs
+def test_restart_keeps_igcc_outside_coal_steam():
+    """2024: cs alone is the plant file's coal less its CAV (IGCC) unit, so ig is extra capacity, not a subgroup."""
+    import numpy as np
+    from nems_open.emm import plants
+    from nems_open.snapshot import Snapshot
+    s = Snapshot()
+    y = 2024 - history.FIRST_YEAR
+    u = plants.load_units()
+    on = plants.online(2024)
+    coal = u.summer_mw[on & np.isin(u.efd_type, dispatch.EXISTING_TYPES["coal"])].sum() / 1000.0
+    cav = u.summer_mw[on & (u.efd_type == "CAV")].sum() / 1000.0
+    assert cav > 0.5
+    assert float(dispatch._ucap(s, ("cs",), y).sum()) == pytest.approx(coal - cav, abs=0.2)
+    assert {"ig", "pq", "is"} <= set(dispatch.CAPACITY_PREFIXES["coal"])
 
 
 @needs_inputs
