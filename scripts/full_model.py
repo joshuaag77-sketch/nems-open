@@ -103,8 +103,14 @@ GEN = {   # dispatch LP groups -> EIA's UEFDOUT generation arrays (billion kWh =
 NUM_R = 25
 
 
+# Generation by fuel: the gap is model minus EIA as a share of EIA's total generation, in percentage points
+# (gap_unit "pts"). Percent of the fuel itself blows up as EIA retires coal (0.3 TWh in 2050 gave +3,616%).
+MIX_ROWS = ("gen_coal", "gen_gas", "gen_nuclear", "gen_renewables")
+
+
 def rows(r: dict, eia: dict) -> list[dict]:
-    """r and eia: {key: (61,) arrays or None}. One row per headline number."""
+    """r and eia: {key: (61,) arrays or None}. One row per headline number. gap_pct holds the gap in the row's
+    gap_unit: percent of EIA's value, or for MIX_ROWS percentage points of EIA's total generation."""
     spec = [
         ("energy", "Total energy use", "quads"), ("co2", "US energy CO2", "million t"),
         ("gen_total", "Power generation, total", "TWh"), ("gen_coal", "Generation from coal", "TWh"),
@@ -115,6 +121,7 @@ def rows(r: dict, eia: dict) -> list[dict]:
         ("gas_home", "Home natural gas price", "2024 $/MMBtu"), ("bill", "Household energy bill", "2024 $/month"),
         ("sales", "Electricity sales", "TWh"),
     ]
+    total = eia.get("gen_total")
     out = []
     for key, label, unit in spec:
         e, m = eia.get(key), r.get(key)
@@ -124,9 +131,17 @@ def rows(r: dict, eia: dict) -> list[dict]:
             row.update(model=None, gap_pct=None, worst_gap_pct=None, note="not modeled yet" if m is None else "no EIA value")
         else:
             yrs = range(FIRST, LAST + 1)
-            gaps = [100 * (m[y - Y0] / e[y - Y0] - 1) for y in yrs if e[y - Y0]]
+            if key in MIX_ROWS and total is not None:   # share of the mix: a fuel EIA nearly retires has no useful %
+                gap = lambda y: 100 * (float(m[y - Y0]) - float(e[y - Y0])) / float(total[y - Y0])
+                has = lambda y: bool(total[y - Y0])
+                row["gap_unit"] = "pts"
+            else:
+                gap = lambda y: 100 * (float(m[y - Y0]) / float(e[y - Y0]) - 1)
+                has = lambda y: bool(e[y - Y0])
+                row["gap_unit"] = "%"
+            gaps = [gap(y) for y in yrs if has(y)]
             row.update(model={y: round(float(m[y - Y0]), 3) for y in SHOW},
-                       gap_pct={y: round(100 * (float(m[y - Y0]) / float(e[y - Y0]) - 1), 2) for y in SHOW if e[y - Y0]},
+                       gap_pct={y: round(gap(y), 2) for y in SHOW if has(y)},
                        worst_gap_pct=round(float(max(gaps, key=abs)), 2),
                        mean_abs_gap_pct=round(float(np.mean(np.abs(gaps))), 2))
         out.append(row)
