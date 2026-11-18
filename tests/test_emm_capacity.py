@@ -105,3 +105,26 @@ def test_against_reference(comparison, request, kind, name, year):
         request.applymarker(pytest.mark.xfail(reason=KNOWN_MISSES[(kind, name, year)], strict=True))
     model, eia = comparison[(kind, name, year)]
     assert not rep.is_miss(model, eia), f"{kind} {name} {year}: model {model:.1f} GW, EIA {eia:.1f} GW"
+
+
+def test_ptc_is_valued_as_ecp_does_ten_years_in_1987_dollars():
+    import numpy as np
+    from nems_open.emm import capacity as cap
+    jp = np.ones(64)
+    jp[5] = 1.25                         # 1992 dollars are 1.25 1987 dollars; no inflation after
+    snap = {"MACOUT/mc_jpgdp": jp}
+    r = 0.07
+    pv10 = sum(1 / (1 + r) ** k for k in range(1, 11))
+    want = 16.5 / 1.25 / (1 - cap.TAX_RATE) * pv10 * cap._crf(r, 30)
+    assert cap.ptc_annual(16.5, 1992, 10, r, 30, 2028, snap) == pytest.approx(want)
+    assert want < 16.5 * 0.75            # a 10-year credit spread over 30 years is well under the table value
+    assert cap.ptc_annual(0.0, 1992, 10, r, 30, 2028, snap) == 0.0
+
+
+def test_build_steps_follow_ecp_short_term_elasticities():
+    from nems_open.emm import capacity as cap
+    steps = cap.build_steps("WN", [7.4, 10.7, 5.6, 2.5, 15.4])      # the latest year counts in full
+    assert [round(b, 2) for b, _ in steps] == [19.25, 11.55, 15.4]  # 1.25, 0.75 and 1.0 x 15.4 GW
+    assert [round(mu, 3) for _, mu in steps] == [1.0, 1.375, 2.25]
+    floor = cap.build_steps("WN", [0.0] * 5)                         # no history: ESTMNADD (1,500 MW) is step 1
+    assert round(floor[0][0], 3) == 1.5

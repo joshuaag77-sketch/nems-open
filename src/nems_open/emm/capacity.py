@@ -51,6 +51,42 @@ REAL_DISCOUNT_RATE = 0.065       # only for the 45Q credit-life share (_credit_l
 # hundreds of GW of wind in one year when the tax credit makes it nearly free. (Retirements use EIA's own
 # rule, below.)
 ANNUAL_BUILD_LIMIT_GW = {"gas_cc_new": 30.0, "gas_ccs": 10.0, "gas_ct_new": 30.0, "wind": 30.0, "solar": 60.0, "battery": 30.0}
+# ECP's short-term build elasticities (ucape.f ELSTCAP/ELSTELA, ecpdaty.xlsx BLDINFO), in place of the flat
+# ANNUAL_BUILD_LIMIT_GW: each build type's national additions this year come in three cost steps sized from the
+# largest recent year of additions (ESTCPADD: the previous five years, later years weighted up to 1, at least
+# ESTMNADD). Up to 1.25 x ESTCPADD costs the plant's own capital; the next 0.75 x at about 1.4 x and the last 1.0 x
+# at about 2.25 x the capital charge (ESTELAST with ESTCSINC = ESTCPINC: the cost ratio is the capacity ratio less
+# ESTCPSTP(1)). Nothing beyond 3 x ESTCPADD. EIA sets no annual limit (UPANNLMT 999.9).
+BUILD_STEPS = True
+STEP_CODES = {"gas_cc_new": "AC", "gas_ccs": "CS", "gas_ct_new": "AT", "wind": "WN", "solar": "PV", "battery": "DS"}
+STEP_HISTORY = {   # build group -> (state groups whose planned adds count, restart UADD prefixes before the path)
+    "gas_cc_new": (("gas_cc", "gas_cc_new"), ("cc", "-as")), "gas_ccs": (("gas_ccs",), ("as",)),
+    "gas_ct_new": (("gas_ct", "gas_ct_new"), ("ct", "ic")), "wind": (("wind",), ("wn", "wf", "wl")),
+    "solar": (("solar",), ("pv", "pt", "st")), "battery": (("battery",), ("ds",)),
+}
+
+
+def build_steps(code: str, recent: list) -> list:
+    """[(GW bound, capital cost multiplier)] for this year's national builds of ECP type `code`, from the last five
+    years' national additions (GW, oldest first), as ucape.f ELSTCAP and ELSTELA."""
+    b = named_ranges(technology.ECPDATY, "BLDINFO")
+    i = technology.ecp_codes().index(code)
+    stp = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[i]
+    csinc, cpinc = float(b["ESTCSINC"][i]), float(b["ESTCPINC"][i])
+    add = float(b["ESTMNADD"][i]) / 1000.0 / (1.0 + stp[0])
+    n = len(recent)
+    for k, a in enumerate(recent):
+        add = max(add, float(a) * (0.5 + 0.5 * (k + 1) / n))
+    out, cum, done = [], 1.0, 0.0
+    for s, frac in enumerate(stp):
+        cum += frac
+        bound = add * cum - done
+        mult = 1.0 if s == 0 else ((done + bound / 2.0) / add - stp[0]) ** (np.log(1.0 + csinc) / np.log(1.0 + cpinc))
+        out.append((bound, float(mult)))
+        done += bound
+    return out
+
+
 CREDIT_YEARS = 12.0              # years a plant earns the 45Q credit (TCS45Q/I_45Q_DURATION)
 CCS_CAPACITY_FACTOR = 0.8        # assumed, to value the credit when deciding to build
 # ECP's planning horizon (emmcntl.txt %ECP PARAMS%: UNFPH 30 years, UNXPH 3 explicit). The third explicit year
@@ -323,7 +359,23 @@ def unit_costs(case, group: str) -> np.ndarray:
     return hr / 1000.0 * (fuel[r0] + case.carbon_price * tons) + u.vom
 
 
-def capital_costs(snapshot, year: int, case) -> dict:
+def ptc_annual(ptc: float, dollar_year: int, years: int, rate: float, life: float, year: int, snapshot) -> float:
+    """A production tax credit as ECP's EP$INT values it (uecp.f 19466-19500), in 1987 $/MWh of a level annual
+    credit over the plant's life: the online year's UPGSUBYR (dollars of UPGSYD, made 1987 dollars as udat.f does),
+    held for UPGSYR years and rising with inflation (UPGNPD), grossed up for tax (/(1 - UPTXRT)), discounted at the
+    plant's rate and spread over its economic life. Charging the table value every year of the life overstated a
+    2028 wind plant's credit by about half and pulled builds into 2027-2029."""
+    if ptc <= 0 or years <= 0:
+        return 0.0
+    jp = np.asarray(snapshot["MACOUT/mc_jpgdp"], dtype=float).ravel()     # 1987 = index 0 (MC_JPGDP from 1987)
+    at = lambda y: jp[min(max(y - 1987, 0), jp.size - 1)]
+    real87 = ptc / at(dollar_year)
+    infl = (at(year + years) / at(year)) ** (1.0 / years) - 1.0
+    pv = sum((1.0 + infl) ** (k - 1) / (1.0 + rate) ** k for k in range(1, int(years) + 1))
+    return real87 / (1.0 - TAX_RATE) * pv * _crf(rate, life)
+
+
+def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
     """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
     and PTC, with ECP's learned overnight cost and the year's discount rate."""
     params = technology.type_parameters()
@@ -343,10 +395,14 @@ def capital_costs(snapshot, year: int, case) -> dict:
         itc = max(itc_tab[i, col], 0.0)
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
+        if parts is not None:      # the capital charge alone, k$ per GW-year (what ECP's build steps scale)
+            parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3
         ptc = max(ptc_tab[i, col], 0.0)
         if g in ("wind", "solar"):
             cf = case.profile[g].mean(axis=(1, 2))
-            annual = annual - ptc * cf * 8.76         # $/MWh x GWh per MW-year -> $/kW-year
+            credit = ptc_annual(ptc, int(sub["UPGSYD"][i]), int(sub["UPGSYR"][i]), rate, params["economic_life"][i],
+                                cost_year, snapshot)
+            annual = annual - credit * cf * 8.76      # $/MWh x GWh per MW-year -> $/kW-year
         if g in dispatch.CAPTURE_GROUPS:
             tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
             annual = annual + _credit_overpaid(case, g, params["economic_life"][i], year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
@@ -392,11 +448,13 @@ def _reference_case(snapshot, year: int):
 
 
 def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progress: bool = False,
-               groups: dict | None = None, decide: bool = True, case=None, horizon: bool | None = None) -> YearResult:
+               groups: dict | None = None, decide: bool = True, case=None, horizon: bool | None = None,
+               recent_adds: dict | None = None) -> YearResult:
     """One year of the loop. `groups` (dispatch group -> retire_groups.Groups) splits retirements into ECP's
     retirement groups; without it a whole region and type retires at one cost. decide=False solves dispatch
     only (no builds, retirements, retrofits or conversions), to get prices. horizon: plan over ECP's horizon
-    (HORIZON, the default) or this year only."""
+    (HORIZON, the default) or this year only. recent_adds: build group -> the last five years' national additions
+    (GW, oldest first) for ECP's build steps (BUILD_STEPS); without it the steps start from ESTMNADD."""
     horizon = HORIZON if horizon is None else horizon
     y = year - history.FIRST_YEAR
     case = case if case is not None else dispatch.build_case(snapshot, year, "none")
@@ -409,7 +467,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     params = technology.type_parameters()
     codes = technology.ecp_codes()
     hr_new_all = np.array(named_ranges(technology.ECPDATY, "OPTLRN")["UPPHRTN"])
-    capital = capital_costs(snapshot, year, case)
+    capital_only = {}
+    capital = capital_costs(snapshot, year, case, capital_only)
 
     # --- characteristics of the groups ---
     heat, vom, oil_share = dict(case.heat_rate), dict(case.vom), dict(case.oil_share)
@@ -509,14 +568,26 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     convert = m.add_variables(lower=0, upper=xr.DataArray(cap0["coal"] * can_convert, coords=[R]),
                               name="convert")
     m.add_constraints(retrofit.sum() <= RETROFIT_LIMIT_GW, name="retrofit_limit")
-    m.add_constraints(bw.sum() <= ANNUAL_BUILD_LIMIT_GW["wind"], name="limit_build_wind")
-    m.add_constraints(bs.sum() <= ANNUAL_BUILD_LIMIT_GW["solar"], name="limit_build_solar")
-    m.add_constraints(bb.sum() <= ANNUAL_BUILD_LIMIT_GW["battery"], name="limit_build_battery")
+    step_premium = 0
+    if BUILD_STEPS and room > 0:
+        renewable = {"wind": bw, "solar": bs, "battery": bb}
+        for g, code in STEP_CODES.items():
+            total = renewable[g].sum() if g in renewable else build.sel(group=g).sum()
+            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5))
+            S = pd.Index(range(len(steps)), name="step")
+            sv = m.add_variables(lower=0, upper=xr.DataArray([b for b, _ in steps], coords=[S]), name=f"build_step_{g}")
+            m.add_constraints(total - sv.sum() == 0, name=f"build_steps_{g}")
+            premium = float(np.mean(capital_only[g])) * xr.DataArray([mu - 1.0 for _, mu in steps], coords=[S])
+            step_premium = step_premium + (sv * premium).sum()
+    elif not BUILD_STEPS:
+        m.add_constraints(bw.sum() <= ANNUAL_BUILD_LIMIT_GW["wind"], name="limit_build_wind")
+        m.add_constraints(bs.sum() <= ANNUAL_BUILD_LIMIT_GW["solar"], name="limit_build_solar")
+        m.add_constraints(bb.sum() <= ANNUAL_BUILD_LIMIT_GW["battery"], name="limit_build_battery")
     to_ccs = xr.DataArray(np.array([1.0 if g == "coal_ccs" else (-1.0 if g == "coal" else 0.0) for g in TG]), coords=[T])
     to_gas = xr.DataArray(np.array([1.0 if g == "gas_conv" else (-1.0 if g == "coal" else 0.0) for g in TG]), coords=[T])
     cap_th = cap_const + build - retire + retrofit * to_ccs + convert * to_gas
     for g, limit in ANNUAL_BUILD_LIMIT_GW.items():
-        if g in TG:
+        if g in TG and not BUILD_STEPS:
             m.add_constraints(build.sel(group=g).sum() <= limit, name=f"limit_build_{g}")
     # EIA's cap: economic retirements in a region may not exceed a share of its total capacity (the carbon rule's
     # forced coal retirements from RULE_YEAR are exempt, as they are policy, not economics).
@@ -726,7 +797,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
 
     capex = (build * xr.DataArray(np.stack([capital.get(g, np.zeros(NUM_R)) for g in TG], axis=1), coords=[R, T])).sum()
     capex = capex + (bw * xr.DataArray(capital["wind"], coords=[R])).sum() + (bs * xr.DataArray(capital["solar"], coords=[R])).sum()
-    capex = capex + (bb * xr.DataArray(capital["battery"], coords=[R])).sum()
+    capex = capex + (bb * xr.DataArray(capital["battery"], coords=[R])).sum() + step_premium
     if use_groups:
         saved = (rg * xr.DataArray(gcost, coords=[R, TR, K])).sum() + (forced * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
         saved = saved + sum((retire.sel(group=g) * xr.DataArray(fom_made[g], coords=[R])).sum() for g in RETIRABLE_MADE)
@@ -833,7 +904,7 @@ class CapacityPath:
             flat = self.price.reshape(NUM_R, -1)
             grp = {g: retire_groups.build(year, g, self.alive, unit_costs(case, g), flat, hours, 1.0 - case.avail[g][0])
                    for g in RETIRABLE}
-        res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case)
+        res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case, recent_adds=self.recent_adds(year))
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: {res.status}")
         if self.groups:
@@ -848,6 +919,24 @@ class CapacityPath:
         self.results[year] = res
         self.next_year = year + 1
         return res
+
+    def recent_adds(self, year: int, n: int = 5) -> dict:
+        """Build group -> national GW added in each of the n years before `year` (oldest first), for ECP's build
+        steps: this path's planned adds and builds, and the reference run's additions for years before it."""
+        from nems_open.emm import capacity_report
+        out = {}
+        for g, (state, prefixes) in STEP_HISTORY.items():
+            vals = []
+            for yr in range(year - n, year):
+                r = self.results.get(yr)
+                if r is not None:
+                    vals.append(sum(float(r.planned_adds.get(s, np.zeros(NUM_R)).sum()) for s in state)
+                                + float(r.builds.get(g, np.zeros(NUM_R)).sum()))
+                else:
+                    vals.append(max(capacity_report.eia_additions(self.snapshot, yr, prefixes)
+                                    - capacity_report.eia_additions(self.snapshot, yr - 1, prefixes), 0.0))
+            out[g] = vals
+        return out
 
     def credit_share(self, year: int) -> dict:
         """Share of each capture group's capacity still earning 45Q in `year` (dispatch.credit_share), from this
