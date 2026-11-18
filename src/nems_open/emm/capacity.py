@@ -323,6 +323,22 @@ def unit_costs(case, group: str) -> np.ndarray:
     return hr / 1000.0 * (fuel[r0] + case.carbon_price * tons) + u.vom
 
 
+def ptc_annual(ptc: float, dollar_year: int, years: int, rate: float, life: float, year: int, snapshot) -> float:
+    """A production tax credit as ECP's EP$INT values it (uecp.f 19466-19500), in 1987 $/MWh of a level annual
+    credit over the plant's life: the online year's UPGSUBYR (dollars of UPGSYD, made 1987 dollars as udat.f does),
+    held for UPGSYR years and rising with inflation (UPGNPD), grossed up for tax (/(1 - UPTXRT)), discounted at the
+    plant's rate and spread over its economic life. Charging the table value every year of the life overstated a
+    2028 wind plant's credit by about half and pulled builds into 2027-2029."""
+    if ptc <= 0 or years <= 0:
+        return 0.0
+    jp = np.asarray(snapshot["MACOUT/mc_jpgdp"], dtype=float).ravel()     # 1987 = index 0 (MC_JPGDP from 1987)
+    at = lambda y: jp[min(max(y - 1987, 0), jp.size - 1)]
+    real87 = ptc / at(dollar_year)
+    infl = (at(year + years) / at(year)) ** (1.0 / years) - 1.0
+    pv = sum((1.0 + infl) ** (k - 1) / (1.0 + rate) ** k for k in range(1, int(years) + 1))
+    return real87 / (1.0 - TAX_RATE) * pv * _crf(rate, life)
+
+
 def capital_costs(snapshot, year: int, case) -> dict:
     """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
     and PTC, with ECP's learned overnight cost and the year's discount rate."""
@@ -346,7 +362,9 @@ def capital_costs(snapshot, year: int, case) -> dict:
         ptc = max(ptc_tab[i, col], 0.0)
         if g in ("wind", "solar"):
             cf = case.profile[g].mean(axis=(1, 2))
-            annual = annual - ptc * cf * 8.76         # $/MWh x GWh per MW-year -> $/kW-year
+            credit = ptc_annual(ptc, int(sub["UPGSYD"][i]), int(sub["UPGSYR"][i]), rate, params["economic_life"][i],
+                                cost_year, snapshot)
+            annual = annual - credit * cf * 8.76      # $/MWh x GWh per MW-year -> $/kW-year
         if g in dispatch.CAPTURE_GROUPS:
             tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
             annual = annual + _credit_overpaid(case, g, params["economic_life"][i], year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
