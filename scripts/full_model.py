@@ -292,11 +292,39 @@ def run(first: int = FIRST, last: int = LAST, watch: bool = False, save: Path | 
     return r, p, (time.time() - t0) / 60
 
 
+CAPACITY_FIELDS = ("capacity", "builds", "economic_retire", "planned_adds", "planned_retire")
+
+
+def capacity_arrays(cap: dict | None) -> dict:
+    """RunResult.capacity (year -> capacity.YearResult, elec_cap="lp") as "<field>:<group>" -> (61, 25) GW, year by
+    row from 1990; years the LP did not solve stay 0. Empty without a capacity path."""
+    out = {}
+    for year, res in (cap or {}).items():
+        for f in CAPACITY_FIELDS:
+            for g, v in (getattr(res, f, None) or {}).items():
+                v = np.asarray(v, dtype=float)
+                a = out.setdefault(f"{f}:{g}", np.zeros((61, v.size)))
+                a[year - Y0] = v
+    return out
+
+
+def capacity_summary(cap: dict | None) -> dict | None:
+    """National GW by group at the shown years: fleet at year end, and LP builds summed over the run so far."""
+    a = capacity_arrays(cap)
+    if not a:
+        return None
+    groups = sorted({k.split(":", 1)[1] for k in a if k.startswith("capacity:")})
+    built = {g: np.cumsum(a[f"builds:{g}"].sum(axis=1)) if f"builds:{g}" in a else np.zeros(61) for g in groups}
+    return {"unit": "GW", "fleet": {g: {y: round(float(a[f"capacity:{g}"][y - Y0].sum()), 1) for y in SHOW} for g in groups},
+            "built_to_date": {g: {y: round(float(built[g][y - Y0]), 1) for y in SHOW} for g in groups}}
+
+
 def save_run(r, path: Path) -> None:
     arrays = {f"p:{k}": v for k, v in r.prices.items()} | {f"q:{k}": v for k, v in r.quantities.items()}
     arrays |= {f"c:{k}": v for k, v in r.co2.items()}
     arrays |= {f"g:{k}": v for k, v in (r.generation_twh or {}).items()}
     arrays |= {f"n:{k}": np.asarray(v) for k, v in (getattr(r, "gas", None) or {}).items()}
+    arrays |= {f"k:{k}": v for k, v in capacity_arrays(getattr(r, "capacity", None)).items()}
     np.savez_compressed(path, **arrays, stable=np.array([[y, int(s)] for y, s in r.stable.items()] or [[0, 0]]))
 
 
@@ -305,6 +333,7 @@ def load_run(path: Path):
     z = np.load(path, allow_pickle=False)
     pick = lambda pre: {k[2:]: z[k] for k in z.files if k.startswith(pre)}
     return SimpleNamespace(prices=pick("p:"), quantities=pick("q:"), co2=pick("c:"), generation_twh=pick("g:") or None, gas=pick("n:") or None,
+                           capacity_arrays=pick("k:") or None,
                            stable={int(y): bool(s) for y, s in z["stable"] if y})
 
 
@@ -316,6 +345,7 @@ def table(r, p: dict, minutes: float | None, cycles_done: int | None = None) -> 
             "minutes": round(minutes, 1) if minutes else None,
             "converged_years": sum(1 for y, s in stable.items() if FIRST <= y <= LAST and s),
             "rows": rows(model_numbers(r), eia_numbers()),
+            "capacity": capacity_summary(getattr(r, "capacity", None)),
             "method": ("One run of the whole model on EIA's reference settings. Gap = model / EIA - 1 for each year "
                        f"{FIRST}-{LAST}; 'worst' is the year furthest from EIA. CO2 for EIA uses EIA's fuel use with "
                        "the model's emission factors, so it measures fuel use, not accounting.")}

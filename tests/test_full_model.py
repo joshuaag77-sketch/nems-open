@@ -89,3 +89,21 @@ def test_generation_by_fuel_gaps_are_points_of_total_generation():
     assert by["gen_coal"]["worst_gap_pct"] == pytest.approx(100 * 99.7 / 4000, abs=0.01)   # 2.49 pts, not +33,233%
     assert by["energy"]["gap_unit"] == "%" and by["energy"]["worst_gap_pct"] == pytest.approx(10.0)
     assert by["gen_total"]["gap_unit"] == "%" and by["gen_total"]["worst_gap_pct"] == pytest.approx(2.5)
+
+
+def test_capacity_path_is_saved_and_summarised(tmp_path):
+    import numpy as np
+    from types import SimpleNamespace
+    import full_model as fm
+    yr = lambda y, w: SimpleNamespace(capacity={"wind": np.full(25, w)}, builds={"wind": np.full(25, 0.4)},
+                                      economic_retire={}, planned_adds={}, planned_retire={})
+    cap = {2040: yr(2040, 40.0), 2041: yr(2041, 40.4)}
+    a = fm.capacity_arrays(cap)
+    assert a["capacity:wind"].shape == (61, 25) and a["capacity:wind"][2041 - 1990, 0] == 40.4
+    s = fm.capacity_summary(cap)
+    assert s["fleet"]["wind"][2040] == 1000.0 and s["built_to_date"]["wind"][2045] == 20.0
+    r = SimpleNamespace(prices={}, quantities={}, co2={}, generation_twh={}, gas={}, stable={2040: True}, capacity=cap)
+    fm.save_run(r, tmp_path / "x.npz")
+    back = fm.load_run(tmp_path / "x.npz")
+    assert np.allclose(back.capacity_arrays["builds:wind"][2041 - 1990], 0.4)
+    assert fm.capacity_summary(None) is None
