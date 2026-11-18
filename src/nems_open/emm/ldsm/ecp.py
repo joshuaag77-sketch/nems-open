@@ -16,6 +16,13 @@ CAPS = [("pv_cap_adj_rest", "wsspvel_cf"), ("pt_cap_adj_rest", "wssptel_cf"), ("
         ("wn_cap_adj_rest", "wsfwiel_cf"), ("wl_cap_adj_rest", "wsfwlel_cf"), ("wf_cap_adj_rest", "wsfwfel_cf")]
 
 
+def _vec(a):
+    """A 1-D FortranArray as a plain list indexed like Fortran (element lb at position lb): read once, so the hourly
+    walks below do not go through FortranArray per element. The values are the same."""
+    lb = a.lb[0]
+    return [None] * lb + a.a.tolist()
+
+
 def dsmlcp(s, switch=1):
     """ECP load blocks for region RNB, year K1 (switch 1: sort the hours anew)."""
     rnb, k1, cur, nhour = i(s, "rnb"), i(s, "k1"), i(s, "curiyr"), i(s, "nhour")
@@ -27,15 +34,22 @@ def dsmlcp(s, switch=1):
     last_proj = min(i(s, "unyear"), k1)
     netsw = i(s, "nl_slice_sw")
 
+    # read once for the hourly walks (same values: the arrays' own elements)
+    sy_l, mon_l, day_l, hr_l, w_l = _vec(syload), _vec(mon), _vec(day), _vec(hr), _vec(weights)
     sy1 = [0.0] * (nhour + 1)
     sy1_net = [0.0] * (nhour + 1)
+    if netsw == 1:
+        caps = []
+        for cap, cf in CAPS:
+            a = s[cf]
+            caps.append((f64(s[cap][rnb, last_proj]), a.a[rnb - a.lb[0], cur - 1 - a.lb[1]], a.lb[2:]))
     for h in range(1, nhour + 1):
         sy1[h] = float(f32(syload[h]))
         if netsw == 1:
-            m, d, hh = int(mon[h]), int(day[h]), int(hr[h])
+            m, d, hh = int(mon_l[h]), int(day_l[h]), int(hr_l[h])
             v = f64(syload[h])
-            for cap, cf in CAPS:
-                v = v - f64(s[cap][rnb, last_proj]) * f64(s[cf][rnb, cur - 1, d, m, hh])
+            for c, sub_cf, (ld, lm, lh_) in caps:
+                v = v - c * f64(sub_cf[d - ld, m - lm, hh - lh_])
             sy1_net[h] = float(f32(v))
         else:
             sy1_net[h] = sy1[h]
@@ -62,19 +76,21 @@ def dsmlcp(s, switch=1):
     for sgn in range(nsg, 0, -1):
         l = 0
         h1, h2 = int(fh[sgn]), int(lh[sgn])
+        last = int(dnb[sgn])
+        bx = [None] + [blockx[sgn, b] for b in range(1, max(last, 2))]
         abspeak = f32(sy1[order[h1]])
         for h in range(h1, h2 + 1):
             o = order[h]
-            w1 = int(weights[wsrc[h]])
+            w1 = int(w_l[wsrc[h]])
             if k1 == cur:
-                tmphrsl[int(mon[o]), int(day[o]), int(hr[o])] = blk
+                tmphrsl[int(mon_l[o]), int(day_l[o]), int(hr_l[o])] = blk
             load = f32(sy1[o])
             abspeak = max(abspeak, load)
             for _ in range(w1):
                 l += 1
                 area = f32(area + load)
-                if bls != int(dnb[sgn]) and l > blockx[sgn, bls]:
-                    dh = f32(f32(l) - blockx[sgn, bls])
+                if bls != last and l > bx[bls]:
+                    dh = f32(f32(l) - bx[bls])
                     rest = f32(area - f32(dh * load))
                     if bltyp[sgn, bls] in (b"p", b"P"):
                         bh[blk] = abspeak

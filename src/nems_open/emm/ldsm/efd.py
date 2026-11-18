@@ -123,19 +123,25 @@ def _group_blocks(s, sy2, rnb):
     nsg = i(s, "efdnumsg")
     fh, lh, dnb, blockx = s["efdsgfh"], s["efdsglh"], s["efdsgdnb"], s["efdblockx"]
     weights, hn_efd = s["hourlyweights"], s["hournumberefd"]
+    # The arrays are read once here, not through FortranArray inside the hourly walk (that indexing was a third
+    # of a showroom iteration). Same values and the same REAL*4/REAL*8 operations in the same order.
+    y = sy2.tolist()
     energy = {}
     total = f32(0.0)
     blk, bls, area = 1, 1, f32(0.0)
     for sgn in range(nsg, 0, -1):
         l = 0
+        last = int(dnb[sgn])
+        bx = [None] + [blockx[sgn, b] for b in range(1, max(last, 2))]
         for h in range(int(fh[sgn]), int(lh[sgn]) + 1):
+            yh = y[h]
             for _ in range(int(weights[int(hn_efd[h])])):
                 l += 1
-                area = f32(f64(area) + sy2[h])
-                if bls != int(dnb[sgn]) and l > blockx[sgn, bls]:
-                    dh = f32(f32(l) - blockx[sgn, bls])
-                    energy[blk] = f32(f64(area) - f64(dh) * sy2[h])
-                    area = f32(f64(dh) * sy2[h])
+                area = f32(f64(area) + yh)
+                if bls != last and l > bx[bls]:
+                    dh = f32(f32(l) - bx[bls])
+                    energy[blk] = f32(f64(area) - f64(dh) * yh)
+                    area = f32(f64(dh) * yh)
                     bls += 1
                     total = f32(total + energy[blk])
                     blk += 1
