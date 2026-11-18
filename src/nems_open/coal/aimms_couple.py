@@ -35,7 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from nems_open.coal import aimms_run
-from nems_open.ngmm.aimms import parse_composite, to_array
+from nems_open.ngmm.aimms import AwakeTimer, parse_composite, to_array
 from nems_open.snapshot import Snapshot
 
 RUN_DIR = Path(os.environ.get("NEMS_COAL_RUN", Path.home() / "dev" / "oracle-cache" / "coal-aimms"))
@@ -117,12 +117,12 @@ class CoalProcess:
         done, err = self.coal / "done.txt", self.coal / "log" / "aimmsRunOnly.err"
         done.unlink(missing_ok=True)
         err.unlink(missing_ok=True)
-        t = time.time()
+        t, awake = time.time(), AwakeTimer()
         self._request(f"req_year := {year} ;\nreq_itr := {itr} ;\nreq_quit := 0 ;\n")
         while not done.exists():
             if self.proc.poll() is not None:
                 raise RuntimeError(f"AIMMS exited ({self.proc.returncode}) during the CMM {year} itr {itr}; see {self.run}")
-            if time.time() - t > self.timeout:
+            if awake() > self.timeout:
                 raise TimeoutError(f"CMM {year} itr {itr} took over {self.timeout} s")
             time.sleep(0.1)
         if err.exists() and err.read_text(errors="replace").strip():

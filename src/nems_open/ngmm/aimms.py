@@ -34,6 +34,22 @@ import numpy as np
 
 from nems_open.paths import UPSTREAM
 
+
+class AwakeTimer:
+    """Seconds the machine was awake since start. A poll gap over `gap` s means the laptop slept
+    (2026-11-18: lid closed 01:02 to 10:10, CMM 2034 then 'took over 900 s'), so that gap is not counted."""
+
+    def __init__(self, gap: float = 30.0):
+        self.gap, self.awake, self._last = gap, 0.0, time.time()
+
+    def __call__(self) -> float:
+        now = time.time()
+        step = now - self._last
+        self._last = now
+        if 0 <= step <= self.gap:
+            self.awake += step
+        return self.awake
+
 AIMMS_EXE = Path(os.environ.get("AIMMS_EXE", Path(os.environ.get("LOCALAPPDATA", "")) / "AIMMS" / "IFA" / "Aimms"
                                 / "25.5.7.1-x64-VS2022" / "Bin" / "aimms.exe"))
 RUN_DIR = Path(os.environ.get("NEMS_NGMM_RUN", Path.home() / "dev" / "oracle-cache" / "ngmm-aimms"))
@@ -377,12 +393,12 @@ class Ngmm:
         write_inputs(self.run, arrays, year, itr, ncrl, fcrl, cycle)
         done = self.ng / "done.txt"
         done.unlink(missing_ok=True)
-        t = time.time()
+        t, awake = time.time(), AwakeTimer()
         self._request(f"req_year := {year} ;\nreq_itr := {itr} ;\nreq_ncrl := {ncrl} ;\nreq_quit := 0 ;\n")
         while not done.exists():
             if self.proc.poll() is not None:
                 raise RuntimeError(f"AIMMS exited ({self.proc.returncode}) during NGMM {year} itr {itr}; see {self.run}")
-            if time.time() - t > self.timeout:
+            if awake() > self.timeout:
                 raise TimeoutError(f"NGMM {year} itr {itr} took over {self.timeout} s")
             time.sleep(0.2)
         seconds = time.time() - t
