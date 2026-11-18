@@ -76,3 +76,16 @@ def test_each_cycle_but_the_last_is_saved_and_tabled(monkeypatch, tmp_path):
     t = json.loads(out.read_text())
     assert t["cycles_done"] == 1 and (tmp_path / "run_cycle1.npz").exists()
     assert len(t["rows"]) == 15 and r.prices
+
+
+def test_generation_by_fuel_gaps_are_points_of_total_generation():
+    import numpy as np
+    import full_model as fm
+    n = 61
+    e = {"gen_total": np.full(n, 4000.0), "gen_coal": np.full(n, 0.3), "energy": np.full(n, 90.0)}
+    m = {"gen_total": np.full(n, 4100.0), "gen_coal": np.full(n, 100.0), "energy": np.full(n, 99.0)}
+    by = {r["key"]: r for r in fm.rows(m, e)}
+    assert by["gen_coal"]["gap_unit"] == "pts"
+    assert by["gen_coal"]["worst_gap_pct"] == pytest.approx(100 * 99.7 / 4000, abs=0.01)   # 2.49 pts, not +33,233%
+    assert by["energy"]["gap_unit"] == "%" and by["energy"]["worst_gap_pct"] == pytest.approx(10.0)
+    assert by["gen_total"]["gap_unit"] == "%" and by["gen_total"]["worst_gap_pct"] == pytest.approx(2.5)
