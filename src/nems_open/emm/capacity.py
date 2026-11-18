@@ -399,7 +399,7 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
             parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3
         ptc = max(ptc_tab[i, col], 0.0)
         if g in ("wind", "solar"):
-            cf = case.profile[g].mean(axis=(1, 2))
+            cf = (case.build_profile or case.profile)[g].mean(axis=(1, 2))
             credit = ptc_annual(ptc, int(sub["UPGSYD"][i]), int(sub["UPGSYR"][i]), rate, params["economic_life"][i],
                                 cost_year, snapshot)
             annual = annual - credit * cf * 8.76      # $/MWh x GWh per MW-year -> $/kW-year
@@ -611,7 +611,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     keep = order[tab["EMM_REG"][order] <= NUM_R]
     margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[keep])
 
-    def operate(tag: str, cs, c0: dict, capv_p, wind_tot, solar_tot, batt_tot, bh: int = BLOCK_HOURS):
+    def operate(tag: str, cs, c0: dict, capv_p, wind_tot, solar_tot, batt_tot, bh: int = BLOCK_HOURS, new_w=0, new_s=0):
         """Dispatch and reserve margin of one planning period: case `cs` (its load, fuel prices and profiles),
         existing capacity `c0`, thermal capacity `capv_p` and wind, solar and battery totals (expressions in the
         decision variables). Returns its operating cost (1987 k$ for one year) and the pieces the result needs."""
@@ -650,6 +650,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
 
         wind_out = wind_tot * prof["wind"]
         solar_out = solar_tot * prof["solar"]
+        if cs.build_profile is not None:      # capacity built by the LP runs on the new-build profile, not the fleet's
+            bprof = {k: xr.DataArray(_blocks(v, bh), coords=[R, D, Bk]) for k, v in cs.build_profile.items()}
+            wind_out = wind_out + new_w * (bprof["wind"] - prof["wind"])
+            solar_out = solar_out + new_s * (bprof["solar"] - prof["solar"])
         fixed = by_region(c0["nuclear"]) * cf_of("nuclear") + by_region(c0["other"]) * cf_of("other")
 
         g_hy = m.add_variables(lower=0, upper=by_region(c0["hydro"]), name=f"hydro{tag}")
@@ -718,7 +722,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         return (xr.DataArray(c0["wind"], coords=[R]) + extra_w, xr.DataArray(c0["solar"], coords=[R]) + extra_s,
                 xr.DataArray(c0["battery"], coords=[R]) + extra_b)
 
-    p1 = operate("", case, cap0, capv, *totals(cap0, bw, bs, bb))
+    p1 = operate("", case, cap0, capv, *totals(cap0, bw, bs, bb), new_w=bw, new_s=bs)
     g_th, unserved, shortfall, credits = p1["g_th"], p1["unserved"], p1["shortfall"], p1["credits"]
     operating = p1["operating"]
     weight_now = 1.0                       # present-value weight of the annual costs of this year's decisions
@@ -784,7 +788,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 conv_only = xr.DataArray(np.array([1.0 if g == "gas_conv" else 0.0 for g in TG]), coords=[T])
                 m.add_constraints((capv_f * conv_only).sum("group") <= 0, name=f"cofire_rule_p{offset}")
             ren = totals(c0f, bw + later_w, bs + later_s, bb + later_b)
-            pf = operate(f"_p{offset}", cs, c0f, capv_f, *ren, bh=FUTURE_BLOCK_HOURS)
+            pf = operate(f"_p{offset}", cs, c0f, capv_f, *ren, bh=FUTURE_BLOCK_HOURS, new_w=bw + later_w, new_s=bs + later_s)
             operating = operating + wgt * pf["operating"]
             weight_now += wgt
             # a plant built in this period pays its annual capital charge from here to the end of the horizon

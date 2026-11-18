@@ -128,3 +128,21 @@ def test_build_steps_follow_ecp_short_term_elasticities():
     assert [round(mu, 3) for _, mu in steps] == [1.0, 1.375, 2.25]
     floor = cap.build_steps("WN", [0.0] * 5)                         # no history: ESTMNADD (1,500 MW) is step 1
     assert round(floor[0][0], 3) == 1.5
+
+
+def test_new_wind_and_solar_run_on_the_new_build_profile():
+    """ECP values a plant built now on WRENEW's new-build profile (EP$INT UPICFC), not the fleet blend, which is
+    zero where no wind stands today and is held to the STEO benchmark in early years."""
+    import numpy as np
+    pytest.importorskip("nems_open.emm.couple")
+    from nems_open.emm import dispatch
+    from nems_open.emm.couple import Snapshot
+    try:
+        s = Snapshot()
+    except Exception:
+        pytest.skip("no cb2026 restart here")
+    case = dispatch.reduce_hours(dispatch.build_case(s, 2030, "none"), 3)
+    new, fleet = case.build_profile["wind"].mean(axis=(1, 2)), case.profile["wind"].mean(axis=(1, 2))
+    assert new.shape == fleet.shape == (25,)
+    assert (new > 0.3).all()                      # every region can build wind at its own resource
+    assert new.mean() > fleet.mean()              # new turbines beat the fleet average

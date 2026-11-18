@@ -113,6 +113,9 @@ class DispatchCase:
     flat_twh: np.ndarray = None          # (25,) part of net_load_twh that runs flat across the year (data centers)
     flex_share: float = 0.0              # share of flat_twh that can be curtailed over the year
     credit_share: dict = None            # capture group -> (25,) share of capacity still earning 45Q (None: all)
+    # wind and solar -> (25, 36, hours) capacity factor of a plant built now: WRENEW's new-build profile of the main
+    # type (wn, pv) less its outage rate, as ECP values new intermittent capacity (uecp.f EP$INT: UPICFC). None: profile.
+    build_profile: dict = None
 
 
 @dataclass
@@ -362,11 +365,12 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     }
     mcf = {g: _monthly_cf(EXISTING_TYPES[g], year) for g in ("nuclear", "hydro", "other")}
     efd_index = {pt.code: i for i, pt in enumerate(technology.efd_plant_types())}
-    profiles = {}
+    profiles, build_profiles = {}, {}
     for group, parts in WRENEW_PROFILES.items():
         caps = [_in_service(snapshot, (prefix,), (code,), year) for prefix, _, code in parts]
         outage = [snapshot["UEFDOUT/up_xfor"][efd_index[code], :NUM_R, y].astype(float) for _, _, code in parts]
         cfs = [_wrenew_profile(snapshot, key, y) * (1.0 - o)[:, None, None] for (_, key, _), o in zip(parts, outage)]
+        build_profiles[group] = cfs[0]
         total = np.maximum(sum(caps), 1e-9)
         new_profile = sum(c[:, None, None] * f for c, f in zip(caps, cfs)) / total[:, None, None]
         cap[group] = sum(caps)
@@ -411,7 +415,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     year_end = {t: restart_capture_capacity(snapshot, t) for t in range(rule[0] - 1, year + 1)}
     return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
-                        credit_share=credit_share(year_end, year, rule))
+                        credit_share=credit_share(year_end, year, rule), build_profile=build_profiles)
 
 
 def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
@@ -425,7 +429,8 @@ def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
     def blocks(a):
         return a.reshape(a.shape[:-1] + (24 // hours_per_block, hours_per_block)).mean(axis=-1)
 
-    return replace(case, shapes=blocks(case.shapes), profile={k: blocks(v) for k, v in case.profile.items()})
+    bp = None if case.build_profile is None else {k: blocks(v) for k, v in case.build_profile.items()}
+    return replace(case, shapes=blocks(case.shapes), profile={k: blocks(v) for k, v in case.profile.items()}, build_profile=bp)
 
 
 def emissions_per_mwh(case: DispatchCase, g: str) -> np.ndarray:
