@@ -19,18 +19,39 @@ VOM, FOM, PNUC, PTRADE, PALLW = f32(2.0), f32(8.0), f32(0.4), f32(30.0), f32(0.0
 EFD_D_CAP, EFD_D_OWN, EFD_D_NFL, EFD_D_MSP = 54, 5, 60, 4
 
 
-def block(snap, iyr: int, irg: int, uiuf: int, efd_d_mvs: int) -> dict:
+# UEFDOUT fuel-use arrays -> the loop's power-sector fuel (QBLK/q**el, MPBLK/p**el suffix) that moves them
+FUEL_OF = {"uflclnr": "cl", "uflgfnr": "ng", "uflginr": "ng", "uflgcnr": "ng", "ufldsnr": "ds",
+           "uflrlnr": "rs", "uflrhnr": "rs", "uflurnr": "ur"}
+PRICE_OF = {"uprclnr": "cl", "uprngnr": "ng", "uprdsnr": "ds", "uprrsnr": "rs"}
+
+
+def block(snap, iyr: int, irg: int, uiuf: int, efd_d_mvs: int, adjust: dict | None = None) -> dict:
     """The stand-in fields of region irg's DISPOUT block in year index iyr (1-based,
     Fortran's CURIYR), as {lowercase name: value}. snap: the restart file
-    (nems_open.snapshot.Snapshot) or any mapping with the same arrays."""
+    (nems_open.snapshot.Snapshot) or any mapping with the same arrays.
+
+    adjust: the loop's own dispatch against EIA's, so EFP prices the generation the loop runs, not EIA's:
+    {"fuel": {fuel: loop power-sector use / EIA's}, "price": {fuel: loop price / EIA's}, "gen": loop / EIA's
+    generation}, each applied to every region's restart values (FUEL_OF, PRICE_OF). None: EIA's dispatch as is
+    (the oracle's stand-in, operation for operation). Without it a scenario that adds load added sales to EFP
+    but no fuel, so its generation price fell (dc50 2035: -8.2% on 9.9% more sales)."""
     r, y = irg - 1, iyr - 1
     a = lambda name: snap[name]  # noqa: E731
+    fq = (adjust or {}).get("fuel", {})
+    fp = (adjust or {}).get("price", {})
+    fg = f32((adjust or {}).get("gen", 1.0))
 
     def fl(io, n):
-        return f32(a("UEFDOUT/" + n)[io - 1, r, y])
+        v = f32(a("UEFDOUT/" + n)[io - 1, r, y])
+        if adjust is None:
+            return v
+        if n == "ugntlnr":
+            return f32(v * fg)
+        return f32(v * f32(fq.get(FUEL_OF.get(n), 1.0)))
 
     def pr(n):
-        return f32(a("UEFDOUT/" + n)[r, y])
+        v = f32(a("UEFDOUT/" + n)[r, y])
+        return v if adjust is None else f32(v * f32(fp.get(PRICE_OF.get(n), 1.0)))
 
     fuel, gen = {}, {}
     for io in (1, 2):
