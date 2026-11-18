@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "Open Python rebuild of EIA's National Energy Modeling System"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["numpy", "pandas", "xarray", "linopy", "highspy"]
+dependencies = ["numpy", "pandas", "xarray", "linopy==0.10.1", "highspy"]   # linopy pinned for the Nov 21 rerun: a release defaulting to its "v1" semantics would make capacity.py's conflicting "group" coordinate an error
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-xdist"]
