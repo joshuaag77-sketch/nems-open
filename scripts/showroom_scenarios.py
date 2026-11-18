@@ -201,8 +201,8 @@ MINUTES = {
 
 
 BY_KEY = {s.key: s for s in SCENARIOS}
-TIERS = {1: ("reference", "dc50", "dc100", "dc150", "lng30", "lng35", "lng40", "dc100_lng35", "co2_50", "co2_100",
-             "ev75"),
+TIERS = {1: ("reference", "dc100", "lng35", "dc100_lng35", "co2_50", "dc50", "dc150", "lng30", "lng40", "co2_100",
+             "ev75"),   # the four /energy scenarios first
          2: ("gas_low", "gas_high", "dc100_gas_low", "dc100_gas_high", "lng40_gas_low", "lng35_gas_high", "stress")}
 LFMM_GAMS = {"reference", "co2_25", "co2_50", "co2_100", "ev50", "ev75", "ev75_co2_50", "co2_100_nuclear"}
 
