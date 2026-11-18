@@ -37,6 +37,9 @@ def scale_for(gas_ratio, oil_ratio) -> dict:
     return out
 
 
+HSM_ATTEMPTS = 3
+
+
 def _key(scedes: str, scale: dict) -> str:
     h = hashlib.sha1(scedes.encode())
     for k in sorted(scale):
@@ -58,10 +61,15 @@ def production(gas_ratio=None, oil_ratio=None, scedes: str = "scedes.cb2026.csv"
             part = Path(tmp) / "out.npz"
             env = {**os.environ, "OMP_NUM_THREADS": "1",
                    "PYTHONPATH": os.pathsep.join([str(Path(__file__).resolve().parents[2]), os.environ.get("PYTHONPATH", "")])}
-            r = subprocess.run([sys.executable, "-m", "nems_open.ogsm.worker", str(src), str(part)],
-                               env=env, cwd=Path(tmp), capture_output=not verbose, text=True)
-            if r.returncode or not part.exists():
-                raise RuntimeError("HSM run failed:\n" + (r.stderr or "")[-2000:])
+            for attempt in range(HSM_ATTEMPTS):   # dc50 2026-11-18: worker died silently (empty stderr) after a sleep
+                r = subprocess.run([sys.executable, "-m", "nems_open.ogsm.worker", str(src), str(part)],
+                                   env=env, cwd=Path(tmp), capture_output=not verbose, text=True)
+                if not r.returncode and part.exists():
+                    break
+                print(f"HSM attempt {attempt + 1} failed: rc {r.returncode}", file=sys.stderr)
+            else:
+                raise RuntimeError(f"HSM run failed (rc {r.returncode}):\n" + (r.stderr or "")[-1500:]
+                                   + (r.stdout or "")[-500:])
             part.replace(out) if part.drive == out.drive else out.write_bytes(part.read_bytes())
     with np.load(out) as z:
         return {k: z[k] for k in z.files}
