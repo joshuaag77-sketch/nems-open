@@ -42,6 +42,7 @@ def available() -> bool:
 
 class EfpPrices:
     def __init__(self, snap, start_year: int):
+        self.snap = snap
         self.chain = Chain(snap, 32)
         final = oracle_state.load("final", 61, "emm")
         self.ref = {k: final[k.split("/")[1]].a.astype(np.float64) for k in PRICES}   # EFP on EIA's demand
@@ -76,11 +77,33 @@ class EfpPrices:
                 out[k] = np.where(ref > 0, eia * mine / ref, eia)
         return out
 
-    def price_pass(self, year: int, q: dict, itr: int, fcrl: int) -> dict:
+    def dispatch_adjust(self, year: int, q: dict, prices: dict | None) -> dict:
+        """The loop's power-sector fuel use, fuel prices and sales against EIA's in this year (US totals), for the EFD
+        stand-in (efd_standin.block's `adjust`), so EFP's generation costs follow the loop's dispatch."""
+        j, us = year - FIRST_YEAR, 10
+
+        def ratio(loop, eia):
+            loop, eia = float(np.asarray(loop)[us, j]), float(np.asarray(eia)[us, j])
+            return loop / eia if eia > 0 and loop > 0 else 1.0
+        snap = self.snap
+        out = {"fuel": {}, "price": {}}
+        for f in ("cl", "ng", "ds", "rs", "ur"):
+            k = f"QBLK/q{f}el"
+            if k in q:
+                out["fuel"][f] = ratio(q[k], snap[k])
+            k = f"MPBLK/p{f}el"
+            if prices is not None and k in prices and f != "ur":
+                out["price"][f] = ratio(prices[k], snap[k])
+        out["gen"] = ratio(q["QBLK/qelas"], snap["QBLK/qelas"]) if "QBLK/qelas" in q else 1.0
+        return out
+
+    def price_pass(self, year: int, q: dict, itr: int, fcrl: int, prices: dict | None = None) -> dict:
         """EFP on this iteration's demand: {MPBLK/pel**: (11,) prices for the year}. itr is
         NEMS's CURITR (1 rolls the capital accounts forward); fcrl = 1 on the final loop
-        writes the statements and REVGAP's smoothing."""
+        writes the statements and REVGAP's smoothing. prices: the loop's prices, so EFP's generation costs see the
+        loop's fuel prices as well as its fuel use (dispatch_adjust)."""
         y = year - FIRST_YEAR + 1
+        self.chain.dispatch_adjust = self.dispatch_adjust(year, q, prices)
         self._sales_in(q, y)
         self.chain.iteration(y, itr, fcrl=fcrl)
         return self._prices_out(y)

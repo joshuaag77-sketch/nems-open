@@ -69,10 +69,12 @@ class Chain:
         self.steo = steo.load()
         self.year = start
 
+    dispatch_adjust = None   # efd_standin.block's `adjust`: the loop's dispatch against EIA's (retail.EfpPrices)
+
     def dispout(self, y):
         def block(nrgn):
             b = dict(self.base[nrgn])
-            for k, v in efd_standin.block(self.snap, y, nrgn, UIUF, MVS).items():
+            for k, v in efd_standin.block(self.snap, y, nrgn, UIUF, MVS, self.dispatch_adjust).items():
                 b[k] = FArray(np.asarray(v)) if np.ndim(v) else v
             return b
         return block
