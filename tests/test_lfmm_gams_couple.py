@@ -236,3 +236,4 @@ def test_network_license_error_with_rc_minus_one_retries(tmp_path, monkeypatch):
     monkeypatch.setattr(gc.gams_run, "gams", gams)
     assert lf._gams_licensed() == 0 and lf.license_retries == 1
     assert not gc.license_failed(6, tmp_path / "missing.log")
+    assert gc.license_failed(4294967295, tmp_path / "missing.log")   # WSL VM failed to start, no log

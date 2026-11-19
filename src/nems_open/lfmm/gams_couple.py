@@ -104,8 +104,8 @@ def license_failed(rc: int, log_path) -> bool:
         return True
     try:
         text = Path(log_path).read_text(errors="replace")
-    except OSError:
-        return False
+    except OSError:   # no log at all: GAMS never started. 2026-11-19 10:17, wsl.exe exited -1 with
+        return rc in (-1, 4294967295)   # Wsl/Service/CreateInstance/CreateVm/ERROR_TIMEOUT after a standby
     return "network session" in text or "Curl error" in text
 
 
