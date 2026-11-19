@@ -97,13 +97,53 @@ class EfpPrices:
         out["gen"] = ratio(q["QBLK/qelas"], snap["QBLK/qelas"]) if "QBLK/qelas" in q else 1.0
         return out
 
-    def price_pass(self, year: int, q: dict, itr: int, fcrl: int, prices: dict | None = None) -> dict:
+    # capacity LP build groups -> (restart UADD prefixes of EIA's additions, EFP plant type UPEFPT, ECP code for cost)
+    BUILD_TYPES = {
+        "wind": (("wind",), ("wn", "wf", "wl"), 4, "WN"), "solar": (("solar",), ("pv", "pt", "st"), 2, "PV"),
+        "battery": (("battery",), ("ds",), 11, "DS"), "gas_cc": (("gas_cc", "gas_cc_new"), ("cc", "-as"), 5, "AC"),
+        "gas_ccs": (("gas_ccs",), ("as",), 5, "CS"), "gas_ct": (("gas_ct", "gas_ct_new"), ("ct", "ic"), 9, "AT"),
+    }
+
+    def extra_builds(self, year: int, result) -> dict:
+        """EFP region -> builds for elefp.EXTRA_BUILDS: the capacity LP's additions this year (plant file plus LP
+        builds, capacity.YearResult) less EIA's (restart UADD), by region and type, at ECP's learned overnight cost.
+        Signed: fewer additions than EIA's book a negative build. Equal additions book nothing."""
+        from nems_open.emm import capacity
+        if result is None:
+            return {}
+        snap, y = self.snap, year - 1990
+        out = {}
+        for groups, prefixes, ptyp, code in self.BUILD_TYPES.values():
+            model = sum(np.asarray(result.planned_adds.get(g, 0.0), dtype=float) + np.asarray(result.builds.get(g, 0.0), dtype=float)
+                        for g in groups)
+            eia = np.zeros(25)
+            for p in prefixes:
+                sign = -1.0 if p.startswith("-") else 1.0
+                for o in ("u", "n"):
+                    k = f"UECPOUT/uadd{p.lstrip('-')}{o}"
+                    try:
+                        a = np.asarray(snap[k], dtype=float)
+                    except KeyError:
+                        continue
+                    eia += sign * (a[:, :25, y].sum(0) - a[:, :25, y - 1].sum(0))   # cumulative since 2024 (capacity_report)
+            cost = capacity.learned_overnight(snap, code, year)
+            delta = np.asarray(model, dtype=float) * np.ones(25) - eia
+            for r in range(25):
+                if abs(delta[r]) > 1e-6:
+                    c = float(cost[r]) if cost is not None else 0.0
+                    out.setdefault(r + 1, []).append((ptyp, year - 1989, c, float(delta[r])))
+        return out
+
+    def price_pass(self, year: int, q: dict, itr: int, fcrl: int, prices: dict | None = None,
+                   capacity_result=None) -> dict:
         """EFP on this iteration's demand: {MPBLK/pel**: (11,) prices for the year}. itr is
         NEMS's CURITR (1 rolls the capital accounts forward); fcrl = 1 on the final loop
         writes the statements and REVGAP's smoothing. prices: the loop's prices, so EFP's generation costs see the
         loop's fuel prices as well as its fuel use (dispatch_adjust)."""
         y = year - FIRST_YEAR + 1
         self.chain.dispatch_adjust = self.dispatch_adjust(year, q, prices)
+        from nems_open.emm.efp import elefp
+        elefp.EXTRA_BUILDS = self.extra_builds(year, capacity_result) if itr == 1 else {}
         self._sales_in(q, y)
         self.chain.iteration(y, itr, fcrl=fcrl)
         return self._prices_out(y)
