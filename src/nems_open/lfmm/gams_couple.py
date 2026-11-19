@@ -90,9 +90,23 @@ STATE = ("LFMM_Builds.gdx", "GrossCapacity.gdx", "Grossdumfact.gdx")
 # HiGHS options per attempt: defaults first, then interior point with crossover, then primal simplex.
 # Every attempt gets a time limit: a healthy LFMM solve takes under three minutes, while the 2030 cycle 2 dual
 # simplex stalled for 15 minutes and then crashed the solver with bad_alloc.
-LICENSE_WAITS = (0, 30, 120, 300, 600)
+LICENSE_WAITS = (0, 30, 120, 300, 600, 1200)
 TIME_LIMIT = 300   # healthy solves finish in under 90 s; the 2049 stall sat 1,400 s on 300 iterations
 RETRY_OPTIONS = ("", "solver = ipm\nrun_crossover = on\n", "solver = simplex\nsimplex_strategy = 4\n")
+
+
+def license_failed(rc: int, log_path) -> bool:
+    """rc 7, or any failure whose log shows the network license check failing. 2026-11-19 06:09, waking from
+    standby: GAMS exited -1 (4294967295) with 'Error when trying to start network session' and a curl error."""
+    if rc == 0:
+        return False
+    if rc == 7:
+        return True
+    try:
+        text = Path(log_path).read_text(errors="replace")
+    except OSError:
+        return False
+    return "network session" in text or "Curl error" in text
 
 
 def solver_failed(rc: int, info: dict, log: str = "") -> bool:
@@ -152,7 +166,7 @@ class LfmmGams:
         for wait in LICENSE_WAITS:
             time.sleep(wait)
             rc = gams_run.gams(self.run, timeout=self.timeout)
-            if rc != 7:
+            if not license_failed(rc, self.run / "LFMM.log"):
                 return rc
             self.license_retries += 1
         return rc

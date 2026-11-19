@@ -220,3 +220,19 @@ def test_license_error_waits_and_reruns(tmp_path, monkeypatch):
     rcs = iter([7, 7, 0])
     monkeypatch.setattr(gc.gams_run, "gams", lambda run, timeout: next(rcs))
     assert lf._gams_licensed() == 0 and lf.license_retries == 2
+
+
+def test_network_license_error_with_rc_minus_one_retries(tmp_path, monkeypatch):
+    """2026-11-19 06:09, after standby: GAMS exited 4294967295 and LFMM.log held only the license curl error."""
+    from nems_open.lfmm import gams_couple as gc
+    lf = _bare(tmp_path)
+    monkeypatch.setattr(gc.time, "sleep", lambda s: None)
+    rcs = iter([4294967295, 0])
+
+    def gams(run, timeout):
+        rc = next(rcs)
+        (run / "LFMM.log").write_text("*** Error: Error when trying to start network session:\nCurl error: x\n" if rc else "ok\n")
+        return rc
+    monkeypatch.setattr(gc.gams_run, "gams", gams)
+    assert lf._gams_licensed() == 0 and lf.license_retries == 1
+    assert not gc.license_failed(6, tmp_path / "missing.log")
