@@ -72,6 +72,29 @@ def _plant_types(icall):
     return [EITRAN] if icall == "T" else [EIDIST]
 
 
+# Builds the loop's capacity LP made beyond EIA's, booked as ECP's UEXPBLD books its builds (udat.f): region ->
+# [(EFP plant type, start year index, plant cost 1987$/kW, GW)], set per year by retail.EfpPrices. Empty: EFP's books
+# as in EIA's code (no booking at all).
+EXTRA_BUILDS: dict = {}
+
+
+def _book_extra(s, nrgn, ptyp, syr, pcst, gw):
+    """UEXPBLD: a build owned privately (ownership 1), fully in service its first year. ECP books a build years before
+    it comes online, so its cost has built up as CWIP by then; the capacity LP decides in the online year, so the
+    construction years before it (all but ESCPRF's last-year share) come booked as CWIP and asset value at this year's
+    dollars, and ELCWIP adds the last share and moves the lot to book value as for any build reaching its start year."""
+    z = [f32(0.0), f32(0.0)]
+    if "escprf" in s and "mc_jpgdp" in s:
+        gdp = f32(s["mc_jpgdp"][i(s, "curiyr")])
+        pre = f32(f32(f32(f32(1.0) - s["escprf"][int(ptyp), 1]) * f32(f32(gw) * f32(pcst))) * gdp)
+        cw = [pre, f32(0.0)]
+        rc = [f32(pre * s["escwpp"][1]), f32(0.0)] if "escwpp" in s else list(z)
+    else:
+        cw, rc = list(z), list(z)
+    capcost.unewbld(s, nrgn, list(z), list(z), list(z), list(cw), list(cw), rc, int(ptyp), int(syr), f32(pcst),
+                    [f32(gw), f32(0.0)], f32(1.0), list(z))
+
+
 def _wrapped_build(s, books, call, nrgn, *args):
     """Run an UNEWBLD-based routine. UNEWBLD leaves BLINK = 0 in COMMON, which the port does not set."""
     before = len(books.builds)
@@ -108,6 +131,8 @@ def elgltr(s, books, nrgn, icall):
     if curitr == 1 and efpitr == 1:
         if icall == "G" and curiyr + i(s, "uhbsyr") > i(s, "efpsyr"):
             _wrapped_build(s, books, capcost.anewbld, nrgn)
+            for b in EXTRA_BUILDS.get(nrgn, ()):
+                _wrapped_build(s, books, _book_extra, nrgn, *b)
         books.geteb(s, nrgn, icall)
         if icall == "G":
             put(s, "npi", s["savnpi"])

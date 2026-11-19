@@ -285,7 +285,9 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                         p = v * (mult[k][:, j] if k in mult else 1.0)
                         s.prices[k][:, j] = p + (s.carbon_adders[k][:, j] if k in s.carbon_adders else 0.0)
             if efp is not None:   # retail electricity prices from EFP on this iteration's sales
-                for k, v in efp.price_pass(FIRST_YEAR + j, q, itr, fcrl, prices).items():
+                cpath = getattr(lp, "capacity_path", None) if lp is not None else None
+                cres = cpath.results.get(FIRST_YEAR + j) if cpath is not None else None
+                for k, v in efp.price_pass(FIRST_YEAR + j, q, itr, fcrl, prices, cres).items():
                     s.prices[k][:, j] = v
             return s, fuel
 
