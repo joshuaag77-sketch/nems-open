@@ -41,7 +41,7 @@ NYEARS = LAST_YEAR - FIRST_YEAR + 1
 SWITCHES = {"elec": "lp", "elec_price": "efp", "elec_cap": "lp", "macro": "frbus", "ogs": "aimms",
             "lfmm": "gams", "coal": "aimms", "ind": "ported"}
 PORTED = ("residential", "commercial", "transportation", "industrial")
-CYCLES = 2
+CYCLES = 3   # 2026-11-20: three cycles so the relaxed gas-supply loop settles (ngmm.aimms.HSM_RELAX)
 
 DIVISIONS = ("New England", "Middle Atlantic", "East North Central", "West North Central", "South Atlantic",
              "East South Central", "West South Central", "Mountain", "Pacific")
