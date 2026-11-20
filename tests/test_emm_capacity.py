@@ -130,6 +130,31 @@ def test_build_steps_follow_ecp_short_term_elasticities():
     assert round(floor[0][0], 3) == 1.5
 
 
+def test_planned_additions_fill_the_first_build_step():
+    """ECP's step-1 row holds the year's planned additions (uecp.f EP$ELAST,2-3), so the LP's own builds get only
+    the rest of it; steps 2 and 3 and their costs are unchanged."""
+    from nems_open.emm import capacity as cap
+    recent = [7.4, 10.7, 5.6, 2.5, 15.4]
+    free = cap.build_steps("WN", recent)
+    some = cap.build_steps("WN", recent, planned=5.6)
+    assert round(some[0][0], 2) == round(19.25 - 5.6, 2)
+    assert some[1:] == free[1:] and [mu for _, mu in some] == [mu for _, mu in free]
+    full = cap.build_steps("WN", recent, planned=40.0)                # more planned than step 1: step 1 is closed
+    assert full[0][0] == 0.0 and full[1:] == free[1:]
+    assert cap.build_steps("WN", recent, planned=-1.0) == free
+
+
+def test_planned_units_count_in_their_own_ecp_type_step():
+    """2027 in the plant file: 25.8 GW of PV and PT fill solar's step; offshore wind (WF) and the conventional
+    combined cycle and turbine units (EC, ET) do not fill onshore wind's or the advanced gas types' steps."""
+    from nems_open.emm import capacity as cap
+    assert cap.planned_in_step(2027, "solar") == pytest.approx(25.8, abs=0.3)
+    assert cap.planned_in_step(2027, "wind") == pytest.approx(1.2, abs=0.2)       # 4.4 GW offshore left out
+    assert cap.planned_in_step(2027, "gas_cc_new") == 0.0
+    assert cap.planned_in_step(2027, "gas_ct_new") == 0.0
+    assert cap.planned_in_step(2030, "solar") == 0.0
+
+
 def test_new_wind_and_solar_run_on_the_new_build_profile():
     """ECP values a plant built now on WRENEW's new-build profile (EP$INT UPICFC), not the fleet blend, which is
     zero where no wind stands today and is held to the STEO benchmark in early years."""

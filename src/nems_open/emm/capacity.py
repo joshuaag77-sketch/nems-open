@@ -66,9 +66,26 @@ STEP_HISTORY = {   # build group -> (state groups whose planned adds count, rest
 }
 
 
-def build_steps(code: str, recent: list) -> list:
+# Plant-file ECP types (ECPcd) whose planned units fill each build type's first step: ESTYRPLN is kept by the unit's
+# own ECP type, with PT counted as PV and WL as WN (udat.f 8273-8278). Planned gas units are EC/ET, not AC/AT, and
+# offshore wind is WF, so none of them use up the LP's combined cycle, turbine or onshore wind steps.
+PLANNED_STEP_TYPES = {"gas_cc_new": ("AC",), "gas_ccs": ("CS",), "gas_ct_new": ("AT",), "wind": ("WN", "WL"),
+                      "solar": ("PV", "PT"), "battery": ("DS",)}
+
+
+def planned_in_step(year: int, group: str) -> float:
+    """National GW of plant-file units online in `year` that sit in build group `group`'s first ECP step."""
+    u = plants.load_units()
+    m = (u.online_year == year) & np.isin(u.ecp_type, PLANNED_STEP_TYPES.get(group, ()))
+    return float(u.summer_mw[m].sum()) / 1000.0
+
+
+def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
     """[(GW bound, capital cost multiplier)] for this year's national builds of ECP type `code`, from the last five
-    years' national additions (GW, oldest first), as ucape.f ELSTCAP and ELSTELA."""
+    years' national additions (GW, oldest first), as ucape.f ELSTCAP and ELSTELA. `planned`: the plant file's
+    additions of the type online this year (GW); ECP puts them in the first step (uecp.f EP$ELAST,2-3: a fixed
+    column of min(ESTCPLIM step 1, ESTYRPLN) in the step-1 row), so the model's own builds get only what is left
+    of it. Without that, 2027's 26 GW of planned solar left the LP a full 44 GW first step on top."""
     b = named_ranges(technology.ECPDATY, "BLDINFO")
     i = technology.ecp_codes().index(code)
     stp = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[i]
@@ -84,6 +101,7 @@ def build_steps(code: str, recent: list) -> list:
         mult = 1.0 if s == 0 else ((done + bound / 2.0) / add - stp[0]) ** (np.log(1.0 + csinc) / np.log(1.0 + cpinc))
         out.append((bound, float(mult)))
         done += bound
+    out[0] = (max(out[0][0] - max(float(planned), 0.0), 0.0), out[0][1])
     return out
 
 
@@ -573,7 +591,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         renewable = {"wind": bw, "solar": bs, "battery": bb}
         for g, code in STEP_CODES.items():
             total = renewable[g].sum() if g in renewable else build.sel(group=g).sum()
-            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5))
+            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5), planned_in_step(year, g))
             S = pd.Index(range(len(steps)), name="step")
             sv = m.add_variables(lower=0, upper=xr.DataArray([b for b, _ in steps], coords=[S]), name=f"build_step_{g}")
             m.add_constraints(total - sv.sum() == 0, name=f"build_steps_{g}")
