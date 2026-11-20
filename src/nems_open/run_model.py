@@ -181,6 +181,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         from nems_open.ngmm import GasMarket
         market = GasMarket(baseline, base=base, lng=policy.lng_exports)
     aimms_gas = expected = None
+    wellhead_prev = gas_change = None   # ogs="aimms": the last cycle's wellhead ratio and the change since
     if side_case and ogs == "aimms":   # cycle 1: the side case's production on cb2026's prices
         from nems_open.ngmm.aimms import hsm_expected
         expected = hsm_expected(None, None, scedes=hsm_case)
@@ -218,6 +219,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         if st is not None and st["cycle"] < cycles:
             first_cycle = st["cycle"] + 1
             prices, q, co2, expected = st["prices"], st["q"], st["co2"], st["expected"]
+            wellhead_prev = st.get("wellhead_prev")
             passes, stable = st["passes"], st["stable"]
             wholesale, wholesale_us, generation = st["wholesale"], st["wholesale_us"], st["generation"]
             unserved, curtailed = st["unserved"], st["curtailed"]
@@ -376,9 +378,15 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             record.cycle_end(cycle=cycle, prices={k: v.copy() for k, v in prices.items()},
                              q={k: v.copy() for k, v in q.items()}, co2={k: v.copy() for k, v in (co2 or {}).items()},
                              generation={k: v.copy() for k, v in (generation or {}).items()}, henry_hub=hub, stable=dict(stable))
-        if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production
-            from nems_open.ngmm.aimms import hsm_expected
-            expected = hsm_expected(aimms_gas.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case)
+        if ogs == "aimms":   # how far this cycle's wellhead prices moved from the last cycle's
+            from nems_open.ngmm.aimms import cycle_change
+            whr = aimms_gas.wellhead_ratio()
+            if wellhead_prev is not None:
+                gas_change = cycle_change(wellhead_prev, whr)
+            wellhead_prev = whr
+        if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production,
+            from nems_open.ngmm.aimms import hsm_expected, relax_expected   # relaxed toward this cycle's
+            expected = relax_expected(expected, hsm_expected(whr, _oil_ratio(oil, base), scedes=hsm_case))
         if ogs == "hsm" and cycle < cycles:   # HSM on this cycle's wellhead prices sets next cycle's expected production
             from nems_open.ogsm import couple
             market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case), market.P)
@@ -390,7 +398,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         if checkpoint is not None and cycle < cycles:
             cp = lp.capacity_path if lp is not None else None
             _save_checkpoint(*checkpoint, {
-                "cycle": cycle, "prices": prices, "q": q, "co2": co2, "expected": expected, "passes": passes,
+                "cycle": cycle, "prices": prices, "q": q, "co2": co2, "expected": expected, "wellhead_prev": wellhead_prev,
+                "passes": passes,
                 "stable": stable, "wholesale": wholesale, "wholesale_us": wholesale_us, "generation": generation,
                 "unserved": unserved, "curtailed": curtailed, "lp_last": getattr(lp, "last", None),
                 "capacity_path": None if cp is None else {k: v for k, v in cp.__dict__.items() if k != "snapshot"}})
@@ -398,6 +407,12 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if aimms_gas is not None:
         gas = {"henry_hub": aimms_gas.henry_hub.copy(), "ngmm_seconds": aimms_gas.seconds,
                "wellhead_ratio": aimms_gas.wellhead_ratio(), "hsm": expected is not None}
+        if gas_change is not None:   # a year whose gas price still moved between the last two cycles is not settled
+            from nems_open.ngmm.aimms import CYCLE_TOL
+            gas["cycle_change"] = gas_change
+            for y in list(stable):
+                if gas_change[y - FIRST_YEAR] > CYCLE_TOL:
+                    stable[y] = False
     elif market is not None:
         gas = {k: v.copy() for k, v in market.clear(q["QBLK/qngas"][US]).items()}
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)

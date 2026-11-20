@@ -619,6 +619,36 @@ def hsm_expected(gas_ratio, oil_ratio=None, case: str = "cb2026", scedes: str = 
     return out
 
 
+# Between cycles HSM's new expected production is relaxed toward the cycle's (NEMS relaxes between cycles too).
+# Undamped, two cycles made a cobweb: the 2026-11-19 reference handed HSM cycle-1 wellhead prices 21-29% under
+# EIA's in 2031-2035, HSM cut expected production 19% by 2035, and cycle 2's Henry Hub rose 79% over EIA's by
+# 2038, so the final prices answered a supply path HSM never saw. The loop gain was about 2 (a 27% price move
+# gave a 58% move back), and a fixed-point step converges for weights under 2 / (1 + gain); 0.4 damps it to
+# about a fifth per cycle.
+HSM_RELAX = 0.4
+CYCLE_TOL = 0.05   # largest change in log wellhead price between the last two cycles for a year to count as settled
+
+
+def relax_expected(previous: dict | None, new: dict, weight: float = HSM_RELAX, case: str = "cb2026") -> dict:
+    """previous + weight * (new - previous), array by array. previous None is cb2026's own expected production
+    (what cycle 1 ran on without a side case)."""
+    if previous is None:
+        from nems_open.supply_standin.data import restart_path
+        z = np.load(restart_path(case), allow_pickle=False)
+        names = {k.lower(): k for k in z.files}
+        previous = {k: z[names[k.lower()]].astype(np.float64) for k in new}
+    return {k: np.asarray(previous[k], dtype=np.float64) + weight * (np.asarray(v, dtype=np.float64)
+                                                                     - np.asarray(previous[k], dtype=np.float64))
+            for k, v in new.items()}
+
+
+def cycle_change(before, after) -> np.ndarray:
+    """|log(after / before)| by year (61,) for two cycles' wellhead ratios; 0 where either is missing."""
+    a, b = np.asarray(after, dtype=np.float64), np.asarray(before, dtype=np.float64)
+    ok = (a > 0) & (b > 0)
+    return np.where(ok, np.abs(np.log(np.where(ok, a, 1.0) / np.where(ok, b, 1.0))), 0.0)
+
+
 HEADLINE = ("NGTDMREP_OGHHPRNG", "MPBLK_PNGRS", "MPBLK_PNGCM", "MPBLK_PNGIN", "MPBLK_PNGEL", "MPBLK_PNGTR",
             "NGTDMREP_NGSCRV_P", "NGTDMREP_NGSCRV_Q")
 
