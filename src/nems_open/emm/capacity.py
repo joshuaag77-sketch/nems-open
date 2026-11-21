@@ -80,6 +80,9 @@ def planned_in_step(year: int, group: str) -> float:
     return float(u.summer_mw[m].sum()) / 1000.0
 
 
+STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional type whose ESTCPADD it may not fall below
+
+
 def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
     """[(GW bound, capital cost multiplier)] for this year's national builds of ECP type `code`, from the last five
     years' national additions (GW, oldest first), as ucape.f ELSTCAP and ELSTELA. `planned`: the plant file's
@@ -94,6 +97,14 @@ def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
     n = len(recent)
     for k, a in enumerate(recent):
         add = max(add, float(a) * (0.5 + 0.5 * (k + 1) / n))
+    if code in STEP_FLOOR_OF:
+        # ucape.f ELSTCAP: ESTCPADD(AC) = max(ESTCPADD(AC), ESTCPADD(CC)), likewise AT and CT. The conventional type's
+        # ESTCPADD is at least its ESTMNADD / (1 + ESTCPSTP step 1), 5,000 MW / 1.25 = 4 GW, and its own history is
+        # the same additions this group counts, so the advanced type's steps never fall below 4 GW. Without it, five
+        # years with no turbine builds shrank the turbine steps to 1.2 GW and the 2039 cofiring retirements went to CC.
+        j = technology.ecp_codes().index(STEP_FLOOR_OF[code])
+        stp_j = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[j]
+        add = max(add, float(b["ESTMNADD"][j]) / 1000.0 / (1.0 + stp_j[0]))
     out, cum, done = [], 1.0, 0.0
     for s, frac in enumerate(stp):
         cum += frac
@@ -414,6 +425,32 @@ def ptc_annual(ptc: float, dollar_year: int, years: int, rate: float, life: floa
     return real87 / (1.0 - TAX_RATE) * pv * _crf(rate, life)
 
 
+# Interest during construction (uread.f EPINCST, called for every build column in uecp.f EP$BDSP,62): ECP spends the
+# overnight cost over the construction years by the type's COSTPERF profile UPCPRO, each year's spending in that year's
+# dollars, and carries the work in progress at the plant's rate of return (half a year on that year's spending) to the
+# online year. The book value it then annualizes is overnight x this factor. A combined cycle (3 years, 25/50/25%)
+# carries about 7% more than a turbine (2 years, 35/65%) or a battery (1 year). Off: overnight cost only.
+CONSTRUCTION_INTEREST = True
+
+
+def construction_factor(snapshot, code: str, year: int, rate: float) -> float:
+    """Installed cost over overnight cost for ECP type `code` coming online in `year` (EPINCST's BVBOOK), in the online
+    year's real dollars: spending in year online - UPCLYR + k at the price level of that year (MC_JPGDP), work in
+    progress compounding at `rate` with half a year on each year's spending."""
+    params = technology.type_parameters()
+    codes = technology.ecp_codes()
+    i = codes.index(code)
+    clt = int(params["construction_lead_years"][i])
+    prof = np.asarray(named_ranges(technology.ECPDATY, "COSTPERF")["UPCPRO"], dtype=float).reshape(len(codes), -1)[i]
+    jp = np.asarray(snapshot["MACOUT/mc_jpgdp"], dtype=float).ravel()
+    at = lambda y: jp[min(max(y - 1987, 0), jp.size - 1)]
+    book = 0.0
+    for k in range(clt):
+        spend = float(prof[k]) * at(year - clt + k) / at(year)
+        book = book + spend + (book + 0.5 * spend) * rate
+    return book if book > 0 else 1.0
+
+
 def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
     """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
     and PTC, with ECP's learned overnight cost and the year's discount rate."""
@@ -433,6 +470,8 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
             ovn = params["overnight_cost"][i] * reg["regional_multiplier"][:NUM_R, i] * reg["area_multiplier"][:NUM_R, i]
         itc = max(itc_tab[i, col], 0.0)
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
+        if CONSTRUCTION_INTEREST:
+            ovn = ovn * construction_factor(snapshot, code, cost_year, rate)
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
         if parts is not None:      # the capital charge alone, k$ per GW-year (what ECP's build steps scale)
             parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3

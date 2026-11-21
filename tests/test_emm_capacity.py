@@ -268,3 +268,45 @@ def test_ldsm_load_follows_the_run_and_flat_load_lifts_the_requirement(snapshot)
     lift = req(ecp_load.follow_run(sy, ref + flat, ref, flat)) - req(sy)
     assert lift[0] == pytest.approx(10.0 * (1.0 + margin[0]), rel=0.01)
     assert np.allclose(lift[1:], 0.0, atol=1e-6)
+
+
+def test_construction_interest_follows_epincst(snapshot):
+    """EPINCST (uread.f): spending by UPCPRO, work in progress at the plant's rate, half a year on each year's spend.
+    With flat prices a one-year build carries 1 + rate / 2 and the three-year combined cycle carries the most."""
+    jp = np.asarray(snapshot["MACOUT/mc_jpgdp"], dtype=float).ravel()
+    infl_year = 2035
+    rate = 0.07
+    ds = capacity.construction_factor(snapshot, "DS", infl_year, rate)
+    # one year of spending, one year before online, in that year's (lower) price level
+    expect = (1.0 + 0.5 * rate) * jp[infl_year - 1 - 1987] / jp[infl_year - 1987]
+    assert abs(ds - expect) < 1e-9
+    ac = capacity.construction_factor(snapshot, "AC", infl_year, rate)
+    at = capacity.construction_factor(snapshot, "AT", infl_year, rate)
+    assert ac > at > ds > 0.99
+    assert 1.06 < ac < 1.12 and 1.01 < at < 1.05
+
+
+def test_combined_cycle_over_turbine_cost_matches_ecp(snapshot):
+    """ECP's own build columns (oracle OutToNEMS_2035, cB_DSP step 1, planning year 1) cost AC 1.23 to 1.30 times AT
+    by region, median 1.28. Overnight cost and fixed O&M alone give 1.20 to 1.24; with interest during construction the
+    LP's annual costs land on ECP's ratio."""
+    case = dispatch.build_case(snapshot, 2035, "none")
+    cap = capacity.capital_costs(snapshot, 2035, case)
+    ratio = cap["gas_cc_new"] / cap["gas_ct_new"]
+    assert 1.25 < np.median(ratio) < 1.31
+    old = capacity.CONSTRUCTION_INTEREST
+    try:
+        capacity.CONSTRUCTION_INTEREST = False
+        bare = capacity.capital_costs(snapshot, 2035, case)
+    finally:
+        capacity.CONSTRUCTION_INTEREST = old
+    assert np.median(bare["gas_cc_new"] / bare["gas_ct_new"]) < 1.24
+
+
+def test_advanced_gas_steps_keep_the_conventional_floor():
+    """ucape.f ELSTCAP: ESTCPADD(AT) = max(ESTCPADD(AT), ESTCPADD(CT)) and AC likewise from CC, whose ESTMNADD floor is
+    5,000 MW / 1.25. With no recent additions the turbine's first step is 5 GW, not the 1.875 GW of AT's own floor."""
+    for code in ("AT", "AC"):
+        steps = capacity.build_steps(code, [0.0] * 5)
+        assert [round(b, 2) for b, _ in steps] == [5.0, 3.0, 4.0]
+    assert round(capacity.build_steps("DS", [0.0] * 5)[0][0], 3) == 3.0        # other types keep their own floor

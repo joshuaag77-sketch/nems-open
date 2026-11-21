@@ -211,3 +211,27 @@ One-step 2033 from EIA's fleet: reserve price 22 of 25 regions inside 21-45 (ISN
 Chain 2027-2040, 2040 GW, accounting-only / with ECP's requirement / EIA: CC 482 / 491 / 431, CT 182 / 207 / 267, steam 41 / 49 / 52, solar 343 / 343 / 323, battery 127 / 141 / 103, wind 385 / 371 / 404. CT tracks EIA through 2032 (201 vs 194) and then stops while EIA adds about 7 GW a year; the CC choice and the battery credit (near 1 here, builds 38 GW over EIA) are what is left.
 
 LDSM's load follows the run (`ecp_load.follow_run`): the shaped part of the run's net energy scales LDSM's hours by its ratio to the reference run's for that region and year, and flat added load (DispatchCase.flat_twh, the data center cases) goes on as flat GW, so 10 GW of data centers lifts a region's requirement by 10 x (1 + EPMRM). The reference run is unchanged (ratios of 1). LDSM costs about 0.4 s per year (cached per year).
+
+## Why CC beat turbines on reserve need, and why batteries overshoot (branch ecp-cc-ct-battery)
+
+Chain 2027-2040 from EIA's 2026 fleet (`CapacityPath(first=2027)`), baseline on main: 2040 CC (with CCS) 491, CT 207, battery 141, solar 343 GW against EIA 431 / 267 / 103 / 323.
+
+**Turbines.** At the LP's own energy prices (balance duals) a new turbine earns almost nothing above its variable cost (0 to 1.3 $/kW-year in every region in 2030), so its net cost is its capital and it is built only when the reserve price reaches it. A new CC earns 8 to 19 $/kW-year even at EPA 111's 40% cap. The capital gap was 7 to 8 $/kW-year (2035: CC 43.7, turbine 35.9), so CC's net cost sat below the turbine's in most regions and CC took the reserve-driven builds. 2033-2037: turbine step 1 was 17 to 27 GW at 37 to 38 $/kW-year against a reserve price of 25 to 32, and 0.0 to 0.6 GW were built a year while CC filled 10 to 20 GW. Five years without turbine builds then shrank the turbine steps to 1.5 / 0.9 / 1.2 GW, so the 2039 cofiring retirements (reserve price 55) went to CC (22.8 GW) and turbines got 2.4.
+
+ECP prices the two differently. Its build columns (oracle OutToNEMS_2035, cB_DSP step 1, planning year 1) cost AC 1.23 to 1.30 times AT by region, median 1.28; this LP had 1.20 to 1.24. The missing term is interest during construction: EP$BDSP,62 annualizes EPINCST's book value, the overnight cost spent by the type's UPCPRO profile and carried at the plant's rate to the online year. A CC (3 years, 25/50/25%, at its EXTRARISK rate) carries 10% over overnight, a turbine (2 years, 35/65%) 3%, a battery 1%, CCS 10%. With it the LP's 2035 ratio is 1.27 to 1.31 (median 1.29). Ported as `capacity.construction_factor` (`CONSTRUCTION_INTEREST`, on), with spending in each year's dollars (MC_JPGDP) and half a year of carrying on each year's spend, as EPINCST does.
+
+Also ported: ucape.f ELSTCAP's floor, ESTCPADD(AT) = max(AT, CT) and AC from CC, so the advanced types' steps never fall below CT's and CC's 5,000 MW ESTMNADD / 1.25 (first step 5 GW). It is what keeps turbines available in 2039 after years without turbine builds.
+
+**Batteries.** The credit is not the cause. The CAP_CREDIT_LDC port (top-8-hour ratio of net load less stored energy / hoursToSell) gives 0.84 to 1.0 by region and falls as storage grows, the range EIA's DS_CAP_CREDIT lines show, and new and existing storage share it as in CALC_STORAGE_VAL,4 and 13. Batteries are built in two years only: 2027 (21.3 GW unplanned against EIA's about 3; reserve price 63 in 10 regions) and 2032 (37.5 GW against EIA's 10; reserve price 80). Both are reserve shortfalls the turbine steps cannot cover, filled from the large battery steps (17 to 39 GW, sized from the 2022-2026 battery history). 2027's comes from economic retirements (coal 6.3, CC 3.6, steam 4.4 GW in the first year); 2032's from the coal rule taking 98.5 GW of coal at once against EIA's 62, because EIA's 2028-2030 coal-to-gas cofiring (steam 110 GW in 2030 against 70 here) is not in the chain. After 2032 the LP builds no batteries. These are the retirement and conversion questions above, not a storage term.
+
+Result, 2040 national GW (before / construction interest / plus ELSTCAP floor / EIA):
+
+| | before | interest | interest + floor | EIA |
+|---|---|---|---|---|
+| CC with CCS | 491 | 456 | 453 | 431 |
+| of which CCS | 52 | 28 | 45 | 52 |
+| Turbines | 207 | 236 | 243 | 267 |
+| Batteries | 141 | 146 | 143 | 103 |
+| Solar | 343 | 343 | 343 | 323 |
+
+2035 with both: CC 379 (EIA 357, before 399), turbines 220 (EIA 208, before 202). Turbines are now built every year (2 to 5 GW in 2033-2038, 8 in 2039). CC is still 22 GW over in 2040 and batteries 40 GW over; the battery excess is set in 2027 and 2032 by the reserve shortfalls described above.
