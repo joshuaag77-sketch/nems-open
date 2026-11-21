@@ -171,3 +171,44 @@ def test_new_wind_and_solar_run_on_the_new_build_profile():
     assert new.shape == fleet.shape == (25,)
     assert (new > 0.3).all()                      # every region can build wind at its own resource
     assert new.mean() > fleet.mean()              # new turbines beat the fleet average
+
+
+def test_battery_credit_is_ecp_top_eight_hour_ratio():
+    """CAP_CREDIT_LDC: credit = top-8 mean of (net load - stored energy / 4) over the top-8 mean of net load. No
+    battery: 1. A battery that holds its charge through the peak hours loses that share; never below 0 or above 1."""
+    from nems_open.emm import capacity_credit as cc
+    net = np.full((36, 24), 50.0)
+    net[:, 18:22] = 100.0                                   # a four-hour evening peak every day
+    zero = {"wind": np.zeros(25), "solar": np.zeros(25), "battery": np.zeros(25)}
+    prof = {"wind": np.zeros((25, 36, 24)), "solar": np.zeros((25, 36, 24))}
+    load = np.broadcast_to(net, (25, 36, 24)).copy()
+    assert np.allclose(cc.storage_credits(load, zero, prof), 1.0)
+    soc = cc.battery_soc(net, 10.0)
+    assert soc.min() == 0.0 and soc.max() == pytest.approx(40.0)          # 4 hours at 10 GW
+    assert (soc[:, 21] == 0.0).all()                                         # empty after the peak
+    some = dict(zero, battery=np.full(25, 10.0))
+    c = cc.storage_credits(load, some, prof)
+    assert ((c > 0.85) & (c <= 1.0)).all()
+    wide = np.full((36, 24), 50.0)
+    wide[:, 18:22] = 90.0
+    wide[0, 14:22] = 100.0                                   # one eight-hour peak: the battery is still charged in part of it
+    load = np.broadcast_to(wide, (25, 36, 24)).copy()
+    stored = cc.battery_soc(wide, 10.0) / cc.HOURS_TO_SELL
+    want = np.sort((wide - stored).ravel())[-8:].mean() / np.sort(wide.ravel())[-8:].mean()
+    got = cc.storage_credits(load, some, prof)
+    assert want < 1.0 and np.allclose(got, want)
+
+
+def test_reserve_row_uses_ecp_coefficients_and_no_free_lending(snapshot):
+    """ECP counts hydro at RNWFAC (0.70), pumped storage at UPCCR(PS) (0.70) and batteries at CAP_CREDIT_LDC, and
+    credits interregional transfers only on lines it builds, carried as UTRELADJ on the requirement."""
+    from nems_open.emm import capacity_credit as cc
+    assert capacity.ECP_RESERVE
+    case = dispatch.build_case(snapshot, 2033, "none")
+    cap = capacity.initial_capacity(snapshot, 2033)
+    load_hr = case.net_load_twh[:, None, None] * 1000.0 * case.shapes
+    cr = capacity.capacity_credits(case, cap, load_hr, np.repeat(np.arange(12), 3))
+    assert cr["hydro"] == cc.HYDRO_CREDIT == 0.70 and cr["pumped"] == cc.PUMPED_CREDIT == 0.70
+    assert cr["battery"].shape == (25,) and ((cr["battery"] > 0.8) & (cr["battery"] <= 1.0)).all()
+    adj = capacity.reliability_adjustment(snapshot, 2033)
+    assert adj.shape == (25,) and abs(adj.sum()) < 1.0 and np.abs(adj).max() > 1.0   # moves capacity, nets to ~0

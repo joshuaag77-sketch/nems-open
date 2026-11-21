@@ -148,8 +148,14 @@ STORAGE_HOURS = {"battery": (4.0, 0.85), "pumped": (12.0, 0.78)}
 PEAK_HOURS = 88.0                # the top 1% of hours of net load define the peak the reserve margin protects
 NEAR_PEAK = 0.9                  # storage must carry the hours where net load is within this share of its peak
 # Firm capacity one region can lend another toward its reserve margin: share of the link's transfer capacity
-# (uecp.f EP$ETT CAPACITY_DERATE, applied there to new lines; used here for the existing ones too).
+# (uecp.f EP$ETT CAPACITY_DERATE). Used only with ECP_RESERVE off, for the existing links.
 FIRM_TRANSFER_SHARE = 0.75
+# ECP's reserve accounting (uecp.f EP$MRM, EP$ETT, EP$BRNW, CALC_STORAGE_VAL): hydro and pumped storage at 0.70,
+# batteries at the CAP_CREDIT_LDC credit, and no firm capacity lent over existing links. ECP credits a transfer only
+# on a line it builds (0.75 of it), and carries the lines built in earlier years as UTRELADJ on the requirement; this
+# LP builds no lines, so it takes EIA's UTRELADJ (UETTOUT/utreladj) as given. Off: the earlier load-shape credits
+# (hydro up to 1.0, batteries 0.74) and free lending up to FIRM_TRANSFER_SHARE of every existing link.
+ECP_RESERVE = True
 # Debt share and tax rate of a new plant's financing (ecpdaty.xlsx FINANCIAL UPNFDT, UPTXRT). EIA adds its
 # EXTRARISK premium (restart EMISSION/extrarisk, 3 points from 2008) to both the debt and equity rates of the
 # types marked UPRSKSW (util.f 893-902: coal and combined cycle), so their after-tax discount rate rises by
@@ -356,7 +362,19 @@ def capacity_credits(case, cap0: dict, load_hr: np.ndarray, month_of_day: np.nda
     hydro_cf = float(np.average(case.monthly_cf["hydro"][:, peak_month], weights=np.maximum(cap0["hydro"], 1e-9)))
     credits["hydro"] = float(min(1.0, hydro_cf * 24.0 / width))
     credits["window_hours"] = float(width)
+    if ECP_RESERVE:      # ECP's own reserve coefficients (capacity_credit: RNWFAC, UPCCR(PS), CAP_CREDIT_LDC)
+        credits["hydro"] = capacity_credit.HYDRO_CREDIT
+        credits["pumped"] = capacity_credit.PUMPED_CREDIT
+        credits["battery"] = capacity_credit.storage_credits(load_hr, cap0, case.profile)
     return credits
+
+
+def reliability_adjustment(snapshot, year: int) -> np.ndarray:
+    """UTRELADJ (GW by region): firm capacity rights on the interregional lines ECP built in earlier years, 0.75 of
+    each line, added to the exporter's reserve requirement and taken off the importer's (uecp.f 32118-32166, EP$MRM
+    PKADJ). From EIA's run, since this LP builds no lines."""
+    a = np.asarray(snapshot["UETTOUT/utreladj"], dtype=float)
+    return a[:NUM_R, min(year - 1990, a.shape[1] - 1)]
 
 
 def _blocks(a: np.ndarray, hours: int = BLOCK_HOURS) -> np.ndarray:
@@ -716,13 +734,17 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         # neighbour, up to FIRM_TRANSFER_SHARE of the link, less line losses.
         icc = capacity_credit.credits(load_hr, c0, cs.profile, cs.weights)
         credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
-        requirement = xr.DataArray(margin * icc["peak"] + icc["net_peak"], coords=[R])
+        req = margin * icc["peak"] + icc["net_peak"]
+        if ECP_RESERVE:
+            req = req + reliability_adjustment(snapshot, cs.year)
+        requirement = xr.DataArray(req, coords=[R])
         firm = capv_p.sum("group")
         firm = firm + wind_tot * xr.DataArray(icc["wind"], coords=[R])
         firm = firm + solar_tot * xr.DataArray(icc["solar"], coords=[R])
-        firm = firm + batt_tot * credits["battery"]
+        firm = firm + batt_tot * xr.DataArray(np.broadcast_to(credits["battery"], (NUM_R,)).copy(), coords=[R])
         const_firm = c0["nuclear"] + c0["other"] + c0["hydro"] * credits["hydro"] + c0["pumped"] * credits["pumped"]
-        lend = m.add_variables(lower=0, upper=xr.DataArray(FIRM_TRANSFER_SHARE * links["capacity_gw"].mean(axis=1), coords=[L]),
+        lend_share = 0.0 if ECP_RESERVE else FIRM_TRANSFER_SHARE
+        lend = m.add_variables(lower=0, upper=xr.DataArray(lend_share * links["capacity_gw"].mean(axis=1), coords=[L]),
                                name=f"firm_transfer{tag}")
         into_f = np.zeros((NUM_R, len(L)))
         out_f = np.zeros((NUM_R, len(L)))

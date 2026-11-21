@@ -91,3 +91,56 @@ def credits(load_hr: np.ndarray, cap: dict, profile: dict, weights: np.ndarray) 
             t = (expected - z * (np.sqrt(vi + v) - np.sqrt(v))) / ci
             out[i][r] = float(min(1.0, (t * w).sum() / w.sum()))
     return out
+
+
+# ECP's reserve credit for hydro and pumped storage. Conventional hydro counts RNWFAC (dsmsectr, 0.70) in the reserve
+# row (uecp.f EP$BRNW,18 and 55); pumped storage (PS) its UPCCR, 0.70 in ecpdaty.xlsx COSTPERF.
+HYDRO_CREDIT = 0.70
+PUMPED_CREDIT = 0.70
+# Diurnal storage (emmcntl.txt storage line: hoursToBuy, hoursToSell, batteryEfficiency).
+HOURS_TO_SELL = 4.0
+BATTERY_EFFICIENCY = 0.85
+TOP_HOURS = 8             # CAP_CREDIT_LDC: the top 8 of the 864 hours, about 1% of them
+
+
+def battery_soc(net: np.ndarray, power: float, hours: float = HOURS_TO_SELL,
+                efficiency: float = BATTERY_EFFICIENCY) -> np.ndarray:
+    """Stand-in for the EFD's battery state of charge (Rep_StorageLevel, GWh) over (36, 24) typical hours.
+
+    Each typical day the battery discharges at full power in the `hours` highest net-load hours and recharges the
+    energy (plus round-trip loss) in the lowest ones; the day is a cycle, so the level is the running sum of charge
+    less discharge, shifted to be empty at its lowest point."""
+    if power <= 1e-9:
+        return np.zeros_like(net)
+    days, n = net.shape
+    k = int(round(hours))
+    order = np.argsort(net, axis=1)
+    flow = np.zeros_like(net)
+    rows = np.arange(days)[:, None]
+    flow[rows, order[:, n - k:]] = -power                         # discharge, GW out of the store
+    need = power * k / np.sqrt(efficiency)                       # energy drawn from the grid to put that back
+    full, part = divmod(need / power, 1.0)
+    full = int(full)
+    flow[rows, order[:, :full]] = power * np.sqrt(efficiency)
+    if part > 1e-9 and full < n - k:
+        flow[rows, order[:, full:full + 1]] = part * power * np.sqrt(efficiency)
+    level = np.cumsum(flow, axis=1)
+    return level - level.min(axis=1, keepdims=True)
+
+
+def storage_credits(load_hr: np.ndarray, cap: dict, profile: dict) -> np.ndarray:
+    """ECP's diurnal storage capacity credit by region (CAP_CREDIT_LDC, uecp.f 39834-40060).
+
+    Net load is load less wind and solar output in each of the 864 typical hours. The storage term is the battery's
+    stored energy over hoursToSell (ENERGY_STORED_HOURLY = StoLevel / 4, from the EFD's last solve; battery_soc here).
+    The credit is the mean of the top 8 hours of (net load - storage term) over the mean of the top 8 hours of net
+    load, each sorted on its own, between 0 and 1. It applies to existing and new batteries alike (CALC_STORAGE_VAL,4
+    and 13). It is close to 1 while batteries are small next to the peak and falls as they grow."""
+    out = np.ones(NUM_R)
+    for r in range(NUM_R):
+        net = load_hr[r] - sum(cap[g][r] * profile[g][r] for g in INTERMITTENT)
+        stored = battery_soc(net, float(cap["battery"][r])) / HOURS_TO_SELL
+        dem = np.abs(np.sort(net.ravel())[-TOP_HOURS:].sum())
+        num = np.abs(np.sort((net - stored).ravel())[-TOP_HOURS:].sum())
+        out[r] = float(np.clip(num / dem, 0.0, 1.0)) if dem > 1e-9 else 1.0
+    return out
