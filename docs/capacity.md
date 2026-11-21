@@ -273,4 +273,38 @@ National GW, main / branch / EIA:
 
 2032 battery builds 43.7 -> 35.3 GW (EIA 9.9); the reserve price is still 82 in 24 regions. The rule now takes 75 GW against EIA's 62, and the fleet-side reserve gap above covers the rest of the shortfall. In 2039 the converted capacity retires and is replaced with 17.7 GW of CC and 13.0 of turbines (main: 15.7 and 8.0; EIA: 19.1 and 24.5). The rate fix alone moves the 2040 numbers by under 1 GW (conversions only: CC 460, CT 248, battery 135).
 
-Open: the capacity side of ECP's reserve row (40 GW in 2027) is what keeps the 2027 and 2032 battery builds high. It needs the ECP matrix coefficients from the oracle rerun queued above.
+Open: the capacity side of ECP's reserve row (40 GW in 2027) is what keeps the 2027 and 2032 battery builds high. Answered below without a rerun.
+
+## The capacity side of ECP's reserve row (branch ecp-reserve-supply)
+
+No rerun was needed. The AIMMS oracle's 2030 ECP composite input (`aimms-showreel/sample/ecp_2030_01/composite_2030.txt`, the file `ecp.ams` reads) carries every coefficient behind the row: EPECAP by type, region and planning year, EPIRCCR, DINURAL_STORAGE_CAPACITY_CREDIT, RNWFAC, UPCCR, UPPLYR. Planning year 2 rebuilt as EPECAP x coefficient (dispatchable 1, hydro RNWFAC 0.70, pumped storage UPCCR 0.70, wind and solar EPIRCCR, batteries min(DINURAL, 1)) gives 973.6 GW against the row's level of 979.9 in OutToNEMS_2030; the rest is the solve's own year-1 builds (UPPLYR is 1 for every type, so only builds decided in year 1 count on year 2). Hydro, pumped storage, nuclear, other renewables and battery coefficients agree with this model's.
+
+Gap for 2031 (OutToNEMS_2030 planning year 2), this model on EIA's 2031 fleet less ECP, GW: wind -29.6, solar -7.8, thermal +11.4, batteries +14.5, hydro and the rest +0.3, ECP's own year-1 builds and lines -6.3; total -17.5. Wind is credit: ECP's EPIRCCR for wind is 0.19 to 0.34 (TRE 0.24, SPPS 0.31, NWPP 0.34) where this model had 0.08 to 0.27 (TRE 0.08); at ECP's credits EIA's own wind would count 34 GW more. Solar, thermal and batteries are fleet, not credit: the oracle's fleet is not EIA's restart (87 GW more solar, 11 GW less thermal, 14 GW less batteries in 2031).
+
+Why wind differed. ECP's wind credit is the capacity factor over the net-peak hours (this model's credit with no single-plant variance is within 0.03 of ECP's on average; with the capped variance, 0.11). uecp.f 40405 caps the variance at (cap x CF / z)^2, which with wesarea.txt's sigma 0.38 and rho 0.85 binds everywhere and halves the credit. ECP's numbers show no such variance; the likely reason is that renew.f, which reads wesarea into the wwind block, is not part of the oracle build. EIA's own run points the same way: on EIA's year-end fleets and ECP's requirement, the regional shortfall is 23 / 24 / 21 / 35 / 32 GW in 2027 / 2028 / 2030 / 2032 / 2033 with the capped credit and 13 / 10 / 5 / 13 / 12 with the net-peak credit, and the wind regions (TRE, MISW, SPPS, SPPC, BASN) balance only with the latter. What is left short is MISE, NYCW, PJME, SRCE and CANO, all fleet-side.
+
+For 2027 (OutToNEMS_2026) the 40.6 GW splits into the wind and solar credit, 20 GW (TRE 6.3, MISW 3.6, SPPS 2.3, SPPC 1.4), and fleet and ECP's own year-1 builds, about 20 (10 GW of dispatchable and 2.5 of batteries online in 2027 in that solve). NWPP's 8.3 is fleet (the oracle has 3 to 4 GW more thermal there), not hydro: ECP counts NWPP hydro at 0.70 as this model does. There is no 2026 composite to split the fleet part further.
+
+Ported (`capacity_credit`):
+- `SINGLE_SITE_VARIANCE = False`: no single-plant variance in EPIRCCR. True puts back uecp.f's formula on wesarea's sigma and rho (`wesarea()`), capped as before.
+- CAP_CREDIT's net load, which picks the hours, on ECP's adjusted capacities (PV_CAP_ADJ, WN_CAP_ADJ and the rest; uecp.f 39987, 40200): the LP adds the reference run's adjustment (`cap_adjustment`, UECPOUT `*_cap_adj` less installed capacity) to its own fleet. This moves solar's hours in ISNE, NYCW and NWPP (ISNE 0.32 -> 0.07, ECP 0.06) and is worth -2 GW nationally in 2027.
+
+Chain 2027-2040 from EIA's 2026 fleet, before (main 667cc9b) / after / EIA, GW:
+
+| | before | after | EIA |
+|---|---|---|---|
+| 2040 CC with CCS | 459 | 449 | 431 |
+| 2040 turbines | 248 | 219 | 267 |
+| 2040 batteries | 136 | 123 | 103 |
+| 2040 solar | 344 | 343 | 323 |
+| 2040 wind | 338 | 395 | 404 |
+| 2040 coal | 15 | 14 | 16 |
+| 2040 steam | 50 | 44 | 52 |
+| 2027 battery builds | 18.9 | 13.6 | about 3 |
+| 2032 battery builds | 35.3 | 28.8 | 9.9 |
+| 2027 reserve price, median (regions over 50) | 24 (11) | 16 (5) | |
+| 2032 reserve price, median (regions over 50) | 82 (24) | 82 (24) | |
+
+Wind lands on EIA, batteries and CC move toward it, turbines move away (turbine builds 2027-2040 fall from 102 to 76 GW: firm wind takes reserve need the turbines filled). Economic retirements in 2027 rise from 10.6 to 19.3 GW, still under the 3% cap. 2032 is still a reserve shortfall at the coal rule (64 GW of coal leaves that year), so the battery spike there is now the coal question, not the credit.
+
+Pinned by `tests/test_emm_capacity.py` (`test_intermittent_credit_is_net_peak_capacity_factor`, `test_wesarea_inputs`, `test_intermittent_credit_matches_ecp_2030`: credits on EIA's 2030 fleet within 0.04 of ECP's EPIRCCR on average). Scripts: scratchpad `ecprs/` (otn.py parses OutToNEMS, comp.py and ecprow.py rebuild the row from the composite, cmp_row.py and short.py do the comparisons).

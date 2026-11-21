@@ -812,7 +812,11 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             if sy is not None:     # LDSM's load, moved to this run's demand (scaled shape plus flat added load)
                 ref = _reference_case(snapshot, cs.year).net_load_twh
                 load_rm = ecp_load.follow_run(sy, cs.net_load_twh, ref, cs.flat_twh)
-        icc = capacity_credit.credits(load_rm, c0, cs.profile, cs.weights)
+        net_cap = None
+        if ECP_RESERVE:      # CAP_CREDIT's net load on ECP's adjusted capacities (the reference run's adjustment)
+            off = capacity_credit.cap_adjustment(snapshot, cs.year)
+            net_cap = {g: np.maximum(c0[g] + off[g], 0.0) for g in capacity_credit.INTERMITTENT}
+        icc = capacity_credit.credits(load_rm, c0, cs.profile, cs.weights, net_cap)
         credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
         req = margin * icc["peak"] + icc["net_peak"]
         if ECP_RESERVE:

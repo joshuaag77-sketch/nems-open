@@ -199,6 +199,71 @@ def test_battery_credit_is_ecp_top_eight_hour_ratio():
     assert want < 1.0 and np.allclose(got, want)
 
 
+def test_intermittent_credit_is_net_peak_capacity_factor():
+    """ECP's EPIRCCR carry no single-plant variance (SINGLE_SITE_VARIANCE off): with a large conventional fleet or
+    none, a region's wind credit is its capacity factor over the net-peak hours. The capped variance (on) gives less.
+    net_cap moves the hours, not the denominator."""
+    from nems_open.emm import capacity_credit as cc
+    load = np.full((25, 36, 24), 50.0)
+    load[:, :, 19] = 60.0                                     # the peak hour every day
+    load[:, :, 12] = 52.0                                     # a windless midday shoulder
+    wind = np.full((25, 36, 24), 0.4)
+    wind[:, :, 19] = 0.25
+    wind[:, :, 12] = 0.0
+    prof = {"wind": wind, "solar": np.zeros((25, 36, 24))}
+    cap = {"wind": np.full(25, 20.0), "solar": np.zeros(25), "gas_cc": np.full(25, 40.0)}
+    w = np.full(36, 365.0 / 36)
+    assert not cc.SINGLE_SITE_VARIANCE
+    c = cc.credits(load, cap, prof, w)
+    assert np.allclose(c["wind"], 0.25)
+    cc.SINGLE_SITE_VARIANCE = True
+    try:
+        capped = cc.credits(load, cap, prof, w)
+    finally:
+        cc.SINGLE_SITE_VARIANCE = False
+    assert (capped["wind"] < 0.22).all()                    # the variance takes part of the 0.25
+    # with twice the wind in the net load, the windless hour becomes the net peak
+    moved = cc.credits(load, cap, prof, w, net_cap={"wind": np.full(25, 40.0), "solar": np.zeros(25)})
+    assert np.allclose(moved["wind"], 0.0, atol=0.002)
+
+
+def test_wesarea_inputs():
+    """renew.f's IntStDdv and IntRegCrl (input/rfm/wesarea.txt): wind sigma 0.38, solar 0.10; TRE wind rho 0.89."""
+    from nems_open.emm import capacity_credit as cc
+    if not (INPUT / "rfm" / "wesarea.txt").exists():
+        pytest.skip("wesarea.txt missing")
+    w = cc.wesarea()
+    assert np.allclose(w["wind"][0], 0.38) and np.allclose(w["solar"][0], 0.10)
+    assert w["wind"][1][0] == pytest.approx(0.89) and w["solar"][1][0] == pytest.approx(0.70)
+
+
+# ECP's own EPIRCCR for 2030 (AIMMS oracle composite_2030.txt, ec::EPIRCCR, WN and PV), regions 1 to 25.
+ECP_WIND_2030 = [0.24, 0.30, 0.26, 0.19, 0.19, 0.19, 0.30, 0.19, 0.21, 0.31, 0.21, 0.18, 0.23, 0.28, 0.30, 0.19, 0.31,
+                 0.33, 0.33, 0.27, 0.67, 0.34, 0.34, 0.29, 0.33]
+ECP_SOLAR_2030 = [0.06, 0.03, 0.08, 0.11, 0.07, 0.08, 0.06, 0.09, 0.03, 0.03, 0.09, 0.29, 0.08, 0.11, 0.04, 0.11, 0.26,
+                  0.27, 0.09, 0.07, 0.01, 0.01, 0.05, 0.04, 0.03]
+
+
+def test_intermittent_credit_matches_ecp_2030(snapshot):
+    """On EIA's 2030 fleet and LDSM's load, with ECP's adjusted capacities in the net load, wind and solar credits are
+    within 0.04 of ECP's own EPIRCCR on average (the capped variance missed wind by 0.11), and capacity-weighted wind
+    credit is within 10% of ECP's."""
+    from nems_open.emm import capacity_credit as cc, ecp_load
+    sy = ecp_load.system_load(2030)
+    if sy is None:
+        pytest.skip("no LDSM state dumps (oracle/run_emm/out/state/ld_in)")
+    case = dispatch.build_case(snapshot, 2030, "none")
+    cap = capacity.initial_capacity(snapshot, 2030)
+    off = cc.cap_adjustment(snapshot, 2030)
+    net_cap = {g: np.maximum(cap[g] + off[g], 0.0) for g in cc.INTERMITTENT}
+    c = cc.credits(sy, cap, case.profile, case.weights, net_cap)
+    ew, es = np.array(ECP_WIND_2030), np.array(ECP_SOLAR_2030)
+    mw, ms = cap["wind"] > 0.5, cap["solar"] > 0.5
+    assert np.abs(c["wind"] - ew)[mw].mean() < 0.04
+    assert np.abs(c["solar"] - es)[ms].mean() < 0.04
+    assert (cap["wind"] * c["wind"]).sum() == pytest.approx((cap["wind"] * ew).sum(), rel=0.10)
+
+
 def test_reserve_row_uses_ecp_coefficients_and_no_free_lending(snapshot):
     """ECP counts hydro at RNWFAC (0.70), pumped storage at UPCCR(PS) (0.70) and batteries at CAP_CREDIT_LDC, and
     credits interregional transfers only on lines it builds, carried as UTRELADJ on the requirement."""
