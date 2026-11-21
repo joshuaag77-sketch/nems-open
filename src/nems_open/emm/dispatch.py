@@ -193,6 +193,65 @@ COAL_BY_CONFIGURATION = True
 COAL_PRICE_BY_CLASS = False
 COAL_CONFIG_LAST = "HC"         # the coal configurations are the ECP types up to HC
 COAL_FUELS = ("B", "C", "H")   # plant-file fuel codes of the coal supply curves (B1..B8, C1..CX, H1..HC)
+# EFD's dispatch modes (uefd.f OPBSLD 9715-9870). EFD commits a thermal group per season, not per hour: one column
+# per mode L (it runs in the season's slices 1..L, the peak slice first; UPPCFB's low bound keeps coal and combined
+# cycle from running peak-only) and per shape, each a FIXED output per committed GW in every slice it covers:
+# O, normal (base-load types, UPPCFB low bound above 0.001: max((1 - FOR) x FOS_CF_EFD, SR_MIN_CF), ReStore's
+# capacity factor by slice; turbines (1 - FOR) x height / the season's peak height), J, minimum load (SR_MIN_CF x
+# height / the season's lowest height), U, maximum load ((1 - FOR) x (SR_MAX_LF + (1 - SR_MAX_LF) x height / peak);
+# coal until UYR_STEO + 1 the plain derate). Every column puts 1 - its output on the slice's reserve row, so a
+# group's reserve in a slice is its committed capacity less its output there. The shapes tie a group's output
+# across the season's slices: a combined cycle group running near full in the peak slice runs near full in the
+# base slice too, and holds 0.2 GW of reserve per GW there, not the 0.7 an hour-by-hour dispatch leaves idle at
+# night. On (needs EFD_SPIN_RESERVE): per region, thermal group and season, commitment by mode and shape within
+# the season's committable capacity; in every slice the hour-weighted output of its hours equals the shapes'
+# output, every hour's output is at most the hourly ceiling on the committed share; the reserve rows are EFD's 9
+# slices per region, thermal reserve committed less output, pumped storage, batteries, nuclear and other
+# renewables as before at their slice averages, against the slice requirement plus SR_INT of the slice's wind and
+# solar. Off: hourly reserve rows, each group's reserve at most its idle capacity in that hour.
+EFD_DISPATCH_MODES = False
+MODE_TYPE = {"coal": "B1", "coal_ccs": "PQ", "gas_cc": "EC", "gas_ccs": "CS", "gas_ct": "ET", "steam": "ST", "cofire": "NG"}
+# ReStore's base-load fossil capacity factor by EFD slice (FOS_CF_EFD, uecp.f 39134-39236), the O shape of the
+# base-load types: the 2030 EFD composite's (iterations 1 and 2 agree), by region, in ECP slice order (shoulder,
+# summer, winter, each peak / middle / base). A stand-in for every year: this model has no ReStore.
+FOS_CF_EFD = (
+    (0.706, 0.542, 0.245, 0.958, 0.783, 0.622, 0.463, 0.453, 0.193),
+    (0.918, 0.651, 0.206, 0.973, 0.837, 0.463, 0.799, 0.658, 0.208),
+    (0.720, 0.723, 0.486, 0.972, 0.919, 0.729, 0.902, 0.844, 0.696),
+    (0.902, 0.839, 0.697, 0.983, 0.913, 0.789, 0.906, 0.894, 0.799),
+    (0.448, 0.435, 0.255, 0.888, 0.669, 0.396, 0.694, 0.569, 0.391),
+    (0.902, 0.734, 0.609, 0.951, 0.876, 0.680, 0.759, 0.745, 0.681),
+    (0.501, 0.190, 0.004, 0.815, 0.580, 0.131, 0.493, 0.372, 0.105),
+    (0.045, 0.018, 0.000, 0.606, 0.231, 0.005, 0.274, 0.083, 0.009),
+    (0.000, 0.000, 0.000, 0.565, 0.103, 0.000, 0.072, 0.004, 0.000),
+    (0.803, 0.726, 0.397, 0.980, 0.829, 0.586, 0.812, 0.769, 0.549),
+    (0.864, 0.845, 0.729, 0.976, 0.900, 0.757, 0.890, 0.879, 0.827),
+    (0.546, 0.433, 0.132, 0.957, 0.876, 0.466, 0.860, 0.698, 0.499),
+    (0.957, 0.938, 0.827, 0.972, 0.945, 0.863, 0.959, 0.949, 0.806),
+    (0.942, 0.828, 0.520, 0.986, 0.938, 0.643, 0.929, 0.883, 0.477),
+    (0.934, 0.827, 0.594, 0.976, 0.903, 0.788, 0.885, 0.878, 0.653),
+    (0.735, 0.660, 0.461, 0.986, 0.884, 0.651, 0.859, 0.748, 0.536),
+    (0.793, 0.431, 0.300, 0.981, 0.827, 0.441, 0.586, 0.493, 0.367),
+    (0.574, 0.388, 0.215, 0.941, 0.776, 0.531, 0.587, 0.561, 0.429),
+    (0.750, 0.416, 0.331, 0.968, 0.888, 0.498, 0.807, 0.602, 0.367),
+    (0.577, 0.481, 0.170, 0.943, 0.753, 0.543, 0.538, 0.491, 0.154),
+    (0.497, 0.405, 0.170, 0.928, 0.793, 0.476, 0.654, 0.589, 0.242),
+    (0.643, 0.544, 0.193, 0.915, 0.811, 0.601, 0.699, 0.615, 0.197),
+    (0.893, 0.817, 0.733, 0.951, 0.859, 0.791, 0.890, 0.847, 0.775),
+    (0.878, 0.810, 0.576, 0.982, 0.908, 0.793, 0.875, 0.826, 0.612),
+    (0.673, 0.661, 0.509, 0.934, 0.810, 0.731, 0.751, 0.732, 0.583),
+)
+# Heat-rate tiers for the gas groups. EFD dispatches each plant group at its own heat rate (UG_HTRT); this LP has one
+# combined cycle and one turbine group per region at the capacity-weighted mean. With one group, a combined cycle
+# group running part loaded in low-load hours leaves its idle capacity as spinning reserve for free: the energy it
+# would give up is made by the same group at the same cost. In EFD the idle combined cycle capacity is the least
+# efficient, so committing it for reserve burns gas above the energy price, and turbines at minimum load compete.
+# The coal classes (COAL_BY_CONFIGURATION) then carry reserve class by class too. On: TIER_GROUPS' existing capacity in N_TIERS equal-capacity heat-rate tiers per region (heat_rate_tiers), plus
+# one tier for capacity beyond the plant file at the new-build heat rate; each tier has its own output, cost and
+# spinning reserve (EFD_SPIN_RESERVE). The group's mean heat rate is unchanged. Off: one tier at the mean.
+HEAT_RATE_TIERS = True
+TIER_GROUPS = ("gas_ct",)     # with gas_cc too, 2030 combined cycle falls another 1.2% under EIA and steam goes 6% over
+N_TIERS = 3
 EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
 EFD_NUCLEAR_SR = 0.04
 SPIN_SHORTFALL_COST = 100.0   # 1987$/MWh of missing reserve, below UNSERVED_COST so no load is shed to make reserve
@@ -228,6 +287,7 @@ class DispatchCase:
     coal_share: dict = None             # thermal group -> (25,) share of its Btu that is coal (cofire; None: none)
     capture_net: np.ndarray = None      # (25,) coal_ccs capacity that generates per GW of reported capacity (None: 1)
     coal_classes: object = None         # coal_supply.CoalClasses (COAL_BY_CONFIGURATION; None: one coal group per region)
+    tiers: dict = None                  # group -> (share (25, T), heat rate (25, T)) (HEAT_RATE_TIERS; None: one tier)
 
 
 @dataclass
@@ -243,6 +303,7 @@ class DispatchResult:
     spilled_twh: np.ndarray = None                          # (25,)
     price: np.ndarray = None                                # (25, 36, 24) 1987$/MWh
     spin_price: np.ndarray = None                           # (25, 36, 24) 1987$/MWh of reserve (EFD_SPIN_RESERVE)
+    tier_hr: dict = None             # tiered group -> (25,) heat rate of its output (HEAT_RATE_TIERS)
     spin_gw: dict = None             # reserve carried (EFD_SPIN_RESERVE): thermal group, battery, pumped, idle, required -> (25, 36, 24) GW
     objective: float = 0.0
     trade_twh: np.ndarray = None                            # (links,) energy sent on each link
@@ -542,6 +603,10 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     heat["gas_ccs"] = np.full(NUM_R, float(hr_new_all[codes.index("CS")]))
     coal_share = cofire_case(year, cap["cofire"], heat, vom, coal_heat=coal_plain)
     heat["nuclear"] = _weighted(u.heat_rate, u.summer_mw, EXISTING_TYPES["nuclear"], u.region, year, 10400.0)
+    tiers = None
+    if HEAT_RATE_TIERS:
+        tiers = {g: heat_rate_tiers(year, types_of[g], cap[g], float(hr_new_all[codes.index(NEW_TYPE[g])]), heat[g])
+                 for g in TIER_GROUPS}
 
     price = {
         "coal": _fill_prices(snapshot["UEFDOUT/upcoalavg"], y),
@@ -607,7 +672,41 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
-                        coal_share=coal_share, capture_net=capture_net, coal_classes=classes)
+                        coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers)
+
+
+def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr: np.ndarray) -> tuple:
+    """A group's capacity in heat-rate tiers (HEAT_RATE_TIERS): by region, the existing units online in `year`
+    sorted by heat rate and cut into N_TIERS tiers of equal capacity (a unit straddling a cut is split), each at
+    its units' capacity-weighted heat rate, plus a last tier for capacity beyond the plant file at `hr_new`.
+    Shares of `total` (25,) and heat rates, both (25, N_TIERS + 1); scaled so the capacity-weighted heat rate is
+    `mean_hr`, the group's single heat rate."""
+    u = plants.load_units()
+    on = plants.online(year) & np.isin(u.efd_type, list(types))
+    existing = plants.capacity_gw(year, types)[:NUM_R]
+    T = N_TIERS + 1
+    share, hr = np.zeros((NUM_R, T)), np.tile(np.asarray(mean_hr, dtype=float)[:, None], (1, T))
+    hr[:, -1] = hr_new
+    for r in range(NUM_R):
+        tot = max(float(total[r]), 1e-9)
+        ex = min(float(existing[r]), tot)
+        share[r, -1] = (tot - ex) / tot
+        m = on & (u.region == r + 1) & (u.summer_mw > 0)
+        if ex <= 0 or not m.any():
+            share[r, 0] += ex / tot
+            continue
+        order = np.argsort(u.heat_rate[m], kind="stable")
+        mw, h = u.summer_mw[m][order].astype(float), u.heat_rate[m][order].astype(float)
+        edges = np.cumsum(mw) / mw.sum()
+        lo = np.concatenate(([0.0], edges[:-1]))
+        for k in range(N_TIERS):
+            a, b = k / N_TIERS, (k + 1) / N_TIERS
+            part = np.clip(np.minimum(edges, b) - np.maximum(lo, a), 0.0, None)
+            hr[r, k] = np.average(h, weights=part) if part.sum() > 0 else float(mean_hr[r])
+            share[r, k] = ex / tot / N_TIERS
+    w = (share * hr).sum(axis=1)
+    hr = hr * np.divide(np.asarray(mean_hr, dtype=float), w, out=np.ones(NUM_R), where=w > 0)[:, None]
+    return share, hr
 
 
 def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict, coal_heat: np.ndarray = None) -> dict:
@@ -695,6 +794,37 @@ def max_load_shape(slice_of: np.ndarray, height: np.ndarray, year: int) -> dict:
             continue
         a = float(lf[codes.index(code)])
         out[g] = a + (1.0 - a) * rel_h
+    return out
+
+
+def efd_mode_shapes(height: np.ndarray, year: int, avail: dict) -> dict:
+    """EFD's dispatch modes (EFD_DISPATCH_MODES): per thermal group, (allowed modes L, output per committed GW of each
+    shape O, J, U in every slice, (3, 25, 9)). `height` (25, 9) is capacity.ecp_slice_heights' in ECP order,
+    `avail` 1 - FOR by group. uefd.f OPBSLD: DRAT, DRAT_MIN, DRAT_MAX; the modes from UPPCFB as in capacity."""
+    from nems_open.emm import capacity as ecp
+    sp = ecp.named_ranges(technology.ECPDATY, "SPNRSV")
+    pcfb = ecp.named_ranges(technology.ECPDATY, "COSTPERF")["UPPCFB"]
+    codes = technology.ecp_codes()
+    h3 = height.reshape(height.shape[0], 3, 3)
+    peak = np.repeat(h3.max(axis=2), 3, axis=1)
+    low = np.repeat(h3.min(axis=2), 3, axis=1)
+    rel_max = np.divide(height, peak, out=np.ones_like(height), where=peak > 0)
+    rel_min = np.divide(height, low, out=np.ones_like(height), where=low > 0)
+    fos = np.asarray(FOS_CF_EFD)
+    out = {}
+    for g in THERMAL:
+        i = codes.index(MODE_TYPE[g])
+        lo, hi = float(pcfb[2 * i]), float(pcfb[2 * i + 1])
+        modes = tuple(L for L in (1, 2, 3) if hi >= ecp.ECP_SLICE_CF[L - 1] and lo <= ecp.ECP_SLICE_CF[L])
+        a = float(avail[g])
+        min_cf, min_lf, max_lf = (float(sp[k][i]) for k in ("SR_MIN_CF", "SR_MIN_LF", "SR_MAX_LF"))
+        o = np.maximum(a * fos, min_cf) if lo > 0.001 else a * rel_max
+        j = min_cf * (min_lf + (1.0 - min_lf) * rel_min)
+        if year < MAX_LOAD_FIRST_YEAR and codes.index(MODE_TYPE[g]) <= codes.index(MAX_LOAD_STEO_LAST):
+            u = np.full_like(height, a)
+        else:
+            u = a * (max_lf + (1.0 - max_lf) * rel_max)
+        out[g] = (modes, np.clip(np.stack([o, j, u]), 0.01, 1.0))
     return out
 
 
@@ -925,8 +1055,101 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             grp = xr.DataArray(cl.route_class[idx], coords=[pd.Index(idx, name="coal_route")], name="coal_class")
             m.add_constraints(tr.sel(coal_route=idx).groupby(grp).sum() - dx <= xr.DataArray(cap[ks], coords=[K]), name=f"coal_{name}_cap")
             objective = objective + (dx * (coal_supply.ESCAPE * 1000.0)).sum()
+    tier_vars = {}
+    if case.tiers is not None:
+        for g, (share, hr_t) in case.tiers.items():
+            k = THERMAL.index(g)
+            TI = pd.Index(np.arange(share.shape[1]), name="tier")
+            hr_g = np.asarray(case.heat_rate[g], dtype=float)
+            per_mmbtu = np.divide(cost[:, k] - case.vom[g], hr_g / 1000.0, out=np.zeros(NUM_R), where=hr_g > 0)  # fuel + carbon
+            ct = case.vom[g][:, None] + hr_t / 1000.0 * per_mmbtu[:, None]                                       # (25, T)
+            up = upper.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
+            gt = m.add_variables(lower=0, upper=up.transpose("region", "tier", "day", "hour"), name=f"tier_gen_{g}")
+            m.add_constraints(g_th.sel(group=g, drop=True) - gt.sum("tier") == 0, name=f"tiers_{g}")
+            objective = objective - (g_th.sel(group=g, drop=True) * cost_da.sel(group=g, drop=True) * w).sum()                 + (gt * xr.DataArray(ct, coords=[R, TI]) * w).sum()
+            tier_vars[g] = (gt, TI, share, hr_t)
     spin = spin_row = None
-    if EFD_SPIN_RESERVE:
+    modes_on = EFD_SPIN_RESERVE and EFD_DISPATCH_MODES and EFD_DERATE
+    if modes_on:
+        from nems_open.emm import capacity as ecp
+        mins = ecp.spin_min_cf()
+        intermittent = (ren_gw["wind"] + ren_gw["solar"]).transpose("region", "day", "hour")
+        load_np = load_gw.transpose("region", "day", "hour").values
+        slice_of, height = ecp.ecp_slice_heights(load_np, case.weights, month_of_day, load_np - intermittent.values)
+        peak = height[:, (np.arange(9) // 3) * 3]
+        req = ecp.SR_RQMT_HGHT * height + ecp.SR_RQMT_DIFF * (peak - height)                  # (25, 9) GW
+        hw = np.broadcast_to((case.weights * hp)[None, :, None], slice_of.shape)
+        K = pd.Index(np.arange(9), name="slice")
+        onehot = np.stack([(slice_of == k) * hw for k in range(9)], axis=1)                     # (25, 9, 36, nh) hours
+        width = onehot.sum(axis=(2, 3))                                                          # (25, 9)
+        avg = xr.DataArray(np.divide(onehot, width[:, :, None, None], out=np.zeros_like(onehot),
+                                     where=width[:, :, None, None] > 0), coords=[R, K, D, H])     # slice average weights
+        shapes = efd_mode_shapes(height, case.year, {g: avail[k] for k, g in enumerate(THERMAL)})
+        S = pd.Index(np.arange(3), name="season")                  # ECP seasons: winter, summer, shoulder
+        SH = pd.Index(["O", "J", "U"], name="shape")
+        LM = pd.Index([1, 2, 3], name="mode")
+        ok = np.zeros((len(THERMAL), 3, 3, 3))
+        for k, g in enumerate(THERMAL):
+            for L_ in shapes[g][0]:
+                ok[k, :, :, L_ - 1] = np.inf
+        season_of_day = ecp.ecp_season_of_month()[month_of_day]
+        cap_s = np.stack([committable.values[:, :, season_of_day == s, 0].max(axis=2) for s in range(3)], axis=2)  # (25, groups, 3)
+        commit = m.add_variables(lower=0, upper=xr.DataArray(np.broadcast_to(ok, (NUM_R,) + ok.shape).copy(), coords=[R, TH, S, SH, LM]),
+                                 name="commit")
+        m.add_constraints(commit.sum(["shape", "mode"]) <= xr.DataArray(cap_s, coords=[R, TH, S]), name="commit_capacity")
+        # slice k: season 2 - k // 3, rank k % 3 (0 peak); the modes reaching it are L >= rank + 1
+        sea = np.array([2 - k // 3 for k in range(9)])
+        reach = np.array([[1.0 if L_ >= k % 3 + 1 else 0.0 for L_ in (1, 2, 3)] for k in range(9)])     # (9, 3)
+        sel_season = xr.DataArray(np.eye(3)[sea], coords=[K, S])
+        reach_da = xr.DataArray(reach, coords=[K, LM])
+        shape_np = np.stack([shapes[g][1] for g in THERMAL], axis=1)                                     # (3, groups, 25, 9)
+        shape_da = xr.DataArray(shape_np.transpose(2, 1, 0, 3), coords=[R, TH, SH, K])
+        committed = m.add_variables(lower=0, coords=[R, TH, K], name="committed")                        # GW by slice
+        out_k = m.add_variables(lower=0, coords=[R, TH, K], name="mode_output")                          # GW, slice average
+        for k in range(9):
+            ck = commit.sel(season=sea[k], mode=[L_ for L_ in (1, 2, 3) if reach[k, L_ - 1] > 0])
+            m.add_constraints(committed.sel(slice=k) - ck.sum(["shape", "mode"]) == 0, name=f"committed_{k}")
+            m.add_constraints(out_k.sel(slice=k) - (ck * shape_da.sel(slice=k)).sum(["shape", "mode"]) == 0, name=f"mode_output_{k}")
+        up_np = upper.transpose("region", "group", "day", "hour").values
+        cm_np = committable.transpose("region", "group", "day", "hour").values
+        frac = xr.DataArray(np.divide(up_np, cm_np, out=np.zeros_like(up_np), where=cm_np > 0), coords=[R, TH, D, H])
+        for k in range(9):
+            mask = xr.DataArray(slice_of == k, coords=[R, D, H])
+            m.add_constraints((g_th * avg.sel(slice=k)).sum(["day", "hour"]) - out_k.sel(slice=k) == 0, name=f"mode_energy_{k}")
+            m.add_constraints(g_th - committed.sel(slice=k) * frac <= 0, name=f"mode_hourly_{k}", mask=mask)
+        for g, (gt, TI, share, _) in tier_vars.items():
+            # a tiered group commits tier by tier, each on its own capacity, at the group's shapes
+            j = THERMAL.index(g)
+            okt = np.broadcast_to(ok[j], (NUM_R, len(TI)) + ok[j].shape).copy()
+            ct_ = m.add_variables(lower=0, upper=xr.DataArray(okt, coords=[R, TI, S, SH, LM]), name=f"commit_{g}")
+            m.add_constraints(ct_.sum(["shape", "mode"]) <= xr.DataArray(cap_s[:, j, None, :] * share[:, :, None], coords=[R, TI, S]),
+                              name=f"commit_capacity_{g}")
+            cmt = m.add_variables(lower=0, coords=[R, TI, K], name=f"committed_{g}")
+            outt = m.add_variables(lower=0, coords=[R, TI, K], name=f"mode_output_{g}")
+            sh_g = shape_da.sel(group=g, drop=True)
+            fr_g = frac.sel(group=g, drop=True)
+            for k in range(9):
+                ck = ct_.sel(season=sea[k], mode=[L_ for L_ in (1, 2, 3) if reach[k, L_ - 1] > 0])
+                m.add_constraints(cmt.sel(slice=k) - ck.sum(["shape", "mode"]) == 0, name=f"committed_{g}_{k}")
+                m.add_constraints(outt.sel(slice=k) - (ck * sh_g.sel(slice=k)).sum(["shape", "mode"]) == 0, name=f"mode_output_{g}_{k}")
+                mask = xr.DataArray(slice_of == k, coords=[R, D, H])
+                m.add_constraints((gt * avg.sel(slice=k)).sum(["day", "hour"]) - outt.sel(slice=k) == 0, name=f"mode_energy_{g}_{k}")
+                m.add_constraints(gt - cmt.sel(slice=k) * fr_g <= 0, name=f"mode_hourly_{g}_{k}", mask=mask)
+            m.add_constraints(committed.sel(group=g, drop=True) - cmt.sum("tier") == 0, name=f"committed_tiers_{g}")
+            m.add_constraints(out_k.sel(group=g, drop=True) - outt.sum("tier") == 0, name=f"mode_output_tiers_{g}")
+        c, di, soc = spin_sto["pumped"]
+        ss = m.add_variables(lower=0, coords=[R, D, H], name="spin_pumped")
+        m.add_constraints(ss + di - c <= 0, name="spin_pumped_headroom")
+        m.add_constraints(ss - di * (1.0 / mins["pumped"] - 1.0) <= 0, name="spin_pumped_committed")
+        battery_sr = xr.DataArray(np.asarray(EFD_BATTERY_SR)[slice_of] * case.capacity["battery"][:, None, None], coords=[R, D, H])
+        idle = (by_region(case.capacity["nuclear"]) * EFD_NUCLEAR_SR + by_region(case.capacity["other"]) - ren_gw["other"]
+                + battery_sr)
+        thermal_sr = (committed - out_k).sum("group")
+        short = m.add_variables(lower=0, coords=[R, K], name="spin_shortfall")
+        rhs = xr.DataArray(req, coords=[R, K]) + ((ecp.SR_INT * intermittent - idle) * avg).sum(["day", "hour"])
+        spin_row = m.add_constraints(thermal_sr + (ss * avg).sum(["day", "hour"]) + short >= rhs, name="spin_reserve")
+        objective = objective + (short * xr.DataArray(SPIN_SHORTFALL_COST * width, coords=[R, K])).sum()
+    elif EFD_SPIN_RESERVE:
         from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
         mins = ecp.spin_min_cf()
         inv = xr.DataArray(np.array([1.0 / mins[g] - 1.0 for g in THERMAL]), coords=[TH])
@@ -934,6 +1157,20 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         m.add_constraints(spin + g_th - committable <= 0, name="spin_headroom")
         m.add_constraints(spin - g_th * inv <= 0, name="spin_committed")
         supply = spin.sum("group")
+        for g, (gt, TI, share, _) in tier_vars.items():
+            # each tier carries reserve only on its own running capacity
+            st = m.add_variables(lower=0, coords=[R, TI, D, H], name=f"tier_spin_{g}")
+            com_g = committable.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
+            m.add_constraints(st + gt - com_g <= 0, name=f"tier_spin_headroom_{g}")
+            m.add_constraints(st - gt * float(inv.sel(group=g)) <= 0, name=f"tier_spin_committed_{g}")
+            m.add_constraints(spin.sel(group=g, drop=True) - st.sum("tier") <= 0, name=f"tier_spin_{g}")
+        if case.tiers is not None and gc is not None:
+            # the coal classes are tiers too: each carries reserve only on its own running capacity
+            com_c = committable.sel(group="coal", drop=True).sel(region=reg_of) * xr.DataArray(cl.share, coords=[P])
+            sc = m.add_variables(lower=0, coords=[P, D, H], name="class_spin")
+            m.add_constraints(sc + gc - com_c.transpose("coal_pair", "day", "hour") <= 0, name="class_spin_headroom")
+            m.add_constraints(sc - gc * float(inv.sel(group="coal")) <= 0, name="class_spin_committed")
+            m.add_constraints(spin.sel(group="coal", drop=True) - sc.groupby(reg_of).sum() <= 0, name="class_spin")
         c, di, soc = spin_sto["pumped"]
         ss = m.add_variables(lower=0, coords=[R, D, H], name="spin_pumped")
         m.add_constraints(ss + di - c <= 0, name="spin_pumped_headroom")
@@ -991,8 +1228,13 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         res.coal_class_price[dual["coal_class"].values] = dual.values / 1000.0
         fuel_r = np.bincount(cl.region - 1, weights=e * cl.heat_rate, minlength=NUM_R)
         coal_hr = np.divide(fuel_r, gen["coal"], out=np.asarray(case.heat_rate["coal"], dtype=float).copy(), where=gen["coal"] > 1e-9)
+    tier_hr = {}
+    for g, (gt, TI, share, hr_t) in tier_vars.items():
+        e = (gt.solution.transpose("region", "tier", "day", "hour").values * wd[:, None]).sum(axis=(2, 3)) / 1000.0
+        tier_hr[g] = np.divide((e * hr_t).sum(axis=1), gen[g], out=np.asarray(case.heat_rate[g], dtype=float).copy(), where=gen[g] > 1e-9)
+    res.tier_hr = tier_hr
     for g in THERMAL:
-        btu = gen[g] * (coal_hr if g == "coal" else case.heat_rate[g]) * 1e-3
+        btu = gen[g] * (coal_hr if g == "coal" else tier_hr.get(g, case.heat_rate[g])) * 1e-3
         if g.startswith("coal"):
             fuel["coal"] += btu
         else:
@@ -1013,7 +1255,18 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         co2 = co2 - CAPTURE_RATE * gen[g] * case.heat_rate[g] * 1e-3 * CO2_PER_TBTU[fuel_key]
     res.co2_mt = co2
     res.price = bal.dual.transpose("region", "day", "hour").values / np.maximum(wd, 1e-9)
-    if spin_row is not None:
+    if spin_row is not None and modes_on:
+        price_k = spin_row.dual.transpose("region", "slice").values / np.maximum(width, 1e-9)            # 1987$/MWh
+        res.spin_price = np.take_along_axis(price_k, slice_of.reshape(NUM_R, -1), axis=1).reshape(slice_of.shape)
+        on_hours = lambda a: np.take_along_axis(a, slice_of.reshape(NUM_R, -1), axis=1).reshape(slice_of.shape)
+        cm = committed.solution.transpose("region", "group", "slice").values
+        ok_ = out_k.solution.transpose("region", "group", "slice").values
+        res.spin_gw = {g: on_hours(cm[:, k] - ok_[:, k]) for k, g in enumerate(THERMAL)}
+        res.spin_gw["pumped"] = m.variables["spin_pumped"].solution.transpose("region", "day", "hour").values
+        res.spin_gw["idle"] = idle.transpose("region", "day", "hour").values
+        res.spin_gw["required"] = on_hours(req) + (ecp.SR_INT * intermittent).transpose("region", "day", "hour").values
+        res.spin_gw["shortfall"] = on_hours(short.solution.transpose("region", "slice").values)
+    elif spin_row is not None:
         res.spin_price = spin_row.dual.transpose("region", "day", "hour").values / np.maximum(wd, 1e-9)
         sp = spin.solution.transpose("region", "group", "day", "hour").values
         res.spin_gw = {g: sp[:, k] for k, g in enumerate(THERMAL)}

@@ -8,7 +8,7 @@
 - Regions trade over the links in the ETT table (`V_EMM_PRETTIN`: 127 rows, summer and winter MW, a $/MWh markup, 2% line loss, plus the new transmission EMM built, `UETTOUT/UTNEWTRN`).
 - Capacity is what is in service on average through the year. The plant file's in-service and retirement months are used for dated units; capacity the restart shows beyond that is assumed to arrive mid-year.
 - Load is the step 1 shapes scaled to the demand modules' sales as LDSM builds EFD's load, less what EFD gets from outside the fleet (`demand.py`; section "The electricity balance" below).
-- EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). Coal's ceiling follows EFD's maximum-load mode from 2028 (`EFD_MAX_LOAD_SHAPE`, on; section "Coal's ceiling is EFD's maximum-load mode"). Coal heat rates follow EFD's part-load curves, and the cofired units take the maximum-load mode too (`COAL_PART_LOAD_HEAT_RATE`, `COFIRE_MAX_LOAD_SHAPE`, on; section "Coal heat rates and the cofired units' ceiling"). The results table above them predates these switches.
+- EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). Turbines dispatch in heat-rate tiers (`HEAT_RATE_TIERS`, on); EFD's dispatch modes are ported but off (`EFD_DISPATCH_MODES`); section "Turbines, the reserve price and EFD's modes". Coal's ceiling follows EFD's maximum-load mode from 2028 (`EFD_MAX_LOAD_SHAPE`, on; section "Coal's ceiling is EFD's maximum-load mode"). Coal heat rates follow EFD's part-load curves, and the cofired units take the maximum-load mode too (`COAL_PART_LOAD_HEAT_RATE`, `COFIRE_MAX_LOAD_SHAPE`, on; section "Coal heat rates and the cofired units' ceiling"). The results table above them predates these switches.
 - `trade="none"` is the sales-based run with links (the real target). `trade="reference"` fixes each region's load at EIA's regional generation and has no links; it is kept as a control.
 
 ## Result, sales-based load with trade (the real target)
@@ -343,3 +343,47 @@ Coal units by region, 2030 (before / after / EIA): TRE 49.9 / 45.3 / 44.7, BASN 
 - The caps are the reference run's burn. In a scenario they stay at the reference levels, as EFD's would within an iteration; the coupled loop does not rewrite them.
 
 The gen_coal 2025 known miss is gone (24-hour days). Pinned by `tests/test_emm_dispatch.py` (`test_diversity_caps_are_eia_burn`, `test_coal_supply_steps_follow_ed_col`, `test_coal_classes_split_the_coal_group`, `test_western_coal_held_by_its_caps`; `test_pjm_coal_runs_at_eia_level` now checks PJM as a whole). Scripts: scratchpad `coalsup/` (run.py the test years, reg.py and cls.py regions and classes, kls.py classes against EIA's burn, nmar.py the oracle's marginal costs).
+
+
+## Turbines, the reserve price and EFD's modes (branch ct-reserve)
+
+The question was whether turbines run too little because combined cycle gives spinning reserve away for free, so the reserve price is too low. It is partly true, but the price is not off by the factor earlier notes gave, and EFD's mode structure does not change it here.
+
+**The units of EIA's reserve duals.** EFD's reserve rows are in GW (uefd.f OPBSLD,3/7/10: 1 - DRAT per committed GW, no hours) and its objective is in million dollars (OPBSLD,23: cost x GWh x 0.001). So SP_RES_DUAL is 1987$ per kW for the whole slice. NMARCST is the load row's dual times 100 (efd.ams NMARCST_calc), which is $/MWh. The base-slice duals of 2.0 / 3.0 / 2.2 above are therefore about 1.4 / 2.0 / 1.5 1987$/MWh (divided by the slice's 1,452 hours), and a region's yearly sum is $/kW-year: median 5.9 in the 2030 EFD (PJME 6.1, PJMW 5.4, NWPP 44). ECP's objective is nominal and discounted (uecp.f: every cost x UPGNPD x PWF). Its 2031 load duals over the slice hours, divided by the deflator (2.76 from 1987, MC_JPGDP) and PWF, give 16 1987$/MWh in the base slice, EFD's level. Its reserve duals' median of 19.5 $/kW-year (docs/capacity.md) is about 7.6 in 1987$. The capacity LP's 2.3 is about a third of ECP, not a fifteenth. The dispatch with turbine tiers gives a median of 2.7 against EFD's 5.9; PJMW is 4.9 against 5.4.
+
+**What EFD does that the dispatch did not.**
+- Dispatch modes (OPBSLD 9715-9870). A group is committed per season, in modes L = 1..3 (slices 1..L from the peak) and three shapes, each a fixed output per committed GW in every slice: O (base-load types, UPPCFB low bound above 0.001: max((1 - FOR) x FOS_CF_EFD, SR_MIN_CF), ReStore's capacity factor by slice; turbines (1 - FOR) x height / peak), J (SR_MIN_CF x height / the season's lowest) and U ((1 - FOR)(SR_MAX_LF + (1 - SR_MAX_LF) x height / peak)). A group's reserve in a slice is committed capacity less output. The earlier capacity LP port (ECP_DISPATCH_MODES) let output float between J and full capacity in every block; EFD's shapes tie a group's output across the season's slices.
+- Plant groups at their own heat rates. EFD's 2030 turbines are AT 38 GW at 9,142 Btu/kWh running at 0.12 (41 TWh), ET 153 GW at 0.02 (25 TWh), CT 7 GW (10 TWh). AT carries 17 to 21 GW of reserve in every slice. The dispatch had one turbine group per region at the capacity-weighted mean (TRE 11,650), which no turbine is near.
+- Who carries the 2030 base-slice reserve (GW, winter / summer / shoulder), EFD against main: combined cycle 46 / 60 / 48 against 51 / 60 / 60, coal about 10 / 20 / 13 against 20 / 33 / 24, turbines 32 / 36 / 31 against 9 / 6 / 3, batteries 31 / 34 / 34 against about 38, pumped storage 16 / 18 / 17 against 4 / 6 / 2. The requirement is 10 to 15 GW lower here (145 / 180 / 153 against 135 / 166 / 139): the load part is 4-8% lower and the wind and solar part 15-20% lower in the base slices (EFD has 344 GW of solar in 2030, the case 257).
+
+**Ported.**
+- `HEAT_RATE_TIERS` (on): TIER_GROUPS (the turbines) in three equal-capacity tiers per region by unit heat rate from the plant file, plus a tier for capacity beyond it at the new-build heat rate (`heat_rate_tiers`; the capacity-weighted mean is the old group heat rate). Each tier has its own output, cost and reserve, and with it the coal classes carry reserve class by class. Tiering combined cycle too was tried: it pulls combined cycle another 1.2% under EIA and moves steam from 5% under EIA to 6% over, and leaves the reserve price where it is, so only the turbines are tiered. Six tiers gave the same result as three.
+- `EFD_DISPATCH_MODES` (off): the modes and shapes above, per region, group (and tier) and season, within the season's committable capacity. In every EFD slice the hour-weighted output of its hours equals the shapes' output, each hour is capped at the committed share of the hourly ceiling, and the reserve rows are EFD's 9 slices per region. FOS_CF_EFD is the 2030 composite's table for every year (no ReStore here).
+
+**Result.** 2030 on EIA's fleet, national TWh, main / modes / tiers on CC and CT / modes and tiers / turbine tiers (EIA): turbines 11.3 / 11.6 / 23.2 / 24.4 / 21.9 (66.8); combined cycle 1,422 / 1,413 / 1,398 / 1,384 / 1,415 (1,462); steam 137 / 140 / 144 / 153 / 130 (136). The reserve price barely moves in any of them (median 2.7 with turbine tiers, 2.9 with six tiers on both groups, 1.8 with modes and tiers) and combined cycle keeps 50-70 GW of base-slice reserve. Modes take 370 s a year and modes with tiers 1,400 s, against 70 s. With one group per region, committing more combined cycle in the J shape displaces output of the same group at the same cost, so it is free. With tiers it is cheap, since adjacent tiers differ by a few hundred Btu/kWh. The shapes are not what makes EFD's reserve dear. The turbine energy the tiers add comes from the efficient tier (AT) running for energy, as AT does in EFD, not from reserve.
+
+Generation, TWh, main -> turbine tiers (EIA). National:
+
+| | 2030 | 2031 | 2035 |
+|---|---|---|---|
+| Coal units | 387.0 -> 389.2 (403.5) | 355.9 -> 360.3 (352.8) | 65.5 -> 65.6 (62.5) |
+| Combined cycle | 1,421.6 -> 1,415.2 (1,461.5) | 1,392.4 -> 1,385.8 (1,468.6) | 1,533.3 -> 1,522.1 (1,558.2) |
+| Turbines | 11.3 -> 21.9 (66.8) | 8.2 -> 16.2 (64.6) | 20.1 -> 35.7 (81.1) |
+| Steam and cofired | 136.9 -> 129.6 (135.8) | 153.5 -> 147.2 (140.4) | 125.3 -> 119.6 (117.3) |
+
+PJM (PJME, PJMW, PJMC, PJMD):
+
+| | 2030 | 2031 | 2035 |
+|---|---|---|---|
+| Coal units | 99.6 -> 101.5 (114.7) | 97.0 -> 99.3 (105.1) | 25.4 -> 25.4 (24.2) |
+| Combined cycle | 417.7 -> 415.0 (391.2) | 426.9 -> 423.1 (404.7) | 524.8 -> 530.6 (483.7) |
+| Turbines | 1.3 -> 4.1 (8.7) | 1.2 -> 2.9 (9.0) | 2.9 -> 5.7 (16.2) |
+| Steam and cofired | 4.1 -> 2.8 (7.6) | 5.1 -> 3.7 (8.3) | 5.7 -> 3.9 (12.0) |
+
+Nuclear and renewables do not move. The load-weighted PJMW price goes from 15.4 to 15.1 1987$/MWh in 2030 (EFD 18.0): cheaper turbines lower the eastern marginal cost a little, so this does not close PJM's coal gap. A year takes 80-115 s instead of 50-70. The capacity LP does not read the tiers, so the planner chain is unchanged (2040 GW: CC 428, CT 246, batteries 108, solar 344, wind 362, coal 15, steam 56; EIA 431, 267, 103, 323, 404, 16, 52).
+
+**Still open.**
+- Turbines stay at a third of EIA's energy. Matching EFD needs turbines to hold 30-35 GW of base-slice reserve. The rest of the reserve balance differs: the requirement is 10-15 GW short (the case's solar capacity, and the load slices), pumped storage carries 12-14 GW less than in EFD, and batteries about 5 GW more. With the requirement scaled to EFD's and the battery reserve to EFD's 75 GW (scratchpad ctres, req2030.log), combined cycle took up the extra 15 GW and turbines rose only from 11 to 15 TWh. What remains is why EFD's combined cycle and coal stop at about 46 and 10 GW in the winter base slice. EFD's PassBack does not report column levels, so that needs a rerun that saves them.
+- The capacity LP. Its reserve price is about a third of ECP's in 1987$ (above), and its turbines are one existing group plus AT. The chain's CT shortfall (246 against 267) is that LP's, untouched here.
+
+Pinned by `tests/test_emm_dispatch.py` (`test_heat_rate_tiers_keep_the_group_mean`, `test_efd_mode_shapes_follow_opbsld`). Scripts: scratchpad `ctres/` (run.py the single-year runs with national, PJM and reserve output; before.txt, tct.log and tct2.log the tables; mt.log and modes2030.txt the mode runs).

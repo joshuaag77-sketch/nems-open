@@ -198,7 +198,7 @@ def test_turbines_carry_spinning_reserve(results, year):
     if not dispatch.EFD_SPIN_RESERVE:
         pytest.skip("EFD_SPIN_RESERVE off")
     assert res.generation_twh["gas_ct"].sum() > (10.0 if year == 2030 else 25.0)
-    supply = sum(v for k, v in res.spin_gw.items() if k != "required")
+    supply = sum(v for k, v in res.spin_gw.items() if k not in ("required", "shortfall"))
     assert (supply >= res.spin_gw["required"] - 1e-3).all()
     assert res.unserved_twh.sum() < 0.001
 
@@ -377,3 +377,37 @@ def test_cofire_takes_the_ng_max_load_shape():
     s = dispatch.max_load_shape(sl, ht, 2030)
     assert ((s["cofire"] - 0.5) / 0.5 == pytest.approx((s["coal"] - 0.55) / 0.45))
     assert (dispatch.max_load_shape(sl, ht, 2025)["coal"] == 1.0).all()
+
+
+def test_heat_rate_tiers_keep_the_group_mean(snapshot):
+    """HEAT_RATE_TIERS: each region's existing gas capacity in equal-capacity tiers by unit heat rate, plus a new-build
+    tier; shares sum to one, the tiers rise in heat rate, and their capacity-weighted mean is the group's heat rate."""
+    old = dispatch.HEAT_RATE_TIERS
+    dispatch.HEAT_RATE_TIERS = True
+    try:
+        c = dispatch.build_case(snapshot, 2030)
+    finally:
+        dispatch.HEAT_RATE_TIERS = old
+    for g in dispatch.TIER_GROUPS:
+        share, hr = c.tiers[g]
+        assert np.allclose(share.sum(axis=1), 1.0)
+        assert np.allclose((share * hr).sum(axis=1), c.heat_rate[g])
+        ex = hr[:, :dispatch.N_TIERS]
+        assert (np.diff(ex, axis=1) >= -1e-6).all()
+    share, hr = c.tiers["gas_ct"]
+    assert np.average(hr[:, -1], weights=share[:, -1] + 1e-12) < 9500      # the new tier is the advanced turbine
+
+
+def test_efd_mode_shapes_follow_opbsld():
+    """EFD_DISPATCH_MODES: J is SR_MIN_CF x height / the season's lowest, U (1 - FOR)(SR_MAX_LF + (1 - SR_MAX_LF) x
+    height / peak), O the base-load types' ReStore capacity factor and the turbines' load-following shape; combined
+    cycle and coal may not run peak-only (UPPCFB)."""
+    h = np.tile(np.array([70, 55, 50, 90, 75, 65, 74, 56, 54.0]), (dispatch.NUM_R, 1))
+    s = dispatch.efd_mode_shapes(h, 2031, {g: 0.9 for g in dispatch.THERMAL})
+    modes, (o, j, u) = s["gas_cc"]
+    assert modes == (2, 3)
+    assert j[0, 2] == pytest.approx(0.2) and j[0, 0] == pytest.approx(0.2 * 70 / 50)
+    assert u[0, 0] == pytest.approx(0.9) and u[0, 2] == pytest.approx(0.9 * (0.7 + 0.3 * 50 / 70))
+    assert o[0, 2] == pytest.approx(max(0.9 * dispatch.FOS_CF_EFD[0][2], 0.2))
+    modes, (o, j, u) = s["gas_ct"]
+    assert modes == (1, 2, 3) and o[0, 2] == pytest.approx(0.9 * 50 / 70)
