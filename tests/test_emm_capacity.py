@@ -310,3 +310,38 @@ def test_advanced_gas_steps_keep_the_conventional_floor():
         steps = capacity.build_steps(code, [0.0] * 5)
         assert [round(b, 2) for b, _ in steps] == [5.0, 3.0, 4.0]
     assert round(capacity.build_steps("DS", [0.0] * 5)[0][0], 3) == 3.0        # other types keep their own floor
+
+
+def test_retirement_cap_follows_ecp_lead_time():
+    """uecp.f 1171-1178 and EP$RET: ECP year E caps retirements in E + UPRTLT (1) at 3% + 1 point x (E - 2026), and
+    switches the cap off past 6%. So 3% for 2027 (not 5%), 6% for 2030 and none from 2031."""
+    rate = [capacity.max_retirement_rate(y) for y in range(2027, 2032)]
+    assert rate[:4] == pytest.approx([0.03, 0.04, 0.05, 0.06])
+    assert rate[4] == float("inf")
+
+
+def test_conversion_credit_is_the_avoided_firm_build_after_the_coal_rule():
+    """A conversion keeps firm capacity through ECP's 30-year horizon; only years from RULE_YEAR count (before then
+    the coal unit itself is firm), each worth a new turbine less the converted unit's fixed O&M."""
+    from nems_open.emm import capacity as cap
+    r = 0.07
+    firm, keep = np.array([40.0e3, 10.0e3]), np.array([10.0e3, 15.0e3])
+    got = cap.conversion_credit(2028, firm, keep, r)
+    k0 = cap.RULE_YEAR - 2028
+    pv = sum((1 + r) ** -(k + 1) for k in range(k0, cap.HORIZON_YEARS))
+    assert got[0] == pytest.approx(30.0e3 * pv * cap._crf(r, cap.HORIZON_YEARS))
+    assert got[1] == 0.0                                                 # keeping costs more than building: no credit
+    assert cap.conversion_credit(cap.RULE_YEAR, firm, keep, r)[0] == pytest.approx(30.0e3)    # every year counts
+    assert cap.conversion_credit(2028, firm, keep, r)[0] < 30.0e3
+
+
+def test_conversion_costs_come_from_the_plant_file():
+    """ECP's OV_CLtNG is each coal unit's T_NG_COST plus T_NG_TRAN; units without a cost cannot convert."""
+    from nems_open.emm import db, plants
+    t, u = db.table("V_EMM_PLTF860"), plants.load_units()
+    coal = np.isin(u.efd_type, dispatch.EXISTING_TYPES["coal"]) & plants.online(2028)
+    cost = np.asarray(t["T_NG_COST"], dtype=float)[coal]
+    gw = u.summer_mw[coal][cost > 0].sum() / 1000.0
+    assert 50.0 < gw < 140.0                                             # most, not all, coal can convert
+    tot = cost + np.asarray(t["T_NG_TRAN"], dtype=float)[coal]
+    assert 100.0 < np.average(tot[cost > 0], weights=u.summer_mw[coal][cost > 0]) < 400.0     # 1987$/kW

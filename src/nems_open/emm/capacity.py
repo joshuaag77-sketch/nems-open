@@ -39,9 +39,11 @@ RETROFIT_LIMIT_GW = 3.0          # national CCS retrofits per year (UPCQMAX in e
 RETROFIT_MIN_MW = 500.0          # smallest unit that can be retrofitted (UPCCSCAP)
 RETROFIT_MAX_HEAT_RATE = 12000.0 # least efficient unit that can be retrofitted (UPCCSHRT)
 # Coal-to-gas conversion (emmcntl.txt %CL_to_NG%, allowed since 2014): fixed O&M x0.67, variable O&M x0.75, heat rate +5%.
-# The conversion cost is an assumption, not EIA data: 100 1987$/kW (about 230 2024$/kW, the range EPA cites).
+# The conversion cost is each unit's own from the plant file, T_NG_COST plus T_NG_TRAN (the gas lateral), as ECP's
+# OV_CLtNG (uecp.f EP$COAL; udat.f 9302); units with no cost there cannot convert. CONVERT_COST_KW (1987$/kW) is
+# only the fallback for a region whose eligible units carry no cost.
 CONVERT_FOM_ADJ, CONVERT_VOM_ADJ, CONVERT_HR_PENALTY = 0.67, 0.75, 0.05
-CONVERT_COST_KW = 100.0
+CONVERT_COST_KW = 200.0
 RETIREMENT_HURDLE = 0.05         # emmcntl.txt %RET HURDLE RATES%, fossil (UPRETFHU)
 AGE_ADDER_1987 = 5.0 / 1.336922   # $/kW-year for units 30+ years old: UPXTRA (%XTRA OandM%, 1999$) in 1987$
 RESERVE_SHORTFALL_COST = 2.0e5  # k$ per GW-year, about 200 1987$/kW-year, for missing the reserve margin
@@ -224,16 +226,22 @@ class YearResult:
 
 
 def max_retirement_rate(year: int) -> float:
-    """EIA's cap on economic retirements, as a share of a region's capacity in one year.
+    """EIA's cap on economic retirements taking effect in `year`, as a share of a region's capacity.
 
-    emmcntl.txt, %MAX RET RATE%: UPRETRT0 (3%) in the first ECP year, rising UPRETCHG (1 point) a year to
-    UPRETRTL (6%). EP$RET in uecp.f applies it to each region's total capacity of every type.
+    emmcntl.txt, %MAX RET RATE%: UPRETRT0 (3%) rising UPRETCHG (1 point) a year to UPRETRTL (6%). EP$RET in uecp.f
+    applies it to each region's total capacity in planning year UPRTLT + 1, so ECP year E sets the cap for
+    retirements in E + UPRTLT (%ECONOMIC RETIRE SW%, 1 year) at UPRETRT0 + UPRETCHG x ((E + UPRTLT - 1) - (UPSTYR + 1))
+    (uecp.f 1171-1178). With UPSTYR = START_YEAR that is 3% for 2027, 4% for 2028, 6% for 2030 and no cap from 2031.
+    (In ECP's first year, E = UPSTYR, UPRETRAT keeps its input 0 and there is no cap on 2026; this model keeps the
+    first rate for years before START_YEAR + 2.)
     """
     lines = (INPUT / "emm" / "emmcntl.txt").read_text(encoding="latin-1").splitlines()
     row = next(l for l in lines if l.lstrip().startswith("'MAX RET'")).split()
     first, last, step = float(row[3]), float(row[4]), float(row[5])         # fields: 'MAX', 'RET', UPRETRAT, UPRETRT0, UPRETRTL, UPRETCHG
-    rate = first + step * (year - START_YEAR)
-    return rate if rate <= last + 1e-9 else float("inf")        # uecp.f 1176: past UPRETRTL the limit is switched off (RETYR = 0)
+    lead = int(next(l for l in lines if l.lstrip().startswith("'ERET SW'")).split()[3])      # UPRTLT
+    decided = year - lead                                                    # ECP year E whose plan retires in `year`
+    rate = first + step * max((decided + lead - 1) - (START_YEAR + 1), 0)
+    return rate if rate <= last + 1e-9 else float("inf")        # uecp.f 1177: past UPRETRTL the limit is switched off (RETYR = 0)
 
 
 def epa111() -> dict:
@@ -277,6 +285,22 @@ def epa111_retirements(snapshot, year: int, cap_in: dict, rets: dict) -> dict:
 
 def _crf(rate: float, years: float) -> float:
     return rate / (1.0 - (1.0 + rate) ** -years)
+
+
+def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon: int = HORIZON_YEARS) -> np.ndarray:
+    """What a coal-to-gas conversion made in `year` is worth each year, beyond this year, as ECP's planning horizon
+    sees it (k$ per GW-year, levelized over the horizon).
+
+    ECP's conversion column (uecp.f EP$COAL,19-28) moves the unit into gas steam for the rest of its UNFPH (30) year
+    horizon and puts it in every horizon year's reserve-margin row; its cost is the conversion capital spread over
+    that horizon plus the converted fixed O&M. Unconverted coal has to retire from RULE_YEAR, so from then each
+    converted GW is firm capacity the plan does not have to build. A one-year LP sees none of that and never
+    converts (EIA's run converts 36 GW in 2028-2030). The credit is that avoided build, `firm_annual` (the annual
+    cost of a new turbine, the cheapest firm type) less `keep_annual` (the converted unit's own fixed O&M), for each
+    horizon year from RULE_YEAR, discounted at `rate` and levelized over the horizon."""
+    gain = np.maximum(np.asarray(firm_annual, dtype=float) - np.asarray(keep_annual, dtype=float), 0.0)
+    pv = sum((1.0 + rate) ** -(k + 1) for k in range(horizon) if year + k >= RULE_YEAR)
+    return gain * pv * _crf(rate, horizon)
 
 
 def _credit_lost_share(life: float) -> float:
@@ -586,6 +610,12 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     elig_gw = np.zeros(NUM_R)
     np.add.at(elig_gw, u.region[elig] - 1, u.summer_mw[elig] / 1000.0)
     elig_gw = np.minimum(elig_gw, cap0["coal"])
+    conv_unit = np.asarray(tb["T_NG_COST"], dtype=float) + np.asarray(tb["T_NG_TRAN"], dtype=float)
+    conv_elig = coal_mask & (np.asarray(tb["T_NG_COST"], dtype=float) > 0)
+    conv_gw = np.zeros(NUM_R)
+    np.add.at(conv_gw, u.region[conv_elig] - 1, u.summer_mw[conv_elig] / 1000.0)
+    conv_gw = np.minimum(conv_gw, cap0["coal"])
+    conv_capital = _weighted_by_region(conv_unit, u.summer_mw, conv_elig, CONVERT_COST_KW)
     retro_cost = _weighted_by_region(tb["T_CCSROV"], u.summer_mw, elig, 1100.0)
     retro_fom = _weighted_by_region(tb["T_CCSF"], u.summer_mw, elig, 8.0)
     retro_tons = case.heat_rate["coal_ccs"] / 1000.0 * dispatch.CO2_PER_TBTU["coal"] * dispatch.CAPTURE_RATE
@@ -642,8 +672,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     bw = m.add_variables(lower=0, upper=room * can_build["wind"], coords=[R], name="build_wind")
     bs = m.add_variables(lower=0, upper=room * can_build["solar"], coords=[R], name="build_solar")
     bb = m.add_variables(lower=0, upper=room * can_build["battery"], coords=[R], name="build_battery")
-    can_convert = year >= START_YEAR and decide and (not rule["switch"] or year <= rule["gas_switch_last"])
-    convert = m.add_variables(lower=0, upper=xr.DataArray(cap0["coal"] * can_convert, coords=[R]),
+    # UCL_CL_NG_SYR = max(2014, first ECP year + the conversion's lead time (NG, UPCLYR 2) + 1) (udat.f 13042): 2028
+    first_convert = START_YEAR + int(lead[codes.index("NG")]) + 1
+    can_convert = year >= first_convert and decide and (not rule["switch"] or year <= rule["gas_switch_last"])
+    convert = m.add_variables(lower=0, upper=xr.DataArray(conv_gw * can_convert, coords=[R]),
                               name="convert")
     m.add_constraints(retrofit.sum() <= RETROFIT_LIMIT_GW, name="retrofit_limit")
     step_premium = 0
@@ -672,8 +704,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     rate = max_retirement_rate(year)
     region_total = xr.DataArray(sum(cap0[g] for g in STATE_GROUPS), coords=[R])
     econ = retire.sel(group=[g for g in TG if g != "coal"]).sum("group")
-    if year < RULE_YEAR:
-        econ = econ + retire.sel(group="coal") + convert
+    if year < RULE_YEAR:            # conversions are not retirements (ECP leaves them out of MXRET, EP$COAL,24)
+        econ = econ + retire.sel(group="coal")
     if np.isfinite(rate):
         m.add_constraints(econ <= rate * region_total, name="retirement_rate")
     capv = m.add_variables(lower=0, coords=[R, T], name="capacity")
@@ -902,7 +934,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         saved = (retire * xr.DataArray(np.stack([fom_exist.get(g, fom_made.get(g, np.zeros(NUM_R))) for g in TG], axis=1), coords=[R, T])).sum()
         saved_coal = (retire.sel(group="coal") * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
-    conv_cost = CONVERT_COST_KW * _crf(discount_rate(snapshot, year), 20.0) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
+    rate_now = discount_rate(snapshot, year)
+    conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"] \
+        - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
     retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
     m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal)
     opts = HORIZON_SOLVER_OPTIONS if (solver == "highs" and horizon and decide) else {}

@@ -235,3 +235,42 @@ Result, 2040 national GW (before / construction interest / plus ELSTCAP floor / 
 | Solar | 343 | 343 | 343 | 323 |
 
 2035 with both: CC 379 (EIA 357, before 399), turbines 220 (EIA 208, before 202). Turbines are now built every year (2 to 5 GW in 2033-2038, 8 in 2039). CC is still 22 GW over in 2040 and batteries 40 GW over; the battery excess is set in 2027 and 2032 by the reserve shortfalls described above.
+
+## Coal-to-gas conversions and the retirement cap's timing (branch ecp-coal-retire)
+
+Chain 2027-2040 from EIA's 2026 fleet (`CapacityPath(first=2027)`, groups on), main (4d5e8e5) against this branch.
+
+**What drives the 2027 batteries is not retirements.** Year one retires 14.3 GW (coal 6.3, CC 3.6, steam 4.4), but 9.3 GW of it is in SRSE, SRCE and SRSG, at the retirement cap, where the reserve price is zero. The 11 regions priced at 56-67 $/kW-year (TRE, FRCC, MISC, MISE, MISS, NYCW, PJME, PJMW, PJMD, SRCA, RMRG) retire 0.5 GW between them. With the cap at ECP's 3% (below) retirements fall to 10.5 GW and the 2027 battery build is unchanged at 18.9 GW (EIA: 3.3 unplanned). The requirement is not it either: 941.5 GW against ECP's 944.9 (OutToNEMS_2026, rRXXXXXge.Lower, planning year 2), within 1.7 GW in every region. The gap is on the capacity side: EIA's own 2027 year-end fleet counts 948.7 GW on this LP's reserve rows against ECP's row level of 989.3 (TRE -10.4, NWPP -8.3, ISNE -3.8, PJME -3.5, CASO -3.4), and 15 regions are short by about 19 GW in all even after EIA's own 2027 builds. The same fleet-side gap is 38 GW in 2028, 19 in 2030 and 28 in 2033. Which coefficients differ (NWPP's looks like hydro above 0.70, TRE's like wind and solar credits) needs ECP's row coefficients, which the saved OutToNEMS files do not carry.
+
+**Retirement cap timing (ported).** EP$RET puts the cap on planning year UPRTLT + 1, so ECP year E caps retirements in E + 1 at UPRETRT0 + UPRETCHG x (E - 2026) (uecp.f 1171-1178, UPRTLT = 1 from %ECONOMIC RETIRE SW%). The cap on 2027 is 3%, 4% on 2028, 6% on 2030 and off from 2031. This LP had 5% on 2027 and no cap from 2029. `max_retirement_rate` now follows ECP.
+
+**Conversions (b1e0ace, ported).** Why it was held: on the old main the converted capacity retired in 2039 (cofiring ends 2038) and came back as combined cycle, so 2040 CC got worse. The port itself (plant-file T_NG_COST + T_NG_TRAN, from UCL_CL_NG_SYR = 2028, outside MXRET, horizon firm-capacity credit) matches what uecp.f EP$COAL,19-28 does and gets the conversion volume right. It is taken here unchanged.
+
+Coal retirements (not counting conversions) and conversions by year, GW. EIA's 2026 is 2.7 (both chains start from it):
+
+| | main ret | main conv | branch ret | branch conv | EIA ret | EIA conv |
+|---|---|---|---|---|---|---|
+| 2027 | 13.0 | 1.8 | 11.6 | 0.0 | 3.3 | 0.0 |
+| 2028 | 16.3 | 0.0 | 14.4 | 27.7 | 12.2 | 4.3 |
+| 2029 | 7.7 | 0.5 | 3.7 | 2.3 | 13.3 | 12.7 |
+| 2030 | 1.4 | 0.0 | 1.4 | 0.0 | 3.5 | 18.9 |
+| 2031 | 3.5 | 0.0 | 2.5 | 0.0 | 10.3 | 0.0 |
+| 2032 | 94.2 | 0.0 | 74.9 | 0.0 | 61.6 | 0.0 |
+| 2033-2035 | 0.0 | 0.0 | 0.0 | 0.0 | 0.2 | 0.0 |
+
+The 2027 figure includes 6.8 GW of plant-file retirements, of which EIA's restart carries out only about 3. Conversions come all in 2028 (EIA spreads them over 2028-2030) and total 30 GW against EIA's 36.
+
+National GW, main / branch / EIA:
+
+| | 2030 | 2032 | 2040 |
+|---|---|---|---|
+| Coal | 116 / 95 / 88 | 18 / 18 / 16 | 18 / 15 / 16 |
+| Steam | 72 / 97 / 110 | 71 / 96 / 104 | 50 / 50 / 52 |
+| CC with CCS | 289 / 287 / 291 | 324 / 315 / 323 | 453 / 459 / 431 |
+| Turbines | 183 / 179 / 171 | 213 / 204 / 194 | 243 / 248 / 267 |
+| Batteries | 94 / 94 / 88 | 138 / 130 / 99 | 143 / 136 / 103 |
+| Solar | 293 / 293 / 258 | 343 / 343 / 288 | 343 / 344 / 323 |
+
+2032 battery builds 43.7 -> 35.3 GW (EIA 9.9); the reserve price is still 82 in 24 regions. The rule now takes 75 GW against EIA's 62, and the fleet-side reserve gap above covers the rest of the shortfall. In 2039 the converted capacity retires and is replaced with 17.7 GW of CC and 13.0 of turbines (main: 15.7 and 8.0; EIA: 19.1 and 24.5). The rate fix alone moves the 2040 numbers by under 1 GW (conversions only: CC 460, CT 248, battery 135).
+
+Open: the capacity side of ECP's reserve row (40 GW in 2027) is what keeps the 2027 and 2032 battery builds high. It needs the ECP matrix coefficients from the oracle rerun queued above.
