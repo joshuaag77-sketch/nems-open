@@ -46,3 +46,28 @@
 
 ## Next
 Per-unit retrofit years for the 45Q credit, and the fuel-share data behind the oil floors. Both need the coal and fuel-supply modules; neither is available from the restart.
+
+## Coal capacity factor: which number is off (branch coal-dispatch)
+The capacity lane compared its 2031 coal (430 to 460 TWh) with ECP's planning dispatch (200 TWh). That is the wrong yardstick: ECP's dispatch is a planning estimate and EFD's is what cb2026 reports. EFD's numbers, from the restart (TWh; coal by fuel is UGNCLNR, by unit UGEN<type>):
+
+| | 2031 EIA | 2031 dispatch | 2040 EIA | 2040 dispatch |
+|---|---|---|---|---|
+| Coal by fuel | 419 | 470 | 63 | 93 |
+| of which coal units (pc + ig) | 353 | 470 | 63 | 93 |
+| of which coal share of cofired units (ng) | 66 | 0 | 0 | 0 |
+| Cofired units, all fuel | 129 | 19 (steam group) | 0 | 0 |
+| Combined cycle (cc + ac; gas CCS cs) | 1,446; 23 | 1,501; 24 | 1,437; 365 | 1,485; 396 |
+| Turbines (ct + at) | 65 | 0.3 | 90 | 8 |
+
+UGENSQ (CCS retrofits) is a subset of UGENPC, as UCAPSQ is of UCAPCS, so pc + sq counts the retrofits twice. The earlier reading that EIA ran CCS coal at 87% from 2034 to 2038 (dispatch_fixes.md) was that double count plus the cofired units' coal: the retrofits run at 44% in every year from 2033.
+
+So the capacity LP's coal is within 3 to 10% of what EIA reports, and its planning dispatch is not what is off. What is off is the dispatch itself (here and in the capacity LP, which shares it): EIA's coal units run at 42 to 48% of mid-year capacity in every year from 2028 to 2040 (2032, the rule year, aside), ours at the 0.65 maximum in 18 of 20 coal regions. In 2031 EIA's regional coal capacity factors range from 0.31 to 0.62 while coal costs 9 to 12 1987$/MWh to run against 16 to 18 for combined cycle. Turbines are the other gap (65 vs 0.3 TWh), in both models.
+
+Ruled out, with numbers:
+- Maximum capacity factor. The oracle's 2030 EFD composite (aimms-showreel sample) gives coal groups UG_SCF 0.65 to 0.72, with FOR 0.18 and PMR 0.185: udat.f CRPGRP's consistency rule (10168-10236, MXLFR 0) scales pltdata's 0.066 / 0.071 so that (1 - FOR)(1 - PMR) = 0.65, and the rule reproduces the composite to three decimals (combined cycle 0.075 / 0.061). Porting that per-slice derate leaves 2031 coal at 470 TWh and 2040 at 93: coal still reaches its annual cap. Not kept.
+- Coal VOM and heat rate. EFD's coal groups: VOM 0.78 1987$/MWh (ours 0.77), heat rate 10,093 Btu/kWh (ours 10,762). EFD's coal is if anything cheaper.
+- Coal price. UPCOLPRC equals UPCOALAVG; EFD's supply steps (XCL_PECP) rise under 15% across 1.54 times the base quantity, and XCL_PCAP is twice the coal burned. No quantity limit binds.
+- STEO benchmark rows (emmcntl %BM QUANTY%: 2024 to 2026 only), the CF fade (UCFEYR 2030), 45Q (it lowers CCS coal's cost, so it cannot explain 44%).
+- EPA 111 cofiring. EIA's ng units burn at least 40% gas from 2030 (udat.f 6457-6460) and run at 29%; treating them as cofiring here would add coal, not remove it.
+
+No fix is justified from saved outputs. What would settle it is the coal columns' reduced costs in an EFD solution (cO, cJ, cU for a coal group), which needs an oracle EFD solve with its solution kept. Pinned by `tests/test_emm_dispatch.py::test_eia_coal_units_run_below_their_maximum`. Scripts: scratchpad `coaldisp/` (efd.py, reg.py, comp.py, comp2.py).

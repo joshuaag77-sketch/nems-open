@@ -20,8 +20,9 @@ YEARS = (2025, 2030, 2040, 2050)
 
 # (quantity, year) -> why the dispatch model misses. Measured with sales-based load and interregional links.
 KNOWN_MISSES = {
-    ("gen_coal", 2040): "coal 47% high: EIA runs 16 GW of CCS-retrofitted coal at 44% capacity factor in 2040 (87% before), the LP runs it at its maximum; "
-                        "the restart has no per-unit retrofit years or CO2 transport cost to explain the step (docs/dispatch.md)",
+    ("gen_coal", 2040): "coal 47% high: EIA runs 16 GW of CCS-retrofitted coal at 44% capacity factor (every year from 2033), the LP runs it at "
+                        "its 65% maximum; EIA's coal units run at 42-48% in every year 2028-2040 for a reason not found in saved outputs "
+                        "(docs/dispatch.md, coal capacity factor)",
     ("fuel_coal", 2040): "coal fuel 62% high, follows coal generation",
     ("gen_coal", 2030): "coal 16% high (539 vs 465 TWh) on EIA's real gas fleet; it was 6% high only because UCAPAC/AS/AT were added on top "
                         "of UCAPCC/CT, giving dispatch 37 GW of gas that does not exist (branch ecp-reserve, docs/capacity.md)",
@@ -96,3 +97,20 @@ def test_trade_none_uses_sales_based_load(snapshot):
     ref = dispatch.build_case(snapshot, 2030, "reference")
     assert abs(case.net_load_twh.sum() / ref.net_load_twh.sum() - 1) < 0.05
     assert case.net_load_twh.shape == (25,)
+
+
+def test_eia_coal_units_run_below_their_maximum(snapshot):
+    """What EFD reports for coal. UGENSQ (CCS retrofits) is a subset of UGENPC, like UCAPSQ of UCAPCS: in 2040 both are
+    63 TWh and so is coal generation by fuel (UGNCLNR). Coal by fuel also holds the coal share of the cofired units
+    (UGENNG). EIA's coal units (pc + ig) run at 42-48% of mid-year capacity from 2028 (2032 aside), below EFD's 0.65 maximum, while
+    the dispatch LP runs them at the maximum (docs/dispatch.md)."""
+    def gen(t, year):
+        return float(snapshot[f"UDATOUT/ugen{t}"][:dispatch.NUM_R, year - 1990].sum())
+    by_fuel = {y: rep.reference(snapshot, y)["gen_coal"] for y in (2031, 2040)}
+    assert abs(gen("pc", 2040) - by_fuel[2040]) < 1.0 and abs(gen("sq", 2040) - by_fuel[2040]) < 1.0
+    units = gen("pc", 2031) + gen("ig", 2031)
+    assert 340 < units < 365 and 410 < by_fuel[2031] < 430          # 353 from coal units, 66 from cofiring
+    for y in (2031, 2035, 2040):
+        cap = float(dispatch._in_service(snapshot, dispatch.CAPACITY_PREFIXES["coal"], dispatch.EXISTING_TYPES["coal"], y).sum())
+        cf = (gen("pc", y) + gen("ig", y)) / cap / 8.76
+        assert 0.40 < cf < 0.53, (y, cf)
