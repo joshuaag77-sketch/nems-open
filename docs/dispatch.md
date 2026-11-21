@@ -137,3 +137,36 @@ Marginal cost in 2030, load-weighted by slice (winter / summer / shoulder, each 
 - Coal heat-rate spread. A second coal group by heat rate needs a seventh thermal group through dispatch, capacity and their reports. Not done; with the derate, coal is at EIA in 2030 and 17 TWh over in 2031.
 
 Pinned by `tests/test_emm_dispatch.py` (`test_efd_outage_rates_follow_udat_rule`, `test_spin_requirement_is_efd_slice_formula`, `test_maintenance_skips_the_peak_season`, `test_turbines_carry_spinning_reserve`). The 2025 coal fuel known miss is removed.
+
+## What EIA's steam is, and CCS coal's capacity (branch gen-2035)
+**EIA's steam is cofired coal.** From 2028 most of EIA's steam (restart ng + os) is the coal-gas cofiring units, prefix ng: ECP type NG, EFD type CTN ("Coal to Gas Retrofit"). In 2035 ng makes 106 TWh on 48 GW (0.25) and oil/gas steam (os) 11.5 on 51. They burn coal: the plant file's 14.3 GW of CTN units list gas first and a coal curve (B1..CX) second at 52% of Btu; ECP's conversions get W_FSHR(2) = UEPA_CGSH = 0.6 coal (uecp.f 28148); udat.f 6457 caps every NG unit at that share from 2030; the oracle's 2030 EFD passes back CTN coal shares of 0.17-0.60 by fuel region (FCLSH_ams). In the restart the coal share of ng generation (UGNCLNR less UGENPC and UGENIG) is 52% in 2031 and 56-57% in 2032-2038. EIA's 2035 coal (122 TWh) is 62 from CCS retrofits and 59 from these units. The dispatch had them in steam on gas at steam's cost (23-25 1987$/MWh), so they ran at 0.07 and the CC fleet took their energy.
+
+**CCS retrofits are reported before their capacity loss.** udat.f 9265 gives a retrofitted coal unit a capacity loss of 1 - WHRATE / CCSHR, uecp.f 27662 takes it off the unit (CCSCAPA), and the UCAP tally reports the unit at WC_SUM / (1 - CCSADJ) (udat.f 8421-8467: ECSCAPSQ, ECSCAP). So sq (and cs) hold retrofits at their old nameplate, and EFD dispatches about 0.71 of it (the plant file's THRATE / T_CCSHR, 0.69-0.74 by region). EFD's 0.62-0.65 of that is the 0.44 of sq that EIA's CCS coal shows in every year from 2033. 45Q, its eligibility and the CF cap were never the cause.
+
+**Ported** (`dispatch.py`, both on):
+- `COFIRE_GROUP`: ng is a seventh thermal group, `cofire` (`DispatchCase.coal_share`, `cofire_case`): the CTN units' heat rate (10,780), variable O&M and coal share, and coal converted after the plant file at the coal fleet's heat rate +5% and variable O&M x0.75 (capacity.CONVERT_*) with UEPA_CGSH of coal; no coal after UEPA_CLCFYR (2038). Its coal counts as coal generation and fuel, as UGNCLNR does. In 2035 it costs 17.4 1987$/MWh, the same as combined cycle. The capacity LP starts the reference run's cofiring units (cofiring_existing) in gas_conv, which already cofired at 0.6 and retires after 2038, and `dispatch_capacity` hands gas_conv to `cofire`. Steam's existing types and retirement groups drop CTN (`dispatch.existing_types`).
+- `CCS_CAPACITY_PENALTY`: coal_ccs generates on capacity x `DispatchCase.capture_net` (`generating_capacity`). Dispatch only; the capacity LP still values a retrofit at its full nameplate (to do: ECP's CPEN on the retrofit column).
+
+**Result.** Single-year dispatch on EIA's fleet, sales-based load with trade, 3-hour blocks. TWh, before (both off) / after (both on) / EIA. Steam is os + ng (steam + cofire here); coal is by fuel.
+
+| | 2030 | 2031 | 2035 | 2040 |
+|---|---|---|---|---|
+| Coal | 466 / 526 / 465 | 436 / 500 / 419 | 92 / 141 / 122 | 93 / 66 / 63 |
+| of which coal units | 450 / 440 / 385 | 394 / 382 / 319 | 0.5 / 0.5 / 0 | 0.3 / 0.3 / 0 |
+| of which CCS coal | 16 / 11 / 18 | 42 / 30 / 34 | 92 / 65 / 62 | 93 / 66 / 63 |
+| Cofired units (all fuel) | 0 / 131 / 122 | 0 / 152 / 129 | 0 / 130 / 106 | 0 / 0 / 0.1 |
+| Steam (os + ng) | 60 / 145 / 136 | 49 / 164 / 140 | 36 / 141 / 117 | 8 / 7 / 6 |
+| Combined cycle | 1,509 / 1,440 / 1,449 | 1,490 / 1,403 / 1,446 | 1,531 / 1,460 / 1,414 | 1,462 / 1,487 / 1,437 |
+| Turbines | 18 / 15 / 67 | 19 / 14 / 65 | 38 / 29 / 81 | 38 / 40 / 90 |
+| Gas, all | 1,596 / 1,538 / 1,469 | 1,578 / 1,516 / 1,477 | 1,752 / 1,704 / 1,577 | 1,900 / 1,926 / 1,779 |
+| Gas against EIA | +8.6% / +4.7% | +6.8% / +2.6% | +11.1% / +8.0% | +6.8% / +8.3% |
+| Coal fuel, trillion Btu | 5,029 / 5,671 / 4,962 | 4,825 / 5,486 / 4,531 | 1,387 / 1,811 / 1,491 | 1,394 / 988 / 861 |
+| Seconds a year | 7.3 / 7.7 | 7.1 / 7.5 | 6.8 / 7.5 | 6.7 / 7.4 |
+
+Each alone: the capacity penalty alone takes 2035 coal to 66 (EIA 122) and 2035 gas to +12.7%, because the coal EIA's cofired units burn is missing; cofiring alone takes 2035 coal to 165 (CCS still at 92). Together steam, CCS coal and 2035 gas land near EIA, and 2040 coal (was +47%) is +4%.
+
+**What it uncovers.** The coal units. Without the cofired units' coal, the LP's coal units running at their 0.61 ceiling (EIA about 0.50) landed total coal on EIA's in 2030 by accident. Now coal is 13% over in 2030 and 19% over in 2031, all of it the coal units (440 vs 385, 382 vs 319), and cofired units run 7-20% above EIA's. Test years: gen_coal 2040 is fixed; gen_coal 2030, fuel_coal 2030 and fuel_coal 2025 are new known misses (`tests/test_emm_dispatch.py`). 2040 coal fuel stays 15% high: generation is on EIA's, but at the full-capture heat rate (15.2 MMBtu/MWh) where EIA's averages 13.7, partly in EFD's partial-capture mode (uefd.f OPBSLD, SHR_NOCCS / ADJ_FAC). Turbines are unchanged in kind (29-40 TWh vs EIA 65-90).
+
+Planner chain 2027-2040 from EIA's 2026 fleet (the capacity LP sees the cofiring move), 2040 GW before / after / EIA: CC 436 / 430 / 431, CT 234 / 242 / 267, batteries 108 / 107 / 103, solar 348 / 344 / 323, wind 383 / 378 / 404, coal 15 / 15 / 16, steam (with gas_conv) 56 / 56 / 52. Conversions 2028-2029 unchanged (30.7 + 2.8 GW). 367 s for the chain (382 before).
+
+Pinned by `tests/test_emm_dispatch.py` (`test_eia_steam_is_cofired_coal_units`, `test_cofire_group_takes_ng_out_of_steam`, `test_restart_counts_ccs_retrofits_before_their_capacity_loss`) and `tests/test_emm_epa111.py`. Scripts: scratchpad `gen2035/` (run.py, efdgrp.py reads the EFD composite by ECP type through the EFD_GRPS_F / _N group chains, caps.py).

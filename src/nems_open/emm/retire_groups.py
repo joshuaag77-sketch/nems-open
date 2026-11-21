@@ -98,7 +98,7 @@ def retirable_units(year: int, group: str, alive: np.ndarray) -> np.ndarray:
     tb = db.table("V_EMM_PLTF860")
     mrun = tb["T_MRUN"]
     must_run = (mrun > 0) & (year <= mrun)
-    return (plants.online(year) & np.isin(u.efd_type, dispatch.EXISTING_TYPES[group]) & (u.retire_year >= 9999)
+    return (plants.online(year) & np.isin(u.efd_type, dispatch.existing_types(group)) & (u.retire_year >= 9999)
             & (u.owner <= 3) & ~must_run & (alive > 0))
 
 

@@ -20,10 +20,14 @@ YEARS = (2025, 2030, 2040, 2050)
 
 # (quantity, year) -> why the dispatch model misses. Measured with sales-based load and interregional links.
 KNOWN_MISSES = {
-    ("gen_coal", 2040): "coal 47% high: EIA runs 16 GW of CCS-retrofitted coal at 44% capacity factor (every year from 2033), the LP runs it at "
-                        "its 65% maximum; EIA's coal units run at 42-48% in every year 2028-2040 for a reason not found in saved outputs "
-                        "(docs/dispatch.md, coal capacity factor)",
-    ("fuel_coal", 2040): "coal fuel 62% high, follows coal generation",
+    ("gen_coal", 2030): "coal 13% high: the cofired units now burn their coal (COFIRE_GROUP, 2030 ng 131 TWh at 55% coal, EIA 122), "
+                        "which uncovers that the LP runs the coal units at their 0.61 ceiling where EIA runs them at about 0.5 "
+                        "(2030 coal units 440 TWh against EIA's 385; docs/dispatch.md, cofiring and CCS capacity)",
+    ("fuel_coal", 2030): "coal fuel 14% high, follows coal generation",
+    ("fuel_coal", 2025): "coal fuel 10% high: the 14 GW of cofiring units in the plant file burn their 52% coal share; the coal units "
+                         "run at their ceiling as in 2030",
+    ("fuel_coal", 2040): "coal fuel 15% high: CCS coal generation is on EIA's (66 vs 63 TWh) but at the full-capture heat rate "
+                         "(15.2 MMBtu/MWh) where EIA's averages 13.7, partly in EFD's partial-capture mode (uefd.f OPBSLD SHR_NOCCS)",
 }
 
 
@@ -175,3 +179,45 @@ def test_turbines_carry_spinning_reserve(results, year):
     supply = sum(v for k, v in res.spin_gw.items() if k != "required")
     assert (supply >= res.spin_gw["required"] - 1e-3).all()
     assert res.unserved_twh.sum() < 0.001
+
+
+def test_eia_steam_is_cofired_coal_units(snapshot):
+    """EIA's steam from 2030 is mostly the coal-gas cofiring units (restart prefix ng), and they burn coal: coal by fuel
+    (UGNCLNR) less the coal units (UGENPC + UGENIG) is 50-60% of their generation in 2031-2038. The plant file's ng units
+    are EFD type CTN with a coal curve as second fuel at about 52% of Btu."""
+    def gen(t, year):
+        return float(snapshot[f"UDATOUT/ugen{t}"][:dispatch.NUM_R, year - 1990].sum())
+    for y in (2031, 2033, 2035, 2038):
+        ng, os_ = gen("ng", y), gen("os", y)
+        coal_in_ng = rep.reference(snapshot, y)["gen_coal"] - gen("pc", y) - gen("ig", y)
+        assert ng > 5 * os_ and 0.50 < coal_in_ng / ng < 0.60, (y, ng, os_, coal_in_ng)
+    assert gen("ng", 2040) < 1.0                     # cofiring ends after UEPA_CLCFYR (2038)
+
+
+@pytest.mark.skipif(not dispatch.COFIRE_GROUP, reason="COFIRE_GROUP off")
+def test_cofire_group_takes_ng_out_of_steam(snapshot):
+    """ng is its own group, at the CTN units' heat rate and coal share, and the converted coal's; no coal after 2038."""
+    c = dispatch.build_case(snapshot, 2035)
+    ng = dispatch._in_service(snapshot, dispatch.COFIRE_PREFIXES, dispatch.EXISTING_TYPES["cofire"], 2035)
+    assert c.capacity["cofire"].sum() == pytest.approx(ng.sum(), abs=0.1)
+    assert 45 < c.capacity["cofire"].sum() < 52 and 45 < c.capacity["steam"].sum() < 55
+    w = c.capacity["cofire"]
+    assert 0.52 < np.average(c.coal_share["cofire"], weights=w) < 0.60
+    assert 10500 < np.average(c.heat_rate["cofire"], weights=w) < 11600
+    assert (dispatch.build_case(snapshot, 2040).coal_share["cofire"] == 0).all()
+
+
+def test_restart_counts_ccs_retrofits_before_their_capacity_loss(snapshot):
+    """udat.f reports a CCS retrofit at WC_SUM / (1 - CCSADJ), its capacity before the capture plant's loss
+    (CCSADJ = 1 - WHRATE / CCSHR, udat.f 9265). On that capacity EIA's CCS coal runs at 0.44 in every year 2033-2040;
+    on the capacity left after the loss (about 0.7 of it) that is EFD's 0.6 to 0.65."""
+    c = dispatch.build_case(snapshot, 2040)
+    net = np.average(c.capture_net, weights=c.capacity["coal_ccs"])
+    assert 0.68 < net < 0.73
+    for y in range(2033, 2041):
+        cap = float(dispatch._ucap(snapshot, ("sq",), y - 1990).sum())
+        cf = float(snapshot["UDATOUT/ugensq"][:dispatch.NUM_R, y - 1990].sum()) / cap / 8.76
+        assert 0.42 < cf < 0.46 and 0.58 < cf / net < 0.66, (y, cf)
+    if dispatch.CCS_CAPACITY_PENALTY:
+        gen = dispatch.generating_capacity(c)
+        assert gen["coal_ccs"] == pytest.approx(c.capacity["coal_ccs"] * c.capture_net)

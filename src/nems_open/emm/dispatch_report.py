@@ -42,9 +42,13 @@ def reference(snapshot, year: int) -> dict:
 def model(result: dispatch.DispatchResult) -> dict:
     g = {k: float(v.sum()) for k, v in result.generation_twh.items()}
     f = {k: float(v.sum()) for k, v in result.fuel_tbtu.items()}
+    # Cofired units count by fuel, as EIA's UGNCLNR / UGNGFNR do: the coal share of their Btu is coal generation.
+    cofire = result.generation_twh.get("cofire", np.zeros(NUM_R))
+    cofire_coal = float((cofire * dispatch.coal_share(result.case, "cofire")).sum())
     return {
-        "gen_coal": g["coal"] + g["coal_ccs"],
-        "gen_gas": g["gas_cc"] + g["gas_ccs"] + g["gas_ct"] + g["steam"] * (1 - float(np.average(result.case.oil_share["steam"]))),
+        "gen_coal": g["coal"] + g["coal_ccs"] + cofire_coal,
+        "gen_gas": g["gas_cc"] + g["gas_ccs"] + g["gas_ct"] + g["steam"] * (1 - float(np.average(result.case.oil_share["steam"])))
+        + g.get("cofire", 0.0) - cofire_coal,
         "gen_oil": g["steam"] * float(np.average(result.case.oil_share["steam"])) + g.get("oil_must_run", 0.0),
         "gen_nuclear": g["nuclear"],
         "gen_renewable": g["hydro"] + g["wind"] + g["solar"] + g["other"],

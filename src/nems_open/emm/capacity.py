@@ -221,7 +221,7 @@ ECP_SEASON_MONTHS = ((12, 1, 2, 3), (6, 7, 8, 9), (4, 5, 10, 11))
 # ECP type whose SR_MIN_CF (ecpdaty.xlsx SPNRSV) each LP group takes: the share of its capacity a committed unit
 # must generate (EP$ODSP min-load mode). Coal and steam 0.3, combined cycle 0.2, turbines and pumped storage 0.1.
 SPIN_TYPE = {"coal": "PC", "coal_ccs": "PQ", "gas_cc": "EC", "gas_cc_new": "AC", "gas_ccs": "CS", "gas_ct": "ET",
-             "gas_ct_new": "AT", "steam": "ST", "gas_conv": "NG", "pumped": "PS"}
+             "gas_ct_new": "AT", "steam": "ST", "gas_conv": "NG", "cofire": "NG", "pumped": "PS"}
 SPIN_SHORTFALL_COST = 1000.0    # 1987$/MWh of missing spinning reserve; ECP has no slack (cSR is bounded below)
 # ECP values a new wind or solar plant at WRENEW's capacity factor of the year before its solve, with no outage
 # derate (uecp.f 38880-39035, UPICFC1). This LP's step for year y is ECP's year 2 of its y - 1 solve, so y - 2.
@@ -506,7 +506,8 @@ def epa111_retirements(snapshot, year: int, cap_in: dict, rets: dict) -> dict:
         return rets
     rets = dict(rets)
     rets["gas_conv"] = rets["gas_conv"] + cap_in["gas_conv"]
-    rets["steam"] = rets["steam"] + np.minimum(cofiring_existing(snapshot, START_YEAR), cap_in["steam"])
+    if not dispatch.COFIRE_GROUP:     # on, initial_capacity put them in gas_conv
+        rets["steam"] = rets["steam"] + np.minimum(cofiring_existing(snapshot, START_YEAR), cap_in["steam"])
     return rets
 
 
@@ -615,6 +616,12 @@ def initial_capacity(snapshot, year_before: int) -> dict:
     cap = {g: dispatch._ucap(snapshot, p, y) for g, p in dispatch.CAPACITY_PREFIXES.items()}
     cap["coal"] = np.maximum(cap["coal"] - cap["coal_ccs"], 0.0)
     cap["gas_conv"] = np.zeros(NUM_R)
+    if dispatch.COFIRE_GROUP:
+        # The reference run's coal-gas cofiring units (prefix ng, less what it keeps after UEPA_CLCFYR) cofire like the
+        # LP's own conversions, so they start in gas_conv: coal share UEPA_CGSH, retired after UEPA_CLCFYR.
+        cof = np.minimum(cofiring_existing(snapshot, year_before + 1), cap["steam"])
+        cap["steam"] = cap["steam"] - cof
+        cap["gas_conv"] = cof
     cap["gas_cc_new"] = np.zeros(NUM_R)
     cap["gas_ct_new"] = np.zeros(NUM_R)
     return {g: cap[g] for g in STATE_GROUPS}
@@ -874,7 +881,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     on = plants.online(year)
     fom_exist = {}
     for g in RETIRABLE:
-        mask = on & np.isin(u.efd_type, dispatch.EXISTING_TYPES[g])
+        mask = on & np.isin(u.efd_type, dispatch.existing_types(g))
         # What ECP charges an existing plant for staying (udat.f RET_FOM): fixed O&M, capital additions and the
         # age-dependent adder; the retirement hurdle rate (UPRETFHU) then discounts that cost by 5%.
         age = np.maximum(year - u.online_year, 0)
@@ -1346,16 +1353,17 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     return out
 
 
-# Capacity-LP groups folded into the dispatch model's groups. Steam in the restart already holds EIA's coal-to-gas
-# conversions (prefix ng), so converted coal joins steam.
-TO_DISPATCH = {"gas_cc_new": "gas_cc", "gas_ct_new": "gas_ct", "gas_conv": "steam"}
+# Capacity-LP groups folded into the dispatch model's groups. Converted coal cofires: it is the dispatch's cofire group
+# (dispatch.COFIRE_GROUP), or steam, where the restart keeps EIA's conversions (prefix ng), with the switch off.
+TO_DISPATCH = {"gas_cc_new": "gas_cc", "gas_ct_new": "gas_ct", "gas_conv": "cofire"}
 
 
 def dispatch_capacity(capacity: dict) -> dict:
     """A year's capacity (STATE_GROUPS) in the dispatch model's groups (dispatch.GROUPS), GW by region."""
+    to = dict(TO_DISPATCH, gas_conv="cofire" if dispatch.COFIRE_GROUP else "steam")
     out = {g: np.zeros(NUM_R) for g in dispatch.GROUPS}
     for g, v in capacity.items():
-        out[TO_DISPATCH.get(g, g)] = out[TO_DISPATCH.get(g, g)] + v
+        out[to.get(g, g)] = out[to.get(g, g)] + v
     return out
 
 

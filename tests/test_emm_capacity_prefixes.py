@@ -102,7 +102,7 @@ def test_2049_fleet_counts_each_gas_unit_once():
     one = lambda *p: float(dispatch._ucap(s, p, y).sum())
     assert cap["gas_cc"].sum() + cap["gas_ccs"].sum() == pytest.approx(one("cc", "fc"), abs=0.1)
     assert cap["gas_ct"].sum() == pytest.approx(one("ct", "ic", "i2"), abs=0.1)
-    thermal = sum(float(cap[g].sum()) for g in dispatch.THERMAL)
+    thermal = sum(float(cap[g].sum()) for g in capacity.TG)
     assert 860 < thermal < 895                         # 877.5 GW; it was 1,222.5 with the subgroups added on top
     # Before the fix the thermal fleet, nuclear, hydro and pumped storage alone exceeded ECP's whole 2050
     # requirement, so the LP saw a surplus however low the wind, solar and battery credits. Now they do not.

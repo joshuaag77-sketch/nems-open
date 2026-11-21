@@ -4,7 +4,7 @@ no coal-to-gas switches after 2030, new gas combined cycle without CCS held to 4
 import numpy as np
 import pytest
 
-from nems_open.emm import capacity
+from nems_open.emm import capacity, dispatch
 from nems_open.emm.regions import NUM_EMM
 
 try:
@@ -36,5 +36,10 @@ def test_cofiring_plants_retire_after_2038_only():
     assert np.allclose(rets["gas_conv"], 2.0)                    # every LP conversion cofires
     existing = capacity.cofiring_existing(SNAP, capacity.START_YEAR)
     assert 10.0 < existing.sum() < 15.0                          # 14.3 GW of ng in 2024, 1.7 GW full conversions kept
-    assert np.allclose(rets["steam"], np.minimum(existing, 2.0))
+    if dispatch.COFIRE_GROUP:       # the reference run's cofiring units start in gas_conv (initial_capacity)
+        assert np.allclose(rets["steam"], 0.0)
+        start = capacity.initial_capacity(SNAP, capacity.START_YEAR - 1)
+        assert np.allclose(start["gas_conv"], np.minimum(existing, start["gas_conv"] + start["steam"]))
+    else:
+        assert np.allclose(rets["steam"], np.minimum(existing, 2.0))
     assert np.allclose(rets["coal"], 0.0)
