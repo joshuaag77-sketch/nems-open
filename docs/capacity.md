@@ -200,3 +200,12 @@ What is left is the requirement. ECP's own 2033 requirement (OutToNEMS_2032, rRX
 Chain 2027-2040 from EIA's 2026 fleet, 2040 national GW, before / after / EIA: CC (with CCS) 494 / 482 / 431, CT 189 / 182 / 267, steam 33 / 41 / 52, solar 344 / 343 / 323, battery 112 / 127 / 103, wind 383 / 385 / 404. Median reserve price in the chain was already in EIA's band (29-36 most years) before and stays there.
 
 Conversions (b1e0ace) on top, branch ecp-reserve-conv: steam tracks EIA better through the 2030s (2030 86 vs 64 without, EIA 110; 2033 80 vs 61, EIA 103) and coal lands on EIA in 2030 (91 / 88), but by 2040 CC is 492 (vs 482 without, EIA 431) and CT 183 (EIA 267): the converted capacity retires when cofiring ends in 2038 and is replaced with CC, not turbines. It does not fix the turbine gap; the requirement does.
+
+### The requirement on ECP's load (`ecp_load`, `capacity.ECP_PEAK`)
+EPPEAK is the top of LDSM's 864-hour system load (UPPEAK, udat.f 14369-14381), EP_NET_PEAK that load over the top net-load hours, and PKADJ adds firm contracts (UEITAJ: V_EMM_ETCNCT exports less imports x 0.91, prepett.f 769), UTRELADJ and UCAPADJ (cogeneration, Mexico). The LP now runs the ported LDSM (dsmfor, dsmdlt, dsmhlm) for the year from the nearest oracle `ld_in` dump; it reproduces the oracle's 2030 UPPEAK exactly in every region, and the 2033 load is the same from the 2027 or 2030 dump. LDSM's 2033 peak is 924 GW (the old shape: 876; ISNE 29.3 vs 19.8). Without the dumps the LP falls back to its own shape.
+
+2033 requirement: 999 GW against ECP's 991 (+0.8%). By region within 2 GW in 19 of 25; off by more in MISC +3.3, SRCE -2.9, NYUP +2.8, TRE -2.3, MISW -2.2 (ISNE 31.1 vs 29.3). The rest is likely EP_NET_PEAK's hours (ECP's restart intermittent capacity, DEM_ADJ in its net load) and UTRELADJ timing; not pursued.
+
+One-step 2033 from EIA's fleet: reserve price 22 of 25 regions inside 21-45 (ISNE 15, PJMW 19, SPPN 7 below); 8.8 GW of turbines (MISS 2.1, PJME 3.9, BASN 1.6, NYUP, PJMC) and 27.6 of CC; retirements 3.3 GW (were 31). Turbines are not in TRE, SPPS, CASO or MISW: there the LP takes CC for the same reserve need.
+
+Chain 2027-2040, 2040 GW, accounting-only / with ECP's requirement / EIA: CC 482 / 491 / 431, CT 182 / 207 / 267, steam 41 / 49 / 52, solar 343 / 343 / 323, battery 127 / 141 / 103, wind 385 / 371 / 404. CT tracks EIA through 2032 (201 vs 194) and then stops while EIA adds about 7 GW a year; the CC choice and the battery credit (near 1 here, builds 38 GW over EIA) are what is left.

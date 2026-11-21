@@ -212,3 +212,33 @@ def test_reserve_row_uses_ecp_coefficients_and_no_free_lending(snapshot):
     assert cr["battery"].shape == (25,) and ((cr["battery"] > 0.8) & (cr["battery"] <= 1.0)).all()
     adj = capacity.reliability_adjustment(snapshot, 2033)
     assert adj.shape == (25,) and abs(adj.sum()) < 1.0 and np.abs(adj).max() > 1.0   # moves capacity, nets to ~0
+
+
+def test_firm_contracts_follow_prepett():
+    """UEITAJ: exports less imports of V_EMM_ETCNCT's firm contracts, times AVEFOR 0.91; a phased-out contract keeps
+    0.9 of itself the year after it ends. Domestic contracts net to zero across the 25 regions."""
+    from nems_open.emm import ecp_load
+    a = ecp_load.firm_contracts(2033)
+    assert a.shape == (25,)
+    assert a[21] < -3.0                         # CASO imports (from CANO, SRSG, NWPP and the rest of the West)
+    assert a[19] > 2.0                          # SRSG exports
+
+
+def test_requirement_on_ldsm_load_matches_ecp(snapshot):
+    """2033 on LDSM's load: EPPEAK x EPMRM + EP_NET_PEAK + PKADJ is within 1.5% of ECP's own reserve rows nationally
+    (991 GW, OutToNEMS_2032 rRXXXXXge planning year 2) and ISNE's peak is LDSM's 29.3 GW, not the 19.8 of the
+    LP's net-energy shape."""
+    from nems_open.emm import capacity_credit as cc, db, ecp_load
+    sy = ecp_load.system_load(2033)
+    if sy is None:
+        pytest.skip("no LDSM state dumps (oracle/run_emm/out/state/ld_in)")
+    assert sy.max(axis=(1, 2))[6] == pytest.approx(29.3, abs=0.1)
+    case = dispatch.build_case(snapshot, 2033, "none")
+    cap = capacity.initial_capacity(snapshot, 2032)
+    icc = cc.credits(sy, cap, case.profile, case.weights)
+    tab = db.table("V_EMM_ECPDAT_REG")
+    o = np.argsort(tab["EMM_REG"])
+    margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[o[tab["EMM_REG"][o] <= 25]])
+    req = (margin * icc["peak"] + icc["net_peak"] + capacity.reliability_adjustment(snapshot, 2033)
+           + ecp_load.firm_contracts(2033) + ecp_load.cogen_adjustment(snapshot, 2033))
+    assert req.sum() == pytest.approx(991.0, rel=0.015)

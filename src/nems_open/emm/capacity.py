@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from nems_open.emm import capacity_credit, db, dispatch, history, load, plants, regions, retire_groups, technology
+from nems_open.emm import capacity_credit, db, dispatch, ecp_load, history, load, plants, regions, retire_groups, technology
 from nems_open.paths import INPUT
 from nems_open.xlsx_ranges import named_ranges
 
@@ -156,6 +156,9 @@ FIRM_TRANSFER_SHARE = 0.75
 # LP builds no lines, so it takes EIA's UTRELADJ (UETTOUT/utreladj) as given. Off: the earlier load-shape credits
 # (hydro up to 1.0, batteries 0.74) and free lending up to FIRM_TRANSFER_SHARE of every existing link.
 ECP_RESERVE = True
+# The requirement on ECP's own load (ecp_load): LDSM's system load for EPPEAK and EP_NET_PEAK, plus PKADJ's firm
+# contracts and cogeneration terms. Off, or without the LDSM dumps: the LP's net-energy shape, about 5% lower.
+ECP_PEAK = True
 # Debt share and tax rate of a new plant's financing (ecpdaty.xlsx FINANCIAL UPNFDT, UPTXRT). EIA adds its
 # EXTRARISK premium (restart EMISSION/extrarisk, 3 points from 2008) to both the debt and equity rates of the
 # types marked UPRSKSW (util.f 893-902: coal and combined cycle), so their after-tax discount rate rises by
@@ -732,11 +735,20 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         # Dispatchable capacity counts in full; wind and solar at EPIRCCR (capacity_credit, CAP_CREDIT's variance
         # method); storage and hydro at the load-shape credits above. A region can count firm capacity lent by a
         # neighbour, up to FIRM_TRANSFER_SHARE of the link, less line losses.
-        icc = capacity_credit.credits(load_hr, c0, cs.profile, cs.weights)
+        load_rm = load_hr
+        if ECP_RESERVE and ECP_PEAK:
+            sy = ecp_load.system_load(cs.year)
+            if sy is not None:     # LDSM's load, moved by how far this case's energy is from the reference's
+                ref = _reference_case(snapshot, cs.year).net_load_twh
+                load_rm = sy * np.divide(cs.net_load_twh, ref, out=np.ones(NUM_R), where=ref > 0)[:, None, None]
+        icc = capacity_credit.credits(load_rm, c0, cs.profile, cs.weights)
         credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
         req = margin * icc["peak"] + icc["net_peak"]
         if ECP_RESERVE:
             req = req + reliability_adjustment(snapshot, cs.year)
+            if ECP_PEAK and load_rm is not load_hr:
+                req = req + ecp_load.firm_contracts(cs.year) + ecp_load.cogen_adjustment(snapshot, cs.year)
+        credits["requirement"] = req
         requirement = xr.DataArray(req, coords=[R])
         firm = capv_p.sum("group")
         firm = firm + wind_tot * xr.DataArray(icc["wind"], coords=[R])
