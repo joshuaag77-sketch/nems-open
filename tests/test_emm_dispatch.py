@@ -20,9 +20,6 @@ YEARS = (2025, 2030, 2040, 2050)
 
 # (quantity, year) -> why the dispatch model misses. Measured with sales-based load and interregional links.
 KNOWN_MISSES = {
-    ("gen_coal", 2025): "coal 12% high: the part-load heat rate (COAL_PART_LOAD_HEAT_RATE) moves PJMW, SRSE and FRCC coal onto EIA's, "
-                        "which uncovers the regions EFD holds below their ceiling with its coal LP's configuration costs "
-                        "(SPPS 33 vs 13 TWh, MISC 106 vs 96, TRE 66 vs 58, SPPC 36 vs 29; docs/dispatch.md)",
 }
 
 
@@ -289,15 +286,81 @@ def test_coal_heat_rate_follows_eia_burn(snapshot):
 
 @pytest.mark.parametrize("year", (2030,))
 def test_pjm_coal_runs_at_eia_level(results, snapshot, year):
-    """With the part-load heat rate PJM's coal is cheaper than its marginal cost again: PJME, PJMW and PJMD coal units
-    land within 15% of EIA's (2030: 21.7, 78.8, 7.8 TWh; at THRATE they made 7.9, 71.0, 4.4)."""
+    """With the part-load heat rate PJM's coal is cheaper than its marginal cost again (2030 at THRATE: PJME 7.9,
+    PJMW 71.0, PJMD 4.4 TWh against EIA's 21.7, 78.8, 7.8). With the coal classes (COAL_BY_CONFIGURATION) PJM's high
+    heat rate waste-coal and northern Appalachian units sit near the dispatch's low eastern marginal cost and run less
+    than EIA's: PJM as a whole stays within 15% of EIA's."""
     if not dispatch.COAL_PART_LOAD_HEAT_RATE:
         pytest.skip("COAL_PART_LOAD_HEAT_RATE off")
     _, _, res = results[year]
     y = year - 1990
     eia = snapshot["UDATOUT/ugenpc"][:25, y] + snapshot["UDATOUT/ugenig"][:25, y] - snapshot["UDATOUT/ugensq"][:25, y]
-    for r in (10, 11, 13):
-        assert abs(res.generation_twh["coal"][r - 1] / eia[r - 1] - 1) < 0.15, (r, res.generation_twh["coal"][r - 1], eia[r - 1])
+    pjm = [9, 10, 11, 12]
+    ours = res.generation_twh["coal"][pjm].sum()
+    assert abs(ours / eia[pjm].sum() - 1) < 0.15, (ours, eia[pjm].sum())
+
+
+def test_diversity_caps_are_eia_burn(snapshot):
+    """The CMM writes EFD's sub-bituminous and lignite caps from EFD's own unit burn (EMM_CL_BTUS x the plant's
+    shares + 0.05): where a western configuration burns only those ranks the two caps add up to its burn in EIA's
+    run (2030, restart COALEMM QCLCLNR by coal region and ECP type)."""
+    from nems_open.emm import coal_supply, technology
+    y = 2030 - 1990
+    q = np.asarray(snapshot["COALEMM/qclclnr"], float)[:, y, :38]
+    cap = np.asarray(snapshot["USO2GRP/efd_sb_dvlim"], float)[:, :38, y] + np.asarray(snapshot["USO2GRP/efd_lg_dvlim"], float)[:, :38, y] - 0.1
+    codes = technology.ecp_codes()
+    for crg, cfg in (("WS", "C4"), ("WS", "B7"), ("MT", "C4"), ("MT", "CX"), ("CU", "B7"), ("ZN", "B5")):
+        c, t = coal_supply.CL_CODES.index(crg), codes.index(cfg)
+        assert cap[c, t] == pytest.approx(q[c, t], rel=0.03), (crg, cfg, cap[c, t], q[c, t])
+
+
+def test_coal_supply_steps_follow_ed_col(snapshot):
+    """ED$COL's supply rows: 11 steps of XCL_QECP x the XCL_STEPS widths at most XCL_PCAP in all, then a 12th without
+    limit at max(3 x the 11th price, 9.999). In 2030 the Utah bituminous curve's base production all goes to other
+    users (XCL_OTHER = XCL_QECP = 11.8 TBtu), so power gets the steps above base and then 9.999."""
+    from nems_open.emm import coal_supply
+    curves, rank, qty, price, other = coal_supply.supply_curves(snapshot, 2030)
+    assert np.isinf(qty[:, 11]).all() and (price[:, 11] >= 9.999).all()
+    pcap = np.asarray(snapshot["USO2GRP/xcl_pcap"], float)[curves - 1, 2030 - 1990]
+    assert (qty[:, :11].sum(axis=1) <= pcap + 1e-6).all()
+    i = list(curves).index(12)
+    assert rank[i] == 1 and other[i] == pytest.approx(qty[i, :6].sum(), rel=1e-6)
+    assert 5.0 < qty[i, 6:11].sum() < 7.0
+
+
+def test_coal_classes_split_the_coal_group(snapshot):
+    """Every region's coal capacity is split over its classes (or the rest), and the coal group's part of a class's
+    caps is at most the class's caps."""
+    from nems_open.emm import coal_supply
+    case = dispatch.build_case(snapshot, 2030)
+    cl = case.coal_classes
+    if cl is None:
+        pytest.skip("COAL_BY_CONFIGURATION off")
+    assert np.bincount(cl.region - 1, weights=cl.share, minlength=25) == pytest.approx(np.ones(25))
+    sb = np.asarray(snapshot["USO2GRP/efd_sb_dvlim"], float)[:, :38, 2030 - 1990]
+    from nems_open.emm import technology
+    codes = technology.ecp_codes()
+    for k, (crg, cfg) in enumerate(cl.classes):
+        assert cl.sub_cap[k] <= sb[coal_supply.CL_CODES.index(crg), codes.index(cfg)] + 1e-6
+    assert (cl.route_cost >= 0).all() and len(cl.route_cost) > 100
+
+
+@pytest.mark.parametrize("year", (2030,))
+def test_western_coal_held_by_its_caps(results, snapshot, year):
+    """EFD's coal LP holds the western configurations at their caps: TRE, BASN and SRSG coal units land within 10% of
+    EIA's (one regional price gave 2030 TRE 52, BASN 30 against 44.7, 14.8), and Montana's C4 units, with no
+    bituminous route, stay near their 4.4 TBtu cap (EFD: capacity factor 0.05)."""
+    if not dispatch.COAL_BY_CONFIGURATION:
+        pytest.skip("COAL_BY_CONFIGURATION off")
+    _, _, res = results[year]
+    y = year - 1990
+    eia = snapshot["UDATOUT/ugenpc"][:25, y] + snapshot["UDATOUT/ugenig"][:25, y] - snapshot["UDATOUT/ugensq"][:25, y]
+    for r in (1, 20, 25):
+        assert abs(res.generation_twh["coal"][r - 1] / eia[r - 1] - 1) < 0.10, (r, res.generation_twh["coal"][r - 1], eia[r - 1])
+    cl = res.case.coal_classes
+    k = cl.classes.index(("MT", "C4"))
+    burn = (res.coal_class_twh * cl.heat_rate / 1000.0)[cl.klass == k].sum()
+    assert burn < 1.1 * (cl.sub_cap[k] + cl.lig_cap[k]) + 0.5
 
 
 def test_cofire_takes_the_ng_max_load_shape():

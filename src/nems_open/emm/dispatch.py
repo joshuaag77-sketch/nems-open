@@ -172,6 +172,25 @@ MAX_LOAD_STEO_LAST = "IS"   # that exemption covers ECP types up to WIIS (the co
 COFIRE_MAX_LOAD_SHAPE = True
 COFIRE_MAX_LOAD_TYPE = "NG"
 COFIRE_PREFIXES = ("ng",)
+# EFD dispatches coal by configuration (ECP type B1..HC) and coal region, and buys each one's coal in its own coal LP
+# (uefd.f ED$COL): supply steps per curve, transport per route, and sub-bituminous and lignite deliveries capped at what
+# the configuration's units burned (EFD_SB_DVLIM, EFD_LG_DVLIM: the CMM writes them from EFD's own unit burn,
+# EMM_CL_BTUS). Beyond its cap a western unit pays for bituminous coal from far away (0.3-0.5 1987$/MMBtu more in Texas,
+# SPP, Colorado and the Southwest), the 9.9 escape where there is no bituminous route (Montana, Wyoming, the Dakotas),
+# or, for Utah and Colorado bituminous, the 9.999 step above a curve's base production. In EIA's 2030 restart every
+# capped configuration burns its cap; in the oracle's 2030 EFD MT C4 burns 4.45 TBtu on a 4.43 cap at a capacity
+# factor of 0.05 while CU B7 runs at its ceiling. On: the coal group's output in each region is split into its units'
+# classes (coal region, configuration; coal_supply.coal_classes), each with its share of the capacity and hourly
+# ceiling, its own heat rate and VOM, and its coal bought in that LP. Dispatch only (the capacity LP keeps one coal
+# price). Off: one coal group per region at the regional price.
+COAL_BY_CONFIGURATION = True
+# How a class's LP price meets the regional price (UPCOALAVG). False: each class at EIA's own burn pays the regional
+# price (the LP adds what moving off that burn costs: a cap, a scarce curve). True: a region's classes pay the LP's
+# delivered prices, shifted so EIA's mix pays the regional price; that also prices bituminous from northern
+# Appalachia (S1, 1.44) against Ohio (1.08) and Kentucky (0.90), which with the dispatch's lower eastern marginal
+# costs (PJMW 15.5 1987$/MWh load-weighted against the oracle EFD's 18.0) idles WV units EIA runs. 2030 coal against
+# EIA: -1.7% (False) and -2.9% (True); 2025 -4.8% and -8.6%.
+COAL_PRICE_BY_CLASS = False
 COAL_CONFIG_LAST = "HC"         # the coal configurations are the ECP types up to HC
 COAL_FUELS = ("B", "C", "H")   # plant-file fuel codes of the coal supply curves (B1..B8, C1..CX, H1..HC)
 EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
@@ -208,6 +227,7 @@ class DispatchCase:
     build_profile: dict = None
     coal_share: dict = None             # thermal group -> (25,) share of its Btu that is coal (cofire; None: none)
     capture_net: np.ndarray = None      # (25,) coal_ccs capacity that generates per GW of reported capacity (None: 1)
+    coal_classes: object = None         # coal_supply.CoalClasses (COAL_BY_CONFIGURATION; None: one coal group per region)
 
 
 @dataclass
@@ -226,6 +246,8 @@ class DispatchResult:
     spin_gw: dict = None             # reserve carried (EFD_SPIN_RESERVE): thermal group, battery, pumped, idle, required -> (25, 36, 24) GW
     objective: float = 0.0
     trade_twh: np.ndarray = None                            # (links,) energy sent on each link
+    coal_class_twh: np.ndarray = None                       # (pairs,) coal group TWh by region and class (COAL_BY_CONFIGURATION)
+    coal_class_price: np.ndarray = None                     # (classes,) delivered coal price in EFD's coal LP, 1987$/MMBtu
 
     def total_generation_twh(self) -> float:
         return float(sum(v.sum() for v in self.generation_twh.values()))
@@ -578,10 +600,14 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     ignition = float(np.average(np.where(second == "DS", tb["T_FSHR_2"], 0.0)[coal_on], weights=u.summer_mw[coal_on])) if coal_on.any() else 0.0
     rule = credit_rule(snapshot)
     year_end = {t: restart_capture_capacity(snapshot, t) for t in range(rule[0] - 1, year + 1)}
+    classes = None
+    if COAL_BY_CONFIGURATION:
+        from nems_open.emm import coal_supply
+        classes = coal_supply.coal_classes(snapshot, year, heat["coal"], vom["coal"])
     return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
-                        coal_share=coal_share, capture_net=capture_net)
+                        coal_share=coal_share, capture_net=capture_net, coal_classes=classes)
 
 
 def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict, coal_heat: np.ndarray = None) -> dict:
@@ -851,6 +877,54 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved + curtail - spill + trade_in - trade_out == load_gw - fixed - oil_gw, name="balance")
 
     objective = (g_th * cost_da * w).sum() + (g_hy * w).sum() * 0.01 + (unserved * (UNSERVED_COST * w)).sum()
+    cl = case.coal_classes if COAL_BY_CONFIGURATION else None
+    gc = None
+    if cl is not None:
+        from nems_open.emm import coal_supply
+        # The coal group's output is split over its region's classes (region and class pairs P), each with its share
+        # of the hourly ceiling, its units' heat rate and VOM. Coal, TBtu = GWh x MMBtu/MWh x 1e-3 less the ignition
+        # distillate, is bought in EFD's coal LP at its delivered price, on top of the regional price less the class's
+        # (COAL_PRICE_BY_CLASS: the region's) price at EIA's burn (1987$/MMBtu; TBtu x $/MMBtu = 1e6 $ = 1e3 objective
+        # units of GWh x $/MWh). Each region's rest pays the regional price. The coal row of cost_da gives way.
+        P = pd.Index(np.arange(len(cl.region)), name="coal_pair")
+        reg_of = xr.DataArray(cl.region, coords=[P], name="region")
+        lp = np.flatnonzero(cl.klass >= 0)
+        PL = pd.Index(lp, name="coal_pair")
+        base = cl.ref[cl.region - 1] if COAL_PRICE_BY_CLASS else cl.pay[np.maximum(cl.klass, 0)]
+        mmbtu = cl.heat_rate / 1000.0
+        pc = mmbtu * (case.price["coal"][cl.region - 1] - np.where(cl.klass >= 0, base, 0.0)) + cl.vom \
+            + case.carbon_price * mmbtu * CO2_PER_TBTU["coal"]
+        up = upper.sel(group="coal", drop=True).sel(region=reg_of) * xr.DataArray(cl.share, coords=[P])
+        gc = m.add_variables(lower=0, upper=up.transpose("coal_pair", "day", "hour"), name="coal_class_gen")
+        m.add_constraints(g_th.sel(group="coal", drop=True) - gc.groupby(reg_of).sum() == 0, name="coal_classes")
+        objective = objective - (g_th.sel(group="coal", drop=True) * cost_da.sel(group="coal", drop=True) * w).sum() \
+            + (gc * xr.DataArray(pc, coords=[P]) * w).sum()
+        burn = (gc.sel(coal_pair=PL) * w).sum(["day", "hour"]) * xr.DataArray(mmbtu[lp] * (1.0 - case.ignition_share) * 1e-3, coords=[PL])
+        # EFD's coal LP: supply steps per curve, deliveries per route, demand per class, the diversity caps.
+        C = pd.Index(np.arange(len(cl.curves)), name="coal_curve")
+        S = pd.Index(np.arange(12), name="coal_step")
+        RT = pd.Index(np.arange(len(cl.route_curve)), name="coal_route")
+        steps = m.add_variables(lower=0, upper=xr.DataArray(cl.step_qty, coords=[C, S]), name="coal_steps")
+        tr = m.add_variables(lower=0, coords=[RT], name="coal_routes")
+        k_of_route = xr.DataArray(cl.route_class, coords=[RT], name="coal_class")
+        k_of_pair = xr.DataArray(cl.klass[lp], coords=[PL], name="coal_class")
+        demand_row = m.add_constraints(tr.groupby(k_of_route).sum() - burn.groupby(k_of_pair).sum() == 0, name="coal_class_demand")
+        used = np.unique(cl.route_curve)
+        c_of_route = xr.DataArray(cl.route_curve, coords=[RT], name="coal_curve")
+        m.add_constraints(tr.groupby(c_of_route).sum() - steps.sel(coal_curve=used).sum("coal_step")
+                          <= xr.DataArray(-cl.other[used], coords=[pd.Index(used, name="coal_curve")]), name="coal_curve_supply")
+        objective = objective + (steps * xr.DataArray(cl.step_price * 1000.0, coords=[C, S])).sum() \
+            + (tr * xr.DataArray(cl.route_cost * 1000.0, coords=[RT])).sum()
+        for rank, cap, name in ((2, cl.sub_cap, "sub"), (3, cl.lig_cap, "lig")):
+            idx = np.flatnonzero(cl.route_rank == rank)
+            if not len(idx):
+                continue
+            ks = np.unique(cl.route_class[idx])
+            K = pd.Index(ks, name="coal_class")
+            dx = m.add_variables(lower=0, coords=[K], name=f"coal_{name}_escape")
+            grp = xr.DataArray(cl.route_class[idx], coords=[pd.Index(idx, name="coal_route")], name="coal_class")
+            m.add_constraints(tr.sel(coal_route=idx).groupby(grp).sum() - dx <= xr.DataArray(cap[ks], coords=[K]), name=f"coal_{name}_cap")
+            objective = objective + (dx * (coal_supply.ESCAPE * 1000.0)).sum()
     spin = spin_row = None
     if EFD_SPIN_RESERVE:
         from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
@@ -908,8 +982,17 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
 
     # TWh x Btu/kWh = 1e9 Btu = 1e-3 trillion Btu
     fuel = {k: np.zeros(NUM_R) for k in ("coal", "gas", "distillate", "residual", "uranium")}
+    coal_hr = case.heat_rate["coal"]
+    if gc is not None:
+        e = (gc.solution.transpose("coal_pair", "day", "hour").values * wd[0]).sum(axis=(1, 2)) / 1000.0
+        res.coal_class_twh = e
+        dual = demand_row.dual
+        res.coal_class_price = np.full(len(cl.classes), np.nan)
+        res.coal_class_price[dual["coal_class"].values] = dual.values / 1000.0
+        fuel_r = np.bincount(cl.region - 1, weights=e * cl.heat_rate, minlength=NUM_R)
+        coal_hr = np.divide(fuel_r, gen["coal"], out=np.asarray(case.heat_rate["coal"], dtype=float).copy(), where=gen["coal"] > 1e-9)
     for g in THERMAL:
-        btu = gen[g] * case.heat_rate[g] * 1e-3
+        btu = gen[g] * (coal_hr if g == "coal" else case.heat_rate[g]) * 1e-3
         if g.startswith("coal"):
             fuel["coal"] += btu
         else:

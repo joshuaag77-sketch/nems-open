@@ -308,3 +308,38 @@ The capacity LP takes its load from `build_case`, so it moves too. Planner chain
 **Still open.** Coal (+8% in 2030, the configuration costs); turbines; 2025 renewables; the CO2 reference's CHP emissions; the residential and commercial own-use gross-up (LDSM's load holds that own use times the loss factor, about 7 TWh in 2030), not ported.
 
 Pinned by `tests/test_emm_demand.py` (`test_net_load_matches_fleet_generation`, `test_total_generation_holds_distributed_pv`, `test_sales_follow_ldsm_mapping`, `test_load_takes_off_nontraditional_cogen_and_ldsm_losses`, `test_nontraditional_cogen_fuel_is_part_of_power_sector_fuel`). The 2025 coal fuel known miss is gone; the turbine floors in `test_turbines_carry_spinning_reserve` are 10 and 25 TWh.
+
+## Coal by configuration: EFD's coal LP (branch coal-supply-efd)
+**What holds the West's coal.** EFD buys every coal configuration's coal (ECP type B1..HC) in every coal demand region in its own coal LP, solved with the dispatch (uefd.f ED$COL 16433-17460, ED$BTU 7700-7790): supply rows per curve (11 steps of XCL_QECP x the XCL_STEPS widths at XCL_PECP, then a 12th at max(3 x p11, 9.999) 1987$/MMBtu, after the curve's fixed other demand XCL_OTHER), transport columns per route at the first-tier rate plus MATS activated carbon, a demand row CL<crg><type> per configuration, and two caps per configuration: sub-bituminous <= EFD_SB_DVLIM and lignite <= EFD_LG_DVLIM (escape at 9.9). The CMM writes the caps from EFD's own burn by unit, EMM_CL_BTUS (uefd.f 2993; coal.ams 10536-10580: burn x the plant's sub-bituminous or lignite share + 0.05). So in a converged run each western configuration burns cheap Powder River or lignite coal up to what it burned, and pays for anything more at the next source: bituminous from far away (0.3-0.5 1987$/MMBtu more in WS, C2, CU, ZN), the 9.9 escape where no bituminous route exists (coal regions C1 and MT), or 9.999 for Utah and Colorado bituminous, whose 2030 base production (11.8 and 33 TBtu) all goes to other users. Evidence (scratchpad `coalsup/`: cost.py, samp.py):
+- EIA's 2030 restart: caps = burn for every capped configuration (WS C4 236.8 + 10.5 = 247.3 TBtu against 247.3; MT C4 4.4 / 4.4; CU B7 98.9 / 98.9; ZN B5 68.8 / 68.7).
+- Oracle 2030 EFD (aimms-showreel sample, its own fleet on the restart's caps): the below-ceiling groups are the capped ones and sit on their caps whatever their heat rate: MT C4 4.45 TBtu on 4.43 (capacity factor 0.05), MT CX 7.35 on 7.32 (0.12), MT B7 39.8 on 39.6 (0.31), WS C4 248 on 247 (0.42), CU B3 0.09 (bituminous only, Utah coal short). Where a bituminous route is cheap enough EFD goes past the cap (WS B1 119 on 44, C2 C1 244 on 193).
+- That is the configuration axis the earlier lanes saw (RMRG C4 at 8.8 1987$/MWh idle while B7 at 10.1 runs: MT C4 has no route beyond its cap, CU B7 does).
+
+**Ported** (`coal_supply.py`, `dispatch.py`; on): `COAL_BY_CONFIGURATION`. The coal group's output in each region is split over its units' classes (coal region, configuration; 66 classes in 96 region-class pairs in 2030), each with its share of the capacity and hourly ceiling and its own heat rate and VOM (the CMM's units placed by the plant file). Their coal is bought in ED$COL's LP: 12 curves x 12 steps, 419 routes, the caps. The caps count cofired units and CCS retrofits too; the coal group gets the part its units burned in EIA's run (EIA's coal-unit generation at the group's heat rate). `COAL_PRICE_BY_CLASS` (off) says how LP prices meet the regional price: off, each class at EIA's own burn pays UPCOALAVG and the LP prices only departures from that burn; on, classes pay EFD's delivered price differences too (northern Appalachia 1.44 against Ohio 1.08), which with the dispatch's lower eastern marginal costs (PJMW 15.5 1987$/MWh against the oracle EFD's 18.0) idles West Virginia units EIA runs (2030 coal -2.9%, 2025 -8.6%). Dispatch only; the capacity LP keeps one coal price, so the planner chain does not move (build_case's heat rates, VOM and load are unchanged).
+
+**Result.** Single-year dispatch on EIA's fleet, sales-based load with trade, 3-hour blocks. TWh, before / after / EIA. Coal is by fuel; coal units are pc + ig - sq.
+
+| | 2025 | 2030 | 2031 | 2035 |
+|---|---|---|---|---|
+| Coal | 803 / 693 / 728 | 501 / 458 / 465 | 472 / 439 / 419 | 133 / 133 / 122 |
+| Coal against EIA | +10.3% / -4.8% | +7.6% / -1.7% | +12.6% / +4.7% | +9% / +9% |
+| of which coal units | 786 / 673 / 723 | 420 / 375 / 385 | 360 / 326 / 319 | 0.4 / 0.4 / 0.2 |
+| Cofired units (all fuel) | 24 / 29 / 25 | 121 / 124 / 122 | 142 / 144 / 129 | 116 / 116 / 106 |
+| Combined cycle | 1,425 / 1,526 / 1,544 | 1,368 / 1,409 / 1,449 | 1,337 / 1,369 / 1,446 | 1,383 / 1,383 / 1,414 |
+| Gas, all | 1,474 / 1,582 / 1,570 | 1,455 / 1,497 / 1,469 | 1,438 / 1,470 / 1,477 | 1,610 / 1,610 / 1,577 |
+| Gas against EIA | -6.1% / +0.8% | -1.0% / +1.9% | -2.7% / -0.5% | +2.1% / +2.1% |
+| Coal fuel, trillion Btu | 8,168 / 7,034 / 7,446 | 5,192 / 4,721 / 4,891 | 4,974 / 4,622 / 4,460 | 1,669 / 1,668 / 1,491 |
+| Seconds a year | 16.3 / 15.7 | 14.2 / 11.6 | 13.8 / 12.1 | 14.6 / 10.6 |
+
+Seconds are with the reference run on the machine (an unloaded year took 7-8 s before); the coal LP adds no measurable time.
+
+Coal units by region, 2030 (before / after / EIA): TRE 49.9 / 45.3 / 44.7, BASN 30.1 / 13.3 / 14.8, SRSG 17.6 / 16.5 / 16.6, SPPC 19.5 / 16.1 / 13.3, SPPS 17.0 / 16.2 / 10.1, RMRG 7.4 / 5.7 / 7.6; PJME 20.8 / 16.8 / 21.7, PJMW 76.7 / 70.9 / 78.8, PJMD 7.7 / 5.6 / 7.8. 2031: TRE 43.0 / 39.8 / 32.6, BASN 22.8 / 14.8 / 15.7, SPPC 17.1 / 13.8 / 10.1, SPPS 17.0 / 15.8 / 11.2. 2035 has almost no coal units left; its coal is the cofired units' and CCS retrofits', which are not split.
+
+**Still open.**
+- SPPS: the classes go past their caps at 1.40-1.50 1987$/MMBtu (WS B1, CX), 15.2 1987$/MWh, under the region's load-weighted marginal cost (16.7). EFD holds them at the cap.
+- PJM falls 10-28% below EIA: its waste-coal (YP B3, 11,700 Btu/kWh) and West Virginia units now carry their own heat rates and sit at the dispatch's eastern marginal cost, which is 2-4 1987$/MWh under the oracle EFD's (PJME 12.9 against 16.9). The marginal-cost gap is the turbines and reserve question above, not coal.
+- The cofired units' coal stays at the regional price outside the caps; held-back coal raises regional prices and TRE's cofired units run 8 TWh against EIA's 0.1 (SPPS 7.4 / 1.3, RMRG 7.8 / 2.2).
+- 2025 is a STEO benchmark year (EFD's BMCLGEN rows), which the dispatch does not have; coal is 4.8% low there.
+- The caps are the reference run's burn. In a scenario they stay at the reference levels, as EFD's would within an iteration; the coupled loop does not rewrite them.
+
+The gen_coal 2025 known miss is gone (24-hour days). Pinned by `tests/test_emm_dispatch.py` (`test_diversity_caps_are_eia_burn`, `test_coal_supply_steps_follow_ed_col`, `test_coal_classes_split_the_coal_group`, `test_western_coal_held_by_its_caps`; `test_pjm_coal_runs_at_eia_level` now checks PJM as a whole). Scripts: scratchpad `coalsup/` (run.py the test years, reg.py and cls.py regions and classes, kls.py classes against EIA's burn, nmar.py the oracle's marginal costs).
