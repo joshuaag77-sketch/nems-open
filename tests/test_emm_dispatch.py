@@ -20,12 +20,8 @@ YEARS = (2025, 2030, 2040, 2050)
 
 # (quantity, year) -> why the dispatch model misses. Measured with sales-based load and interregional links.
 KNOWN_MISSES = {
-    ("gen_coal", 2030): "coal 13% high: the cofired units now burn their coal (COFIRE_GROUP, 2030 ng 131 TWh at 55% coal, EIA 122), "
-                        "which uncovers that the LP runs the coal units at their 0.61 ceiling where EIA runs them at about 0.5 "
-                        "(2030 coal units 440 TWh against EIA's 385; docs/dispatch.md, cofiring and CCS capacity)",
-    ("fuel_coal", 2030): "coal fuel 14% high, follows coal generation",
-    ("fuel_coal", 2025): "coal fuel 10% high: the 14 GW of cofiring units in the plant file burn their 52% coal share; the coal units "
-                         "run at their ceiling as in 2030",
+    ("fuel_coal", 2025): "coal fuel 10% high: the 14 GW of cofiring units in the plant file burn their 52% coal share, and the coal "
+                         "units run at the flat derate, which EFD keeps until UYR_STEO + 1 (EFD_MAX_LOAD_SHAPE starts in 2028)",
     ("fuel_coal", 2040): "coal fuel 15% high: CCS coal generation is on EIA's (66 vs 63 TWh) but at the full-capture heat rate "
                          "(15.2 MMBtu/MWh) where EIA's averages 13.7, partly in EFD's partial-capture mode (uefd.f OPBSLD SHR_NOCCS)",
 }
@@ -124,6 +120,35 @@ def test_undated_retirements_leave_for_the_whole_year(snapshot):
     end, mid = dispatch._ucap(snapshot, p, y).sum(), dispatch._ucap_mid(snapshot, p, y).sum()
     now = dispatch._in_service(snapshot, p, types, 2031).sum()
     assert end - 0.5 < now < end + 3.0 < mid
+
+
+def test_max_load_shape_is_efd_drat_max():
+    """uefd.f OPBSLD: a coal unit's maximum-load mode makes (1 - FOR) x (SR_MAX_LF + (1 - SR_MAX_LF) x height / the
+    season's peak slice height) per committed GW, SR_MAX_LF 0.55 for existing coal; the plain derate up to 2027."""
+    rng = np.random.default_rng(2)
+    load = 50.0 + 20.0 * rng.random((2, 36, 8))
+    from nems_open.emm import capacity
+    sl, ht = capacity.ecp_slice_heights(load, np.full(36, 365.0 / 36), np.repeat(np.arange(12), 3), load)
+    shape = dispatch.max_load_shape(sl, ht, 2030)["coal"]
+    for r in range(2):
+        for s in range(3):
+            peak = ht[r, 3 * s]
+            for j in range(3):
+                assert np.allclose(shape[r][sl[r] == 3 * s + j], 0.55 + 0.45 * ht[r, 3 * s + j] / peak, atol=1e-6)
+    assert (shape <= 1.0 + 1e-9).all() and shape.min() > 0.55
+    assert (dispatch.max_load_shape(sl, ht, 2027)["coal"] == 1.0).all()
+
+
+@pytest.mark.parametrize("year", (2030,))
+def test_coal_units_stay_under_efd_ceiling(results, year):
+    """With the maximum-load shape coal units run at 0.57-0.60 of capacity where they run flat out, EFD's 2030 ceiling
+    (oracle 2030 EFD: 0.570-0.583 by region), not the flat (1 - FOR)(1 - PMR) = 0.65."""
+    _, _, res = results[year]
+    gen, cap = res.generation_twh["coal"], dispatch.generating_capacity(res.case)["coal"]
+    big = cap > 1.0
+    cf = gen[big] / cap[big] / 8.76
+    assert cf.max() < 0.61, cf.round(3)
+    assert 0.48 < gen.sum() / cap.sum() / 8.76 < 0.56
 
 
 def test_efd_outage_rates_follow_udat_rule():

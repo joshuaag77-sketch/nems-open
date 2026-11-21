@@ -8,7 +8,7 @@
 - Regions trade over the links in the ETT table (`V_EMM_PRETTIN`: 127 rows, summer and winter MW, a $/MWh markup, 2% line loss, plus the new transmission EMM built, `UETTOUT/UTNEWTRN`).
 - Capacity is what is in service on average through the year. The plant file's in-service and retirement months are used for dated units; capacity the restart shows beyond that is assumed to arrive mid-year.
 - Load is the step 1 shapes scaled to the demand modules' sales (`demand.py`).
-- EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). The results table above them predates these switches.
+- EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). Coal's ceiling follows EFD's maximum-load mode from 2028 (`EFD_MAX_LOAD_SHAPE`, on; section "Coal's ceiling is EFD's maximum-load mode"). The results table above them predates these switches.
 - `trade="none"` is the sales-based run with links (the real target). `trade="reference"` fixes each region's load at EIA's regional generation and has no links; it is kept as a control.
 
 ## Result, sales-based load with trade (the real target)
@@ -170,3 +170,42 @@ Each alone: the capacity penalty alone takes 2035 coal to 66 (EIA 122) and 2035 
 Planner chain 2027-2040 from EIA's 2026 fleet (the capacity LP sees the cofiring move), 2040 GW before / after / EIA: CC 436 / 430 / 431, CT 234 / 242 / 267, batteries 108 / 107 / 103, solar 348 / 344 / 323, wind 383 / 378 / 404, coal 15 / 15 / 16, steam (with gas_conv) 56 / 56 / 52. Conversions 2028-2029 unchanged (30.7 + 2.8 GW). 367 s for the chain (382 before).
 
 Pinned by `tests/test_emm_dispatch.py` (`test_eia_steam_is_cofired_coal_units`, `test_cofire_group_takes_ng_out_of_steam`, `test_restart_counts_ccs_retrofits_before_their_capacity_loss`) and `tests/test_emm_epa111.py`. Scripts: scratchpad `gen2035/` (run.py, efdgrp.py reads the EFD composite by ECP type through the EFD_GRPS_F / _N group chains, caps.py).
+
+## Coal's ceiling is EFD's maximum-load mode (branch coal-units-cf)
+**What sets EFD's 0.51.** Each EFD coal group has three dispatch modes per season (uefd.f OPBSLD): normal (O, shaped by ReStore's FOS_CF_EFD since coal is a fossil baseload type, UPPCFB 0.15), minimum load (J, SR_MIN_CF 0.3 x height / the season's lowest) and maximum load (U). U is the highest, and it follows load: DRAT_MAX = (1 - FOR) x (SR_MAX_LF + (1 - SR_MAX_LF) x height / the season's peak slice), SR_MAX_LF 0.55 for every existing coal configuration (ecpdaty SPNRSV B1..HC; PC and IG 0.9). On the oracle's 2030 EFD files (scratchpad `coalcf/modes.py`), (1 - FOR)(1 - PMR) x the U shape reproduces the coal groups that run at their ceiling to three decimals in every region: MISC 0.580 against 0.583, PJMW 0.578 / 0.581, SRCE 0.570 / 0.572, TRE 0.579 / 0.578, MISS 0.579 / 0.580. EFD's 335 TWh on 74 GW splits into:
+
+| | TWh |
+|---|---|
+| Every group at the flat (1 - FOR)(1 - PMR) = 0.648, as the dispatch had it | 420 |
+| Every group at the U shape (0.57-0.60 of nameplate) | 388 |
+| EFD's coal | 335 |
+
+So 32 TWh of the gap is the ceiling and 53 TWh is 22 GW of groups below it, in TRE (7 GW), BASN (3.8), MISC (3.2, one group), SRSG (2.8), RMRG (1.7), SPPS (1.5), PJMW (1.5) and SPPN. Many of those sit at the J mode's 0.24-0.26 all year (committed at minimum load for reserve) or below it.
+
+**The below-ceiling groups are not a heat-rate merit order.** Within one EMM region and one coal demand region, low-cost groups idle while costlier ones run flat out (fuel at UPFUEL, which EFD passes back unchanged and equal for every configuration in a coal region): RMRG C4 at 8.8 1987$/MWh runs 0.08 while B7 at 10.1 runs 0.60; BASN B3 at 9.5 runs 0.09 while B7 at 11.4 runs 0.60; SPPS CX and C1 (9.7) run 0.24 while B1 (9.9) runs 0.59, all on WS coal. The split follows the ECP coal configuration (TRE, BASN, RMRG, SPPS: C4, CX, B3 low; B7, B1 at the ceiling). That is the axis of EFD's coal LP (ED$COL: CL rows per coal region and configuration, fed by supply-curve, transport-tier, ACI and diversity columns), whose duals are the configuration's true coal cost. They are not in the saved files. A split of the regional coal group by heat rate would produce a merit order EFD does not show, and the part-load curves only change the cost of each mode, so neither is ported.
+
+**Ported** (`dispatch.py`, on): `EFD_MAX_LOAD_SHAPE`. Coal's hourly upper bound, (1 - FOR) x (capacity - maintenance), takes the U shape on the EFD slices of the spinning reserve (`max_load_shape`, `MAX_LOAD_GROUPS`), from 2028: up to UYR_STEO + 1 (2027) OPBSLD sets DRAT_MAX to the plain derate for coal. Dispatch only; the capacity LP has its own coal rows and is unchanged, so the planner chain does not move.
+
+**Result.** Single-year dispatch on EIA's fleet, sales-based load with trade, 3-hour blocks. TWh, before / after / EIA. Coal is by fuel; coal units are pc + ig - sq.
+
+| | 2025 | 2030 | 2031 | 2035 | 2040 |
+|---|---|---|---|---|---|
+| Coal | 781 / 781 / 728 | 526 / 490 / 465 | 500 / 468 / 419 | 141 / 141 / 122 | 66 / 66 / 63 |
+| Coal against EIA | +7.3% / +7.3% | +13.1% / +5.3% | +19.4% / +11.7% | +16% / +16% | +4% / +4% |
+| of which coal units | 761 / 761 / 723 | 440 / 400 / 385 | 382 / 346 / 319 | 0.5 / 0.4 / 0.2 | 0.3 / 0.3 / 0.3 |
+| Cofired units (all fuel) | 27 / 27 / 25 | 131 / 138 / 122 | 152 / 159 / 129 | 130 / 130 / 106 | 0 / 0 / 0.1 |
+| Combined cycle | 1,531 / 1,531 / 1,544 | 1,440 / 1,472 / 1,449 | 1,403 / 1,431 / 1,446 | 1,460 / 1,460 / 1,414 | 1,487 / 1,487 / 1,437 |
+| Turbines | 16 / 16 / 80 | 15 / 16 / 67 | 14 / 13 / 65 | 29 / 29 / 81 | 40 / 40 / 90 |
+| Steam (os + ng) | 90 / 90 / 92 | 145 / 154 / 136 | 164 / 172 / 140 | 141 / 141 / 117 | 7 / 7 / 6 |
+| Gas, all | 1,614 / 1,614 / 1,570 | 1,538 / 1,574 / 1,469 | 1,516 / 1,548 / 1,477 | 1,704 / 1,704 / 1,577 | 1,926 / 1,926 / 1,779 |
+| Gas against EIA | +2.8% / +2.8% | +4.7% / +7.2% | +2.6% / +4.8% | +8.0% / +8.0% | +8.3% / +8.3% |
+| Coal fuel, trillion Btu | 8,292 / 8,292 / 7,513 | 5,671 / 5,282 / 4,962 | 5,486 / 5,145 / 4,531 | 1,811 / 1,811 / 1,491 | 988 / 988 / 861 |
+| Seconds a year | 6.9 / 7.2 | 7.1 / 7.1 | 6.9 / 7.4 | 6.7 / 7.2 | 6.6 / 6.9 |
+
+2030 coal units by region against EIA (TWh on the dispatch's in-service capacity; scratchpad `coalcf/reg.py`): where coal runs at its ceiling the dispatch now lands on EIA's (MISW 28.7 / 29.3, MISC 45.9 / 48.4, MISS 14.7 / 14.7, SRCA 25.7 / 24.4, SRCE 15.4 / 16.3, SPPN 15.1 / 14.9, RMRG 7.4 / 7.6). What is left is the below-ceiling regions, high: TRE 52.3 / 44.7, BASN 30.1 / 14.8, SPPS 17.0 / 10.1, SPPC 19.4 / 13.3, SRSE 9.1 / 4.0; and PJM low: PJME 7.9 / 21.7, PJMW 71.0 / 78.8, PJMD 4.4 / 7.8. The PJM coal runs on a heat rate of 10,960 Btu/kWh in PJME where EFD's 2030 groups dispatch at 9,600 (UG_HTRT; 9,980 burned), so it sits above the region's marginal cost.
+
+The 2030 coal generation and fuel misses are gone (`tests/test_emm_dispatch.py`, 24-hour days); 2025 coal fuel stays a known miss (the shape starts in 2028). Coal's energy goes to combined cycle and the cofired units, so 2030 gas moves from +4.7% to +7.2%, still inside 10%.
+
+**Still open.** The configuration-level coal cost (EFD's coal LP) that idles 22 GW in TRE, SPP and the West; PJM's dispatch heat rate; cofired units 13-23% above EIA's in 2030-2035 (NG's SR_MAX_LF is 0.5, but they run at 0.25-0.3 and do not reach the ceiling).
+
+Pinned by `tests/test_emm_dispatch.py` (`test_max_load_shape_is_efd_drat_max`, `test_coal_units_stay_under_efd_ceiling`).

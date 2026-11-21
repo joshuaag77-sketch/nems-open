@@ -135,6 +135,18 @@ COFIRE_GROUP = True
 # EFD's 0.65 of a net capacity about 0.7 of sq. On: coal_ccs generates on capacity x DispatchCase.capture_net (the
 # plant file's THRATE / T_CCSHR, capacity-weighted by region over the units with a capture heat rate). Off: on sq.
 CCS_CAPACITY_PENALTY = True
+# EFD's maximum-load mode. A coal unit's dispatch columns (uefd.f OPBSLD) are three modes per season: normal,
+# minimum load (J) and maximum load (U). The highest of them, U, follows the season's load: in slice k its output per
+# committed GW is DRAT_MAX = (1 - FOR) x (SR_MAX_LF + (1 - SR_MAX_LF) x height_k / the season's peak slice height),
+# SR_MAX_LF 0.55 for every existing coal configuration (ecpdaty SPNRSV, B1..HC), except up to UYR_STEO + 1 (2027),
+# when DRAT_MAX is the plain derate. That shape is coal's ceiling in EFD: on the oracle's 2030 EFD files the 52 GW of
+# coal groups running at their ceiling make (1 - FOR)(1 - PMR) x the U shape to three decimals in every region (MISC
+# 0.580 against 0.583, PJMW 0.578 / 0.581, SRCE 0.570 / 0.572, TRE 0.579 / 0.578): 0.57-0.60 of nameplate where a
+# flat (1 - FOR)(1 - PMR) gives 0.65. On: coal's hourly upper bound takes the U shape on the EFD slices of
+# spin_requirement (its maximum within a season is the flat bound, its average about 0.9 of it).
+EFD_MAX_LOAD_SHAPE = True
+MAX_LOAD_GROUPS = {"coal": "B1"}   # LP group -> ECP type whose SR_MAX_LF it takes (all existing coal configurations: 0.55)
+MAX_LOAD_FIRST_YEAR = BENCHMARK_LAST + 2   # uefd.f OPBSLD: DRAT_MAX = DRAT_ORG for coal while CURIYR <= UYR_STEO + 1
 COFIRE_PREFIXES = ("ng",)
 COAL_FUELS = ("B", "C", "H")   # plant-file fuel codes of the coal supply curves (B1..B8, C1..CX, H1..HC)
 EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
@@ -558,6 +570,26 @@ def spin_requirement(load_gw: np.ndarray, weights: np.ndarray, net_gw: np.ndarra
     return slice_of, np.take_along_axis(req, slice_of.reshape(slice_of.shape[0], -1), axis=1).reshape(slice_of.shape)
 
 
+def max_load_shape(slice_of: np.ndarray, height: np.ndarray, year: int) -> dict:
+    """EFD's maximum-load mode (EFD_MAX_LOAD_SHAPE): per LP group in MAX_LOAD_GROUPS, the share of (1 - FOR) x the
+    committable capacity a unit can produce in every hour, SR_MAX_LF + (1 - SR_MAX_LF) x its slice's height / the
+    season's peak slice height (uefd.f OPBSLD DRAT_MAX). slice_of (25, 36, n) and height (25, 9) are
+    capacity.ecp_slice_heights'. Before MAX_LOAD_FIRST_YEAR, ones."""
+    from nems_open.emm import capacity as ecp
+    if year < MAX_LOAD_FIRST_YEAR:
+        return {g: np.ones(slice_of.shape) for g in MAX_LOAD_GROUPS}
+    lf = ecp.named_ranges(technology.ECPDATY, "SPNRSV")["SR_MAX_LF"]
+    codes = technology.ecp_codes()
+    peak = height[:, (np.arange(9) // 3) * 3]
+    rel = np.divide(height, peak, out=np.ones_like(height), where=peak > 0).clip(0.0, 1.0)
+    rel_h = np.take_along_axis(rel, slice_of.reshape(slice_of.shape[0], -1), axis=1).reshape(slice_of.shape)
+    out = {}
+    for g, code in MAX_LOAD_GROUPS.items():
+        a = float(lf[codes.index(code)])
+        out[g] = a + (1.0 - a) * rel_h
+    return out
+
+
 def efd_outage_rates() -> dict:
     """(forced outage, planned maintenance) by thermal group as EFD uses them: pltdata's rates for AVAIL_TYPE scaled
     by one factor so that (1 - FOR)(1 - PMR) is the type's maximum capacity factor (udat.f 10168-10236); left as they
@@ -650,6 +682,15 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         avail = np.array([1.0 - rates[g][0] for g in THERMAL])
         committable = xr.DataArray(cap_g[:, :, None, None] * (1.0 - out)[..., None] * np.ones(nh), coords=[R, TH, D, H])
         upper = committable * xr.DataArray(avail, coords=[TH])
+        if EFD_MAX_LOAD_SHAPE:
+            load_np = load_gw.transpose("region", "day", "hour").values
+            wind_solar = sum(case.capacity[k][:, None, None] * case.profile[k] for k in ("wind", "solar"))
+            from nems_open.emm import capacity as ecp
+            sl, ht = ecp.ecp_slice_heights(load_np, case.weights, month_of_day, load_np - wind_solar)
+            shape = np.ones((NUM_R, len(THERMAL), 36, nh))
+            for g, a in max_load_shape(sl, ht, case.year).items():
+                shape[:, THERMAL.index(g)] = a
+            upper = upper * xr.DataArray(shape, coords=[R, TH, D, H])
     else:
         upper = (cap_th * ones).transpose("region", "group", "day", "hour")
         committable = upper
