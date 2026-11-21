@@ -14,6 +14,7 @@ from nems_open.snapshot import Snapshot
 YEARS = (2025, 2030, 2040, 2050)
 TOLERANCE = 0.10
 NUM_R = dispatch.NUM_R
+NT_COAL, NT_GAS = 0, 2          # COGEN fuel columns (MNUMCGF): coal, gas
 
 
 def reference(snapshot, year: int) -> dict:
@@ -30,8 +31,11 @@ def reference(snapshot, year: int) -> dict:
         "gen_nuclear": ugn("ugnurnr"),
         "gen_renewable": ugn("ugnhonr"),
         "gen_total": ugn("ugntlnr"),
-        "fuel_coal": float(snapshot["QBLK/qclel"][10, y]),
-        "fuel_gas": float(snapshot["QBLK/qngel"][10, y]),
+        # QCLEL and QNGEL hold the fuel of the electric power sector's CHP units (nontraditional cogeneration, COGEN/CGNTQ),
+        # which the dispatched fleet does not hold: their output is taken off its load (demand.nontraditional_cogen_twh),
+        # and EIA's generation by fuel leaves it out too (UGN* sum ownership classes 1 to 3, UFL* 1 to 4; util.f 3626, 4045).
+        "fuel_coal": float(snapshot["QBLK/qclel"][10, y]) - float(snapshot["COGEN/cgntq"][:NUM_R, y, NT_COAL].sum()),
+        "fuel_gas": float(snapshot["QBLK/qngel"][10, y]) - float(snapshot["COGEN/cgntq"][:NUM_R, y, NT_GAS].sum()),
         # Oil in the 25 regions EFD dispatches. QBLK/QDSEL + QRSEL also holds Alaska and Hawaii (about 45% of it
         # in 2025), which EFD does not dispatch.
         "fuel_oil": ugn("ufldsnr", "uflrlnr"),

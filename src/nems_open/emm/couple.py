@@ -115,8 +115,13 @@ class ElectricityLP:
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: dispatch {res.status}")
         fuel = {k: float(v.sum()) for k, v in res.fuel_tbtu.items()}
-        total = {"QBLK/qclel": fuel["coal"], "QBLK/qngel": fuel["gas"], "QBLK/qdsel": fuel["distillate"],
-                 "QBLK/qrsel": fuel["residual"]}
+        # The electric power sector's CHP units supply part of the load outside the fleet (demand.net_load_twh); their
+        # fuel is still power-sector fuel in QCLEL / QNGEL, at the reference run's level. Their oil goes to residual.
+        nt = demand.nontraditional_cogen_fuel_tbtu(self.snapshot, year)
+        total = {"QBLK/qclel": fuel["coal"] + nt["coal"], "QBLK/qngel": fuel["gas"] + nt["gas"],
+                 "QBLK/qdsel": fuel["distillate"], "QBLK/qrsel": fuel["residual"] + nt["oil"]}
+        nt_co2 = (nt["coal"] * dispatch.CO2_PER_TBTU["coal"] + nt["gas"] * dispatch.CO2_PER_TBTU["gas"]
+                  + nt["oil"] * dispatch.CO2_PER_TBTU["residual"])
         power = {}
         for name, value in total.items():
             power[name] = self._spread(q[name], self.base[name], j, value)
@@ -126,7 +131,7 @@ class ElectricityLP:
             if name in self.base:
                 power[name] = q[name].copy()
                 power[name][:, j] = self.base[name][:, j] * gas_factor
-        co2_total = float(res.co2_mt.sum())
+        co2_total = float(res.co2_mt.sum()) + nt_co2
         el = self.base["EMISSION/emelc"][:, 0, :] * CO2_PER_C
         co2_el = el.copy()
         share = np.divide(el[:, j], el[US, j], out=np.zeros(11), where=el[US, j] > 0)

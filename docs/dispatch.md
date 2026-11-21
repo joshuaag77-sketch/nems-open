@@ -7,7 +7,7 @@
 - Nuclear runs at its monthly capacity factor. Hydro dispatches inside a monthly energy budget. Wind and solar use EIA's hourly profiles (`WRENEW/ws*_cf`) cut by each type's outage rate. Batteries and pumped storage cycle inside each day.
 - Regions trade over the links in the ETT table (`V_EMM_PRETTIN`: 127 rows, summer and winter MW, a $/MWh markup, 2% line loss, plus the new transmission EMM built, `UETTOUT/UTNEWTRN`).
 - Capacity is what is in service on average through the year. The plant file's in-service and retirement months are used for dated units; capacity the restart shows beyond that is assumed to arrive mid-year.
-- Load is the step 1 shapes scaled to the demand modules' sales (`demand.py`).
+- Load is the step 1 shapes scaled to the demand modules' sales as LDSM builds EFD's load, less what EFD gets from outside the fleet (`demand.py`; section "The electricity balance" below).
 - EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). Coal's ceiling follows EFD's maximum-load mode from 2028 (`EFD_MAX_LOAD_SHAPE`, on; section "Coal's ceiling is EFD's maximum-load mode"). Coal heat rates follow EFD's part-load curves, and the cofired units take the maximum-load mode too (`COAL_PART_LOAD_HEAT_RATE`, `COFIRE_MAX_LOAD_SHAPE`, on; section "Coal heat rates and the cofired units' ceiling"). The results table above them predates these switches.
 - `trade="none"` is the sales-based run with links (the real target). `trade="reference"` fixes each region's load at EIA's regional generation and has no links; it is kept as a control.
 
@@ -257,3 +257,54 @@ The capacity LP takes the new coal heat rates (the cofire shape is dispatch only
 **Still open.** The coal LP's configuration costs that hold TRE, SPP and the West below their ceiling (now visible in national coal: +9% in 2030, +12% in 2025); what UGNTLNR holds beyond the fuel categories; turbines.
 
 Pinned by `tests/test_emm_dispatch.py` (`test_part_load_factor_reproduces_efd_group_heat_rates`, `test_coal_heat_rate_follows_eia_burn`, `test_pjm_coal_runs_at_eia_level`, `test_cofire_takes_the_ng_max_load_shape`). Scripts: scratchpad `hrcof/` (hrcmp.py EFD group heat rates by region, hyp.py the rules against EIA's burn, implL.py the load EFD's modes ran at, reg2.py and cof.py regional coal and cofired units, run.py and tab2.py the test years).
+
+## The electricity balance (branch disp-load-balance)
+**The question.** Gas ran 4-8% over EIA in every year and coal over too, and EIA's total generation (UGNTLNR) is 164 TWh above the sum of its fuel categories in 2030 and 241 in 2040. Term by term, against EIA's table 8 (the reporter's T8 rows) and EFD's own load (scratchpad `lbal/`: bal.py, bal2.py, bal3.py, gapsearch.py):
+
+- **UGNTLNR's extra is distributed solar.** util.f 3779 makes UGNTLNR the sum of its parts, but the restart's value is 148 TWh (2030) and 220 (2040) above that sum in ownership class 1, spread over every region; a search of every restart array by region finds only the end-use solar output (COGEN/cgtotgennr's solar column, 169 and 272 TWh; correlation 0.996). It is behind the meter and not load the fleet serves. The fleet's total is the sum of the categories with storage (UGNPSNR + UGNSDNR, -16 and -20 TWh): 4,274 TWh in 2030, 5,054 in 2040.
+- **EIA's generation by fuel leaves out the electric power sector's CHP.** UGNCLNR, UGNGFNR and the rest sum ownership classes 1 to 3 (util.f 3626-3720); class 4 is nontraditional cogeneration (COGEN/CGNTCAP, UCAP*C: 25 GW, 20 of it combined cycle), reported apart (CGNTGEN, T8 rows 42-48: 136 TWh in 2030, 122 of it to the grid, 114 of that gas). The dispatch's fleet is UCAP*U and *N, so it holds none of it, but its load did not take it off. The fuel arrays (UFL*, and QNGEL, QCLEL) do count class 4 (util.f 4045). So do the plant-type arrays (UGEN<type>): about 100 TWh of EIA's 2030 combined cycle (ugencc + ugenac) is CHP, which the CC rows of the tables in this file include.
+- **LDSM's losses are smaller.** EMM grosses sales up by 1 + ULOSSADJ x UQTDLS (uldsm.f 2011; ULOSSADJ 0.8 from 2020, prepett.f 853-886). The dispatch used sales / (1 - UQTDLS): 335 TWh of losses in 2030 against 247.
+- **End-use generators' own use was taken off twice.** The demand modules report purchases, so own use is already out of sales. EFD's load gets only their grid sales (BTCOGEN, unugs.f 436-458; residential and commercial own use is in both LDSM's load and BTCOGEN). The dispatch took off grid sales and own use (117 TWh in 2030).
+- **Alaska and Hawaii were in the 25 regions.** The old split moved 2024 regional sales with census growth over the 25 regions only, so the Pacific division's growth carried Alaska's and Hawaii's 15-20 TWh. LDSM's DSMEMMV gives each region MappCtoN's share of each division (uldsm.f 1730-1758, 4425-4437); that is within 0.1% of EIA's regional sales (QELASN) in every region in 2025, where the old split was up to 8% off.
+- Imports (UTIMP - UTEXP) and storage were already right. EFD's supply and load balance without the end-use solar column, which stays out.
+
+**Ported** (`demand.py`): `regional_sales_twh` uses LDSM's mapping; `net_load_twh` is sales x (1 + `loss_adjustment` x UQTDLS) less `end_user_grid_sales_twh`, `nontraditional_cogen_twh` and imports. `dispatch_report.reference` takes the CHP units' fuel (CGNTQ) out of QCLEL and QNGEL, so the fuel check is on the fleet's fuel. In the coupled loop (`couple.py`) the CHP units' fuel and CO2 at the reference run's level are added back to the fleet's, so QNGEL and QCLEL keep their meaning.
+
+**Balance, 25 regions, TWh.** Old load / new load / EIA. EIA's load column uses its own regional sales (QELASN), which trail the census sales by 21 TWh in 2030 and 46 in 2040; EFD's supply matches the census sales, not QELASN, so the gap looks like an iteration lag in QELASN.
+
+| | 2030 | 2040 |
+|---|---|---|
+| Sales | 4,291 / 4,275 / 4,255 | 5,034 / 5,014 / 4,968 |
+| T&D losses | 335 / 247 / 245 | 395 / 291 / 288 |
+| less end-use own use | -117 / 0 / 0 | -121 / 0 / 0 |
+| less end-use grid sales | -42 / -42 / -42 | -46 / -46 / -46 |
+| less electric power CHP (CGNTGEN to the grid) | 0 / -122 / -122 | 0 / -113 / -113 |
+| less net imports | -83 / -83 / -83 | -89 / -89 / -89 |
+| Load on the fleet | 4,384 / 4,275 / 4,253 | 5,174 / 5,058 / 5,009 |
+| Fleet generation, storage net included (new load; EIA by category) | 4,279 / 4,274 | 5,063 / 5,055 |
+| of which storage net | -11 / -16 | -11 / -21 |
+| UGNTLNR (adds distributed solar) | 4,438 | 5,295 |
+
+The new load is within 0.2% of the fleet generation EIA reports in 2025-2040 (`tests/test_emm_demand.py`); the old one was 110-125 TWh over.
+
+**Result.** Single-year dispatch on EIA's fleet, sales-based load with trade, 3-hour blocks. TWh, before / after / EIA. Coal is by fuel; CC, CT and steam are EIA's plant types, which include the CHP units (about 100 TWh of CC).
+
+| | 2025 | 2030 | 2031 | 2035 | 2040 |
+|---|---|---|---|---|---|
+| Coal | 819 / 803 / 728 | 507 / 501 / 465 | 477 / 472 / 419 | 136 / 133 / 122 | 65.9 / 65.8 / 63.2 |
+| Combined cycle | 1,496 / 1,425 / 1,544 | 1,459 / 1,368 / 1,449 | 1,427 / 1,337 / 1,446 | 1,468 / 1,383 / 1,414 | 1,487 / 1,391 / 1,437 |
+| Gas CCS | 0 / 0 / 0 | 13 / 13 / 12 | 24 / 24 / 23 | 150 / 150 / 144 | 393 / 393 / 365 |
+| Turbines | 15.7 / 8.0 / 80 | 16.0 / 11.3 / 67 | 13.7 / 8.9 / 65 | 29.4 / 21.4 / 81 | 40.1 / 30.7 / 90 |
+| Steam (os + ng) | 85 / 60 / 92 | 142 / 132 / 136 | 160 / 150 / 140 | 133 / 123 / 117 | 7.4 / 3.8 / 5.5 |
+| Gas, all | 1,576 / 1,474 / 1,570 | 1,557 / 1,455 / 1,469 | 1,539 / 1,438 / 1,477 | 1,709 / 1,610 / 1,577 | 1,926 / 1,818 / 1,779 |
+| Gas against EIA | +0.4% / -6.1% | +6.0% / -1.0% | +4.2% / -2.7% | +8.4% / +2.1% | +8.3% / +2.2% |
+| Coal fuel, trillion Btu | 8,336 / 8,168 / 7,513 | 5,260 / 5,192 / 4,962 | 5,028 / 4,974 / 4,531 | 1,702 / 1,669 / 1,491 | 933 / 932 / 861 |
+| Seconds a year | 8.3 / 7.9 | 7.8 / 7.3 | 7.9 / 7.4 | 7.6 / 7.2 | 7.4 / 7.0 |
+
+The load cut comes off gas: it was the marginal fuel. Coal moves 1-2% (coal units run at their ceiling), so coal's overrun (+8% in 2030, +13% in 2031) is the configuration costs above, not load. 2025 gas goes from +0.4% to -6.1%: 2025 renewables run 3% over EIA (the benchmark years, section "What is still wrong") and had been hidden by the extra load. Turbines fall further from EIA's 65-90 TWh (about 10 of which are CHP turbines). With 24-hour days (the tests) gas is -6.1% / -1.0% / +2.3% / +0.6% in 2025 / 2030 / 2040 / 2050, and the 2025 coal fuel known miss is gone; CO2 is -3% / -3% / -7% / +1% (utco2 likely holds the CHP units' emissions, about 60 Mt, which the fleet no longer has; not checked).
+
+The capacity LP takes its load from `build_case`, so it moves too. Planner chain 2027-2040 from EIA's 2026 fleet, 2040 GW before / after / EIA: CC 435 / 428 / 431, CT 238 / 246 / 267, batteries 108 / 108 / 103, solar 347 / 344 / 323, wind 370 / 362 / 404, coal 14 / 15 / 16, steam (with gas_conv) 56 / 56 / 52. Conversions 2028-2029 and the 2032 coal retirements barely move (32.1 + 1.5 GW; 67.0 / 68.4). With the new load the 2032 horizon solve stalled in HiGHS's dual simplex for over an hour at `user_objective_scale` -2; at -3 (`capacity.HORIZON_SOLVER_OPTIONS`) it takes 139 s. 889 s for the chain against 551, with the reference run on the machine.
+
+**Still open.** Coal (+8% in 2030, the configuration costs); turbines; 2025 renewables; the CO2 reference's CHP emissions; the residential and commercial own-use gross-up (LDSM's load holds that own use times the loss factor, about 7 TWh in 2030), not ported.
+
+Pinned by `tests/test_emm_demand.py` (`test_net_load_matches_fleet_generation`, `test_total_generation_holds_distributed_pv`, `test_sales_follow_ldsm_mapping`, `test_load_takes_off_nontraditional_cogen_and_ldsm_losses`, `test_nontraditional_cogen_fuel_is_part_of_power_sector_fuel`). The 2025 coal fuel known miss is gone; the turbine floors in `test_turbines_carry_spinning_reserve` are 10 and 25 TWh.

@@ -7,7 +7,7 @@ Per pass, `emm/couple.py` `ElectricityLP.solve`:
 
 | In | Out |
 |---|---|
-| The loop's electricity sales (`QBLK/qelrs`, `qelcm`, `qelin`, `qeltr`), spread over the 25 EMM regions, plus losses, less end-user generation and net imports | Power-plant coal, gas, distillate and residual use (`QBLK/qclel`, `qngel` with `qgfel` and `qgiel`, `qdsel`, `qrsel`), trillion Btu |
+| The loop's electricity sales (`QBLK/qelrs`, `qelcm`, `qelin`, `qeltr`), spread over the 25 EMM regions as LDSM does, plus LDSM's losses, less end-use grid sales, the electric power sector's CHP and net imports (docs/dispatch.md, "The electricity balance") | Power-plant coal, gas, distillate and residual use (`QBLK/qclel`, `qngel` with `qgfel` and `qgiel`, `qdsel`, `qrsel`), trillion Btu, with the CHP units' fuel (`COGEN/cgntq`, reference run) added to the fleet's |
 | The loop's fuel prices (`MPBLK/pclel`, `pngel`, `pdsel`, `prsel`), as a ratio to the reference run, applied to each region's fuel price | Power CO2, million metric tons (replaces the stand-in's `co2["el"]`) |
 | A carbon price in 1987 $ per ton CO2, added to every plant's cost by its emissions after capture | Wholesale marginal cost by EMM region and nationally, 1987 $/MWh (`RunResult.wholesale`, `wholesale_us`), and generation by plant group (`generation_twh`) |
 

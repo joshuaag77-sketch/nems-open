@@ -20,8 +20,6 @@ YEARS = (2025, 2030, 2040, 2050)
 
 # (quantity, year) -> why the dispatch model misses. Measured with sales-based load and interregional links.
 KNOWN_MISSES = {
-    ("fuel_coal", 2025): "coal fuel 10% high: the 14 GW of cofiring units in the plant file burn their 52% coal share, and the coal "
-                         "units run at the flat derate, which EFD keeps until UYR_STEO + 1 (EFD_MAX_LOAD_SHAPE starts in 2028)",
     ("gen_coal", 2025): "coal 12% high: the part-load heat rate (COAL_PART_LOAD_HEAT_RATE) moves PJMW, SRSE and FRCC coal onto EIA's, "
                         "which uncovers the regions EFD holds below their ceiling with its coal LP's configuration costs "
                         "(SPPS 33 vs 13 TWh, MISC 106 vs 96, TRE 66 vs 58, SPPC 36 vs 29; docs/dispatch.md)",
@@ -197,11 +195,12 @@ def test_maintenance_skips_the_peak_season():
 @pytest.mark.parametrize("year", (2030, 2040))
 def test_turbines_carry_spinning_reserve(results, year):
     """With EFD's spinning reserve rows, turbines run at minimum load for reserve (EFD 2030: 32 TWh from CTG plus 28
-    from CTN, EIA 67 in 2030 and 90 in 2040). The reserve is met without load shedding or shortfall."""
+    from CTN, EIA 67 in 2030 and 90 in 2040). The reserve is met without load shedding or shortfall. Floors are 10 and 25
+    TWh since the load took off nontraditional cogeneration and LDSM's loss factor (11 and 29 TWh, from 16 and 40)."""
     _, _, res = results[year]
     if not dispatch.EFD_SPIN_RESERVE:
         pytest.skip("EFD_SPIN_RESERVE off")
-    assert res.generation_twh["gas_ct"].sum() > (12.0 if year == 2030 else 30.0)
+    assert res.generation_twh["gas_ct"].sum() > (10.0 if year == 2030 else 25.0)
     supply = sum(v for k, v in res.spin_gw.items() if k != "required")
     assert (supply >= res.spin_gw["required"] - 1e-3).all()
     assert res.unserved_twh.sum() < 0.001
