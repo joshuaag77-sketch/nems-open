@@ -84,6 +84,42 @@ def planned_in_step(year: int, group: str) -> float:
 
 STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional type whose ESTCPADD it may not fall below
 
+# ECP's battery build columns (uecp.f CALC_STORAGE_VAL,11-12): one column per region in the first elasticity step only
+# (IS = 1, row LUDSST1), so batteries never reach the 1.4 x and 2.25 x steps, and each region's column is bounded by
+# the ReStore test battery it used, at most BatteryIncrement = MAX_PERCENT x MAX_LOAD (uecp.f 37838-37896: 1% of the
+# region's top hourly load in 2017, a point a year to 5% from 2021; emmcntl.txt %DS PARAMS%). MAX_LOAD is ECP year E's
+# DUCK_SYSTEM_LOAD + DEM_ADJ (uecp.f 860), and E's year-1 builds come online in E + 1. ReStore's own use of the test
+# battery (less than all of it in a few western regions) is not ported; the bound is the whole increment.
+ECP_STORAGE_BUILDS = True
+
+
+def battery_increment_share(ecp_year: int) -> float:
+    """MAX_PERCENT for ECP year `ecp_year`: Battery_Initial_Percent in 2017, plus Battery_Incremental_Percent a year,
+    at most Battery_Maximum_Percent (emmcntl.txt %DS PARAMS%, uecp.f 37838-37842)."""
+    lines = (INPUT / "emm" / "emmcntl.txt").read_text(encoding="latin-1").splitlines()
+    k = next(i for i, l in enumerate(lines) if l.startswith("%DS PARAMS"))
+    row = next(l for l in lines[k + 1:] if not l.lstrip().startswith("#")).split()
+    first, step, top = float(row[5]), float(row[6]), float(row[7])
+    if ecp_year < 2017:
+        return 0.0
+    return min(first + step * (ecp_year - 2017), top)
+
+
+def battery_build_limit(snapshot, year: int, case) -> np.ndarray:
+    """(25,) GW: the most batteries ECP lets a region build online in `year` (its year-1 columns of the year - 1 solve),
+    BatteryIncrement = MAX_PERCENT x MAX_LOAD. MAX_LOAD is the top hour of LDSM's system load for year - 1 plus
+    DEM_ADJ (firm contracts, less cogeneration, plus Mexico), moved to this run's demand as the reserve row's load is;
+    without the LDSM dumps, the LP's own load shape for `year`."""
+    e = year - 1
+    sy = ecp_load.system_load(e)
+    if sy is None:
+        hourly = case.net_load_twh[:, None, None] * 1000.0 * case.shapes
+    else:
+        hourly = ecp_load.follow_run(sy, case.net_load_twh, _reference_case(snapshot, year).net_load_twh, case.flat_twh)
+    adj = ecp_load.firm_contracts(e) + ecp_load.cogen_adjustment(snapshot, e)
+    top = (hourly.reshape(NUM_R, -1) + adj[:, None]).max(axis=1)
+    return battery_increment_share(e) * np.maximum(top, 0.0)
+
 
 def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
     """[(GW bound, capital cost multiplier)] for this year's national builds of ECP type `code`, from the last five
@@ -671,7 +707,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     retrofit = m.add_variables(lower=0, upper=xr.DataArray(elig_gw * (room > 0), coords=[R]), name="retrofit")
     bw = m.add_variables(lower=0, upper=room * can_build["wind"], coords=[R], name="build_wind")
     bs = m.add_variables(lower=0, upper=room * can_build["solar"], coords=[R], name="build_solar")
-    bb = m.add_variables(lower=0, upper=room * can_build["battery"], coords=[R], name="build_battery")
+    bb_upper = np.full(NUM_R, room * can_build["battery"])
+    if ECP_STORAGE_BUILDS and room > 0:
+        bb_upper = np.minimum(bb_upper, battery_build_limit(snapshot, year, case))
+    bb = m.add_variables(lower=0, upper=xr.DataArray(bb_upper, coords=[R]), name="build_battery")
     # UCL_CL_NG_SYR = max(2014, first ECP year + the conversion's lead time (NG, UPCLYR 2) + 1) (udat.f 13042): 2028
     first_convert = START_YEAR + int(lead[codes.index("NG")]) + 1
     can_convert = year >= first_convert and decide and (not rule["switch"] or year <= rule["gas_switch_last"])
@@ -684,6 +723,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         for g, code in STEP_CODES.items():
             total = renewable[g].sum() if g in renewable else build.sel(group=g).sum()
             steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5), planned_in_step(year, g))
+            if g == "battery" and ECP_STORAGE_BUILDS:
+                steps = steps[:1]          # ECP builds batteries in the first step only (CALC_STORAGE_VAL,12)
             S = pd.Index(range(len(steps)), name="step")
             sv = m.add_variables(lower=0, upper=xr.DataArray([b for b, _ in steps], coords=[S]), name=f"build_step_{g}")
             m.add_constraints(total - sv.sum() == 0, name=f"build_steps_{g}")

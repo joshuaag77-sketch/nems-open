@@ -424,3 +424,45 @@ def test_ecp_commits_every_type_one_year_ahead():
         assert lead[code] == 1.0
     assert lead["CC"] == 1.0
 
+
+
+def test_battery_increment_share_follows_ds_params():
+    """emmcntl.txt %DS PARAMS%: the ReStore test battery is 1% of the region's top load in 2017, a point a year more,
+    at most 5% (uecp.f 37838-37842)."""
+    assert capacity.battery_increment_share(2017) == pytest.approx(0.01)
+    assert capacity.battery_increment_share(2019) == pytest.approx(0.03)
+    assert capacity.battery_increment_share(2026) == pytest.approx(0.05)
+    assert capacity.battery_increment_share(2045) == pytest.approx(0.05)
+
+
+def test_battery_build_limit_matches_ecp_2026(snapshot):
+    """ECP's 2026 solve bounds each region's year-1 battery column (cIX DS step 1, CALC_STORAGE_VAL,11) at the
+    ReStore test battery it used, at most 5% of MAX_LOAD. Where ReStore used all of it (19 of 25 regions) this
+    model's limit for 2027 is ECP's bound (OutToNEMS_2026 coeff_cIX_UBOUND) to 0.01 GW; elsewhere it is above it."""
+    from nems_open.emm import ecp_load
+    if ecp_load.system_load(2026) is None:
+        pytest.skip("no LDSM state dumps (oracle/run_emm/out/state/ld_in)")
+    ecp = {"TRE": 4.754, "FRCC": 2.752, "MISW": 2.122, "MISC": 1.883, "MISE": 1.002, "MISS": 1.877, "ISNE": 1.370,
+           "NYCW": 0.832, "NYUP": 0.673, "PJME": 2.154, "PJMW": 2.914, "PJMC": 1.053, "PJMD": 1.173, "SRCA": 2.281,
+           "SRSE": 2.327, "SRCE": 1.855, "SPPS": 1.536, "SPPC": 0.835, "SPPN": 0.555, "SRSG": 0.0, "CANO": 0.0,
+           "CASO": 0.0, "NWPP": 0.0, "RMRG": 0.860, "BASN": 0.0}
+    from nems_open.emm import regions
+    lim = capacity.battery_build_limit(snapshot, 2027, dispatch.build_case(snapshot, 2027, "none"))
+    names = regions.names()[:25]
+    full = [n for n in names if n not in ("NYUP", "PJME", "PJMD", "SRSG", "CANO", "CASO", "NWPP", "BASN")]
+    for n in full:
+        assert lim[names.index(n)] == pytest.approx(ecp[n], abs=0.01), n
+    for n in names:
+        assert lim[names.index(n)] >= ecp[n] - 0.01, n
+
+
+def test_batteries_build_in_the_first_step_only(snapshot):
+    """CALC_STORAGE_VAL,12: ECP's battery column sits in the step-1 elasticity row only, so a 2027 solve from EIA's
+    2026 fleet builds no more batteries than the first step and no more in any region than its limit."""
+    path = capacity.CapacityPath(snapshot, first=2027)
+    recent = path.recent_adds(2027)["battery"]
+    step1 = capacity.build_steps("DS", recent, capacity.planned_in_step(2027, "battery"))[0][0]
+    res = path.step(2027)
+    lim = capacity.battery_build_limit(snapshot, 2027, dispatch.build_case(snapshot, 2027, "none"))
+    assert res.builds["battery"].sum() <= step1 + 1e-6
+    assert np.all(res.builds["battery"] <= lim + 1e-6)

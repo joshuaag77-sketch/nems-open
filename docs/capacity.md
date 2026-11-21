@@ -339,3 +339,36 @@ Tested on the 2027-2040 planner chain from EIA's 2026 fleet (GW; builds are the 
 The main path's 2028-2031 builds are already in EIA's range; the 2032 miss is the mix (28.8 GW of batteries where EIA adds 43 GW of gas), not the timing. HORIZON (next year plus a tail 10 years out, CC, wind and CCS for later periods chosen now) is far off and was stopped after 2030: 54.5 GW of batteries in 2027, coal down to 19 GW in 2028 (EIA 137), turbines 236 GW in 2030 (EIA 171), reserve price zero. It took 125 to 269 s a year against 25 to 33 s (59 s in 2032) for the one-year LP. No lookahead change is justified; HORIZON stays off.
 
 What does set the 2032 mix is what each type can add in one year. In the chain's 2032 solve the LP fills both cheaper battery steps (17.7 / 10.6 / 14.1 GW, built 28.8) and combined cycle's (11.9 / 7.1 / 9.5 GW, built 19.0), and turbines up into their third (6.7 / 4.0 / 5.4, built 12.7): at the 2032 storage credit a battery's 1.38 x step is cheaper per firm kW than gas's 2.25 x step. One ECP structure the LP lacks was tried and dropped: ECP has a second combined cycle type, CC, beside AC (same heat rate, UPOVR 465 vs 441, its own ESTCPLIM steps of about 5 / 3 / 4 GW; the oracle builds it only in its 2031 and 2038 solves, 5.0 GW each). Ported as extra steps on the CC build group, the 2032 battery build stayed at 28.2 GW and the new CC displaced turbines (2032 CT builds 12.7 -> 9.5); 2040 CC 449 -> 455 and CT 219 -> 214 (EIA 431, 267), batteries 123 -> 120, solar 343 -> 332, wind 395 -> 410, 2032 reserve price 82 -> 60 in 24 -> 23 regions. Worse on the two gas types, so not committed. Next lever: battery cost, credit and step size in 2032 (the battery steps are sized from 2027's 23.5 GW of additions, 13.6 GW of them the LP's own builds against EIA's about 3), not the horizon.
+
+## Why 2027 builds batteries, and ECP's battery build columns (branch ecp-battery-2027)
+
+**Retirements are not the cause.** On main, the 2027 step from EIA's 2026 fleet retires 19.3 GW (coal 8.4, steam 7.1, CC 2.5, CT 1.3), against EIA's fleet changes of coal -3.3 and steam -6.6 GW. But the regions that take the 13.6 GW of batteries (MISC 4.1, PJME 3.6, MISE 2.7, PJMD 2.4, NYCW 0.7) retire nothing; the retirements sit in SRSE, SRCE, SRSG, MISW, ISNE and NWPP, where the reserve price is zero. The retirement overshoot is the coal-timing question above, not a battery driver.
+
+**The mix is.** ECP's 2026 solve (OutToNEMS_2026, year-1 columns) builds 8.0 GW of AT, its first two steps of 5 + 3 GW, and 2.5 GW of batteries. The LP built AT's first step only (5.0) and then batteries, because it gave batteries three national steps of 16.9 / 16.1 / 21.5 GW with no regional limit. ECP does not. uecp.f CALC_STORAGE_VAL,11-12 writes one battery column per region, in the step-1 elasticity row only (IS = 1, row LUDSST1), and bounds it at MAX(ENERGY_STORED, BATTERY_USED) of ReStore's test battery. That test battery is BatteryIncrement = MAX_PERCENT x MAX_LOAD (uecp.f 37838-37896): 1% of the region's top hourly load (DUCK_SYSTEM_LOAD + DEM_ADJ, uecp.f 860) in 2017, a point a year more, 5% from 2021 (emmcntl.txt %DS PARAMS%). Rebuilt from this model's LDSM load, firm contracts and UCAPADJ for 2026, 5% of MAX_LOAD reproduces ECP's coeff_cIX_UBOUND to 0.001 GW in 19 of 25 regions (TRE 4.754, MISE 1.002, PJMW 2.914). In the rest ReStore used less of it: PJME 0.74, NYUP 0.88, PJMD 0.99 of it, and none in SRSG, CANO, CASO, NWPP and BASN. The same holds in the 2028, 2031, 2035 and 2040 solves (national bound 36 to 48 GW).
+
+Ported (`capacity.ECP_STORAGE_BUILDS`, on): batteries get only the first build step (ESTCPLIM step 1 less planned), and each region's battery build is at most `battery_build_limit` = `battery_increment_share(year - 1)` x MAX_LOAD of year - 1 (the ECP solve whose year-1 builds come online in the year). ReStore's own use of the test battery is not ported, so the bound is the whole increment; that is looser than ECP's in the West and in PJME.
+
+One step 2027 from EIA's 2026 fleet: batteries 13.6 -> 10.8 GW, turbines 5.0 -> 7.7 (ECP 8.0, EIA's 2027 turbine fleet +9.1), reserve price over 50 in 7 regions (was 5). Batteries are still above EIA's about 3.3 unplanned: the regional limits bind in MISC, MISE, PJMD and NYCW, and the rest goes to MISS, PJMW and SRCA. What is left is the fleet-side reserve gap in the east (MISE, NYCW, PJME) found above, not a storage term.
+
+Chain 2027-2040 from EIA's 2026 fleet, before (main dcba9b6) / after / EIA, GW:
+
+| | before | after | EIA |
+|---|---|---|---|
+| 2040 CC with CCS | 449 | 457 | 431 |
+| 2040 turbines | 219 | 229 | 267 |
+| 2040 batteries | 123 | 106 | 103 |
+| 2040 solar | 343 | 343 | 323 |
+| 2040 wind | 395 | 392 | 404 |
+| 2040 coal | 14 | 14 | 16 |
+
+Builds by year, CC (with CCS) / CT / batteries; EIA's are capacity changes:
+
+| | 2027 | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 |
+|---|---|---|---|---|---|---|---|
+| before | 0 / 5.0 / 13.6 | 8.0 / 7.7 / 0.3 | 7.5 / 6.0 / 0 | 9.4 / 2.2 / 0 | 10.3 / 2.2 / 0 | 20.6 / 12.7 / 28.8 | 21.4 / 3.6 / 1.4 |
+| after | 0 / 7.7 / 10.8 | 8.0 / 8.4 / 0 | 7.3 / 5.6 / 0 | 9.2 / 2.4 / 0 | 10.1 / 2.2 / 0.1 | 29.4 / 17.5 / 15.6 | 20.2 / 4.4 / 0.8 |
+| EIA | 0.2 / 9.1 / 13.2 (3.3 unplanned) | 4.6 / 5.6 / 3.6 | 11.0 / 2.9 / 3.3 | 6.0 / 4.3 / 2.8 | 7.4 / 6.0 / 0.7 | 24.8 / 17.9 / 9.9 | 10.8 / 3.5 / 0.7 |
+
+2032 now builds turbines at EIA's level (17.5 vs 17.9) and batteries at 15.6 (EIA 9.9) instead of 28.8; the step that took them, battery step 2 at 1.38 x, does not exist in ECP. The firm need the batteries no longer fill goes to CC (29.4 vs EIA 24.8), so 2040 CC is 8 GW further from EIA while turbines and batteries move toward it. 2027 economic retirements are unchanged (19.3 GW). The 2032 reserve price rises (median 82 -> 98) since the coal rule's shortfall is now met from dearer gas steps.
+
+Pinned by `tests/test_emm_capacity.py` (`test_battery_increment_share_follows_ds_params`, `test_battery_build_limit_matches_ecp_2026`, `test_batteries_build_in_the_first_step_only`). Scripts: scratchpad `b27/` (dsbound.py compares the bounds, one27.py the 2027 step, chain.py the chain).
