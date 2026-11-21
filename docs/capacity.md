@@ -171,7 +171,7 @@ What it changes:
 
 ### Still open
 - **Requirement.** This model's 2050 requirement (1,202 GW) is 68 GW below ECP's (1,270). About 54 GW of that is the peak: this model's 2050 peak is 1,109 GW against EIA's sector peaks of 1,163. The rest is PKADJ and EP_NET_PEAK, which need the EP_MRM debug lines (question 3 below).
-- **One year or two.** This LP holds the current year to its reserve margin; ECP holds next year and the tail. With HORIZON off, the closest match to ECP would hold next year's requirement. That is a design change to test after the rerun, not part of this fix.
+- **One year or two.** This LP holds the current year to its reserve margin; ECP holds next year and the tail. With HORIZON off, the closest match to ECP would hold next year's requirement. That is a design change to test after the rerun, not part of this fix. Settled 2026-11-21 (branch ecp-lookahead, last section): the one-year LP already is ECP's year 2, and ECP does not anticipate the 2032 cliff.
 - **CCS capacity factor and zero retrofits** (questions 1 and 2): the saved oracle outputs (OutToNEMS without the unit-18 debug file) cannot settle them. They stay queued.
 
 ## Queued for the next oracle rerun (needs HEAVY.lock)
@@ -308,3 +308,34 @@ Chain 2027-2040 from EIA's 2026 fleet, before (main 667cc9b) / after / EIA, GW:
 Wind lands on EIA, batteries and CC move toward it, turbines move away (turbine builds 2027-2040 fall from 102 to 76 GW: firm wind takes reserve need the turbines filled). Economic retirements in 2027 rise from 10.6 to 19.3 GW, still under the 3% cap. 2032 is still a reserve shortfall at the coal rule (64 GW of coal leaves that year), so the battery spike there is now the coal question, not the credit.
 
 Pinned by `tests/test_emm_capacity.py` (`test_intermittent_credit_is_net_peak_capacity_factor`, `test_wesarea_inputs`, `test_intermittent_credit_matches_ecp_2030`: credits on EIA's 2030 fleet within 0.04 of ECP's EPIRCCR on average). Scripts: scratchpad `ecprs/` (otn.py parses OutToNEMS, comp.py and ecprow.py rebuild the row from the composite, cmp_row.py and short.py do the comparisons).
+
+## Does ECP anticipate the 2032 coal cliff? (branch ecp-lookahead)
+
+No. Read from `uecp.f` and the input:
+- Planning year k of ECP year E is calendar year E + k - 1 (EP$MRM writes CURIYR + YEAR - 1). The reserve row binds only for YEAR > UPPLYR(WICT) = 1, so years 2 and 3; year 1 is a free row and has no builds or retirements of its own (retirement columns start at YEAR > UPRTLT = 1).
+- Build columns exist for planning years 1 and 2 only (EP$ELAST: YEAR + UPPLYR <= UNXPH) and come online in YEAR + UPPLYR. UPPLYR is 1 for every type in COSTPERF (pinned by `test_ecp_commits_every_type_one_year_ahead`); UPCLYR (CC 3, CT 2, battery 1) only sets the cost profile (EPINCST) and the first available year. So ECP has no lead-time advantage for batteries: a CC chosen in E is online in E + 1 like a battery.
+- Only year-1 builds are carried out (EPO$BILD, FULLYR = year + UPPLYR). Year-2 builds serve the tail (year 3, the present-value average of the peaks of years 3 to 30, udat.f 14362-14382) and their steps are unbounded ("LET YEAR 3 ELASTICITY BE UNBOUNDED", PV_LIM 999.99), so the tail can always fill a future gap at first-step cost and nothing pushes ECP to build before the gap year.
+
+So this LP's step(y), builds online in y and held to y's requirement, is ECP's year 2 of its E = y - 1 solve; the only piece it lacks is the tail. The oracle's own ECP (oracle-cache OutToNEMS_YYYY, cB_DSP and cIX levels by planning year, rRXXXXXge shadow price) confirms it does not prebuild:
+
+| ECP solve (online year) | AC | CC | AT | CS | DS | year-2 reserve dual, median |
+|---|---|---|---|---|---|---|
+| 2029 (2030) | 7.8 | 0 | 12.5 | 1.2 | 0 | 83 |
+| 2030 (2031) | 9.8 | 0 | 1.3 | 1.6 | 0 | 37 |
+| 2031 (2032) | 14.7 | 5.0 | 21.2 | 3.1 | 2.4 | 522 |
+| 2032 (2033) | 2.7 | 0 | 1.0 | 3.9 | 1.0 | 79 |
+
+The cliff is met in the year itself, at a reserve price 14 times the year before. EIA's cb2026 does the same: capacity added in 2032 is CC +24.8, CT +17.9, batteries +9.9 GW, against 4.6 to 11.0 (CC) and 2.9 to 6.0 (CT) a year in 2028-2031.
+
+Tested on the 2027-2040 planner chain from EIA's 2026 fleet (GW; builds are the LP's own, EIA's are capacity changes):
+
+| | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 |
+|---|---|---|---|---|---|---|
+| CC builds, main / EIA | 8.0 / 4.6 | 7.5 / 11.0 | 9.4 / 6.0 | 10.3 / 7.4 | 20.6 / 24.8 | 21.4 / 10.8 |
+| CT builds, main / EIA | 7.7 / 5.6 | 6.0 / 2.9 | 2.2 / 4.3 | 2.2 / 6.0 | 12.7 / 17.9 | 3.6 / 3.5 |
+| battery builds, main / EIA | 0.3 / 3.6 | 0.0 / 3.3 | 0.0 / 2.8 | 0.0 / 0.7 | 28.8 / 9.9 | 1.4 / 0.7 |
+| CC / CT / battery builds, HORIZON | 8.0 / 16.5 / 19.8 | 17.0 / 27.9 / 49.8 | 21.3 / 34.8 / 0.0 | | | |
+
+The main path's 2028-2031 builds are already in EIA's range; the 2032 miss is the mix (28.8 GW of batteries where EIA adds 43 GW of gas), not the timing. HORIZON (next year plus a tail 10 years out, CC, wind and CCS for later periods chosen now) is far off and was stopped after 2030: 54.5 GW of batteries in 2027, coal down to 19 GW in 2028 (EIA 137), turbines 236 GW in 2030 (EIA 171), reserve price zero. It took 125 to 269 s a year against 25 to 33 s (59 s in 2032) for the one-year LP. No lookahead change is justified; HORIZON stays off.
+
+What does set the 2032 mix is what each type can add in one year. In the chain's 2032 solve the LP fills both cheaper battery steps (17.7 / 10.6 / 14.1 GW, built 28.8) and combined cycle's (11.9 / 7.1 / 9.5 GW, built 19.0), and turbines up into their third (6.7 / 4.0 / 5.4, built 12.7): at the 2032 storage credit a battery's 1.38 x step is cheaper per firm kW than gas's 2.25 x step. One ECP structure the LP lacks was tried and dropped: ECP has a second combined cycle type, CC, beside AC (same heat rate, UPOVR 465 vs 441, its own ESTCPLIM steps of about 5 / 3 / 4 GW; the oracle builds it only in its 2031 and 2038 solves, 5.0 GW each). Ported as extra steps on the CC build group, the 2032 battery build stayed at 28.2 GW and the new CC displaced turbines (2032 CT builds 12.7 -> 9.5); 2040 CC 449 -> 455 and CT 219 -> 214 (EIA 431, 267), batteries 123 -> 120, solar 343 -> 332, wind 395 -> 410, 2032 reserve price 82 -> 60 in 24 -> 23 regions. Worse on the two gas types, so not committed. Next lever: battery cost, credit and step size in 2032 (the battery steps are sized from the 23.5 GW of 2027 builds, which EIA does not make), not the horizon.

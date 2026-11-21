@@ -410,3 +410,17 @@ def test_conversion_costs_come_from_the_plant_file():
     assert 50.0 < gw < 140.0                                             # most, not all, coal can convert
     tot = cost + np.asarray(t["T_NG_TRAN"], dtype=float)[coal]
     assert 100.0 < np.average(tot[cost > 0], weights=u.summer_mw[coal][cost > 0]) < 400.0     # 1987$/kW
+
+
+def test_ecp_commits_every_type_one_year_ahead():
+    """ECP's planning lead (COSTPERF UPPLYR) is 1 year for every type: a build chosen in ECP year E comes online in
+    E + 1 (EPO$BILD, FULLYR = year + UPPLYR), whatever its construction years (UPCLYR, which only set the cost profile
+    and first year). So a battery has no lead-time advantage over a combined cycle in ECP, and this LP's one-year
+    step (builds online the year they are decided, held to that year's reserve row) is ECP's year 2."""
+    from nems_open.xlsx_ranges import named_ranges
+    from nems_open.emm import technology
+    lead = dict(zip(technology.ecp_codes(), named_ranges(technology.ECPDATY, "COSTPERF")["UPPLYR"]))
+    for code in capacity.BUILDS.values():
+        assert lead[code] == 1.0
+    assert lead["CC"] == 1.0
+
