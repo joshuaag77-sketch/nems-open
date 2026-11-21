@@ -517,3 +517,60 @@ def test_conversion_credit_only_when_no_later_conversion_column(monkeypatch):
     assert not capacity.conversion_is_last_chance(2030, dict(rule, switch=0))      # no rule: a later column always exists
     monkeypatch.setattr(capacity, "ECP_CONVERT_TIMING", False)
     assert capacity.conversion_is_last_chance(2028, rule)                         # off: the old credit every year
+
+
+def test_spin_reserve_inputs_follow_ecpdaty():
+    """SR_MIN_CF (ecpdaty.xlsx SPNRSV) as the 2030 composite carries it: coal and steam 0.3, combined cycle 0.2,
+    turbines and pumped storage 0.1; ECP's seasons are LDSM's (winter Dec-Mar, summer Jun-Sep, shoulder)."""
+    mins = capacity.spin_min_cf()
+    assert mins["coal"] == pytest.approx(0.3) and mins["steam"] == pytest.approx(0.3)
+    assert mins["gas_cc"] == pytest.approx(0.2) and mins["gas_cc_new"] == pytest.approx(0.2)
+    assert mins["gas_ct"] == pytest.approx(0.1) and mins["gas_ct_new"] == pytest.approx(0.1)
+    assert mins["pumped"] == pytest.approx(0.1)
+    assert list(capacity.ecp_season_of_month()) == [0, 0, 0, 2, 2, 1, 1, 1, 1, 2, 2, 0]
+
+
+def test_spin_requirement_is_ecp_slice_formula():
+    """EP$MRM,10: SR_RQMT_HGHT x slice height + SR_RQMT_DIFF x (season peak slice - height), on LDSM's slices: each
+    season's hours split 1% / 49% / 50% by load, each slice at the average of its hours."""
+    mod = np.repeat(np.arange(12), 3)
+    load = np.full((1, 36, 24), 50.0)
+    w = np.ones(36)
+    assert np.allclose(capacity.spin_requirement(load, w, mod, 24), 5.0)    # flat load: 10% of it, no gap to the peak
+    load[0, 18, 17] = 110.0                             # one July hour at 110 GW
+    sl, h = capacity.ecp_slice_heights(load, w, mod)
+    assert sl[0, 18, 17] == 3                           # summer's peak slice is ECP slice 4
+    assert h[0, 3] == pytest.approx(70.0)               # 1% of 288 summer hours: that hour and two at 50
+    assert h[0, 4] == pytest.approx(50.0) and h[0, 6] == pytest.approx(50.0)
+    req = capacity.spin_requirement(load, w, mod, 1)
+    assert req[0, 18, 17] == pytest.approx(7.0)
+    assert req[0, 18, 5] == pytest.approx(0.1 * 50.0 + 0.3 * 20.0)      # a July base hour: the gap to the peak slice
+    assert req[0, 0, 0] == pytest.approx(5.0)                           # winter is flat
+
+
+def test_ecp_build_profile_is_wrenew_two_years_back_without_derate(snapshot):
+    """ECP's UPICFC1 (uecp.f 38880-39035): WRENEW's capacity factor of the year before the solve, no outage derate.
+    This LP's step for 2031 is ECP's year 2 of its 2030 solve, so WRENEW 2029."""
+    got = capacity.ecp_build_profile(snapshot, 2031)
+    ref = dispatch._wrenew_profile(snapshot, "wsfwiel_cf", 2029 - 1990)
+    assert np.allclose(got["wind"], ref)
+    assert got["solar"].shape == (25, 36, 24)
+    derated = dispatch.build_case(snapshot, 2031, "none").build_profile["wind"]
+    assert got["wind"].mean() > derated.mean()
+
+
+def test_spin_requirement_matches_ecp_2031(snapshot):
+    """ECP's 2030 solve, planning year 2 (OutToNEMS_2030 cSR lower bounds, the requirement of each rRSRge row): 100.5 GW
+    nationally, hour-weighted over its 9 slices. On LDSM's load sliced by net load (EIA's restart intermittent
+    capacity) this LP's rows give the same within 2%."""
+    from nems_open.emm import capacity_credit as cc, ecp_load
+    sy = ecp_load.system_load(2031)
+    if sy is None:
+        pytest.skip("no LDSM state dumps (oracle/run_emm/out/state/ld_in)")
+    case = dispatch.build_case(snapshot, 2031, "none")
+    load = ecp_load.follow_run(sy, case.net_load_twh, capacity._reference_case(snapshot, 2031).net_load_twh, case.flat_twh)
+    c0, off = capacity.initial_capacity(snapshot, 2030), cc.cap_adjustment(snapshot, 2031)
+    net = load - sum(np.maximum(c0[g] + off[g], 0.0)[:, None, None] * case.profile[g] for g in cc.INTERMITTENT)
+    req = capacity.spin_requirement(load, case.weights, np.repeat(np.arange(12), 3), 1, ecp_load.firm_contracts(2031), net)
+    total = (req * case.weights[None, :, None]).sum() / (24.0 * case.weights.sum())
+    assert total == pytest.approx(100.5, rel=0.02)

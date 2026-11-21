@@ -208,6 +208,103 @@ ECP_RESERVE = True
 # The requirement on ECP's own load (ecp_load): LDSM's system load for EPPEAK and EP_NET_PEAK, plus PKADJ's firm
 # contracts and cogeneration terms. Off, or without the LDSM dumps: the LP's net-energy shape, about 5% lower.
 ECP_PEAK = True
+# ECP's spinning reserve rows (uecp.f EP$MRM,8-13, rRSRge in ecp.ams), with ECP's build capacity factor for new wind
+# and solar (ECP_BUILD_CF): the two go in together (docs/capacity.md, branch ecp-spin-reserve). In every region and
+# time slice, spinning reserve >= SR_RQMT_HGHT x load + SR_RQMT_DIFF x (the season's peak load - load), plus SR_INT of
+# the slice's wind and solar output (EP$INT,8/23/52: intermittents carry -SR_INT x their output on the row).
+# Off: with ECP_BUILD_CF the 2027-2040 chain's wind runs away (2040: 591 GW against EIA's 404), the rows price
+# spinning reserve at about a fifteenth of ECP's duals, and a year takes 150 to 380 s instead of 20 to 50.
+SPIN_RESERVE = False
+SR_RQMT_HGHT, SR_RQMT_DIFF, SR_INT = 0.1, 0.3, 0.25      # composite_2030 (the same in all 25 regions and every type)
+# ECP's load seasons (LDSM ECPSGFH/ECPSGLH, months 1-based): winter Dec-Mar, summer Jun-Sep, the rest shoulder.
+ECP_SEASON_MONTHS = ((12, 1, 2, 3), (6, 7, 8, 9), (4, 5, 10, 11))
+# ECP type whose SR_MIN_CF (ecpdaty.xlsx SPNRSV) each LP group takes: the share of its capacity a committed unit
+# must generate (EP$ODSP min-load mode). Coal and steam 0.3, combined cycle 0.2, turbines and pumped storage 0.1.
+SPIN_TYPE = {"coal": "PC", "coal_ccs": "PQ", "gas_cc": "EC", "gas_cc_new": "AC", "gas_ccs": "CS", "gas_ct": "ET",
+             "gas_ct_new": "AT", "steam": "ST", "gas_conv": "NG", "pumped": "PS"}
+SPIN_SHORTFALL_COST = 1000.0    # 1987$/MWh of missing spinning reserve; ECP has no slack (cSR is bounded below)
+# ECP values a new wind or solar plant at WRENEW's capacity factor of the year before its solve, with no outage
+# derate (uecp.f 38880-39035, UPICFC1). This LP's step for year y is ECP's year 2 of its y - 1 solve, so y - 2.
+# Off, with SPIN_RESERVE (see there).
+ECP_BUILD_CF = False
+
+
+def spin_min_cf() -> dict:
+    """SR_MIN_CF by LP group (ecpdaty.xlsx SPNRSV), the minimum load of a unit carrying spinning reserve."""
+    r = named_ranges(technology.ECPDATY, "SPNRSV")
+    codes = technology.ecp_codes()
+    return {g: float(r["SR_MIN_CF"][codes.index(c)]) for g, c in SPIN_TYPE.items()}
+
+
+def ecp_season_of_month() -> np.ndarray:
+    """ECP season (0, 1, 2) of each month (0-based), shape (12,)."""
+    out = np.zeros(12, dtype=int)
+    for s, months in enumerate(ECP_SEASON_MONTHS):
+        for mo in months:
+            out[mo - 1] = s
+    return out
+
+
+ECP_SLICE_SHARES = (0.01, 0.49, 0.50)     # EPWDTH: each season's peak, middle and base slices (29, 1435, 1464 hours)
+
+
+def ecp_slice_heights(load_hr: np.ndarray, weights: np.ndarray, month_of_day: np.ndarray, net_hr=None):
+    """LDSM's ECP load slices (uldsm.f DSMLCP) cut from an hourly load (25, 36, 24) GW: in each season the hours
+    sorted by net load `net_hr` (NL_SLICE_SW: load less wind and solar; the load itself when None) and split at
+    ECP_SLICE_SHARES of the season's hours; each slice's height is the average load (not net load) of its hours,
+    the peak slice's too (ECP's 2030 composite EPHGHT: TRE's summer peak slice 90.1 GW, below LDSM's top hour).
+    Returns (slice of every hour, (25, 36, 24), 0-8 as ECP numbers them; heights (25, 9) GW)."""
+    season = ecp_season_of_month()[month_of_day]
+    R = load_hr.shape[0]
+    slice_of = np.zeros(load_hr.shape, dtype=int)
+    height = np.zeros((R, 9))
+    w = np.broadcast_to(weights[:, None], load_hr.shape[1:]).ravel()
+    for r in range(R):
+        flat = load_hr[r].ravel()
+        key = flat if net_hr is None else net_hr[r].ravel()
+        sl = np.zeros(flat.size, dtype=int)
+        for s in range(3):
+            # ECP numbers its slice groups from LDSM's last season down: shoulder 1-3, summer 4-6, winter 7-9
+            base = 3 * (2 - s)
+            idx = np.flatnonzero(np.repeat(season == s, load_hr.shape[2]))
+            order = idx[np.argsort(-key[idx], kind="stable")]
+            cum = np.cumsum(w[order]) / w[order].sum()
+            mid = cum - 0.5 * w[order] / w[order].sum()
+            k = np.searchsorted(np.cumsum(ECP_SLICE_SHARES), mid, side="right").clip(max=2)
+            sl[order] = base + k
+            for j in range(3):
+                pick = order[k == j]
+                if pick.size == 0:
+                    continue
+                height[r, base + j] = float(np.average(flat[pick], weights=w[pick]))
+        slice_of[r] = sl.reshape(load_hr.shape[1:])
+    return slice_of, height
+
+
+def spin_requirement(load_hr: np.ndarray, weights: np.ndarray, month_of_day: np.ndarray, hours: int = BLOCK_HOURS,
+                     adjust=None, net_hr=None) -> np.ndarray:
+    """EP$MRM,8-10's requirement before intermittents, (25, 36, 24 // hours) GW. On ECP's slices of the load
+    (ecp_slice_heights, plus ADJ_HGHT `adjust`, GW by region): SR_RQMT_HGHT x the slice's height plus SR_RQMT_DIFF x
+    the gap to the season's peak slice. Each hour takes its slice's requirement; a block averages its hours."""
+    slice_of, height = ecp_slice_heights(load_hr, weights, month_of_day, net_hr)
+    if adjust is not None:
+        height = height + np.asarray(adjust, dtype=float)[:, None]
+    peak = height[:, (np.arange(9) // 3) * 3]
+    req_slice = SR_RQMT_HGHT * height + SR_RQMT_DIFF * (peak - height)
+    req_hr = np.take_along_axis(req_slice, slice_of.reshape(slice_of.shape[0], -1), axis=1).reshape(slice_of.shape)
+    return _blocks(req_hr, hours)
+
+
+def ecp_build_profile(snapshot, year: int) -> dict:
+    """ECP's UPICFC1 for a new wind or solar plant online in `year`: WRENEW's profile (main type, WN and PV) of
+    year - 2, without the outage derate, (25, 36, 24)."""
+    y = max(year - 2 - history.FIRST_YEAR, 0)
+    out = {}
+    for group, parts in dispatch.WRENEW_PROFILES.items():
+        out[group] = dispatch._wrenew_profile(snapshot, parts[0][1], y)
+    return out
+
+
 # Debt share and tax rate of a new plant's financing (ecpdaty.xlsx FINANCIAL UPNFDT, UPTXRT). EIA adds its
 # EXTRARISK premium (restart EMISSION/extrarisk, 3 points from 2008) to both the debt and equity rates of the
 # types marked UPRSKSW (util.f 893-902: coal and combined cycle), so their after-tax discount rate rises by
@@ -259,6 +356,9 @@ class YearResult:
     group_retire: dict = field(default_factory=dict)  # group -> (25, 4) GW retired from each retirement group
     group_share: dict = field(default_factory=dict)   # group -> (25, 4) share of each retirement group retired
     rule_retire: np.ndarray = field(default_factory=lambda: np.zeros(NUM_R))  # GW coal the 2032 rule forced out
+    spin_price: np.ndarray = None   # (25, 36, BLOCKS) 1987$/kW-year per slice, dual of the spinning reserve rows
+    spin_requirement: np.ndarray = None   # (25, 36, BLOCKS) GW, before intermittents (SPIN_RESERVE)
+    spin_shortfall_gw: float = 0.0  # largest shortfall in any region and slice on the spinning reserve rows
 
 
 def max_retirement_rate(year: int) -> float:
@@ -644,6 +744,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     horizon = HORIZON if horizon is None else horizon
     y = year - history.FIRST_YEAR
     case = case if case is not None else dispatch.build_case(snapshot, year, "none")
+    if ECP_BUILD_CF and case.build_profile is not None and case.build_profile["wind"].shape[-1] == 24:
+        case = replace(case, build_profile=ecp_build_profile(snapshot, year))
     adds, rets = dated_changes(year)
     rule = epa111()
     rets = epa111_retirements(snapshot, year, cap_in, rets)
@@ -932,7 +1034,46 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
             + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum() \
             + (shortfall * RESERVE_SHORTFALL_COST).sum()
-        return {"operating": operating, "g_th": g_th, "unserved": unserved, "shortfall": shortfall, "credits": credits}
+        spin = {}
+        if SPIN_RESERVE:
+            # ECP's spinning reserve rows (EP$MRM,8-13). A dispatchable unit carries reserve only while it runs: in
+            # ECP's dispatch modes (EP$ODSP,34-53) a committed unit generates between SR_MIN_CF and its derated
+            # capacity and its headroom (SR_CREDIT 1 for every type) is reserve, so reserve <= capacity - output and
+            # reserve <= output x (1 / SR_MIN_CF - 1). Conventional hydro carries none: ecp.ams leaves WIHY out of
+            # every hydro reserve coefficient (EP$ORNW,113-116). Pumped storage runs like a thermal unit in its
+            # min-load mode (EP$ORNW,116: output SR_MIN_CF, reserve 1 - SR_MIN_CF); batteries their discharge
+            # headroom (CALC_STORAGE_VAL,5/14, ReStore's StoSR), here up to one hour of stored energy. Nuclear and
+            # other renewables their capacity less output (EP$NUC,24, EP$ORNW,28). Wind and solar raise the
+            # requirement by SR_INT of their output. No reserve over the links (SR_TRAN_CREDIT is 0).
+            mins = spin_min_cf()
+            inv = xr.DataArray(np.array([1.0 / mins[g] - 1.0 for g in TG]), coords=[T])
+            sp = m.add_variables(lower=0, coords=[R, T, D, Bk], name=f"spin{tag}")
+            m.add_constraints(sp + g_th - capv_p <= 0, name=f"spin_headroom{tag}")
+            m.add_constraints(sp - g_th * inv <= 0, name=f"spin_committed{tag}")
+            supply = sp.sum("group")
+            for name in STORAGE_HOURS:
+                ss = m.add_variables(lower=0, coords=[R, D, Bk], name=f"spin_{name}{tag}")
+                di = m.variables[f"{name}_discharge{tag}"]
+                m.add_constraints(ss + di - sto_cap[name] <= 0, name=f"spin_{name}_headroom{tag}")
+                if name == "pumped":
+                    m.add_constraints(ss - di * (1.0 / mins["pumped"] - 1.0) <= 0, name=f"spin_{name}_committed{tag}")
+                else:
+                    m.add_constraints(ss - m.variables[f"{name}_soc{tag}"] <= 0, name=f"spin_{name}_energy{tag}")
+                supply = supply + ss
+            const_sp = by_region(c0["nuclear"]) * (1.0 - cf_of("nuclear")) + by_region(c0["other"]) * (1.0 - cf_of("other"))
+            # ECP's slice heights are LDSM's load (EPHGHT) plus ADJ_HGHT, of which the firm contracts are ported
+            adj = ecp_load.firm_contracts(cs.year) if load_rm is not load_hr else None
+            # LDSM slices on net load, ECP's restart intermittent capacity (net_cap) on this year's profiles
+            sub = net_cap if net_cap is not None else c0
+            net_hr = load_rm - sum(sub[g][:, None, None] * cs.profile[g] for g in capacity_credit.INTERMITTENT)
+            sr_req = xr.DataArray(spin_requirement(load_rm, cs.weights, month_of_day, bh, adj, net_hr), coords=[R, D, Bk])
+            sp_short = m.add_variables(lower=0, coords=[R, D, Bk], name=f"spin_shortfall{tag}")
+            m.add_constraints(supply - SR_INT * (wind_out + solar_out) + sp_short >= sr_req - const_sp,
+                              name=f"spin_reserve{tag}")
+            operating = operating + (sp_short * (SPIN_SHORTFALL_COST * hours_w)).sum()
+            spin = {"requirement": np.asarray(sr_req.values), "shortfall": sp_short}
+        return {"operating": operating, "g_th": g_th, "unserved": unserved, "shortfall": shortfall, "credits": credits,
+                "spin": spin}
 
     def totals(c0, extra_w, extra_s, extra_b):
         return (xr.DataArray(c0["wind"], coords=[R]) + extra_w, xr.DataArray(c0["solar"], coords=[R]) + extra_s,
@@ -1086,6 +1227,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     hours = (case.weights * BLOCK_HOURS)[None, :, None]
     out.price = np.asarray(m.constraints["balance"].dual.transpose("region", "day", "block").values) / hours
     out.reserve_price = np.asarray(m.constraints["reserve_margin"].dual.values) / 1000.0     # k$/GW -> $/kW
+    if p1["spin"]:
+        out.spin_price = np.asarray(m.constraints["spin_reserve"].dual.transpose("region", "day", "block").values) / 1000.0
+        out.spin_requirement = p1["spin"]["requirement"]
+        out.spin_shortfall_gw = float(sol(p1["spin"]["shortfall"]).max())
     if use_groups:
         g_ret = sol(rg)
         out.group_retire = {g: g_ret[:, j, :] for j, g in enumerate(RETIRABLE)}
