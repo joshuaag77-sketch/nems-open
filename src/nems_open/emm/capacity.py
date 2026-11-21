@@ -339,6 +339,34 @@ def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon:
     return gain * pv * _crf(rate, horizon)
 
 
+# ECP keeps or retires an existing gas or oil plant for its whole planning horizon, not for one year. Combined cycle and
+# steam are EP$NGBS gas plant groups (uecp.f 36045-36680): each group's options run it for period 1 only (the one that
+# retires it), periods 1-2, or all of the UNFPH horizon at ENG_FOM a year (FOM + G&A + capital additions + age adder,
+# no hurdle), and the kept options count on the reserve rows of years 2 and 3. Turbines are retirement-group columns
+# (EP$BDSP,5-8) priced at the present value of EPGFOM over the horizon and counted on every year's reserve row. The
+# tail year's reserve row binds in almost every region (OutToNEMS_2026: 21 of 25), so a kept GW is firm capacity the
+# tail would otherwise have to build. ECP's 2026-2049 solves retire 2.5 GW of EC, ST and ET in all; a one-year LP with a
+# zero reserve price this year retired 28 GW of them in 2027-2033 (EIA: about 7 GW of steam). Off: retirements see
+# only this year.
+RETIRE_HORIZON = True
+# Coal (EP$COAL's commit vectors also run to the end of the horizon) counts only the years before the 2032 rule, and
+# coal cofired with gas (gas_conv) only to UEPA_CLCFYR.
+RETIRE_HORIZON_GROUPS = ("gas_cc", "gas_ct", "steam", "gas_conv", "coal")
+
+
+def retirement_tail_value(year: int, firm_annual, keep_annual, rate: float, last_year: int | None = None,
+                          horizon: int = HORIZON_YEARS) -> np.ndarray:
+    """What retiring a GW of existing gas or oil capacity in `year` gives up in the rest of ECP's horizon, in this year's
+    money (k$ per GW): each later year to `last_year` in which the plant could still run, the firm capacity the plan
+    would then have to build, `firm_annual` (a new turbine's annual cost, the cheapest firm type), less the plant's own
+    `keep_annual`, never below zero, discounted at `rate`. Charged on the retirement column, it makes the one-year LP
+    keep a plant whenever keeping it is cheaper than replacing it later, which is ECP's option-3 test."""
+    gain = np.maximum(np.asarray(firm_annual, dtype=float) - np.asarray(keep_annual, dtype=float), 0.0)
+    last = year + horizon - 1 if last_year is None else last_year
+    pv = sum((1.0 + rate) ** -k for k in range(1, horizon) if year + k <= last)
+    return gain * pv
+
+
 def _credit_lost_share(life: float) -> float:
     """Share of a flat annual 45Q credit that a plant of this life does not get, because the credit
     lasts only I_45Q_DURATION (12) years. The dispatch model pays the credit every year; a build
@@ -980,10 +1008,26 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         saved_coal = (retire.sel(group="coal") * xr.DataArray(fom_exist["coal"], coords=[R])).sum()
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
     rate_now = discount_rate(snapshot, year)
+    tail = 0
+    if RETIRE_HORIZON and decide and not horizon:
+        # ECP's keep-or-retire test spans its horizon (RETIRE_HORIZON): retiring now also gives up the plant's firm
+        # capacity later, worth a new turbine's annual cost less the plant's own fixed cost in each later year.
+        firm = capital["gas_ct_new"][:, None]
+        for g in RETIRE_HORIZON_GROUPS:
+            last = rule["cofire_last"] if (g == "gas_conv" and rule["switch"]) else (RULE_YEAR - 1 if g == "coal" else None)
+            if use_groups and g in RETIRABLE:
+                j = RETIRABLE.index(g)
+                tv = retirement_tail_value(year, firm, gcost[:, j, :], rate_now, last)
+                tail = tail + (rg.sel(group=g) * xr.DataArray(tv, coords=[R, K])).sum()
+            else:
+                keep = fom_exist[g] if g in fom_exist else fom_made[g]
+                tv = retirement_tail_value(year, firm[:, 0], keep, rate_now, last)
+                tail = tail + (retire.sel(group=g) * xr.DataArray(tv, coords=[R])).sum()
     conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"] \
         - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
     retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
-    m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal)
+    m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal
+                    + tail)
     opts = HORIZON_SOLVER_OPTIONS if (solver == "highs" and horizon and decide) else {}
     status, cond = m.solve(solver_name=solver, progress=progress, **opts)
 

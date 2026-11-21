@@ -406,3 +406,64 @@ Builds, CC (with CCS) / CT / batteries, before -> after (EIA's are capacity chan
 Turbine builds in 2036-2039 rise from 22.1 to 28.7 GW and the 2039 reserve price drops from 76 to 53. The 2033 CC excess (18.6 against 10.8) is mostly firm capacity the chain lacks, not the mix: steam is 87 GW against EIA's 103 from 2031 (the retirement and conversion question above) and wind 240 against 296. ECP's own 2032 solve builds only 2.7 GW of AC and 1.0 of AT for 2033.
 
 Pinned by `tests/test_emm_capacity.py::test_new_gas_heat_rates_are_ecp_uphtrt`. Scripts: scratchpad `gas/` (ecpval.py and ecpyears.py split ECP's columns, ourval2.py and energy.py do the LP's side, chain.py runs the chain).
+
+## Existing plants are kept for ECP's whole horizon (branch ecp-retire-fleet)
+
+**What ECP retires.** Almost nothing. Summed over every oracle ECP solve from 2026 to 2049 (OutToNEMS_YYYY), economic retirements of combined cycle, oil and gas steam and turbines are 2.5 GW in all: EC 0.45 and ST 0.56 GW in the 2026 solve, ST 0.5 in 2027, under 0.5 a year after that, ET 0.3 once (2049). EIA's own restart agrees: beyond the plant file's dated changes, CC and CT never lose capacity in 2027-2040, and steam loses 2.7 GW in 2027 and 4.3 in 2031. The chain on main retired CC 8.2, CT 4.3 and steam 15.2 GW (plus 2.9 GW of converted coal) in 2027-2033. That is the 16 GW steam gap from 2031.
+
+**Why.** EC and ST are not retirement-group columns in ECP. EP$BDSP skips them ("Existing NGBS ... now Modeled in EP$NGBS", uecp.f 15114) and EP$NGBS (uecp.f 36045-36680) writes three options per gas plant group: run period 1 only (this is the one that retires it, EPO$NGBS), periods 1-2, or the whole UNFPH horizon, each costing ENG_FOM (FOM + G&A + capital additions + age adder, udat.f 9601; no hurdle) for the years it covers, and each counting on the reserve rows of the years it covers. Turbines are retirement-group columns whose cost is EPGFOM's present value over the horizon (EP$BDSP,8). Either way the decision is over 30 years, and the tail year's reserve row binds in 21 of 25 regions (OutToNEMS_2026 year-3 duals; zero only in BASN, NWPP, RMRG and SRSG). EPO$NGBS also retires a group only if every option past period 1 is empty, and then only units with ENG_RVAL of zero or less.
+
+Lined up from ECP's 2030 solve (composite GRP_FOM, OutToNEMS cE NomCoeff and reduced costs; value of keeping = cost of option 3 less option 1 plus option 1's reduced cost, levelized over the horizon), 1987$/kW-year:
+
+| | keep cost | value of keeping | ratio, region range |
+|---|---|---|---|
+| ST, 54 GW | 13.4 | 33.7 | 0.9 (SRSG) to 5.8 |
+| EC, 281 GW | 7.5 | 69.9 | 3.1 to 39 |
+| ET (cEXX0, present values) | 75 | 1,301 | 4.2 to 34 |
+
+Steam is worth about 34 a year kept, roughly a new turbine's annual cost (37 to 41 here); the energy margin alone covers far less. A one-year LP sees only this year's reserve price, which was zero in SRSE, SRCE, SRSG, MISW, ISNE and NWPP in 2027, and retires there.
+
+**Ported** (`capacity.RETIRE_HORIZON`, on, one-year LP only): retiring a GW of gas_cc, gas_ct, steam, gas_conv or coal also gives up its firm capacity in the rest of the horizon. `retirement_tail_value` charges the retirement column, for each later year the plant could still run, a new turbine's annual cost less the plant's own keep cost (its retirement group's cost), never below zero, discounted at the year's rate. Converted coal counts only to UEPA_CLCFYR (2038), coal only to 2031 (the 2032 rule; EP$COAL's commit vectors also run to the end of the horizon). A plant whose keep cost exceeds a new turbine's still retires. The 2027 step from EIA's 2026 fleet retires coal 12.7 GW without coal in the groups and 5.0 with it (main 8.4), so coal is in.
+
+Chain 2027-2040 from EIA's 2026 fleet, before (main fc685d8) / after / EIA, GW:
+
+| 2040 | before | after | EIA |
+|---|---|---|---|
+| CC with CCS | 442 | 435 | 431 |
+| Turbines | 239 | 234 | 267 |
+| Batteries | 106 | 108 | 103 |
+| Solar | 343 | 348 | 323 |
+| Wind | 405 | 383 | 404 |
+| Coal | 14 | 15 | 16 |
+| Steam | 45 | 56 | 52 |
+
+Economic retirements by year, before -> after (EIA: change beyond the plant file's dates; coal's includes conversions out):
+
+| | 2027 | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 |
+|---|---|---|---|---|---|---|---|
+| coal | 8.4 -> 5.0 | 6.8 -> 3.8 | 1.3 -> 1.7 | 0.5 -> 0.3 | 0 -> 0 | rule | 0 |
+| steam | 7.1 -> 2.6 | 2.7 -> 0 | 1.5 -> 0.3 | 1.4 -> 0.3 | 0 | 0 | 2.5 -> 0 |
+| CC | 2.5 -> 0 | 3.7 -> 0 | 1.5 -> 0 | 0.1 -> 0 | 0 | 0.2 -> 0 | 0.2 -> 0.1 |
+| CT | 1.3 -> 0.1 | 1.8 -> 0 | 1.2 -> 0 | 0 | 0 | 0 | 0 |
+| EIA steam / CC / CT | -2.7 / 0 / +7.9 | +2.7 / +4.6 / +6.1 | | | -4.3 / +6.3 / +6.6 | | |
+
+Steam (with converted coal) and wind by year, before / after / EIA:
+
+| | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 | 2034 | 2035 |
+|---|---|---|---|---|---|---|---|---|
+| steam | 99 / 110 / 82 | 94 / 110 / 92 | 92 / 108 / 110 | 91 / 107 / 104 | 91 / 107 / 104 | 88 / 106 / 103 | 86 / 105 / 102 | 84 / 104 / 101 |
+| wind | 187 / 187 / 178 | 202 / 202 / 193 | 204 / 204 / 212 | 206 / 205 / 234 | 225 / 229 / 262 | 248 / 242 / 296 | 269 / 263 / 330 | 294 / 286 / 344 |
+
+CC / CT builds, before -> after (EIA's are capacity changes):
+
+| | 2027 | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 | 2034 | 2035 |
+|---|---|---|---|---|---|---|---|---|---|
+| CC | 0 -> 0 | 8.0 -> 8.0 | 6.9 -> 3.6 | 9.0 -> 5.9 | 9.5 -> 4.5 | 27.7 -> 19.3 | 18.6 -> 17.7 | 11.9 -> 9.5 | 11.9 -> 10.8 |
+| CT | 7.7 -> 7.3 | 8.4 -> 6.0 | 6.3 -> 5.4 | 2.6 -> 1.4 | 2.9 -> 3.8 | 17.6 -> 15.3 | 4.8 -> 3.8 | 4.7 -> 5.2 | 5.7 -> 5.3 |
+| EIA CC / CT | 0.2 / 9.1 | 4.6 / 5.6 | 11.0 / 2.9 | 6.0 / 4.3 | 7.4 / 6.0 | 24.8 / 17.9 | 10.8 / 3.5 | 9.2 / 4.1 | 13.6 / 5.5 |
+
+Steam from 2031 is now within 3 GW of EIA (was 13 to 17 under), CC within 9 GW through 2035, and the 2032-2033 CC excess is gone (19.3 / 17.7 against 24.8 / 10.8). Steam is 28 GW over in 2028-2029: the conversions still come all in 2028 (30.7 GW against EIA's 4.3, then 12.7 and 18.9), an existing timing gap that kept retirements no longer hide.
+
+**Wind is a build-timing gap, not retirements or repowering.** EIA's wind beyond the plant file's dates never falls (no economic wind retirements or repowering losses in 2027-2040); ECP itself retires some wind groups (cEXX0_INT: 7.5 GW in the 2026 solve, 3.3 in 2027, then under 1.5 a year), which would widen the gap, not close it. The gap opens when the PTC ends: wind's annual cost goes from 39.6 (2029) to 75.3 $/kW-year (2030, UPGSUBYR 16.5 -> 0), and the one-year LP builds 0 and 0.8 GW in 2030-2031 where EIA adds 17.4 and 22.0. ECP builds that wind for its tail year (post-2032 prices, no coal); this LP sees only the year it builds for. Its wind build steps then start low. With more firm capacity kept the reserve price falls and wind builds drop a little more (2040 wind 405 -> 383). No Fortran-justified fix short of the horizon was found; HORIZON stays off (see the lookahead section).
+
+Pinned by `tests/test_emm_capacity.py::test_retirement_tail_value_is_the_avoided_replacement_over_ecp_horizon`. Scripts: scratchpad `ret/` (ngbs.py reads ECP's retirements from OutToNEMS, lineup.py the 2030 keep cost and value, eia_resid.py EIA's changes beyond the plant file, chain.py the chain).
