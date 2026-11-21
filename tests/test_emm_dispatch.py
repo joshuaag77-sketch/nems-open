@@ -22,8 +22,9 @@ YEARS = (2025, 2030, 2040, 2050)
 KNOWN_MISSES = {
     ("fuel_coal", 2025): "coal fuel 10% high: the 14 GW of cofiring units in the plant file burn their 52% coal share, and the coal "
                          "units run at the flat derate, which EFD keeps until UYR_STEO + 1 (EFD_MAX_LOAD_SHAPE starts in 2028)",
-    ("fuel_coal", 2040): "coal fuel 15% high: CCS coal generation is on EIA's (66 vs 63 TWh) but at the full-capture heat rate "
-                         "(15.2 MMBtu/MWh) where EIA's averages 13.7, partly in EFD's partial-capture mode (uefd.f OPBSLD SHR_NOCCS)",
+    ("gen_coal", 2025): "coal 12% high: the part-load heat rate (COAL_PART_LOAD_HEAT_RATE) moves PJMW, SRSE and FRCC coal onto EIA's, "
+                        "which uncovers the regions EFD holds below their ceiling with its coal LP's configuration costs "
+                        "(SPPS 33 vs 13 TWh, MISC 106 vs 96, TRE 66 vs 58, SPPC 36 vs 29; docs/dispatch.md)",
 }
 
 
@@ -148,7 +149,7 @@ def test_coal_units_stay_under_efd_ceiling(results, year):
     big = cap > 1.0
     cf = gen[big] / cap[big] / 8.76
     assert cf.max() < 0.61, cf.round(3)
-    assert 0.48 < gen.sum() / cap.sum() / 8.76 < 0.56
+    assert 0.48 < gen.sum() / cap.sum() / 8.76 < 0.58
 
 
 def test_efd_outage_rates_follow_udat_rule():
@@ -246,3 +247,71 @@ def test_restart_counts_ccs_retrofits_before_their_capacity_loss(snapshot):
     if dispatch.CCS_CAPACITY_PENALTY:
         gen = dispatch.generating_capacity(c)
         assert gen["coal_ccs"] == pytest.approx(c.capacity["coal_ccs"] * c.capture_net)
+
+
+def test_part_load_factor_reproduces_efd_group_heat_rates():
+    """udat.f CRPGRP stores THRATE x Target_EFF(T_CF) / Max_EFF as the group heat rate (UG_HTRT) on emmcntl's curve
+    for the unit's coal region and configuration. The oracle's 2030 EFD composite: Northampton (B3, coal region 2,
+    T_CF 0.40) 10,052 Btu/kWh; the PJME C7 group (Conemaugh and Keystone, THRATE 10,116-10,427) 9,230."""
+    from nems_open.emm import db, plants
+    tb, u = db.table("V_EMM_PLTF860"), plants.load_units()
+    curves = dispatch.heat_rate_curves()
+    assert (2, "B3") in curves and (1, "C7") in curves and (2, "B5") in curves       # B5 takes B3's curve
+    assert curves[(2, "B5")] is curves[(2, "B3")]
+    full = dispatch.part_load_factor(1.0)
+    names = np.array([str(x).strip() for x in tb["T_PNM"]])
+    pjme = (u.region == 10) & (u.efd_type == "CSC") & np.isin(names, ["Conemaugh", "Keystone"])
+    north = (u.region == 10) & (u.efd_type == "CSC") & (names == "Northampton Generati")
+    assert float((u.heat_rate * full)[north][0]) == pytest.approx(10052.0, abs=5)
+    assert np.average((u.heat_rate * full)[pjme], weights=u.summer_mw[pjme]) == pytest.approx(9230.0, abs=40)
+    # Units without a curve (gas) keep THRATE.
+    assert (full[u.efd_type == "CCG"] == 1.0).all()
+
+
+def test_coal_heat_rate_follows_eia_burn(snapshot):
+    """EIA's 2030 coal burn (UFLCLNR / UGNCLNR) where coal units make nearly all the coal power: the plain THRATE
+    average is 3-4% above it, at the part-load level within 3%. PJME's group heat rate drops from 10,960 to about
+    10,140 (EIA burns 10,720 there)."""
+    if not dispatch.COAL_PART_LOAD_HEAT_RATE:
+        pytest.skip("COAL_PART_LOAD_HEAT_RATE off")
+    y = 2030 - 1990
+    c = dispatch.build_case(snapshot, 2030)
+    gen_all = snapshot["UEFDOUT/ugnclnr"][:, :25, y].sum(0)
+    burn = snapshot["UEFDOUT/uflclnr"][:, :25, y].sum(0) / np.maximum(gen_all, 1e-9) * 1000
+    clean = np.array([5, 10, 11, 12, 13, 17, 20, 25]) - 1
+    gen = snapshot["UDATOUT/ugenpc"][:25, y][clean]
+    err = np.average(c.heat_rate["coal"][clean] / burn[clean] - 1, weights=gen)
+    assert -0.03 < err < 0.0, err
+    assert 10000 < c.heat_rate["coal"][9] < 10300
+    # Conversions to cofiring start from the plain coal heat rate.
+    on = c.capacity["cofire"] > 0
+    assert (c.heat_rate["cofire"][on] > 10300).all()
+
+
+@pytest.mark.parametrize("year", (2030,))
+def test_pjm_coal_runs_at_eia_level(results, snapshot, year):
+    """With the part-load heat rate PJM's coal is cheaper than its marginal cost again: PJME, PJMW and PJMD coal units
+    land within 15% of EIA's (2030: 21.7, 78.8, 7.8 TWh; at THRATE they made 7.9, 71.0, 4.4)."""
+    if not dispatch.COAL_PART_LOAD_HEAT_RATE:
+        pytest.skip("COAL_PART_LOAD_HEAT_RATE off")
+    _, _, res = results[year]
+    y = year - 1990
+    eia = snapshot["UDATOUT/ugenpc"][:25, y] + snapshot["UDATOUT/ugenig"][:25, y] - snapshot["UDATOUT/ugensq"][:25, y]
+    for r in (10, 11, 13):
+        assert abs(res.generation_twh["coal"][r - 1] / eia[r - 1] - 1) < 0.15, (r, res.generation_twh["coal"][r - 1], eia[r - 1])
+
+
+def test_cofire_takes_the_ng_max_load_shape():
+    """OPBSLD gives ECP type NG (SR_MAX_LF 0.5) its maximum-load mode in every year: the STEO exemption stops at WIIS."""
+    if not dispatch.COFIRE_MAX_LOAD_SHAPE:
+        pytest.skip("COFIRE_MAX_LOAD_SHAPE off")
+    rng = np.random.default_rng(3)
+    load = 50.0 + 20.0 * rng.random((2, 36, 8))
+    from nems_open.emm import capacity
+    sl, ht = capacity.ecp_slice_heights(load, np.full(36, 365.0 / 36), np.repeat(np.arange(12), 3), load)
+    for year in (2025, 2030):
+        shape = dispatch.max_load_shape(sl, ht, year)["cofire"]
+        assert shape.min() > 0.5 and shape.max() <= 1.0 + 1e-9 and shape.min() < 0.99
+    s = dispatch.max_load_shape(sl, ht, 2030)
+    assert ((s["cofire"] - 0.5) / 0.5 == pytest.approx((s["coal"] - 0.55) / 0.45))
+    assert (dispatch.max_load_shape(sl, ht, 2025)["coal"] == 1.0).all()

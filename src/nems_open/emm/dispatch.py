@@ -145,9 +145,34 @@ CCS_CAPACITY_PENALTY = True
 # flat (1 - FOR)(1 - PMR) gives 0.65. On: coal's hourly upper bound takes the U shape on the EFD slices of
 # spin_requirement (its maximum within a season is the flat bound, its average about 0.9 of it).
 EFD_MAX_LOAD_SHAPE = True
+# Coal heat rates follow each unit's load. The plant file's THRATE is a unit's average heat rate at its historical
+# capacity factor (T_CF). udat.f CRPGRP (7210-7262) stores WHRATE x Target_EFF(W_CFA) / Max_EFF as the group heat
+# rate (UG_HTRT): the heat rate moved to full load on emmcntl's efficiency curve for the unit's coal region and
+# configuration (HTRT_ADJUSTMENT in uefd.f; the curves follow %HAWAII RPS% in emmcntl.txt, read by udat.f 3845-3900,
+# a configuration without a curve taking the one before it). Each dispatch mode then burns at UG_HTRT x Max_EFF /
+# Target_EFF(its output per committed GW) (uefd.f OPBSLD 9970-9985, ECDSPF 13861). So a coal unit burns THRATE x
+# Target(T_CF) / Target(L) at load L. The oracle's 2030 EFD files bear both steps out: Northampton (B3, coal region
+# 2, T_CF 0.40) is UG_HTRT 10,052 = 11,868 x 0.847; the PJME C7 group is 9,230 against THRATE 10,116-10,427; and
+# fuel / UG_HTRT gives the load each group's modes ran at, generation-weighted 0.74 (PART_LOAD_LEVEL; most groups
+# 0.70-0.75, the maximum-load mode's (1 - FOR) x its mean shape). On: coal and coal_ccs heat rates are THRATE (or
+# T_CCSHR) x that factor at PART_LOAD_LEVEL, capacity-weighted as before; coal converted to cofiring keeps the plain
+# coal heat rate (ECP type NG has no curve). Against EIA's own 2030 coal burn (restart UFLCLNR / UGNCLNR) in the
+# eight regions where coal units make nearly all the coal power, capacity-weighted THRATE is 3.6% high
+# (generation-weighted; mean absolute error 3.7%) and this is 1.7% low (2.1%). It moves PJM's coal onto EIA's (2030
+# PJME 7.9 -> 20.8 TWh, EIA 21.7). Dropping the units EIA retired, worst heat rate first, made the fit worse.
+# Off: THRATE.
+COAL_PART_LOAD_HEAT_RATE = True
+PART_LOAD_LEVEL = 0.74
 MAX_LOAD_GROUPS = {"coal": "B1"}   # LP group -> ECP type whose SR_MAX_LF it takes (all existing coal configurations: 0.55)
 MAX_LOAD_FIRST_YEAR = BENCHMARK_LAST + 2   # uefd.f OPBSLD: DRAT_MAX = DRAT_ORG for coal while CURIYR <= UYR_STEO + 1
+MAX_LOAD_STEO_LAST = "IS"   # that exemption covers ECP types up to WIIS (the coal configurations, PC, OC, IG, I2, PQ, IS)
+# The cofired units take the same mode. OPBSLD gives every type with SR_CREDIT its U mode, and the STEO exemption
+# stops at WIIS, so ECP type NG (the CTN units) has DRAT_MAX = (1 - FOR)(SR_MAX_LF + (1 - SR_MAX_LF) x height / peak)
+# with SR_MAX_LF 0.5 in every year. On: cofire's hourly upper bound takes that shape. Off: the flat derate.
+COFIRE_MAX_LOAD_SHAPE = True
+COFIRE_MAX_LOAD_TYPE = "NG"
 COFIRE_PREFIXES = ("ng",)
+COAL_CONFIG_LAST = "HC"         # the coal configurations are the ECP types up to HC
 COAL_FUELS = ("B", "C", "H")   # plant-file fuel codes of the coal supply curves (B1..B8, C1..CX, H1..HC)
 EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
 EFD_NUCLEAR_SR = 0.04
@@ -292,6 +317,52 @@ def _weighted_mask(values, weights, mask, region_arr, fallback):
     return np.where(np.isnan(out), nat, out)
 
 
+_CURVES = {}
+
+
+def heat_rate_curves() -> dict:
+    """emmcntl.txt's coal efficiency curves (udat.f 3845-3900, HR_EFF / HR_LL): {(coal region, ECP code): (load levels,
+    efficiencies)}. Within a coal region a configuration without a curve takes the last one listed before it."""
+    if not _CURVES:
+        from nems_open.paths import INPUT
+        lines = (INPUT / "emm" / "emmcntl.txt").read_text(encoding="latin-1").splitlines()
+        i = next(k for k, l in enumerate(lines) if l.startswith("#Coal")) + 2
+        raw = {}
+        for line in lines[i:]:
+            t = line.split()
+            if int(t[0]) == 0:
+                break
+            n = int(t[3])
+            v = np.array(t[4:4 + 2 * n], dtype=float)
+            raw[(int(t[0]), t[1])] = (v[1::2], v[0::2])
+        codes = technology.ecp_codes()
+        configs = codes[:codes.index(COAL_CONFIG_LAST) + 1]          # B1 .. HC, one UPTTYP
+        for rg in sorted({k[0] for k in raw}):
+            last = None
+            for c in configs:
+                last = raw.get((rg, c), last)
+                if last is not None:
+                    _CURVES[(rg, c)] = last
+    return _CURVES
+
+
+def _efficiency(curve, level: float) -> float:
+    """HTRT_ADJUSTMENT's Target_EFF: the curve's efficiency at `level` (its first point below, linear between)."""
+    ll, eff = curve
+    return float(np.interp(min(level, 1.0), ll, eff))
+
+
+def part_load_factor(level: float = None) -> np.ndarray:
+    """Per plant-file unit, the heat rate at `level` (default PART_LOAD_LEVEL) over THRATE: Target_EFF(T_CF) /
+    Target_EFF(level) on the unit's coal region and configuration curve (COAL_PART_LOAD_HEAT_RATE); 1 without one."""
+    level = PART_LOAD_LEVEL if level is None else level
+    tb = db.table("V_EMM_PLTF860")
+    curves = heat_rate_curves()
+    keys = zip(np.asarray(tb["T_CLRG"]).astype(int), (str(x).strip() for x in tb["ECPcd"]), np.asarray(tb["T_CF"], dtype=float))
+    return np.array([_efficiency(curves[(r, c)], cf) / _efficiency(curves[(r, c)], level) if (r, c) in curves else 1.0
+                     for r, c, cf in keys])
+
+
 def _monthly_cf(types, year) -> np.ndarray:
     t = db.table("V_EMM_PLTF860")
     u = plants.load_units()
@@ -414,10 +485,12 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     hr_new_all = technology.new_heat_rate(year)        # UPHTRT (ucape.f 625-641): UPPHRT0 for every gas type
 
     heat, vom, oil, avail = {}, {}, {}, {}
+    part_load = part_load_factor() if COAL_PART_LOAD_HEAT_RATE else np.ones(len(u.heat_rate))
     for g in THERMAL:
         types = types_of[g]
         existing = plants.capacity_gw(year, types)[:NUM_R]
-        hr_ex = _weighted(u.heat_rate, u.summer_mw, types, u.region, year, 10000.0)
+        hr_unit = u.heat_rate * part_load if g == "coal" else u.heat_rate
+        hr_ex = _weighted(hr_unit, u.summer_mw, types, u.region, year, 10000.0)
         vom_ex = _weighted(u.vom, u.summer_mw, types, u.region, year, 2.0)
         i = codes.index(NEW_TYPE[g])
         hr_new, vom_new = float(hr_new_all[i]), float(params["vom"][i])
@@ -425,6 +498,8 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         ex_used = np.minimum(existing, total)
         new = np.maximum(total - ex_used, 0.0)
         heat[g] = (ex_used * hr_ex + new * hr_new) / total
+        if g == "coal":    # the plain coal heat rate, which conversions to cofiring start from
+            coal_plain = (ex_used * _weighted(u.heat_rate, u.summer_mw, types, u.region, year, 10000.0) + new * hr_new) / total
         vom[g] = (ex_used * vom_ex + new * vom_new) / total
         if g in OIL_TYPES:
             oil_cap = plants.capacity_gw(year, OIL_TYPES[g])[:NUM_R]
@@ -437,13 +512,13 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     # with-capture heat rate and variable O&M (T_CCSHR, T_CCSV) for the captured share.
     tb = db.table("V_EMM_PLTF860")
     coal_u = np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
-    ccs_hr = _weighted_mask(tb["T_CCSHR"], u.summer_mw, coal_u, u.region, 14000.0)
+    ccs_hr = _weighted_mask(tb["T_CCSHR"] * part_load, u.summer_mw, coal_u, u.region, 14000.0)
     ccs_vom = _weighted_mask(tb["T_CCSV"], u.summer_mw, coal_u, u.region, 1.5)
     heat["coal_ccs"] = ccs_hr
     capture_net = _weighted_mask(u.heat_rate / np.where(coal_u, tb["T_CCSHR"], 1.0), u.summer_mw, coal_u, u.region, 0.7)
     vom["coal_ccs"] = vom["coal"] + ccs_vom
     heat["gas_ccs"] = np.full(NUM_R, float(hr_new_all[codes.index("CS")]))
-    coal_share = cofire_case(year, cap["cofire"], heat, vom)
+    coal_share = cofire_case(year, cap["cofire"], heat, vom, coal_heat=coal_plain)
     heat["nuclear"] = _weighted(u.heat_rate, u.summer_mw, EXISTING_TYPES["nuclear"], u.region, year, 10400.0)
 
     price = {
@@ -509,13 +584,14 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
                         coal_share=coal_share, capture_net=capture_net)
 
 
-def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict) -> dict:
+def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict, coal_heat: np.ndarray = None) -> dict:
     """Heat rate, variable O&M (set in `heat` and `vom`) and coal share of the cofire group (COFIRE_GROUP).
 
     The plant file's CTN units keep their own heat rate, variable O&M and coal share (fuel 2 when it is a coal curve,
     capped at UEPA_CGSH from UEPA_GSYR, udat.f 6457). Capacity beyond them is coal EIA converted after the plant file:
     the coal group's heat rate +5% and variable O&M x0.75 (capacity.CONVERT_HR_PENALTY, CONVERT_VOM_ADJ) at UEPA_CGSH
-    of coal (uecp.f 28148). After UEPA_CLCFYR no unit cofires coal. Returns {"cofire": (25,) coal share of Btu}."""
+    of coal (uecp.f 28148). After UEPA_CLCFYR no unit cofires coal. coal_heat is the coal heat rate conversions start
+    from (default heat["coal"]). Returns {"cofire": (25,) coal share of Btu}."""
     from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
     rule = ecp.epa111()
     u = plants.load_units()
@@ -535,7 +611,8 @@ def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict) -> dic
     hr_ex = _weighted_mask(u.heat_rate, u.summer_mw, on, u.region, 10800.0)
     vom_ex = _weighted_mask(u.vom, u.summer_mw, on, u.region, 0.55)
     sh_ex = _weighted_mask(share_u, u.summer_mw, on, u.region, cap_share)
-    heat["cofire"] = (ex_used * hr_ex + new * heat["coal"] * (1.0 + ecp.CONVERT_HR_PENALTY)) / total
+    coal_heat = heat["coal"] if coal_heat is None else coal_heat
+    heat["cofire"] = (ex_used * hr_ex + new * coal_heat * (1.0 + ecp.CONVERT_HR_PENALTY)) / total
     vom["cofire"] = (ex_used * vom_ex + new * vom["coal"] * ecp.CONVERT_VOM_ADJ) / total
     share = (ex_used * sh_ex + new * cap_share) / total
     if rule["switch"] and year > rule["cofire_last"]:
@@ -574,17 +651,22 @@ def max_load_shape(slice_of: np.ndarray, height: np.ndarray, year: int) -> dict:
     """EFD's maximum-load mode (EFD_MAX_LOAD_SHAPE): per LP group in MAX_LOAD_GROUPS, the share of (1 - FOR) x the
     committable capacity a unit can produce in every hour, SR_MAX_LF + (1 - SR_MAX_LF) x its slice's height / the
     season's peak slice height (uefd.f OPBSLD DRAT_MAX). slice_of (25, 36, n) and height (25, 9) are
-    capacity.ecp_slice_heights'. Before MAX_LOAD_FIRST_YEAR, ones."""
+    capacity.ecp_slice_heights'. Groups: MAX_LOAD_GROUPS, and cofire with COFIRE_MAX_LOAD_SHAPE. Before
+    MAX_LOAD_FIRST_YEAR, ones for ECP types up to MAX_LOAD_STEO_LAST (coal)."""
     from nems_open.emm import capacity as ecp
-    if year < MAX_LOAD_FIRST_YEAR:
-        return {g: np.ones(slice_of.shape) for g in MAX_LOAD_GROUPS}
+    groups = dict(MAX_LOAD_GROUPS)
+    if COFIRE_MAX_LOAD_SHAPE:
+        groups["cofire"] = COFIRE_MAX_LOAD_TYPE
     lf = ecp.named_ranges(technology.ECPDATY, "SPNRSV")["SR_MAX_LF"]
     codes = technology.ecp_codes()
     peak = height[:, (np.arange(9) // 3) * 3]
     rel = np.divide(height, peak, out=np.ones_like(height), where=peak > 0).clip(0.0, 1.0)
     rel_h = np.take_along_axis(rel, slice_of.reshape(slice_of.shape[0], -1), axis=1).reshape(slice_of.shape)
     out = {}
-    for g, code in MAX_LOAD_GROUPS.items():
+    for g, code in groups.items():
+        if year < MAX_LOAD_FIRST_YEAR and codes.index(code) <= codes.index(MAX_LOAD_STEO_LAST):
+            out[g] = np.ones(slice_of.shape)
+            continue
         a = float(lf[codes.index(code)])
         out[g] = a + (1.0 - a) * rel_h
     return out

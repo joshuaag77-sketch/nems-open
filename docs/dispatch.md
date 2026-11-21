@@ -8,7 +8,7 @@
 - Regions trade over the links in the ETT table (`V_EMM_PRETTIN`: 127 rows, summer and winter MW, a $/MWh markup, 2% line loss, plus the new transmission EMM built, `UETTOUT/UTNEWTRN`).
 - Capacity is what is in service on average through the year. The plant file's in-service and retirement months are used for dated units; capacity the restart shows beyond that is assumed to arrive mid-year.
 - Load is the step 1 shapes scaled to the demand modules' sales (`demand.py`).
-- EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). Coal's ceiling follows EFD's maximum-load mode from 2028 (`EFD_MAX_LOAD_SHAPE`, on; section "Coal's ceiling is EFD's maximum-load mode"). The results table above them predates these switches.
+- EFD's spinning reserve rows, availability and planned maintenance, and oil units running last (`EFD_SPIN_RESERVE`, `EFD_DERATE`, `OIL_UNITS_LAST`, all on; section "EFD's spinning reserve and turbines" below). Coal's ceiling follows EFD's maximum-load mode from 2028 (`EFD_MAX_LOAD_SHAPE`, on; section "Coal's ceiling is EFD's maximum-load mode"). Coal heat rates follow EFD's part-load curves, and the cofired units take the maximum-load mode too (`COAL_PART_LOAD_HEAT_RATE`, `COFIRE_MAX_LOAD_SHAPE`, on; section "Coal heat rates and the cofired units' ceiling"). The results table above them predates these switches.
 - `trade="none"` is the sales-based run with links (the real target). `trade="reference"` fixes each region's load at EIA's regional generation and has no links; it is kept as a control.
 
 ## Result, sales-based load with trade (the real target)
@@ -209,3 +209,51 @@ The 2030 coal generation and fuel misses are gone (`tests/test_emm_dispatch.py`,
 **Still open.** The configuration-level coal cost (EFD's coal LP) that idles 22 GW in TRE, SPP and the West; PJM's dispatch heat rate; cofired units 13-23% above EIA's in 2030-2035 (NG's SR_MAX_LF is 0.5, but they run at 0.25-0.3 and do not reach the ceiling).
 
 Pinned by `tests/test_emm_dispatch.py` (`test_max_load_shape_is_efd_drat_max`, `test_coal_units_stay_under_efd_ceiling`).
+
+## Coal heat rates and the cofired units' ceiling (branch disp-hr-cofire)
+**The PJM heat rate.** The 9,600 Btu/kWh quoted above for PJME is the oracle sample's EFD, a different run (its 2030 coal is 74.6 GW against the restart's 88, its cofired units 21.5 GW against 50). EIA's own 2030 burn in PJME (restart UFLCLNR / UGNCLNR) is 10,719, close to our 10,963. What is wrong is how both relate to the plant file.
+- udat.f CRPGRP (7210-7262) stores a coal unit's heat rate as WHRATE x Target_EFF(W_CFA) / Max_EFF: THRATE, measured at the unit's historical capacity factor (T_CF), moved to full load on emmcntl's efficiency curve for its coal region and configuration (HTRT_ADJUSTMENT in uefd.f; the curves follow %HAWAII RPS% in emmcntl.txt, read by udat.f 3845-3900, a configuration without a curve taking the one listed before it). For 2030 W_CFA is T_CF (COAL_FACTOR 1, no year multiplier). This reproduces the oracle composite's UG_HTRT: Northampton (B3, coal region 2, T_CF 0.40) 11,868 x 0.847 = 10,052; the PJME C7 group (Conemaugh and Keystone, THRATE 10,116-10,427) 9,230.
+- Each dispatch mode then burns at UG_HTRT x Max_EFF / Target_EFF(its output per committed GW) (OPBSLD 9970-9985, ECDSPF 13861). Fuel / UG_HTRT in the oracle's 2030 PassBack gives the load each coal group ran at: generation-weighted 0.74, most groups 0.70-0.75, the maximum-load mode's (1 - FOR) x its mean shape.
+- So a unit burns THRATE x Target(T_CF) / Target(L). Coal units with a low historical capacity factor (T_CF 0.40 is common) burn less than THRATE when they run at 0.74. Gas types have no curves.
+
+Scored against EIA's 2030 burn in the eight regions where coal units make nearly all the coal power (MISE, PJME, PJMW, PJMC, PJMD, SPPS, SRSG, BASN), generation-weighted error and mean absolute error:
+
+| Coal group heat rate | Error | Mean abs |
+|---|---|---|
+| THRATE, capacity-weighted (before) | +3.6% | 3.7% |
+| THRATE x curve factor at L = 0.6 / 0.7 / 0.74 / 0.8 | +0.3% / -1.3% / -1.7% / -2.2% | 1.5% / 1.8% / 2.1% / 2.6% |
+| THRATE, the units EIA retired dropped worst-first | +2.3% | 3.0% |
+| Both, at L = 0.7 | -2.8% | 2.6% |
+
+**Ported** (`dispatch.py`, on): `COAL_PART_LOAD_HEAT_RATE`. The coal and coal_ccs heat rates are THRATE (T_CCSHR) x `part_load_factor` at `PART_LOAD_LEVEL` 0.74 (EFD's own level, not the best fit), capacity-weighted as before; conversions to cofiring start from the plain coal heat rate. The capacity LP takes its heat rates from `build_case`, so it moves too. Retirement selection is not kept.
+
+**Cofired units.** Capacity is EIA's in every region (50.2 GW in 2031). The coal share is EIA's implied one (UGNCLNR less pc and ig, over ng: 0.59-0.60 in MISW, SRSE, SRCE, SPPC) except RMRG (ours 0.60, EIA 0.11) and MISC (0.60 against 0.42). Heat rates are the CTN units' THRATE, 10,340-11,550 (NG has no curve). At 15-16.5 1987$/MWh against combined cycle's 16.5-19 they ran at their flat ceiling, 0.57-0.65, in MISW, MISC, SRCE and TRE. EFD does not let them: OPBSLD gives every type with SR_CREDIT its maximum-load mode, and the STEO exemption (DRAT_MAX = DRAT_ORG up to UYR_STEO + 1) covers only types up to WIIS, so NG (SR_MAX_LF 0.5) has the shape in every year. **Ported** (on): `COFIRE_MAX_LOAD_SHAPE`, cofire's hourly bound takes the U shape with NG's 0.5 from 2025. `max_load_shape` applies the 2027 exemption by ECP type (`MAX_LOAD_STEO_LAST`).
+
+**Result.** Single-year dispatch on EIA's fleet, sales-based load with trade, 3-hour blocks. TWh, before / after (both on) / EIA. Coal is by fuel; coal units are pc + ig - sq.
+
+| | 2025 | 2030 | 2031 | 2035 | 2040 |
+|---|---|---|---|---|---|
+| Coal | 781 / 819 / 728 | 490 / 507 / 465 | 468 / 477 / 419 | 141 / 136 / 122 | 65.8 / 65.9 / 63.2 |
+| of which coal units | 761 / 800 / 723 | 400 / 425 / 385 | 346 / 362 / 319 | 0.4 / 0.4 / 0.2 | 0.3 / 0.3 / 0.3 |
+| Cofired units (all fuel) | 27 / 23 / 25 | 138 / 125 / 122 | 159 / 147 / 129 | 130 / 122 / 106 | 0 / 0 / 0.1 |
+| Steam (os + ng) | 90 / 85 / 92 | 154 / 142 / 136 | 172 / 160 / 140 | 141 / 133 / 117 | 7.4 / 7.4 / 5.5 |
+| Combined cycle | 1,531 / 1,496 / 1,544 | 1,472 / 1,459 / 1,449 | 1,431 / 1,427 / 1,446 | 1,460 / 1,468 / 1,414 | 1,487 / 1,487 / 1,437 |
+| Turbines | 15.9 / 15.7 / 80 | 15.7 / 16.0 / 67 | 13.4 / 13.7 / 65 | 29.1 / 29.4 / 81 | 40.1 / 40.1 / 90 |
+| Gas, all | 1,614 / 1,576 / 1,570 | 1,574 / 1,557 / 1,469 | 1,548 / 1,539 / 1,477 | 1,704 / 1,709 / 1,577 | 1,926 / 1,926 / 1,779 |
+| Gas against EIA | +2.8% / +0.4% | +7.2% / +6.0% | +4.8% / +4.2% | +8.0% / +8.4% | +8.3% / +8.3% |
+| Coal fuel, trillion Btu | 8,292 / 8,336 / 7,513 | 5,282 / 5,260 / 4,962 | 5,144 / 5,028 / 4,531 | 1,811 / 1,702 / 1,491 | 988 / 933 / 861 |
+| Seconds a year | 10.7 / 9.2 | 9.5 / 8.9 | 9.4 / 9.2 | 9.9 / 9.2 | 9.3 / 8.6 |
+
+Seconds are higher than in the last section on both sides; another run shared the machine.
+
+2030 coal units by region, heat rate alone, before / after / EIA: PJME 7.9 / 20.8 / 21.7, PJMW 71.0 / 76.7 / 78.8, PJMD 4.4 / 7.7 / 7.8, ISNE 0 / 2.7 / 0; nothing else moves more than 0.3 TWh. In 2025: PJMW 93 / 103 / 104, SRSE 37 / 44 / 48, FRCC 2.8 / 15.0 / 12.1, SRCA 36 / 45 / 38. Every region that moves lands on or near EIA's except ISNE and SRCA. National coal goes up because the regions that were over stay over (2030 TRE 52 vs 45, BASN 30 vs 15, SPPS 17 vs 10, SPPC 19 vs 13, SRSE 9 vs 4): the PJM shortfall had been hiding them. Coal fuel moves toward EIA in 2031-2040 (2040: +15% to +8%, the known miss is gone). Cofired units go from 13-23% over to 2-15%. What is left is TRE (W A Parish, 8.2 vs 0.1 TWh in 2031), SPPS (6.9 vs 1.3), RMRG (9.8 vs 2.4, the coal share above) and MISW (28.9 vs 24.7), the regions where coal units also run over EIA, against SRSE and MISS under.
+
+Test years (24-hour days, `tests/test_emm_dispatch.py`): fuel_coal 2040 is fixed; gen_coal 2025 is a new known miss (+12%); gen_coal 2030 stays inside 10%.
+
+**Gas.** These changes do not fix it: total gas moves -2.4 to +0.4 points. Giving combined cycle the maximum-load mode too (existing CC is EC, SR_MAX_LF 0.7) moved 10-40 TWh from CC to coal, cofired units and turbines and left total gas within 0.6 points; not kept. A lead: EIA's total generation (UGNTLNR) is 164 TWh above the sum of its fuel categories in 2030 and 241 in 2040. The dispatch serves 115 TWh (2030) and 125 TWh (2040) more than EIA's categorized generation, about the size of the fossil overrun (coal plus gas +130 and +150).
+
+The capacity LP takes the new coal heat rates (the cofire shape is dispatch only). Planner chain 2027-2040 from EIA's 2026 fleet, 2040 GW before / after / EIA: CC 430 / 435 / 431, CT 242 / 238 / 267, batteries 107 / 108 / 103, solar 344 / 347 / 323, wind 378 / 370 / 404, coal 15 / 14 / 16, steam (with gas_conv) 56 / 56 / 52. Conversions 2028-2029 30.7 + 2.8 / 32.1 + 1.5 GW; the 2032 coal retirements 66.5 / 67.0. 551 s for the chain against 367, with another run on the machine.
+
+**Still open.** The coal LP's configuration costs that hold TRE, SPP and the West below their ceiling (now visible in national coal: +9% in 2030, +12% in 2025); what UGNTLNR holds beyond the fuel categories; turbines.
+
+Pinned by `tests/test_emm_dispatch.py` (`test_part_load_factor_reproduces_efd_group_heat_rates`, `test_coal_heat_rate_follows_eia_burn`, `test_pjm_coal_runs_at_eia_level`, `test_cofire_takes_the_ng_max_load_shape`). Scripts: scratchpad `hrcof/` (hrcmp.py EFD group heat rates by region, hyp.py the rules against EIA's burn, implL.py the load EFD's modes ran at, reg2.py and cof.py regional coal and cofired units, run.py and tab2.py the test years).
