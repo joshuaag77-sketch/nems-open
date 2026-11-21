@@ -24,7 +24,6 @@ KNOWN_MISSES = {
                         "its 65% maximum; EIA's coal units run at 42-48% in every year 2028-2040 for a reason not found in saved outputs "
                         "(docs/dispatch.md, coal capacity factor)",
     ("fuel_coal", 2040): "coal fuel 62% high, follows coal generation",
-    ("fuel_coal", 2025):"coal fuel 12% high: EIA holds 2025 coal to the Short-Term Energy Outlook and burns it at 10.3 thousand Btu/kWh; plant-file heat rates give 10.7",
 }
 
 
@@ -121,3 +120,58 @@ def test_undated_retirements_leave_for_the_whole_year(snapshot):
     end, mid = dispatch._ucap(snapshot, p, y).sum(), dispatch._ucap_mid(snapshot, p, y).sum()
     now = dispatch._in_service(snapshot, p, types, 2031).sum()
     assert end - 0.5 < now < end + 3.0 < mid
+
+
+def test_efd_outage_rates_follow_udat_rule():
+    """udat.f 10168-10236: FOR and PMR scaled by one factor so that (1 - FOR)(1 - PMR) is the maximum capacity factor.
+    The 2030 composite's coal groups carry FOR 0.18-0.19 and PMR 0.185-0.20 (pltdata's 0.066 and 0.071)."""
+    from nems_open.emm import technology
+    mcf = {t.code: t.max_capacity_factor for t in technology.efd_plant_types()}
+    rates = dispatch.efd_outage_rates()
+    for g in ("coal", "gas_cc"):
+        f, p = rates[g]
+        assert abs((1 - f) * (1 - p) - mcf[dispatch.AVAIL_TYPE[g]]) < 1e-9
+    assert 0.18 < rates["coal"][0] < 0.20 and 0.18 < rates["coal"][1] < 0.21
+    assert abs(rates["gas_cc"][0] - 0.074) < 0.002 and abs(rates["gas_cc"][1] - 0.060) < 0.002
+
+
+def test_spin_requirement_is_efd_slice_formula():
+    """SP_RES_RQMT_IN = SR_RQMT_HGHT x height + SR_RQMT_DIFF x (season peak slice - height): 0.1 x the height in the
+    peak slice, and the base slice adds 0.3 of its gap to the peak."""
+    rng = np.random.default_rng(1)
+    load = 50.0 + 20.0 * rng.random((2, 36, 24))
+    slice_of, req = dispatch.spin_requirement(load, np.full(36, 365.0 / 36), load)
+    for r in range(2):
+        for s in range(3):
+            h = [load[r][slice_of[r] == 3 * s + j].mean() for j in range(3)]
+            for j in range(3):
+                got = req[r][slice_of[r] == 3 * s + j]
+                assert np.allclose(got, 0.1 * h[j] + 0.3 * (h[0] - h[j]))
+    # 1% of each season's hours in the peak slice
+    assert abs((slice_of % 3 == 0).mean() - 0.01) < 0.005
+
+
+def test_maintenance_skips_the_peak_season():
+    """The rule behind ED$PM's schedule: no maintenance in the season with the highest load, and PMR x 8760 hours in
+    the other two."""
+    load = np.ones((1, 36, 24))
+    load[0, 18:21] = 2.0                       # July: summer peaks
+    w = np.full(36, 365.0 / 36)
+    share = dispatch.maintenance_season_share(load, w)[0]
+    from nems_open.emm import capacity
+    season = capacity.ecp_season_of_month()[np.repeat(np.arange(12), 3)]
+    assert (share[season == 1] == 0).all() and (share[season != 1] > 0).all()
+    assert abs((share * w * 24).sum() - 8760.0) < 1e-6
+
+
+@pytest.mark.parametrize("year", (2030, 2040))
+def test_turbines_carry_spinning_reserve(results, year):
+    """With EFD's spinning reserve rows, turbines run at minimum load for reserve (EFD 2030: 32 TWh from CTG plus 28
+    from CTN, EIA 67 in 2030 and 90 in 2040). The reserve is met without load shedding or shortfall."""
+    _, _, res = results[year]
+    if not dispatch.EFD_SPIN_RESERVE:
+        pytest.skip("EFD_SPIN_RESERVE off")
+    assert res.generation_twh["gas_ct"].sum() > (12.0 if year == 2030 else 30.0)
+    supply = sum(v for k, v in res.spin_gw.items() if k != "required")
+    assert (supply >= res.spin_gw["required"] - 1e-3).all()
+    assert res.unserved_twh.sum() < 0.001

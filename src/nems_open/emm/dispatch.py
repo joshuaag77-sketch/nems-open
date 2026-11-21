@@ -88,6 +88,39 @@ BENCHMARK_FADE = 3           # years over which the stand-in for that benchmark 
 UNSERVED_COST = 1000.0       # 1987$/MWh
 HOURS_PER_YEAR = 8760.0
 
+# EFD's spinning reserve rows (uefd.f ED$LOAD, 11205-11250: row SR<region><season><slice>, column SP bounded below by
+# SP_RES_RQMT_IN). In every region and EFD slice (3 seasons, each cut at 1% / 49% / 50% of its hours by net load),
+# reserve >= SR_RQMT_HGHT x the slice's height + SR_RQMT_DIFF x (the season's peak slice - that height), plus SR_INT
+# of wind and solar output (SR_INT_REQ). The constants and the slicing are ECP's (capacity.ecp_slice_heights); the
+# 2030 PassBack's SP_RES_REQ matches the formula. A thermal unit carries reserve only while it runs: in EFD's modes
+# (OPBSLD,3/7/10) a committed unit's reserve is committed capacity less output and its output is at least SR_MIN_CF of
+# what is committed, so reserve <= capacity in service - output and reserve <= output x (1 / SR_MIN_CF - 1). Pumped
+# storage the same on discharge. Batteries do not optimise their reserve in EFD: ReStore hands it a fixed reserve per
+# GW by slice (NET_STORAGE_SR_EFD), here the 2030 composite's capacity-weighted national value (EFD_BATTERY_SR, ECP
+# slice order: shoulder, summer, winter, each peak / middle / base). Other renewables carry their capacity less
+# output, nuclear a fixed share of its capacity (EFD_NUCLEAR_SR: the 2030 PassBack's 3.6-4.0 GW of CN reserve on
+# 98.6 GW). Conventional hydro carries none (no HY in SP_ACHBYECP). No reserve over the links.
+EFD_SPIN_RESERVE = True
+# EFD's availability and planned maintenance. udat.f 10168-10236 (MXLFR 0) scales pltdata's forced outage and planned
+# maintenance rates by one factor so that (1 - FOR) x (1 - PMR) is the maximum capacity factor (efd_outage_rates; the
+# 2030 composite's UG_FOR and UG_PMR follow the rule to three decimals, coal 0.19 and 0.20). ED$PM (uefd.f 8959-9120)
+# schedules the maintenance by season: a column per group and season in [0, capacity], their hours at least PMR x
+# capacity x the year's hours, sharing the season's capacity row with the dispatch modes. Here the schedule is a rule
+# (maintenance_season_share) and output in every hour is at most (1 - FOR) x (capacity - maintenance). EFD's reserve
+# counts the forced-outage share of a committed unit (OPBSLD,3: 1 - DRAT, DRAT at most 1 - FOR), so with
+# EFD_SPIN_RESERVE reserve + output <= capacity - maintenance. Off: every hour may reach (1 - FOR) x capacity, with
+# pltdata's FOR, and only the year's energy is capped at the maximum capacity factor.
+EFD_DERATE = True
+# EFD dispatches oil turbines and oil steam (CTO, STO) as their own groups at oil prices, 3 to 7 times gas, so they
+# run last: in the 2030 EFD, CTO makes 0.001 TWh on 14.7 GW and STO 1.5 TWh on 3.3 GW, close to the must-run units'
+# output. With one turbine and one steam group, solve takes the group's output as gas (oil share 0) instead of
+# burning the oil units' capacity share of it. DispatchCase.oil_share is unchanged, so the capacity LP is not
+# affected. Off: 8% of every turbine MWh is distillate, which makes a turbine up to half again as costly to run.
+OIL_UNITS_LAST = True
+EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
+EFD_NUCLEAR_SR = 0.04
+SPIN_SHORTFALL_COST = 100.0   # 1987$/MWh of missing reserve, below UNSERVED_COST so no load is shed to make reserve
+
 
 @dataclass
 class DispatchCase:
@@ -130,6 +163,8 @@ class DispatchResult:
     curtailed_twh: np.ndarray = None                        # (25,) flexible load the LP chose to cut
     spilled_twh: np.ndarray = None                          # (25,)
     price: np.ndarray = None                                # (25, 36, 24) 1987$/MWh
+    spin_price: np.ndarray = None                           # (25, 36, 24) 1987$/MWh of reserve (EFD_SPIN_RESERVE)
+    spin_gw: dict = None             # reserve carried (EFD_SPIN_RESERVE): thermal group, battery, pumped, idle, required -> (25, 36, 24) GW
     objective: float = 0.0
     trade_twh: np.ndarray = None                            # (links,) energy sent on each link
 
@@ -438,14 +473,58 @@ def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
     return replace(case, shapes=blocks(case.shapes), profile={k: blocks(v) for k, v in case.profile.items()}, build_profile=bp)
 
 
-def emissions_per_mwh(case: DispatchCase, g: str) -> np.ndarray:
+def spin_requirement(load_gw: np.ndarray, weights: np.ndarray, net_gw: np.ndarray) -> np.ndarray:
+    """EFD's spinning reserve requirement before intermittents (SP_RES_RQMT_IN), GW in every typical hour or block of
+    `load_gw` (25, 36, n): on the season's slices by net load (capacity.ecp_slice_heights), SR_RQMT_HGHT x the slice's
+    height + SR_RQMT_DIFF x (the season's peak slice - that height). Returns (slice of every hour, 0-8 in ECP order;
+    the requirement), both (25, 36, n)."""
+    from nems_open.emm import capacity as ecp
+    slice_of, height = ecp.ecp_slice_heights(load_gw, weights, np.repeat(np.arange(12), 3), net_gw)
+    peak = height[:, (np.arange(9) // 3) * 3]
+    req = ecp.SR_RQMT_HGHT * height + ecp.SR_RQMT_DIFF * (peak - height)
+    return slice_of, np.take_along_axis(req, slice_of.reshape(slice_of.shape[0], -1), axis=1).reshape(slice_of.shape)
+
+
+def efd_outage_rates() -> dict:
+    """(forced outage, planned maintenance) by thermal group as EFD uses them: pltdata's rates for AVAIL_TYPE scaled
+    by one factor so that (1 - FOR)(1 - PMR) is the type's maximum capacity factor (udat.f 10168-10236); left as they
+    are where the maximum is at or above (1 - FOR)(1 - PMR)."""
+    pt = {t.code: t for t in technology.efd_plant_types()}
+    out = {}
+    for g in THERMAL:
+        t = pt[AVAIL_TYPE[g]]
+        f, p, mcf = t.forced_outage, t.planned_maintenance, t.max_capacity_factor
+        k = np.sqrt(mcf / ((1.0 - f) * (1.0 - p)))
+        out[g] = (1.0 - k * (1.0 - f), 1.0 - k * (1.0 - p)) if k < 1.0 else (f, p)
+    return out
+
+
+def maintenance_season_share(load_gw: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """Planned maintenance per unit of PMR in every typical day, (25, 36): ED$PM's schedule taken as a rule. The year's
+    PMR x 8760 hours of maintenance go into the two EFD seasons (capacity.ECP_SEASON_MONTHS) other than the one with
+    the region's highest load, spread evenly over their hours. EFD's LP picks the seasons itself; on EIA's 2031 fleet
+    that LP choice (tried as columns: 60 s a solve instead of 6) left the summer free and put coal's 0.20 at 0.24 of
+    capacity in winter and 0.35 in the shoulder months, against 0.29 in both here."""
+    from nems_open.emm import capacity as ecp
+    season = ecp.ecp_season_of_month()[np.repeat(np.arange(12), 3)]                 # (36,)
+    hours = np.array([weights[season == k].sum() * 24.0 for k in range(3)])
+    out = np.zeros((load_gw.shape[0], season.size))
+    for r in range(load_gw.shape[0]):
+        peak = int(np.argmax([load_gw[r][season == k].max() for k in range(3)]))
+        share = HOURS_PER_YEAR / (hours.sum() - hours[peak])
+        out[r] = np.where(season == peak, 0.0, share)
+    return out
+
+
+def emissions_per_mwh(case: DispatchCase, g: str, oil_share: dict = None) -> np.ndarray:
     """Metric tons of CO2 released per MWh by a thermal group, by region (after capture)."""
     heat = case.heat_rate[g] / 1000.0                       # MMBtu per MWh
     if g.startswith("coal"):
         tons = heat * CO2_PER_TBTU["coal"]
     else:
         oil = CO2_PER_TBTU["residual" if g == "steam" else "distillate"]
-        tons = heat * ((1 - case.oil_share[g]) * CO2_PER_TBTU["gas"] + case.oil_share[g] * oil)
+        o = (case.oil_share if oil_share is None else oil_share)[g]
+        tons = heat * ((1 - o) * CO2_PER_TBTU["gas"] + o * oil)
     return tons * (1.0 - CAPTURE_RATE) if g in CAPTURE_GROUPS else tons
 
 
@@ -458,6 +537,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     TH = pd.Index(list(THERMAL), name="group")
     MO = pd.Index(np.arange(12), name="month")
     month_of_day = np.repeat(np.arange(12), 3)
+    oil_share = {g: np.zeros(NUM_R) for g in THERMAL} if OIL_UNITS_LAST else case.oil_share
     w = xr.DataArray(case.weights * hp, coords=[D])
     ones = xr.DataArray(np.ones((NUM_R, 36, nh)), coords=[R, D, H])
 
@@ -471,7 +551,18 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
 
     # Thermal plants
     cap_th = xr.DataArray(np.stack([case.capacity[g] * (1 - case.avail[g][0]) for g in THERMAL], axis=1), coords=[R, TH])
-    upper = (cap_th * ones).transpose("region", "group", "day", "hour")
+    if EFD_DERATE:
+        rates = efd_outage_rates()
+        season = maintenance_season_share(load_gw.transpose("region", "day", "hour").values, case.weights)   # (25, 36)
+        pmr = np.array([rates[g][1] for g in THERMAL])
+        out = np.clip(pmr[None, :, None] * season[:, None, :], 0.0, 1.0)                                   # (25, groups, 36)
+        cap_g = np.stack([case.capacity[g] for g in THERMAL], axis=1)
+        avail = np.array([1.0 - rates[g][0] for g in THERMAL])
+        committable = xr.DataArray(cap_g[:, :, None, None] * (1.0 - out)[..., None] * np.ones(nh), coords=[R, TH, D, H])
+        upper = committable * xr.DataArray(avail, coords=[TH])
+    else:
+        upper = (cap_th * ones).transpose("region", "group", "day", "hour")
+        committable = upper
     g_th = m.add_variables(lower=0, upper=upper, name="gen_thermal")
     e_lim_np = np.stack([case.capacity[g] * case.max_cf[g] * HOURS_PER_YEAR for g in THERMAL], axis=1)    # GWh
     e_lim = xr.DataArray(e_lim_np, coords=[R, TH])
@@ -481,8 +572,8 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     for k, g in enumerate(THERMAL):
         oil_price = case.price["residual"] if g == "steam" else case.price["distillate"]
         is_coal = g.startswith("coal")
-        fuel = (1 - case.oil_share[g]) * case.price["coal" if is_coal else "gas"] + case.oil_share[g] * oil_price
-        cost[:, k] = case.heat_rate[g] / 1000.0 * fuel + case.vom[g] + case.carbon_price * emissions_per_mwh(case, g)
+        fuel = (1 - oil_share[g]) * case.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
+        cost[:, k] = case.heat_rate[g] / 1000.0 * fuel + case.vom[g] + case.carbon_price * emissions_per_mwh(case, g, oil_share)
         if g in CAPTURE_GROUPS:
             # 45Q pays per ton captured; tons per MWh = MMBtu per MWh x tons of CO2 per MMBtu.
             tons = case.heat_rate[g] / 1000.0 * CO2_PER_TBTU[CAPTURE_GROUPS[g]] * CAPTURE_RATE
@@ -512,7 +603,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
 
     # Storage, cyclic inside each typical day
     net_storage = 0
-    sto = {}
+    sto, spin_sto = {}, {}
     for name, (dur, rte) in STORAGE.items():
         c = by_region(case.capacity[name])
         eta = np.sqrt(rte)
@@ -522,6 +613,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         m.add_constraints(soc - soc.roll(hour=1) - hp * eta * ch + hp * di / eta == 0, name=f"{name}_balance")
         net_storage = net_storage + di - ch
         sto[name] = (ch, di)
+        spin_sto[name] = (c, di, soc)
 
     trade_in = trade_out = 0
     trade = None
@@ -545,6 +637,30 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     bal = m.add_constraints(g_th.sum("group") + g_hy + net_storage + unserved + curtail - spill + trade_in - trade_out == load_gw - fixed - oil_gw, name="balance")
 
     objective = (g_th * cost_da * w).sum() + (g_hy * w).sum() * 0.01 + (unserved * (UNSERVED_COST * w)).sum()
+    spin = spin_row = None
+    if EFD_SPIN_RESERVE:
+        from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
+        mins = ecp.spin_min_cf()
+        inv = xr.DataArray(np.array([1.0 / mins[g] - 1.0 for g in THERMAL]), coords=[TH])
+        spin = m.add_variables(lower=0, coords=[R, TH, D, H], name="spin")
+        m.add_constraints(spin + g_th - committable <= 0, name="spin_headroom")
+        m.add_constraints(spin - g_th * inv <= 0, name="spin_committed")
+        supply = spin.sum("group")
+        c, di, soc = spin_sto["pumped"]
+        ss = m.add_variables(lower=0, coords=[R, D, H], name="spin_pumped")
+        m.add_constraints(ss + di - c <= 0, name="spin_pumped_headroom")
+        m.add_constraints(ss - di * (1.0 / mins["pumped"] - 1.0) <= 0, name="spin_pumped_committed")
+        supply = supply + ss
+        intermittent = (ren_gw["wind"] + ren_gw["solar"]).transpose("region", "day", "hour")
+        load_np = load_gw.transpose("region", "day", "hour").values
+        slice_of, req = spin_requirement(load_np, case.weights, load_np - intermittent.values)
+        battery_sr = xr.DataArray(np.asarray(EFD_BATTERY_SR)[slice_of] * case.capacity["battery"][:, None, None], coords=[R, D, H])
+        idle = (by_region(case.capacity["nuclear"]) * EFD_NUCLEAR_SR + by_region(case.capacity["other"]) - ren_gw["other"]
+                + battery_sr)
+        short = m.add_variables(lower=0, coords=[R, D, H], name="spin_shortfall")
+        spin_row = m.add_constraints(supply + short >= xr.DataArray(req, coords=[R, D, H]) + ecp.SR_INT * intermittent - idle,
+                                     name="spin_reserve")
+        objective = objective + (short * (SPIN_SHORTFALL_COST * w)).sum()
     if trade is not None:
         objective = objective + (trade * (xr.DataArray(case.links["cost"], coords=[L]) * w)).sum()
     m.add_objective(objective)
@@ -583,7 +699,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         if g.startswith("coal"):
             fuel["coal"] += btu
         else:
-            o = case.oil_share[g]
+            o = oil_share[g]
             fuel["gas"] += btu * (1 - o)
             fuel["residual" if g == "steam" else "distillate"] += btu * o
     fuel["uranium"] = gen["nuclear"] * case.heat_rate["nuclear"] * 1e-3
@@ -599,5 +715,12 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         co2 = co2 - CAPTURE_RATE * gen[g] * case.heat_rate[g] * 1e-3 * CO2_PER_TBTU[fuel_key]
     res.co2_mt = co2
     res.price = bal.dual.transpose("region", "day", "hour").values / np.maximum(wd, 1e-9)
+    if spin_row is not None:
+        res.spin_price = spin_row.dual.transpose("region", "day", "hour").values / np.maximum(wd, 1e-9)
+        sp = spin.solution.transpose("region", "group", "day", "hour").values
+        res.spin_gw = {g: sp[:, k] for k, g in enumerate(THERMAL)}
+        res.spin_gw["pumped"] = m.variables["spin_pumped"].solution.transpose("region", "day", "hour").values
+        res.spin_gw["idle"] = idle.transpose("region", "day", "hour").values
+        res.spin_gw["required"] = spin_row.rhs.transpose("region", "day", "hour").values + res.spin_gw["idle"]
     res.objective = float(m.objective.value)
     return res
