@@ -242,3 +242,29 @@ def test_requirement_on_ldsm_load_matches_ecp(snapshot):
     req = (margin * icc["peak"] + icc["net_peak"] + capacity.reliability_adjustment(snapshot, 2033)
            + ecp_load.firm_contracts(2033) + ecp_load.cogen_adjustment(snapshot, 2033))
     assert req.sum() == pytest.approx(991.0, rel=0.015)
+
+
+def test_ldsm_load_follows_the_run_and_flat_load_lifts_the_requirement(snapshot):
+    """Reference demand leaves LDSM's load as it is; 10 GW of flat added load in one region (a data center case)
+    lifts that region's requirement by 10 x (1 + EPMRM) (EPPEAK and EP_NET_PEAK each rise by 10) and no other."""
+    from nems_open.emm import capacity_credit as cc, db, ecp_load
+    sy = ecp_load.system_load(2033)
+    if sy is None:
+        pytest.skip("no LDSM state dumps (oracle/run_emm/out/state/ld_in)")
+    case = dispatch.build_case(snapshot, 2033, "none")
+    ref = case.net_load_twh
+    assert np.allclose(ecp_load.follow_run(sy, ref, ref, None), sy)
+    flat = np.zeros(25)
+    flat[0] = 10.0 * 8.76                                   # 10 GW all year in TRE
+    cap = capacity.initial_capacity(snapshot, 2032)
+    tab = db.table("V_EMM_ECPDAT_REG")
+    o = np.argsort(tab["EMM_REG"])
+    margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[o[tab["EMM_REG"][o] <= 25]])
+
+    def req(load):
+        icc = cc.credits(load, cap, case.profile, case.weights)
+        return margin * icc["peak"] + icc["net_peak"]
+
+    lift = req(ecp_load.follow_run(sy, ref + flat, ref, flat)) - req(sy)
+    assert lift[0] == pytest.approx(10.0 * (1.0 + margin[0]), rel=0.01)
+    assert np.allclose(lift[1:], 0.0, atol=1e-6)

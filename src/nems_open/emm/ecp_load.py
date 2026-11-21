@@ -88,3 +88,14 @@ def cogen_adjustment(snapshot, year: int) -> np.ndarray:
     """-BTCOGEN / 8.76 + BMEXICAN / 8.76 (GW by region), as EIA's run stored it (UECPOUT/ucapadj)."""
     a = np.asarray(snapshot["UECPOUT/ucapadj"], dtype=float)
     return a[:NUM_R, min(year - 1990, a.shape[1] - 1)]
+
+
+def follow_run(sy: np.ndarray, net_twh: np.ndarray, ref_twh: np.ndarray, flat_twh=None) -> np.ndarray:
+    """LDSM's reference-run load moved to this run's demand, (25, 36, 24) GW. The part of the run's net energy that
+    follows the load shape (all of it but `flat_twh`) scales LDSM's hours by its ratio to the reference run's net
+    energy for that region and year; the flat part (data centers, dispatch.DispatchCase.flat_twh) is added as flat
+    GW, so the peak rises by exactly that much. In the reference run both ratios are 1 and nothing moves."""
+    flat = np.zeros(NUM_R) if flat_twh is None else np.asarray(flat_twh, dtype=float)
+    shaped = np.asarray(net_twh, dtype=float) - flat
+    ratio = np.divide(shaped, ref_twh, out=np.ones(NUM_R), where=np.asarray(ref_twh) > 0)
+    return sy * ratio[:, None, None] + (flat * 1000.0 / 8760.0)[:, None, None]

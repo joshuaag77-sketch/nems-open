@@ -738,9 +738,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         load_rm = load_hr
         if ECP_RESERVE and ECP_PEAK:
             sy = ecp_load.system_load(cs.year)
-            if sy is not None:     # LDSM's load, moved by how far this case's energy is from the reference's
+            if sy is not None:     # LDSM's load, moved to this run's demand (scaled shape plus flat added load)
                 ref = _reference_case(snapshot, cs.year).net_load_twh
-                load_rm = sy * np.divide(cs.net_load_twh, ref, out=np.ones(NUM_R), where=ref > 0)[:, None, None]
+                load_rm = ecp_load.follow_run(sy, cs.net_load_twh, ref, cs.flat_twh)
         icc = capacity_credit.credits(load_rm, c0, cs.profile, cs.weights)
         credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
         req = margin * icc["peak"] + icc["net_peak"]
