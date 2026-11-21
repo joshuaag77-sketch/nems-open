@@ -212,8 +212,10 @@ ECP_PEAK = True
 # and solar (ECP_BUILD_CF): the two go in together (docs/capacity.md, branch ecp-spin-reserve). In every region and
 # time slice, spinning reserve >= SR_RQMT_HGHT x load + SR_RQMT_DIFF x (the season's peak load - load), plus SR_INT of
 # the slice's wind and solar output (EP$INT,8/23/52: intermittents carry -SR_INT x their output on the row).
-# Off: with ECP_BUILD_CF the 2027-2040 chain's wind runs away (2040: 591 GW against EIA's 404), the rows price
-# spinning reserve at about a fifteenth of ECP's duals, and a year takes 150 to 380 s instead of 20 to 50.
+# Off: with ECP_BUILD_CF the 2027-2040 chain's wind runs away (2040: 591 GW against EIA's 404); alone (with
+# ECP_STORAGE_SR) it ends the chain with fewer turbines and less wind (2040 CT 244, wind 325). Its duals are about a
+# third of ECP's once both are in 1987$ (median regional sum 2.1 against 7.6 for 2031), and a year takes 150 to 680 s
+# instead of 20 to 50 (docs/capacity.md, branch ecp-reserve).
 SPIN_RESERVE = False
 SR_RQMT_HGHT, SR_RQMT_DIFF, SR_INT = 0.1, 0.3, 0.25      # composite_2030 (the same in all 25 regions and every type)
 # ECP's load seasons (LDSM ECPSGFH/ECPSGLH, months 1-based): winter Dec-Mar, summer Jun-Sep, the rest shoulder.
@@ -227,6 +229,16 @@ SPIN_SHORTFALL_COST = 1000.0    # 1987$/MWh of missing spinning reserve; ECP has
 # derate (uecp.f 38880-39035, UPICFC1). This LP's step for year y is ECP's year 2 of its y - 1 solve, so y - 2.
 # Off, with SPIN_RESERVE (see there).
 ECP_BUILD_CF = False
+# ECP's battery spinning reserve (ecp.ams ccalc_cEXXX_INT_rRSRge and ccalc_cIX_rRSRge, EP$INT,23/52, CALC_STORAGE_VAL,
+# 5/14): batteries do not choose their reserve in ECP. ReStore hands it a fixed reserve per GW by ECP slice, one for
+# existing storage (NET_STORAGE_SR_EX, on the existing column) and one for a new build (NET_STORAGE_SR_NW, on the
+# step-1 build column). Here the 2030 composite's values (ECP's 2031 matrix) for every year, in ECP slice order
+# (shoulder, summer, winter, each peak / middle / base): existing weighted by each region's NET_STORAGE_CAP_EX, new
+# the plain mean of the 25 regions (a missing entry is zero). With SPIN_RESERVE. Off: a battery carries its discharge
+# headroom up to one hour of stored energy, about 1.0 per GW whenever it is idle.
+ECP_STORAGE_SR = True
+ECP_BATTERY_SR_EX = (0.241, 0.285, 0.416, 0.220, 0.227, 0.460, 0.283, 0.213, 0.455)
+ECP_BATTERY_SR_NW = (0.097, 0.067, 0.065, 0.125, 0.187, 0.199, 0.087, 0.064, 0.090)
 
 
 def spin_min_cf() -> dict:
@@ -1010,7 +1022,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     keep = order[tab["EMM_REG"][order] <= NUM_R]
     margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[keep])
 
-    def operate(tag: str, cs, c0: dict, capv_p, wind_tot, solar_tot, batt_tot, bh: int = BLOCK_HOURS, new_w=0, new_s=0):
+    def operate(tag: str, cs, c0: dict, capv_p, wind_tot, solar_tot, batt_tot, bh: int = BLOCK_HOURS, new_w=0, new_s=0, new_b=0):
         """Dispatch and reserve margin of one planning period: case `cs` (its load, fuel prices and profiles),
         existing capacity `c0`, thermal capacity `capv_p` and wind, solar and battery totals (expressions in the
         decision variables). Returns its operating cost (1987 k$ for one year) and the pieces the result needs."""
@@ -1151,6 +1163,14 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             net_hr = load_rm - sum(sub[g][:, None, None] * cs.profile[g] for g in capacity_credit.INTERMITTENT)
             storage_sr = {}
             for name in STORAGE_HOURS:
+                if name == "battery" and ECP_STORAGE_SR:
+                    # ReStore's fixed reserve per GW by ECP slice: existing storage at the EX share, this year's
+                    # builds at the NW share
+                    blk = block_slice(ecp_slice_heights(load_rm, cs.weights, month_of_day, net_hr)[0], bh)
+                    ex = xr.DataArray(np.asarray(ECP_BATTERY_SR_EX)[blk], coords=[R, D, Bk])
+                    nw = xr.DataArray(np.asarray(ECP_BATTERY_SR_NW)[blk], coords=[R, D, Bk])
+                    storage_sr[name] = (batt_tot - new_b) * ex + new_b * nw
+                    continue
                 ss = m.add_variables(lower=0, coords=[R, D, Bk], name=f"spin_{name}{tag}")
                 di = m.variables[f"{name}_discharge{tag}"]
                 m.add_constraints(ss + di - sto_cap[name] <= 0, name=f"spin_{name}_headroom{tag}")
@@ -1184,7 +1204,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         return (xr.DataArray(c0["wind"], coords=[R]) + extra_w, xr.DataArray(c0["solar"], coords=[R]) + extra_s,
                 xr.DataArray(c0["battery"], coords=[R]) + extra_b)
 
-    p1 = operate("", case, cap0, capv, *totals(cap0, bw, bs, bb), new_w=bw, new_s=bs)
+    p1 = operate("", case, cap0, capv, *totals(cap0, bw, bs, bb), new_w=bw, new_s=bs, new_b=bb)
     g_th, unserved, shortfall, credits = p1["g_th"], p1["unserved"], p1["shortfall"], p1["credits"]
     operating = p1["operating"]
     weight_now = 1.0                       # present-value weight of the annual costs of this year's decisions

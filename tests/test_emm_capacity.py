@@ -530,6 +530,19 @@ def test_spin_reserve_inputs_follow_ecpdaty():
     assert list(capacity.ecp_season_of_month()) == [0, 0, 0, 2, 2, 1, 1, 1, 1, 2, 2, 0]
 
 
+def test_ecp_battery_spin_reserve_is_restore_share():
+    """ECP's batteries carry a fixed reserve per GW by slice (NET_STORAGE_SR_EX on existing storage, NET_STORAGE_SR_NW
+    on a new build; ccalc_cEXXX_INT_rRSRge, ccalc_cIX_rRSRge). The 2030 composite's capacity-weighted existing share is
+    0.21 to 0.46, highest in each season's base slice; a new build's 0.06 to 0.20. Not the 1.0 per idle GW the
+    headroom formulation gave."""
+    ex, nw = np.asarray(capacity.ECP_BATTERY_SR_EX), np.asarray(capacity.ECP_BATTERY_SR_NW)
+    assert ex.shape == (9,) and nw.shape == (9,)
+    assert 0.2 < ex.min() and ex.max() < 0.47
+    assert all(ex[3 * s + 2] == ex[3 * s:3 * s + 3].max() for s in range(3))
+    assert 0.06 < nw.min() and nw.max() < 0.2
+    assert capacity.ECP_STORAGE_SR is True and capacity.SPIN_RESERVE is False
+
+
 def test_dispatch_modes_follow_uppcfb():
     """EP$ODSP's mode test on UPPCFB (COSTPERF): coal and combined cycle (low bound 0.15 / 0.2) may not run peak-only,
     turbines and steam (0 / 0.01) may use all three modes; the switch is off by default."""
