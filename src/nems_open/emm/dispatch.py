@@ -153,7 +153,11 @@ def _in_service(snapshot, prefixes, types, year) -> np.ndarray:
 
     Start from last year's year-end capacity. Add each planned unit for the part of the year after its
     in-service month and take off each retiring unit for the part after its retirement month. What the
-    restart shows beyond that (builds EMM chose itself, which have no date) is assumed to arrive mid-year.
+    restart shows beyond that has no date in the plant file. A net loss is EMM's own retirements: ECP dates
+    an economic retirement in year Y to December of Y - 1 (uecp.f 27095-27098, W_RYR = YEAR - 1, W_RMO = 12),
+    so the unit is in UCAP(Y - 1), which counts units retiring in December (udat.f 8261-8300), but gone for
+    all of Y; it leaves the whole year. A net gain (EMM's own builds) is assumed to arrive mid-year, which
+    keeps wind and solar on EIA's generation.
     """
     y = year - history.FIRST_YEAR
     start, end = _ucap(snapshot, prefixes, y - 1), _ucap(snapshot, prefixes, y)
@@ -170,7 +174,8 @@ def _in_service(snapshot, prefixes, types, year) -> np.ndarray:
     np.add.at(ret_gw, u.region[rets] - 1, u.summer_mw[rets] / 1000.0)
     np.add.at(ret_avg, u.region[rets] - 1, u.summer_mw[rets] / 1000.0 * (13 - np.clip(tb["T_RMO"][rets], 1, 12)) / 12.0)
     undated = (end - start) - add_gw + ret_gw
-    return np.maximum(start + add_avg - ret_avg + 0.5 * undated, 0.0)
+    undated = np.where(undated < 0.0, undated, 0.5 * undated)
+    return np.maximum(start + add_avg - ret_avg + undated, 0.0)
 
 
 def _ucap(snapshot, prefixes, y) -> np.ndarray:

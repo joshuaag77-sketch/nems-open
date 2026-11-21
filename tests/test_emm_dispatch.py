@@ -24,9 +24,6 @@ KNOWN_MISSES = {
                         "its 65% maximum; EIA's coal units run at 42-48% in every year 2028-2040 for a reason not found in saved outputs "
                         "(docs/dispatch.md, coal capacity factor)",
     ("fuel_coal", 2040): "coal fuel 62% high, follows coal generation",
-    ("gen_coal", 2030): "coal 16% high (539 vs 465 TWh) on EIA's real gas fleet; it was 6% high only because UCAPAC/AS/AT were added on top "
-                        "of UCAPCC/CT, giving dispatch 37 GW of gas that does not exist (branch ecp-reserve, docs/capacity.md)",
-    ("fuel_coal", 2030): "coal fuel 17% high, follows coal generation (7% before the gas subgroup fix)",
     ("fuel_coal", 2025):"coal fuel 12% high: EIA holds 2025 coal to the Short-Term Energy Outlook and burns it at 10.3 thousand Btu/kWh; plant-file heat rates give 10.7",
 }
 
@@ -114,3 +111,13 @@ def test_eia_coal_units_run_below_their_maximum(snapshot):
         cap = float(dispatch._in_service(snapshot, dispatch.CAPACITY_PREFIXES["coal"], dispatch.EXISTING_TYPES["coal"], y).sum())
         cf = (gen("pc", y) + gen("ig", y)) / cap / 8.76
         assert 0.40 < cf < 0.53, (y, cf)
+
+
+def test_undated_retirements_leave_for_the_whole_year(snapshot):
+    """ECP dates an economic retirement in year Y to December of Y - 1 (uecp.f 27095-27098), so coal EMM retires
+    itself is gone for all of Y: 2031 coal is near year-end capacity (78 GW), not the 2030-2031 midpoint (83)."""
+    y = 2031 - 1990
+    p, types = dispatch.CAPACITY_PREFIXES["coal"], dispatch.EXISTING_TYPES["coal"]
+    end, mid = dispatch._ucap(snapshot, p, y).sum(), dispatch._ucap_mid(snapshot, p, y).sum()
+    now = dispatch._in_service(snapshot, p, types, 2031).sum()
+    assert end - 0.5 < now < end + 3.0 < mid

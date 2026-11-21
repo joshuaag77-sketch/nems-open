@@ -71,3 +71,31 @@ Ruled out, with numbers:
 - EPA 111 cofiring. EIA's ng units burn at least 40% gas from 2030 (udat.f 6457-6460) and run at 29%; treating them as cofiring here would add coal, not remove it.
 
 No fix is justified from saved outputs. What would settle it is the coal columns' reduced costs in an EFD solution (cO, cJ, cU for a coal group), which needs an oracle EFD solve with its solution kept. Pinned by `tests/test_emm_dispatch.py::test_eia_coal_units_run_below_their_maximum`. Scripts: scratchpad `coaldisp/` (efd.py, reg.py, comp.py, comp2.py).
+
+## What EFD's saved files show (branch coal-dispatch-2)
+The oracle's 2030 EFD files (aimms-showreel sample, efd_2030_01 and _02) are not the matrix: the composite holds EFD's inputs (group capacity, FOR, PMR, max CF, heat rate, VOM, slice widths and heights, fuel curves) and the PassBack its outputs: ECDSPE and ECDSPC (energy and available capacity by unit group W_GRP and season), NMARCST (marginal cost by region, season and slice), UPFUEL (fuel prices). No column levels or reduced costs, but enough to answer the question. Scripts: scratchpad `coaldisp/` (pb.py, pb2.py).
+
+**EFD's coal is held by capacity, not price.** In the oracle's 2030 EFD, coal makes 335 TWh on 74.6 GW (0.51 of nameplate). ECDSPC is capacity less forced outage (coal 60 GW = 74.6 x (1 - 0.19); combined cycle 231 = 248 x (1 - 0.075)). Of the 60 GW, 41 GW run at 0.70-0.80 of it in their seasons, which is their ceiling after planned maintenance (0.815) and the max-load mode's shape; 14 GW run at 0.3-0.6 (heat rates 11,000-11,500); 5 GW under 0.3. Marginal costs in every one of TRE's 9 slices are 14-50 1987$/MWh, above coal's 10; EFD's coal prices (UPFUEL 0.9-1.5) are ours. EFD dispatches only 3 slices per season (1%, 49%, 50% of hours), 9 a year.
+
+**EIA's coal factor was low because of the capacity we compared it with.** On year-end capacity EIA's coal units run at 0.52 in 2030 (404 TWh on 88.2 GW) and 2031 (353 on 78.0), the oracle's 0.51. The dispatch put the year's undated capacity change half way through the year. For retirements that is wrong: ECP dates an economic retirement in year Y to December of Y - 1 (uecp.f 27095-27098), the UCAP tally counts units retiring in December in that year-end (udat.f 8261-8300), so the unit is gone for all of Y. In 2030 the dispatch had 99.9 GW of coal where EFD had 88.
+
+**Fix.** `dispatch._in_service`: an undated net loss leaves for the whole year; an undated net gain still arrives mid-year (EMM's builds; mid-year keeps wind and solar on EIA's generation, while full-year raised 2031 wind from 734 to 772 TWh against EIA's 735). Sales-based load with trade, before / after / EIA, TWh:
+
+| | 2030 | 2031 | 2040 |
+|---|---|---|---|
+| Coal (EIA by fuel) | 539 / 478 / 465 | 469 / 445 / 419 | 93 / 93 / 63 |
+| Coal fuel, trillion Btu | 5,793 / 5,152 / 4,962 | 5,186 / 4,921 / 4,531 | 1,399 / 1,399 / 861 |
+| Combined cycle (+ gas CCS) | 1,486+13 / 1,546+13 / 1,449+12 | 1,501+24 / 1,524+24 / 1,446+23 | 1,485+396 / same / 1,437+365 |
+| Turbines | 0.3 / 0.5 / 67 | 0.3 / 0.4 / 65 | 8.2 / 8.2 / 90 |
+| Gas, all | 1,515 / 1,582 / 1,469 | 1,543 / 1,568 / 1,477 | 1,893 / same / 1,779 |
+
+The 2030 coal generation and fuel misses are gone (known misses in tests/test_emm_dispatch.py: 3 of 28, was 5); 2030 gas is +8%, inside tolerance.
+
+**Still open.**
+- Coal: 445 vs 419 in 2031 is 26 TWh, and against EIA's coal units (353) the gap is wider because EIA's 50 GW of cofired units burn 66 TWh worth of coal that the dispatch gives to gas steam. Our coal runs at its 0.65 cap; EFD's effective ceiling is about 0.62 of nameplate and a quarter of its coal (the higher heat rate groups) runs below it. One regional group at the average heat rate cannot reproduce that spread.
+- 2040 CCS coal (93 vs 63) is unchanged: its capacity is flat from 2033.
+- Turbines (0.4 vs 65 TWh). In the oracle EFD, gas turbines (CTG) make 32 TWh at 4.6% of their available capacity, and converted steam (CTN) 28. EFD's 1% peak slice and its spinning reserve rows, which buy reserve from turbines at minimum load, are what the dispatch lacks. EFD's per-slice derate (FOR and PMR scaled to the max CF, udat.f 10168-10236, reproduced to three decimals from the composite) was tried again: turbines 0.4 to 0.5 TWh, coal unchanged. Not kept.
+
+The capacity LP carries its own fleet (year-end, `dated_changes`), so it only sees the fix through the heat rate and VOM weights of build_case. Planner chain 2027-2040 from EIA's 2026 fleet, 2040 GW before / after / EIA: CC 435 / 436 / 431, CT 234 / 234 / 267, batteries 108 / 108 / 103, solar 348 / 348 / 323, wind 383 / 383 / 404, coal 15 / 15 / 16, steam 56 / 56 / 52; builds by year move under 0.2 GW.
+
+Pinned by `tests/test_emm_dispatch.py::test_undated_retirements_leave_for_the_whole_year`.
