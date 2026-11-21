@@ -502,3 +502,18 @@ def test_retirement_tail_value_is_the_avoided_replacement_over_ecp_horizon():
         25.0e3 * sum((1 + r) ** -k for k in range(1, 5)))
     assert cap.retirement_tail_value(2031, firm, keep, r, last_year=2031)[0] == 0.0
     assert {"steam", "gas_cc", "gas_ct", "coal"} <= set(cap.RETIRE_HORIZON_GROUPS)
+
+
+def test_conversion_credit_only_when_no_later_conversion_column(monkeypatch):
+    """ECP's conversion columns (ecp.ams cNNG) exist for planning years 2 and 3 only while E + PlanYear - 1 <= UEPA_GSYR,
+    so the horizon credit is earned only when this LP's year is the last one a conversion can come online."""
+    rule = capacity.epa111()
+    monkeypatch.setattr(capacity, "ECP_CONVERT_TIMING", True)
+    last = rule["gas_switch_last"]
+    assert last == 2030
+    assert not capacity.conversion_is_last_chance(2028, rule)
+    assert not capacity.conversion_is_last_chance(2029, rule)
+    assert capacity.conversion_is_last_chance(2030, rule)
+    assert not capacity.conversion_is_last_chance(2030, dict(rule, switch=0))      # no rule: a later column always exists
+    monkeypatch.setattr(capacity, "ECP_CONVERT_TIMING", False)
+    assert capacity.conversion_is_last_chance(2028, rule)                         # off: the old credit every year

@@ -339,6 +339,26 @@ def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon:
     return gain * pv * _crf(rate, horizon)
 
 
+# When ECP converts (ecp.ams Calculate_CL_NNGCOSTS, EP$COAL,19): conversion columns cNNG exist only for planning years
+# 2 and 3 (ord(PlanYear) > 1; emmcntl %CL RET VN% UCL_VIN 0 / 1 / 2: year 1 cannot change) and, with EPA 111 on, only
+# while E + PlanYear - 1 <= UEPA_GSYR (OV_CLtNG = 0 past it). Year 2 (online E + 1) is the one carried out; year 3 is
+# the tail. Both put the unit in every later reserve row, so the horizon's firm value is the same for both and cancels:
+# converting now has to pay for itself in E + 1 alone, unless the tail column is gone (E + 2 > UEPA_GSYR). This LP's
+# year is ECP's E + 1, so the horizon credit applies only when year + 1 > UEPA_GSYR (2030). Before this, the credit
+# applied from 2028 and the LP converted 30.7 GW in 2028 (EIA: 4.3, 12.7, 18.9 in 2028-2030). On, the 2027-2040 chain
+# converts 0 / 0 / 12.4 GW: the timing is ECP's, but the one-year economics of 2028-2029 and the 2030 volume are not,
+# and steam falls 16 to 22 GW under EIA's in 2030-2035 (docs/capacity.md). Off until those are found: credit every year.
+ECP_CONVERT_TIMING = False
+
+
+def conversion_is_last_chance(year: int, rule: dict) -> bool:
+    """True when converting in `year` is the last option ECP has (no tail conversion column after it), so the
+    conversion earns the horizon's firm-capacity credit; False when it could also convert a year later."""
+    if not ECP_CONVERT_TIMING:
+        return True
+    return bool(rule["switch"]) and year + 1 > rule["gas_switch_last"]
+
+
 # ECP keeps or retires an existing gas or oil plant for its whole planning horizon, not for one year. Combined cycle and
 # steam are EP$NGBS gas plant groups (uecp.f 36045-36680): each group's options run it for period 1 only (the one that
 # retires it), periods 1-2, or all of the UNFPH horizon at ENG_FOM a year (FOM + G&A + capital additions + age adder,
@@ -1023,8 +1043,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 keep = fom_exist[g] if g in fom_exist else fom_made[g]
                 tv = retirement_tail_value(year, firm[:, 0], keep, rate_now, last)
                 tail = tail + (retire.sel(group=g) * xr.DataArray(tv, coords=[R])).sum()
-    conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"] \
-        - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
+    conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
+    if conversion_is_last_chance(year, rule):
+        conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
     retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
     m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal
                     + tail)
