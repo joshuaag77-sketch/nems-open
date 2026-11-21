@@ -530,6 +530,32 @@ def test_spin_reserve_inputs_follow_ecpdaty():
     assert list(capacity.ecp_season_of_month()) == [0, 0, 0, 2, 2, 1, 1, 1, 1, 2, 2, 0]
 
 
+def test_dispatch_modes_follow_uppcfb():
+    """EP$ODSP's mode test on UPPCFB (COSTPERF): coal and combined cycle (low bound 0.15 / 0.2) may not run peak-only,
+    turbines and steam (0 / 0.01) may use all three modes; the switch is off by default."""
+    modes = capacity.allowed_modes()
+    for g in ("coal", "coal_ccs", "gas_cc", "gas_cc_new", "gas_ccs"):
+        assert modes[g] == (2, 3)
+    for g in ("gas_ct", "gas_ct_new", "steam", "gas_conv"):
+        assert modes[g] == (1, 2, 3)
+    assert capacity.ECP_DISPATCH_MODES is False
+
+
+def test_block_slice_and_min_mode_output():
+    """A block takes the ECP slice most of its hours fall in; cJ's output per committed GW is SR_MIN_CF scaled by the
+    slice's height over its season's lowest (SR_MIN_LF 0 for thermal types)."""
+    sl = np.zeros((1, 1, 24), dtype=int)
+    sl[0, 0, :2] = 4
+    sl[0, 0, 3:5] = 5
+    b = capacity.block_slice(sl, 3)
+    assert b[0, 0, 0] == 4 and b[0, 0, 1] == 5 and b[0, 0, 2] == 0
+    h = np.array([[30.0, 20.0, 10.0, 40.0, 30.0, 20.0, 9.0, 6.0, 3.0]])
+    f = capacity.mode_min_factor(h, 0.2)
+    assert f[0, :3] == pytest.approx([0.6, 0.4, 0.2])
+    assert f[0, 3:6] == pytest.approx([0.4, 0.3, 0.2])
+    assert capacity.mode_min_factor(h, 0.2, 1.0)[0] == pytest.approx([0.2] * 9)
+
+
 def test_spin_requirement_is_ecp_slice_formula():
     """EP$MRM,10: SR_RQMT_HGHT x slice height + SR_RQMT_DIFF x (season peak slice - height), on LDSM's slices: each
     season's hours split 1% / 49% / 50% by load, each slice at the average of its hours."""
