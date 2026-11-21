@@ -604,7 +604,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     # --- costs of building ---
     params = technology.type_parameters()
     codes = technology.ecp_codes()
-    hr_new_all = np.array(named_ranges(technology.ECPDATY, "OPTLRN")["UPPHRTN"])
+    hr_new_all = technology.new_heat_rate(year)        # UPHTRT (ucape.f 625-641): UPPHRT0 for every gas type
     capital_only = {}
     capital = capital_costs(snapshot, year, case, capital_only)
 

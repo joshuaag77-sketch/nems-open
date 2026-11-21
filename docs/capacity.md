@@ -372,3 +372,37 @@ Builds by year, CC (with CCS) / CT / batteries; EIA's are capacity changes:
 2032 now builds turbines at EIA's level (17.5 vs 17.9) and batteries at 15.6 (EIA 9.9) instead of 28.8; the step that took them, battery step 2 at 1.38 x, does not exist in ECP. The firm need the batteries no longer fill goes to CC (29.4 vs EIA 24.8), so 2040 CC is 8 GW further from EIA while turbines and batteries move toward it. 2027 economic retirements are unchanged (19.3 GW). The 2032 reserve price rises (median 82 -> 98) since the coal rule's shortfall is now met from dearer gas steps.
 
 Pinned by `tests/test_emm_capacity.py` (`test_battery_increment_share_follows_ds_params`, `test_battery_build_limit_matches_ecp_2026`, `test_batteries_build_in_the_first_step_only`). Scripts: scratchpad `b27/` (dsbound.py compares the bounds, one27.py the 2027 step, chain.py the chain).
+
+## Why gas builds tilt to CC over turbines (branch ecp-gas-split)
+
+**The value split in ECP's own matrix.** ECP's 2030 solve (OutToNEMS_2030; year-1, step-1 build columns, online 2031) gives each column's cost (NomCoeff) and reduced cost. Its value is NomCoeff less the reduced cost; take off the reserve rows of planning years 2 and 3 (rRXXXXXge, coefficient 1) and the step row (rLUle), and what is left is the column's operating value. As shares of AT's cost, region medians: AC costs 0.267 more than AT; AC's operating value is 0.414, AT's 0.130, so AC's edge over AT is 0.272. AC and AT tie (edge over cost gap 1.03, both reduced costs near zero), and the split is set by AC's first build step, which binds (9.8 GW). The same holds in every ECP solve from 2029 to 2039 (edge over cost gap 0.94 to 1.07, cost ratio 1.26 to 1.29).
+
+**This LP for 2031** (one step from EIA's 2030 fleet; operating value from the LP's own prices, 1 GW dispatched greedily under its outage rate and the EPA 111 40% cap): the cost gap is 0.269, matching ECP's. CC's edge is 0.329, and the turbine's own value is 0.009 against ECP's 0.130. CC therefore wins by 1.23 x its cost gap (median) where ECP ties, which gives CC the reserve-driven builds.
+
+**What ECP's turbine earns that this LP does not.** The turbine's operating value tracks the spinning reserve duals (rRSRge, years 2 and 3) region by region, with correlation 0.99 (CASO excluded) and a median of 0.62 of the dual sum. CC's edge over AT is uncorrelated with them (0.04). Spinning reserve (EP$MRM,8-13: 10% of load plus 30% of the gap to the season peak; EP$ODSP,34-52: headroom of dispatched units, with min-load and max-load modes) pays both gas types about alike, so it is not what separates them, and this LP has no such row. It is not ported. It is a structural block that would also change how batteries, hydro and wind are valued, and it needs its own lane.
+
+**The heat rate (ported).** ECP builds dispatchable plants at UPHTRT (uecp.f 37458-37478). That is the first-of-a-kind UPPHRT0 unless UPDHRSW > 1 (ucape.f 625-641; udat.f 5350, 13991), and every type in ecpdaty.xlsx has UPDHRSW = 1. The LP and the dispatch case used the nth-of-a-kind UPPHRTN instead. For combined cycle, CCS and steam the two are the same. For the advanced turbine UPPHRTN is 9,905 Btu/kWh against UPPHRT0's 9,142, and ECP's composite input carries UPHTRT(AT) = 9142. The new `technology.new_heat_rate` follows the Fortran rule, and `capacity.solve_year` and `dispatch.build_case` use it. With it, CC's 2031 edge falls to 0.309 and the margin to 1.14 x the cost gap. What is left (about 0.04 of AT's cost, 1.4 $/kW-year) is not traced to an input; cost inputs (UPOVR, multipliers, FOM, VOM, UPFORT, UPMCF, EPA 111 cap) match the composite.
+
+Chain 2027-2040 from EIA's 2026 fleet, before (main 224fce0) / after / EIA, 2040 GW:
+
+| | before | after | EIA |
+|---|---|---|---|
+| CC with CCS | 457 | 442 | 431 |
+| Turbines | 229 | 239 | 267 |
+| Batteries | 106 | 106 | 103 |
+| Solar | 343 | 343 | 323 |
+| Wind | 392 | 405 | 404 |
+| Coal | 14 | 14 | 16 |
+
+Builds, CC (with CCS) / CT / batteries, before -> after (EIA's are capacity changes):
+
+| | 2027 | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 | 2034 | 2035 |
+|---|---|---|---|---|---|---|---|---|---|
+| CC | 0 -> 0 | 8.0 -> 8.0 | 7.3 -> 6.9 | 9.2 -> 9.0 | 10.1 -> 9.5 | 29.4 -> 27.7 | 20.2 -> 18.6 | 11.6 -> 11.9 | 11.8 -> 11.9 |
+| CT | 7.7 -> 7.7 | 8.4 -> 8.4 | 5.6 -> 6.3 | 2.4 -> 2.6 | 2.2 -> 2.9 | 17.5 -> 17.6 | 4.4 -> 4.8 | 3.9 -> 4.7 | 5.1 -> 5.7 |
+| battery | 10.8 -> 10.8 | 0 -> 0 | 0 -> 0 | 0 -> 0 | 0.1 -> 0 | 15.6 -> 15.6 | 0.8 -> 1.1 | 0 -> 0.3 | 0 -> 0.1 |
+| EIA CC / CT / battery | 0.2 / 9.1 / 13.2 | 4.6 / 5.6 / 3.6 | 11.0 / 2.9 / 3.3 | 6.0 / 4.3 / 2.8 | 7.4 / 6.0 / 0.7 | 24.8 / 17.9 / 9.9 | 10.8 / 3.5 / 0.7 | | |
+
+Turbine builds in 2036-2039 rise from 22.1 to 28.7 GW and the 2039 reserve price drops from 76 to 53. The 2033 CC excess (18.6 against 10.8) is mostly firm capacity the chain lacks, not the mix: steam is 87 GW against EIA's 103 from 2031 (the retirement and conversion question above) and wind 240 against 296. ECP's own 2032 solve builds only 2.7 GW of AC and 1.0 of AT for 2033.
+
+Pinned by `tests/test_emm_capacity.py::test_new_gas_heat_rates_are_ecp_uphtrt`. Scripts: scratchpad `gas/` (ecpval.py and ecpyears.py split ECP's columns, ourval2.py and energy.py do the LP's side, chain.py runs the chain).

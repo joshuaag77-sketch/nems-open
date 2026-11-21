@@ -64,6 +64,26 @@ def type_parameters() -> dict[str, np.ndarray]:
     }
 
 
+def new_heat_rate(year: int | None = None) -> np.ndarray:
+    """Heat rate of a new plant of each dispatchable ECP type (Btu/kWh, shape (55,), the OPTLRN order), UPHTRT as
+    ucape.f 625-641 sets it: the first-of-a-kind rate UPPHRT0 (udat.f 5350, 13991) unless UPDHRSW > 1, in which case
+    it moves linearly to the nth-of-a-kind UPPHRTN between UPDHRY0 and UPDHRYN. uecp.f 37458-37478 then builds the
+    ECP columns at UPHTRT. Every type in ecpdaty.xlsx has UPDHRSW = 1, so this is UPPHRT0: the advanced turbine (AT)
+    burns 9,142 Btu/kWh, not its UPPHRTN of 9,905 (ECP's composite input for 2030 carries UPHTRT(AT) = 9142).
+    `year`: the online year, for the types with UPDHRSW > 1."""
+    o = named_ranges(ECPDATY, "OPTLRN")
+    hr0 = np.array(o["UPPHRT0"], dtype=np.float64)
+    hrn = np.array(o["UPPHRTN"], dtype=np.float64)
+    sw = np.array(o["UPDHRSW"], dtype=np.float64)
+    y0 = np.array(o["UPDHRY0"], dtype=np.float64)
+    yn = np.array(o["UPDHRYN"], dtype=np.float64)
+    if year is None:
+        year = 9999
+    share = np.clip(np.divide(year - y0, yn - y0, out=np.ones_like(y0), where=yn > y0), 0.0, 1.0)
+    learned = np.where(year <= y0, hr0, hr0 + (hrn - hr0) * share)
+    return np.where(sw > 1, learned, hr0)
+
+
 @lru_cache(maxsize=1)
 def regional_costs() -> dict[str, np.ndarray]:
     """Regional cost table from the database, each of shape (28, 80): NEMS region (25 EMM,

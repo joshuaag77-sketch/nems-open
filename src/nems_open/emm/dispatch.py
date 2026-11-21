@@ -323,7 +323,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     ptype = {t.code: t for t in technology.efd_plant_types()}
     params = technology.type_parameters()
     codes = technology.ecp_codes()
-    hr_new_all = np.array(named_ranges(technology.ECPDATY, "OPTLRN")["UPPHRTN"])
+    hr_new_all = technology.new_heat_rate(year)        # UPHTRT (ucape.f 625-641): UPPHRT0 for every gas type
 
     heat, vom, oil, avail = {}, {}, {}, {}
     for g in THERMAL:

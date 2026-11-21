@@ -466,3 +466,21 @@ def test_batteries_build_in_the_first_step_only(snapshot):
     lim = capacity.battery_build_limit(snapshot, 2027, dispatch.build_case(snapshot, 2027, "none"))
     assert res.builds["battery"].sum() <= step1 + 1e-6
     assert np.all(res.builds["battery"] <= lim + 1e-6)
+
+
+def test_new_gas_heat_rates_are_ecp_uphtrt():
+    """ECP builds dispatchable plants at UPHTRT (uecp.f 37458-37478), which is UPPHRT0 when UPDHRSW <= 1 (ucape.f
+    625-641), true of every type in ecpdaty.xlsx. The oracle's 2030 composite input carries UPHTRT CT 9447, AT 9142,
+    CC 6226, AC 6226, CS 7239; the LP had the advanced turbine at its UPPHRTN, 9905. The build LP and the
+    dispatch case's new capacity both use it."""
+    from nems_open.emm import technology
+    from nems_open.xlsx_ranges import named_ranges
+    codes = technology.ecp_codes()
+    hr = technology.new_heat_rate(2031)
+    ecp = {"CT": 9447.0, "AT": 9142.0, "CC": 6226.0, "AC": 6226.0, "CS": 7239.0}
+    for c, v in ecp.items():
+        assert hr[codes.index(c)] == pytest.approx(v), c
+    o = named_ranges(technology.ECPDATY, "OPTLRN")
+    sw = np.asarray(o["UPDHRSW"], dtype=float)
+    assert np.all(sw <= 1)
+    assert np.allclose(hr, np.asarray(o["UPPHRT0"], dtype=float))
