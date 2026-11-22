@@ -40,6 +40,12 @@ from nems_open.snapshot import Snapshot
 
 RUN_DIR = Path(os.environ.get("NEMS_COAL_RUN", Path.home() / "dev" / "oracle-cache" / "coal-aimms"))
 FIRST = aimms_run.BASE_YEAR          # 2024
+# coal.ams sizes its iteration set It_ = ElementRange(1, MaxIter) with MaxIter = 7, and keys SolveStatus and
+# ResultMessage by Itr_Element = Element(It_, curitr). From curitr 8 that element is empty: ResultMessage reads ''
+# not 'Optimal', so CalcCoalReportingTotals is skipped and the infeasible fallback (EmptyVariablesWhenInfeasible and
+# a re-solve) runs on a good solve. EIA never gets there (3 calls a year); our loop can call 21 times. The CMM uses
+# curitr otherwise only to tell iteration 1 from later ones, so later iterations go in as 7 (docs/per_call_state_audit.md).
+CMM_MAX_ITR = 7
 # Every CMM solve appends one line here (a log for a later write-up; it never feeds back into results).
 SHOWREEL = Path(os.environ.get("NEMS_SHOWREEL", Path.home() / "dev" / "aimms-showreel"))
 SAMPLE_YEAR = 2030
@@ -280,7 +286,7 @@ class AimmsCoal:
         return arrays
 
     def begin(self, year: int, itr: int, q: dict, prices: dict, fcrl: int = 0):
-        self._call(year, itr, self.inputs(year, q, prices), fcrl)
+        self._call(year, min(itr, CMM_MAX_ITR), self.inputs(year, q, prices), fcrl)
 
     def prices(self) -> dict[str, np.ndarray]:
         return {k: v.copy() for k, v in self.out.items()}
