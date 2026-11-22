@@ -83,6 +83,25 @@ def planned_in_step(year: int, group: str) -> float:
 
 
 STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional type whose ESTCPADD it may not fall below
+# ucape.f ELSTCAP keeps a history per ECP type (ESTYRADD, udat.f 8276, from each unit's own ECPcd): AC counts only AC,
+# CC counts CC plus EC (ucape.f 62), and then ESTCPADD(AC) = max(ESTCPADD(AC), ESTCPADD(CC)) (ucape.f 72-73; AT and CT
+# alike, CT counting ET). The LP pooled them: the gas_cc_new history was the plan's EC units plus its own AC builds in
+# one sum per year, and the CC floor was ESTMNADD alone. On: the advanced type's history is its own (LP builds plus
+# plant-file units of that ECP type), the conventional type's is the plant file's CC + EC (CT + ET) units by online
+# year, and the steps use the larger ESTCPADD. Off: pooled.
+STEP_SEPARATE_HISTORY = True
+STEP_CONVENTIONAL_TYPES = {"gas_cc_new": ("CC", "EC"), "gas_ct_new": ("CT", "ET")}
+STEP_OWN_TYPES = {"gas_cc_new": ("AC",), "gas_ct_new": ("AT",)}
+
+
+def plant_file_adds(year: int, ecp_types) -> float:
+    """National GW of plant-file units of these ECP types online in `year`, with ESTYRADD's vintage filter
+    (WVIN 1, 2, 3 or above 9, not 15; udat.f 8273)."""
+    u = plants.load_units()
+    vin = np.asarray(u.vintage)
+    ok = ((vin == 1) | (vin == 2) | (vin == 3) | (vin > 9)) & (vin != 15)
+    m = ok & (u.online_year == year) & np.isin(u.ecp_type, ecp_types)
+    return float(u.summer_mw[m].sum()) / 1000.0
 
 # ECP's battery build columns (uecp.f CALC_STORAGE_VAL,11-12): one column per region in the first elasticity step only
 # (IS = 1, row LUDSST1), so batteries never reach the 1.4 x and 2.25 x steps, and each region's column is bounded by
@@ -121,12 +140,14 @@ def battery_build_limit(snapshot, year: int, case) -> np.ndarray:
     return battery_increment_share(e) * np.maximum(top, 0.0)
 
 
-def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
+def build_steps(code: str, recent: list, planned: float = 0.0, floor_recent: list | None = None) -> list:
     """[(GW bound, capital cost multiplier)] for this year's national builds of ECP type `code`, from the last five
     years' national additions (GW, oldest first), as ucape.f ELSTCAP and ELSTELA. `planned`: the plant file's
     additions of the type online this year (GW); ECP puts them in the first step (uecp.f EP$ELAST,2-3: a fixed
     column of min(ESTCPLIM step 1, ESTYRPLN) in the step-1 row), so the model's own builds get only what is left
-    of it. Without that, 2027's 26 GW of planned solar left the LP a full 44 GW first step on top."""
+    of it. Without that, 2027's 26 GW of planned solar left the LP a full 44 GW first step on top. `floor_recent`:
+    the conventional type's own five years (STEP_SEPARATE_HISTORY), whose ESTCPADD the advanced type may not fall
+    below; without it, only the conventional type's ESTMNADD floor."""
     b = named_ranges(technology.ECPDATY, "BLDINFO")
     i = technology.ecp_codes().index(code)
     stp = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[i]
@@ -137,12 +158,16 @@ def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
         add = max(add, float(a) * (0.5 + 0.5 * (k + 1) / n))
     if code in STEP_FLOOR_OF:
         # ucape.f ELSTCAP: ESTCPADD(AC) = max(ESTCPADD(AC), ESTCPADD(CC)), likewise AT and CT. The conventional type's
-        # ESTCPADD is at least its ESTMNADD / (1 + ESTCPSTP step 1), 5,000 MW / 1.25 = 4 GW, and its own history is
-        # the same additions this group counts, so the advanced type's steps never fall below 4 GW. Without it, five
-        # years with no turbine builds shrank the turbine steps to 1.2 GW and the 2039 cofiring retirements went to CC.
+        # ESTCPADD is at least its ESTMNADD / (1 + ESTCPSTP step 1), 5,000 MW / 1.25 = 4 GW, or its own weighted history
+        # (CC + EC units, `floor_recent`), so the advanced type's steps never fall below 4 GW. Without it, five years
+        # with no turbine builds shrank the turbine steps to 1.2 GW and the 2039 cofiring retirements went to CC.
         j = technology.ecp_codes().index(STEP_FLOOR_OF[code])
         stp_j = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[j]
-        add = max(add, float(b["ESTMNADD"][j]) / 1000.0 / (1.0 + stp_j[0]))
+        add_j = float(b["ESTMNADD"][j]) / 1000.0 / (1.0 + stp_j[0])
+        if floor_recent is not None:
+            for k, a in enumerate(floor_recent):
+                add_j = max(add_j, float(a) * (0.5 + 0.5 * (k + 1) / len(floor_recent)))
+        add = max(add, add_j)
     out, cum, done = [], 1.0, 0.0
     for s, frac in enumerate(stp):
         cum += frac
@@ -1133,7 +1158,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         renewable = {"wind": bw, "solar": bs, "battery": bb}
         for g, code in STEP_CODES.items():
             total = renewable[g].sum() if g in renewable else build.sel(group=g).sum()
-            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5), planned_in_step(year, g))
+            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5), planned_in_step(year, g),
+                                (recent_adds or {}).get(f"{g}/floor"))
             if g == "battery" and ECP_STORAGE_BUILDS:
                 steps = steps[:1]          # ECP builds batteries in the first step only (CALC_STORAGE_VAL,12)
             S = pd.Index(range(len(steps)), name="step")
@@ -1645,6 +1671,14 @@ class CapacityPath:
                     vals.append(max(capacity_report.eia_additions(self.snapshot, yr, prefixes)
                                     - capacity_report.eia_additions(self.snapshot, yr - 1, prefixes), 0.0))
             out[g] = vals
+            if STEP_SEPARATE_HISTORY and g in STEP_OWN_TYPES:
+                own = []
+                for yr in range(year - n, year):
+                    r = self.results.get(yr)
+                    built = float(r.builds.get(g, np.zeros(NUM_R)).sum()) if r is not None else 0.0
+                    own.append(built + plant_file_adds(yr, STEP_OWN_TYPES[g]))
+                out[g] = own
+                out[f"{g}/floor"] = [plant_file_adds(yr, STEP_CONVENTIONAL_TYPES[g]) for yr in range(year - n, year)]
         return out
 
     def credit_share(self, year: int) -> dict:

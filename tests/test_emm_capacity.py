@@ -391,6 +391,17 @@ def test_advanced_gas_steps_keep_the_conventional_floor():
     assert round(capacity.build_steps("DS", [0.0] * 5)[0][0], 3) == 3.0        # other types keep their own floor
 
 
+def test_advanced_gas_steps_take_the_larger_of_two_histories():
+    """ucape.f 54-73: ESTCPADD(AC) is AC's own weighted history, then max with CC's (CC + EC units). Two separate
+    maxima, not one pooled sum: 3 GW of AC builds and 6 GW of EC units in the same year give a 6 GW base, not 9."""
+    pooled = capacity.build_steps("AC", [0, 0, 0, 0, 9.0])
+    split = capacity.build_steps("AC", [0, 0, 0, 0, 3.0], floor_recent=[0, 0, 0, 0, 6.0])
+    assert split[0][0] == pytest.approx(6.0 * 1.25) and pooled[0][0] == pytest.approx(9.0 * 1.25)
+    assert capacity.build_steps("AC", [0, 0, 0, 0, 8.0], floor_recent=[0, 0, 0, 0, 6.0])[0][0] == pytest.approx(10.0)
+    # the plant file's planned gas units are EC and ET, never AC or AT (they count only toward CC and CT)
+    assert capacity.plant_file_adds(2026, ("AC",)) == 0.0 < capacity.plant_file_adds(2026, ("CC", "EC"))
+
+
 def test_retirement_cap_follows_ecp_lead_time():
     """uecp.f 1171-1178 and EP$RET: ECP year E caps retirements in E + UPRTLT (1) at 3% + 1 point x (E - 2026), and
     switches the cap off past 6%. So 3% for 2027 (not 5%), 6% for 2030 and none from 2031."""
