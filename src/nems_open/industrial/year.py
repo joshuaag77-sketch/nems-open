@@ -39,6 +39,7 @@ ARRAYS = ("enpmqty", "enpiqty", "enprqty", "enbint", "enbqty", "ensqty", "bsshr"
           "enpint", "enpintlag", "enpqty", "bypint", "bypintlag", "bypqty", "idlcap", "idlcaplag", "ifslocby", "ntmax",
           "ifmax", "ipastp", "ifloc", "bcsc", "ifbyp", "iflocby", "bypcsc", "einter", "numrptgrpsteps", "rptgrpsteps")
 REGIONAL = ("qtymain", "qtyintr", "qtyrenw")  # buffer holds one region's column of the shared (fuel, region) array
+OPENING = ("biosteamyr",)  # not in ind.f: BIOSTEAMLAG as the year opened (boiler_totals.calstot), set by roll_lags
 
 
 def start_state(ys: dict) -> tuple[dict, dict]:
@@ -56,6 +57,8 @@ def start_state(ys: dict) -> tuple[dict, dict]:
                     b[name] = v[()]
                 else:
                     b[name] = FArray(np.array(v), a.lb[:-2])
+    for b in bufs.values():
+        b["biosteamyr"] = b["biosteamlag"]   # a 'ys_in' dump is the top of the year, before any ISEAM call
     s["_stepnames9"] = [None] + [x.decode("latin-1").strip() for x in np.asarray(ys["cb_indstepname9"].a)] if "cb_indstepname9" in ys else None
     return s, bufs
 
@@ -63,7 +66,7 @@ def start_state(ys: dict) -> tuple[dict, dict]:
 def rdbin(s: dict, bufs: dict) -> None:
     b = bufs[(int(s["inddir"]), int(s["indreg"]))]
     ir = int(s["indreg"])
-    for n in SCALARS:
+    for n in SCALARS + OPENING:
         s[n] = b[n]
     for n in ARRAYS:
         s[n] = b[n].copy()
@@ -75,7 +78,7 @@ def rdbin(s: dict, bufs: dict) -> None:
 def wrbin(s: dict, bufs: dict) -> None:
     ir = int(s["indreg"])
     b = bufs[(int(s["inddir"]), ir)]
-    for n in SCALARS:
+    for n in SCALARS + OPENING:
         b[n] = s[n]
     for n in ARRAYS:
         b[n] = s[n].copy()
@@ -106,6 +109,7 @@ def roll_lags(bufs: dict) -> None:
         b["stemcurlag"] = b["stemcur"]
         b["prodlag"].a[...] = b["prodcur"].a
         b["idlcaplag"].a[...] = b["idlcap"].a
+        b["biosteamyr"] = b["biosteamlag"]
 
 
 def set_electricity_price(s: dict) -> None:

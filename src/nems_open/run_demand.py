@@ -262,6 +262,10 @@ class IndustrialSector:
         if self.ind != "ported":
             return  # fixed at the oracle's values
         from nems_open.industrial.year import calibrate, run_iteration
+        # The 'ys_in' dump is the top of the year's FIRST iteration, but the coupled loop's first year starts at
+        # iteration 2 (the other sectors' dumps are the top of the final iteration). Count from IND's own first call
+        # so ISEAM's first-iteration block (the lag roll) runs and the year's benchmarking follows EIA's order.
+        itr = itr - state.first_itr.setdefault(year, itr) + 1
         _set_year(state.s, year)
         inputs.apply(state.s)
         run_iteration(state.s, state.bufs, itr, itr == 2, state.standin)
@@ -282,6 +286,7 @@ class IndustrialState:
     def __init__(self, s: dict, bufs: dict, standin):
         self.s, self.bufs, self.standin = s, bufs, standin
         self.needs_first_iteration = False
+        self.first_itr = {}   # year -> the loop's iteration number on IND's first call that year
 
 
 def _set_year(s: dict, year: int) -> None:

@@ -25,6 +25,7 @@ DIVISIONS = {1: (1, 2), 2: (3, 4), 3: (5, 7), 4: (8, 9)}  # census divisions in 
 # main fuel index -> CHP fuel index (exstcap/plancap order); 0 = none
 CHP_FUEL = {7: 1, 11: 2, 4: 3, 41: 4, 44: 5, 48: 6, 42: 7, 46: 8, 34: 9}
 SIZE_COL = ((4, 1), (7, 2), (51, 3), (42, 4), (1, 5))  # (fuel, column of sizeshr)
+ISEAM_CALLS = 2  # ISEAM calls a year in EIA's reference run (the industrial oracle's two iterations)
 
 
 def calstot(s: dict, inddir: int, indreg: int) -> None:
@@ -62,7 +63,14 @@ def calstot(s: dict, inddir: int, indreg: int) -> None:
 
     if curcalyr <= ibyr:
         biosteam = f32(bscibyr[inddir, indreg, 42] * beff[42])
-    else:
+    elif "biosteamyr" in s:
+        # ind.f 8419-8421 grows BIOSTEAMLAG on every call, so biosteam compounds once per ISEAM call: twice a year
+        # in EIA's run (2 iterations, as the oracle). The coupled loop calls up to 21 times a year; start from the
+        # year's opening value and compound at most ISEAM_CALLS times (docs/industrial_biomass_steam.md).
+        biosteam = f32(s["biosteamyr"])
+        for _ in range(min(int(s["curitr"]), ISEAM_CALLS)):
+            biosteam = f32(biosteam * (s["prodvx"] / s["prodvxlag"]))
+    else:   # a bare oracle state (unit tests): EIA's formula as written
         biosteam = f32(s["biosteamlag"] * (s["prodvx"] / s["prodvxlag"]))
     s["biosteamlag"] = biosteam
     s["biosteam"] = biosteam
