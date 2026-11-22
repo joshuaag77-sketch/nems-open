@@ -60,8 +60,13 @@ The worst-lines list ranks by the gap in multiples of what the line allows. A se
 
 ## Known limits
 
-- The run archive holds prices, end-use and power-plant fuel use, CO2 by sector, generation, capacity and Henry Hub. It does not hold crude or gas production, gas trade, Brent, WTI or GDP, so those lines are NOT IN RUN. Dry gas production fills in when the run used the gas-market stand-in, which saves `n:production`.
-- The loop does not update QTSEL or QTSAS. The report rebuilds them with NEMS's identity, as `full_model.numbers` does. Nuclear and renewable fuel inputs to power plants (QUREL, QTREL) are not recomputed from generation, so they show HELD.
+Runs saved from commit `run-outputs` on carry the series below. Older archives lack them, and the report falls back to rebuilding QTSEL and QTSAS itself.
+
+- Dry gas production, pipeline imports and exports, and LNG exports are NGMM's own volumes (`ogs="aimms"`, RunResult.gas). They are not calibrated to EIA, so the gap includes NGMM's reproduction error of a few percent.
+- Crude production is HSM's, scaled to EIA's restart the way NGMM's expected gas production is. With two cycles HSM runs once, between them, so the saved value answers the first cycle's prices. It is missing when HSM never ran.
+- Real GDP is EIA's times the last cycle's FRB/US GDP gap (`macro="frbus"`). Without the macro module it is EIA's and shows HELD.
+- Brent and WTI are inputs. They are saved so the report shows them as HELD. WTI moves with Brent when a lever moves the oil price.
+- QUREL, QTREL and QTRAS are rebuilt at save time from the run's generation, with EIA's own Btu per kWh for each year (nuclear, hydro, wind, solar). Geothermal, biomass and MSW inputs (about 0.5 quads) stay at EIA's, so part of QTREL is held. QTSEL and QTSAS follow from NEMS's identities (`full_model.derived_totals`).
 - Generation sums EMM regions 1 to 25 of UEFDOUT, as `full_model.GEN`. Capacity follows `emm/dispatch.py` CAPACITY_PREFIXES. Our coal excludes CCS retrofits and EIA's includes them, so coal compares coal plus coal with CCS. Converted coal units count as steam, as in EIA's arrays.
 - CO2 by fuel counts combustion only (no feedstock carbon, no capture). It tests fuel use with EIA's own factors. It is not Table 18's printed petroleum total.
 - The series names follow the AEO table rows. They were written from the tables' layout, not copied from EIA's API series IDs.

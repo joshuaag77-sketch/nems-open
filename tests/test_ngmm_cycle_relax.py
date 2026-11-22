@@ -77,6 +77,9 @@ class FakeGas:
     def wellhead_ratio(self):
         return np.full(61, FakeGas.ratios[self.cycle])
 
+    def volume_series(self):
+        return {"production": np.full(61, 40000.0)}
+
 
 def test_run_relaxes_hsm_and_flags_a_moving_price(monkeypatch):
     from nems_open.supply_standin.data import available
@@ -86,6 +89,7 @@ def test_run_relaxes_hsm_and_flags_a_moving_price(monkeypatch):
     monkeypatch.setattr(aimms, "AimmsGas", FakeGas)
     monkeypatch.setattr(aimms, "hsm_expected", lambda gas, oil=None, case="cb2026", scedes=None:
                         {"ogsmout/ogenagprd": np.full((3, 61), 5.0)})
+    monkeypatch.setattr(aimms, "hsm_crude", lambda gas, oil=None, case="cb2026", scedes=None: np.full(61, 5000.0))
     monkeypatch.setattr(aimms, "relax_expected", lambda prev, new, weight=aimms.HSM_RELAX, case="cb2026":
                         {k: 10.0 + weight * (v - 10.0) for k, v in new.items()})
     r = run_model.run(Policy(start_year=START), START, END, ported=(), ogs="aimms", cycles=2)
@@ -94,3 +98,4 @@ def test_run_relaxes_hsm_and_flags_a_moving_price(monkeypatch):
     assert np.allclose(FakeGas.made[1][1]["ogsmout/ogenagprd"], 10.0 + aimms.HSM_RELAX * (5.0 - 10.0))
     assert r.gas["cycle_change"][J] == pytest.approx(np.log(1.20 / 0.75))
     assert r.stable[START] is False
+    assert r.extra["crude"][J] == 5000.0 and r.gas["production"][J] == 40000.0

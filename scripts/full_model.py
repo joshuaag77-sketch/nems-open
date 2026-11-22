@@ -319,12 +319,58 @@ def capacity_summary(cap: dict | None) -> dict | None:
             "built_to_date": {g: {y: round(float(built[g][y - Y0]), 1) for y in SHOW} for g in groups}}
 
 
+# Power-plant inputs the loop leaves at EIA's values, rebuilt from the run's generation with EIA's own Btu per kWh
+# for that year (EIA's input over EIA's generation, UEFDOUT/UGN<type>NR, regions 1-25): QBLK name -> (our dispatch
+# groups, EIA's generation arrays). Geothermal, biomass and MSW (QGEEL, QBMEL, QMSEL, about 0.5 quads) stay at
+# EIA's: biomass input includes co-firing in coal plants, which our "other" group does not separate.
+POWER_INPUTS = {
+    "qurel": (("nuclear",), ("urnr",)),
+    "qhoel": (("hydro",), ("hynr",)),
+    "qwiel": (("wind",), ("wnnr", "wlnr", "wfnr")),
+    "qpvel": (("solar",), ("sonr", "pvnr", "ptnr")),   # with QSTEL below: solar thermal is in our solar group
+    "qstel": (("solar",), ("sonr", "pvnr", "ptnr")),
+}
+FOSSIL_EL = ("cl", "ng", "rs", "ds", "pc")
+
+
+def derived_totals(r, base: dict) -> dict:
+    """US series (61,) the loop does not keep current, rebuilt for the run's output ("d:" in save_run):
+    QUREL and QTREL from generation (POWER_INPUTS), then NEMS's identities QTSEL = power-plant fuels,
+    QTRAS = renewables by sector and QTSAS = QTSRS + QTSCM + QTSIN + QTSTR + QTSEL - QELAS. Years without
+    generation keep EIA's inputs."""
+    f = lambda a: np.asarray(a, dtype=np.float64)
+    gen = r.generation_twh or {}
+    q = r.quantities
+    eia_q = lambda n: f(base[f"QBLK/{n}"][US])
+    new = {}
+    for name, (ours, theirs) in POWER_INPUTS.items():
+        e_gen = sum(f(base[f"UEFDOUT/ugn{t}"])[:, :NUM_R].sum(axis=(0, 1)) for t in theirs)
+        m_gen = sum(f(gen[g]) for g in ours if g in gen) if any(g in gen for g in ours) else np.full(61, np.nan)
+        per_twh = np.divide(eia_q(name), e_gen, out=np.full(61, np.nan), where=e_gen > 0)
+        v = m_gen * per_twh
+        new[name] = np.where(np.isfinite(v), v, eia_q(name))
+    out = {"qurel": new["qurel"]}
+    out["qtrel"] = eia_q("qtrel") + sum(new[n] - eia_q(n) for n in POWER_INPUTS if n != "qurel")
+    fossil = sum(f(q[f"QBLK/q{x}el"][US]) - eia_q(f"q{x}el") for x in FOSSIL_EL if f"QBLK/q{x}el" in q)
+    out["qtsel"] = eia_q("qtsel") + fossil + (out["qurel"] - eia_q("qurel")) + (out["qtrel"] - eia_q("qtrel"))
+    # QTRAS = QTRRS + QTRCM + QTRIN + QTRTR + QTREL (exact in cb2026); the end-use parts are the loop's own.
+    out["qtras"] = sum(f(q[f"QBLK/qtr{x}"][US]) for x in ("rs", "cm", "in", "tr")) + out["qtrel"]
+    out["qtsas"] = sum(f(q[f"QBLK/qts{x}"][US]) for x in ("rs", "cm", "in", "tr")) + out["qtsel"] - f(q["QBLK/qelas"][US])
+    return out
+
+
 def save_run(r, path: Path) -> None:
     arrays = {f"p:{k}": v for k, v in r.prices.items()} | {f"q:{k}": v for k, v in r.quantities.items()}
     arrays |= {f"c:{k}": v for k, v in r.co2.items()}
     arrays |= {f"g:{k}": v for k, v in (r.generation_twh or {}).items()}
     arrays |= {f"n:{k}": np.asarray(v) for k, v in (getattr(r, "gas", None) or {}).items()}
     arrays |= {f"k:{k}": v for k, v in capacity_arrays(getattr(r, "capacity", None)).items()}
+    arrays |= {f"x:{k}": np.asarray(v) for k, v in (getattr(r, "extra", None) or {}).items()}
+    try:   # an output only: a failure here must not lose the run's other arrays
+        from nems_open.supply_standin.data import load_case
+        arrays |= {f"d:QBLK/{k}": v for k, v in derived_totals(r, load_case("cb2026")).items()}
+    except Exception as e:   # noqa: BLE001
+        print(f"derived totals not saved: {e}")
     np.savez_compressed(path, **arrays, stable=np.array([[y, int(s)] for y, s in r.stable.items()] or [[0, 0]]))
 
 
@@ -333,7 +379,7 @@ def load_run(path: Path):
     z = np.load(path, allow_pickle=False)
     pick = lambda pre: {k[2:]: z[k] for k in z.files if k.startswith(pre)}
     return SimpleNamespace(prices=pick("p:"), quantities=pick("q:"), co2=pick("c:"), generation_twh=pick("g:") or None, gas=pick("n:") or None,
-                           capacity_arrays=pick("k:") or None,
+                           capacity_arrays=pick("k:") or None, extra=pick("x:") or None, derived=pick("d:") or None,
                            stable={int(y): bool(s) for y, s in z["stable"] if y})
 
 

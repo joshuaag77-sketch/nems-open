@@ -149,7 +149,8 @@ class Eia:
         return e[2] if kind == "lng" else e[0] + e[1]
 
     def gas_imports(self):
-        return self.raw("NGTDMREP/ngimpvol")[3]           # Bcf, total
+        i = self.raw("NGTDMREP/ngimpvol")                 # Bcf: Canada, Mexico, LNG, total
+        return i[0] + i[1]
 
     def crude(self):
         return self.raw("OGSMOUT/ogqcrrep")[5] / 365.0    # million barrels a year -> a day; row 6 is the total
@@ -186,6 +187,8 @@ class Run:
         return np.asarray(self._a[name], dtype=np.float64)
 
     def q(self, name: str) -> np.ndarray:
+        if f"d:QBLK/{name}" in self._a:                   # rebuilt at save time (full_model.derived_totals)
+            return self._get(f"d:QBLK/{name}")
         if name == "qtsel":
             base = self.eia.q("qtsel")
             return base + sum(self.q(f"q{f}el") - self.eia.q(f"q{f}el") for f in EL_FUELS if f"q:QBLK/q{f}el" in self._a)
@@ -218,27 +221,25 @@ class Run:
         return self._get("n:henry_hub")
 
     def dry_gas(self):
-        return self._get("n:production")                  # Bcf, written by the gas-market stand-in (ngmm/market.py)
+        return self._get("n:production")                  # Bcf: NGMM's (ogs="aimms") or the gas-market stand-in's
 
     def gas_exports(self, kind: str):
-        if kind == "lng":
-            raise Missing("n:exports (LNG)")
-        raise Missing("pipeline exports")
+        return self._get("n:exports_lng" if kind == "lng" else "n:exports_pipeline")   # Bcf, NGMM (ogs="aimms")
 
     def gas_imports(self):
-        raise Missing("gas imports")
+        return self._get("n:imports_pipeline")
 
     def crude(self):
-        raise Missing("crude production")
+        return self._get("x:crude") / 365.0                # million barrels a year -> a day (HSM)
 
     def brent(self):
-        raise Missing("brent")
+        return self._get("x:brent")                       # an input: HELD unless a lever moves it
 
     def wti(self):
-        raise Missing("wti")
+        return self._get("x:wti")
 
     def gdp(self):
-        raise Missing("MACOUT/mc_gdpr")
+        return self._get("x:mc_gdpr")
 
     def factor(self, name: str) -> np.ndarray:
         return self.eia.factor(name)
@@ -388,7 +389,7 @@ def lines() -> list[dict]:
     add(T13, "Dry gas production", "trillion cubic feet", "gas_volume", lambda s: s.dry_gas() * BCF_TO_TCF,
         "OGSMOUT/OGQNGREP(9)")
     add(T13, "Pipeline imports", "trillion cubic feet", "gas_volume", lambda s: s.gas_imports() * BCF_TO_TCF,
-        "NGTDMREP/NGIMPVOL(4)")
+        "NGTDMREP/NGIMPVOL(1)+(2)")
     add(T13, "Pipeline exports", "trillion cubic feet", "gas_volume", lambda s: s.gas_exports("pipe") * BCF_TO_TCF,
         "NGTDMREP/NGEXPVOL(1)+(2)")
     add(T13, "Liquefied natural gas exports", "trillion cubic feet", "gas_volume",

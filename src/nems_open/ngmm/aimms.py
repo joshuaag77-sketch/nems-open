@@ -479,6 +479,10 @@ def reference(first: int = 2024, last: int = 2050, case: str = "cb2026", lng=Non
 # --- inside run_model ---------------------------------------------------------------------------------
 
 PRICE_OUT = ("MPBLK/pgfin", "MPBLK/pgiin", "MPBLK/pngcm", "MPBLK/pngel", "MPBLK/pngin", "MPBLK/pngrs", "MPBLK/pngtr")
+# Volumes NGMM reports back to NEMS (Bcf), kept for the run's output (not calibrated: NGMM's own levels, which land
+# within a few percent of EIA's restart on cb2026's inputs). NGEXPVOL and NGIMPVOL rows: Canada, Mexico, LNG, total.
+# OGPRDNG row 14 is the US dry gas production total.
+VOLUME_OUT = {"NGTDMREP/ngexpvol": (4, 61), "NGTDMREP/ngimpvol": (4, 61), "NGTDMREP/ogprdng": (14, 61)}
 
 
 class AimmsGas:
@@ -509,6 +513,7 @@ class AimmsGas:
         names = {k.lower(): k for k in z.files}
         self.eia = {k: z[names[k.lower()]].astype(np.float64) for k in PRICE_OUT}
         self.eia_hh = z[names["ngtdmrep/oghhprng"]].astype(np.float64)
+        self.volumes = {k: z[names[k.lower()]].astype(np.float64).copy() for k in VOLUME_OUT}
         self.factor = {k: np.ones((11, 61)) for k in PRICE_OUT}
         self.hh_factor = np.ones(61)
         self.wellhead_ref = z[names["ngtdmrep/ogwprng"]].astype(np.float64)[13].copy()   # NGMM's own on cb2026, below
@@ -563,6 +568,16 @@ class AimmsGas:
             self.henry_hub[j] = to_array(o["NGTDMREP_OGHHPRNG"], (61,))[j] * self.hh_factor[j]
         if "NGTDMREP_OGWPRNG" in o:
             self.wellhead[j] = to_array(o["NGTDMREP_OGWPRNG"], (14, 61))[13, j]
+        for k, shape in VOLUME_OUT.items():
+            name = k.replace("/", "_").upper()
+            if name in o:
+                self.volumes[k][:, j] = to_array(o[name], shape)[:, j]
+
+    def volume_series(self) -> dict[str, np.ndarray]:
+        """NGMM's dry production and trade by year (61,), Bcf, for the run's output (RunResult.gas)."""
+        e, i = self.volumes["NGTDMREP/ngexpvol"], self.volumes["NGTDMREP/ngimpvol"]
+        return {"production": self.volumes["NGTDMREP/ogprdng"][13].copy(), "imports_pipeline": i[0] + i[1],
+                "exports_pipeline": e[0] + e[1], "exports_lng": e[2].copy()}
 
     def begin(self, year: int, itr: int, q: dict, prices: dict, fcrl: int = 0):
         j = year - 1990
@@ -617,6 +632,19 @@ def hsm_expected(gas_ratio, oil_ratio=None, case: str = "cb2026", scedes: str = 
         base = z["OGSMOUT/" + k].astype(np.float64)
         out["ogsmout/" + k] = base * np.divide(run[k], ref[k], out=np.ones_like(base), where=np.asarray(ref[k]) != 0)
     return out
+
+
+def hsm_crude(gas_ratio, oil_ratio=None, case: str = "cb2026", scedes: str = "scedes.cb2026.csv") -> np.ndarray:
+    """US crude oil and lease condensate production (61,), million barrels a year (OGSMOUT/OGQCRREP row 6): cb2026's
+    restart values times HSM's run over HSM's own cb2026 run, as hsm_expected. Called right after hsm_expected with
+    the same arguments, both HSM runs are read from couple.production's disk cache: no new HSM solve."""
+    from nems_open.ogsm import couple
+    from nems_open.supply_standin.data import restart_path
+    run = couple.production(gas_ratio, oil_ratio, scedes)["ogqcrrep"][5]
+    ref = couple.production(None, None, couple.REFERENCE_SCEDES)["ogqcrrep"][5]
+    with np.load(restart_path(case), allow_pickle=False) as z:
+        base = z["OGSMOUT/ogqcrrep"].astype(np.float64)[5]
+    return base * np.divide(run, ref, out=np.ones(61), where=np.asarray(ref) != 0)
 
 
 # Between cycles HSM's new expected production is relaxed toward the cycle's (NEMS relaxes between cycles too).

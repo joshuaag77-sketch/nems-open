@@ -56,6 +56,19 @@ class Pass:
     cycle: int = 1
 
 
+# RunResult.extra: series the AEO report reads (scripts/aeo_fidelity.py) that live outside prices and quantities.
+#   brent, wti: the world oil price path, 1987 $/bbl. An input, not modeled: EIA's unless a lever moves Brent; WTI
+#     moves with Brent by the same ratio. Saved so the report labels it HELD rather than missing.
+#   mc_gdpr: real GDP, billion chained 2017 $: EIA's times exp(the last cycle's FRB/US GDP gap) with macro="frbus",
+#     EIA's own (held) without it.
+#   crude: crude oil and lease condensate production, million barrels a year, HSM's answer to the wellhead and oil
+#     prices of the cycle before the last (ogs="aimms", cycles >= 2) or to the final prices (ogs="hsm"). Absent
+#     when HSM never ran.
+RUN_EXTRA = ("brent", "wti", "mc_gdpr", "crude")
+# RunResult.gas keys written by ogs="aimms" for the report, Bcf a year (NGMM's own volumes, not calibrated).
+GAS_VOLUMES = ("production", "imports_pipeline", "exports_pipeline", "exports_lng")
+
+
 @dataclass
 class RunResult:
     prices: dict[str, np.ndarray]       # MPBLK, (11, 61), 1987 $/MMBtu
@@ -73,6 +86,7 @@ class RunResult:
                                              # expected, exports (Bcf); ogs="ngmm" or "hsm"
     coal: dict | None = None                 # coal="aimms": EIA's CMM production by year (COALPROD2 column) and seconds
     capacity: dict | None = None             # year -> capacity.YearResult (builds, retirements, capacity), elec_cap="lp"
+    extra: dict | None = None                # RUN_EXTRA series by year (61,), see there
 
     @property
     def co2_total(self) -> np.ndarray:
@@ -180,7 +194,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if ogs in ("ngmm", "hsm"):
         from nems_open.ngmm import GasMarket
         market = GasMarket(baseline, base=base, lng=policy.lng_exports)
-    aimms_gas = expected = None
+    aimms_gas = expected = crude = path = None
     wellhead_prev = gas_change = None   # ogs="aimms": the last cycle's wellhead ratio and the change since
     if side_case and ogs == "aimms":   # cycle 1: the side case's production on cb2026's prices
         from nems_open.ngmm.aimms import hsm_expected
@@ -220,6 +234,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             first_cycle = st["cycle"] + 1
             prices, q, co2, expected = st["prices"], st["q"], st["co2"], st["expected"]
             wellhead_prev = st.get("wellhead_prev")
+            crude = st.get("crude")
             passes, stable = st["passes"], st["stable"]
             wholesale, wholesale_us, generation = st["wholesale"], st["wholesale_us"], st["generation"]
             unserved, curtailed = st["unserved"], st["curtailed"]
@@ -387,6 +402,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
         if ogs == "aimms" and cycle < cycles:   # HSM on NGMM's wellhead prices: next cycle's expected production,
             from nems_open.ngmm.aimms import hsm_expected, relax_expected   # relaxed toward this cycle's
             expected = relax_expected(expected, hsm_expected(whr, _oil_ratio(oil, base), scedes=hsm_case))
+            crude = _crude(whr, _oil_ratio(oil, base), baseline, hsm_case)   # the same HSM runs, from its cache
         if ogs == "hsm" and cycle < cycles:   # HSM on this cycle's wellhead prices sets next cycle's expected production
             from nems_open.ogsm import couple
             market.set_hsm(couple.expected_ratio(market.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case), market.P)
@@ -399,6 +415,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             cp = lp.capacity_path if lp is not None else None
             _save_checkpoint(*checkpoint, {
                 "cycle": cycle, "prices": prices, "q": q, "co2": co2, "expected": expected, "wellhead_prev": wellhead_prev,
+                "crude": crude,
                 "passes": passes,
                 "stable": stable, "wholesale": wholesale, "wholesale_us": wholesale_us, "generation": generation,
                 "unserved": unserved, "curtailed": curtailed, "lp_last": getattr(lp, "last", None),
@@ -406,7 +423,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     hsm = gas = None
     if aimms_gas is not None:
         gas = {"henry_hub": aimms_gas.henry_hub.copy(), "ngmm_seconds": aimms_gas.seconds,
-               "wellhead_ratio": aimms_gas.wellhead_ratio(), "hsm": expected is not None}
+               "wellhead_ratio": aimms_gas.wellhead_ratio(), "hsm": expected is not None,
+               **(aimms_gas.volume_series() if hasattr(aimms_gas, "volume_series") else {})}
         if gas_change is not None:   # a year whose gas price still moved between the last two cycles is not settled
             from nems_open.ngmm.aimms import CYCLE_TOL
             gas["cycle_change"] = gas_change
@@ -418,12 +436,45 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
     if ogs == "hsm":   # EIA's HSM on the prices this run settled on (nems_open/ogsm/couple.py)
         from nems_open.ogsm import couple
         hsm = couple.production(market.wellhead_ratio(), _oil_ratio(oil, base), scedes=hsm_case)
+        crude = _crude(market.wellhead_ratio(), _oil_ratio(oil, base), baseline, hsm_case)   # the run just made
     coal_out = None
     if aimms_coal is not None:
         coal_out = {"production": aimms_coal.production, "cmm_seconds": aimms_coal.seconds}
     cap_results = dict(lp.capacity_path.results) if lp is not None and lp.capacity_path is not None else None
+    extra = _extra(base, brent_path, path, crude)
     return RunResult(prices, q, co2, passes, wholesale, wholesale_us, generation, stable, unserved, curtailed, hsm, gas,
-                     coal_out, cap_results)
+                     coal_out, cap_results, extra)
+
+
+def _crude(gas_ratio, oil_ratio, case, scedes):
+    """HSM's crude production for the run's output (ngmm.aimms.hsm_crude), or None: an output, so it never stops a run."""
+    try:
+        from nems_open.ngmm.aimms import hsm_crude
+        return hsm_crude(gas_ratio, oil_ratio, case=case, scedes=scedes)
+    except Exception as e:   # noqa: BLE001
+        print(f"crude production not saved: {e}")
+        return None
+
+
+def _extra(base, brent_path, macro_path, crude) -> dict:
+    """RunResult.extra (RUN_EXTRA). Built only from arrays already in hand, and never fails the run: a base without
+    an array (a blend of cases, say) just leaves that series out."""
+    f = lambda a: np.asarray(a, dtype=np.float64)
+    out = {}
+    try:
+        out["brent"] = f(brent_path).copy()
+        b = f(base["INTOUT/brent_price"])
+        out["wti"] = f(base["INTOUT/wti_price"]) * np.divide(f(brent_path), b, out=np.ones(61), where=b > 0)
+    except (KeyError, ValueError):
+        pass
+    try:
+        gap = f(macro_path.gap) if macro_path is not None else 0.0
+        out["mc_gdpr"] = f(base["MACOUT/mc_gdpr"]) * np.exp(gap)
+    except (KeyError, ValueError, AttributeError):
+        pass
+    if crude is not None:
+        out["crude"] = f(crude)
+    return out
 
 
 def _save_checkpoint(path, tag, state) -> None:
