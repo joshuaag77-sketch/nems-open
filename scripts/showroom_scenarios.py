@@ -334,7 +334,10 @@ def run_tier(tier: int, run=None, lock: bool = True, log=print) -> int:
         if lock:
             take_lock(log=log)
         try:
-            _set_status(key, started=time.strftime("%Y-%m-%d %H:%M"), lfmm=lfmm_for(sc), error=None)
+            # A new attempt clears the last one's traceback and finish time (old-342aa01 kept a 2028 traceback
+            # from a failed attempt under a run that then finished cleanly).
+            _set_status(key, started=time.strftime("%Y-%m-%d %H:%M"), lfmm=lfmm_for(sc), error=None, trace=None,
+                        finished=None)
             log(f"{key}: {sc.title} (lfmm={lfmm_for(sc)}, about {minutes(sc) / 60:.1f} h)")
             run_one(sc, run, log)
             _set_status(key, finished=time.strftime("%Y-%m-%d %H:%M"))
