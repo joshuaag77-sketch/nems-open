@@ -468,12 +468,37 @@ def discount_rate(snapshot, year: int) -> float:
     equity the 10-year Treasury plus a 5.75% market premium times UPBETA (EWGTCE), both from the restart's macro
     block. About 7% in the reference case. It is a nominal rate; a level annuity at it is what ECP charges in
     the first year, which is what a one-year decision compares."""
+    debt, equity, share, tax = _financing(snapshot, year)
+    return share * debt * (1.0 - tax) + (1.0 - share) * equity
+
+
+def _financing(snapshot, year: int) -> tuple:
+    """(debt rate, equity rate, debt share UPNFDT, tax rate UPTXRT) of a new plant's financing in `year`."""
     fin = named_ranges(technology.ECPDATY, "FINANCIAL")
     i = year - 1990
     debt = float(snapshot["MACOUT/mc_rmcorppuaa"][i]) / 100.0
     equity = float(snapshot["MACOUT/mc_rmtcm10y"][i]) / 100.0 + 0.0575 * float(fin["UPBETA"][0])
-    share = float(fin["UPNFDT"][0])
-    return share * debt * (1.0 - float(fin["UPTXRT"][0])) + (1.0 - share) * equity
+    return debt, equity, float(fin["UPNFDT"][0]), float(fin["UPTXRT"][0])
+
+
+# The rate ECP carries work in progress at (uread.f EPINCST's ROR). Every EMM region builds as a non-utility
+# (UPBLDTYP = 2 in NEMS_INPUT.db V_EMM_ECPDAT_REG), so EP$BDSP,62 passes EWGROR = EWGROE x (1 - DEBT_F) + EWGINT x DEBT_F
+# (uecp.f 16269, 16301): the pre-tax cost of capital, with UPNIRTEA and UPNRRTEA, which carry EXTRARISK for the UPRSKSW
+# types (util.f 895-900), on both parts. The annuity that follows (EPCNBLD, CRF) is at the after-tax EPDSCRT, as in
+# capital_costs. On: construction interest at that pre-tax rate. Off: at the after-tax discount rate, which understated
+# the interest by about UPNFDT x debt x UPTXRT (0.8 points in 2030).
+CONSTRUCTION_PRE_TAX = True
+
+
+def construction_rate(snapshot, year: int, code: str) -> float:
+    """EPINCST's rate for building ECP type `code` in `year`: EWGROR, the pre-tax cost of capital (with
+    CONSTRUCTION_PRE_TAX), else the after-tax discount rate plus the risk premium."""
+    if not CONSTRUCTION_PRE_TAX:
+        return discount_rate(snapshot, year) + risk_premium(snapshot, year, code)
+    debt, equity, share, _ = _financing(snapshot, year)
+    fin = named_ranges(technology.ECPDATY, "FINANCIAL")
+    extra = float(snapshot["EMISSION/extrarisk"][year - 1990]) if fin["UPRSKSW"][technology.ecp_codes().index(code)] > 0 else 0.0
+    return share * (debt + extra) + (1.0 - share) * (equity + extra)
 
 
 def risk_premium(snapshot, year: int, code: str) -> float:
@@ -857,8 +882,8 @@ def ptc_annual(ptc: float, dollar_year: int, years: int, rate: float, life: floa
 
 # Interest during construction (uread.f EPINCST, called for every build column in uecp.f EP$BDSP,62): ECP spends the
 # overnight cost over the construction years by the type's COSTPERF profile UPCPRO, each year's spending in that year's
-# dollars, and carries the work in progress at the plant's rate of return (half a year on that year's spending) to the
-# online year. The book value it then annualizes is overnight x this factor. A combined cycle (3 years, 25/50/25%)
+# dollars, and carries the work in progress at the plant's rate of return, EWGROR (construction_rate; half a year on
+# that year's spending) to the online year. The book value it then annualizes is overnight x this factor. A combined cycle (3 years, 25/50/25%)
 # carries about 7% more than a turbine (2 years, 35/65%) or a battery (1 year). Off: overnight cost only.
 CONSTRUCTION_INTEREST = True
 
@@ -901,7 +926,7 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
         itc = max(itc_tab[i, col], 0.0)
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         if CONSTRUCTION_INTEREST:
-            ovn = ovn * construction_factor(snapshot, code, cost_year, rate)
+            ovn = ovn * construction_factor(snapshot, code, cost_year, construction_rate(snapshot, cost_year, code))
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
         if parts is not None:      # the capital charge alone, k$ per GW-year (what ECP's build steps scale)
             parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3

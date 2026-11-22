@@ -351,6 +351,20 @@ def test_construction_interest_follows_epincst(snapshot):
     assert 1.06 < ac < 1.12 and 1.01 < at < 1.05
 
 
+def test_construction_rate_is_pre_tax_ewgror(snapshot, monkeypatch):
+    """EPINCST carries work in progress at EWGROR (uecp.f 16269, 16301; all regions UPBLDTYP 2): the pre-tax cost of
+    capital, EXTRARISK on debt and equity for UPRSKSW types (CC), so above the after-tax EPDSCRT by UPNFDT x debt x
+    UPTXRT (plus the risk premium's tax share for CC)."""
+    debt, equity, share, tax = capacity._financing(snapshot, 2030)
+    at = capacity.construction_rate(snapshot, 2030, "AT")
+    assert at == pytest.approx(share * debt + (1 - share) * equity)
+    assert at - capacity.discount_rate(snapshot, 2030) == pytest.approx(share * debt * tax)
+    extra = float(snapshot["EMISSION/extrarisk"][2030 - 1990])
+    assert capacity.construction_rate(snapshot, 2030, "AC") == pytest.approx(at + extra)
+    monkeypatch.setattr(capacity, "CONSTRUCTION_PRE_TAX", False)
+    assert capacity.construction_rate(snapshot, 2030, "AT") == pytest.approx(capacity.discount_rate(snapshot, 2030))
+
+
 def test_combined_cycle_over_turbine_cost_matches_ecp(snapshot):
     """ECP's own build columns (oracle OutToNEMS_2035, cB_DSP step 1, planning year 1) cost AC 1.23 to 1.30 times AT
     by region, median 1.28. Overnight cost and fixed O&M alone give 1.20 to 1.24; with interest during construction the
