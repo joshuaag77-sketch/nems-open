@@ -237,6 +237,54 @@ ECP_BUILD_CF = False
 # the plain mean of the 25 regions (a missing entry is zero). With SPIN_RESERVE. Off: a battery carries its discharge
 # headroom up to one hour of stored energy, about 1.0 per GW whenever it is idle.
 ECP_STORAGE_SR = True
+# ECP's national gas supply curve for the power sector (ecp.ams cSUNGX and rFUELNGXle, ELNGSCRV_Function, PDEL with
+# UPCRVSW = 2): the sector's gas comes in UPCRVSTP = 20 steps below and 20 above the expected burn QBASE (QNGEL, last
+# iteration), each UPCRVSIZ = 2% of QBASE wide, priced at the wellhead price times NGMM's supply curve (NGSCRV_Q0, P0,
+# PER, ELAS) at the step over its value at no change. This LP pays the step's price less the curve's own (ECP's
+# WHDEX x (PDEL - 1)) on top of the delivered price, with QBASE at EIA's dispatched burn (QNGEL less cogeneration).
+# On. ECP's planning dispatch burns about 10% more gas than EFD (2031: 13.35 against 12.18 quads), which puts its
+# marginal gas 12% above the curve's centre and its energy prices about that much above this LP's. This LP burns what
+# EFD burns in 2031 (10.9 against 11.0 quads), so the curve moves 2031-2034 little; from 2035 it lifts wind toward
+# EIA's (2040: 362 -> 414 GW against 404), other types within 1% (docs/capacity.md).
+ECP_GAS_CURVE = True
+GAS_CURVE_STEPS, GAS_CURVE_SIZE = 20, 0.02          # composite_2030 UPCRVSTP, UPCRVSIZ
+
+
+def ngmm_gas_price(snapshot, year: int, extra_tbtu) -> np.ndarray:
+    """ecp.ams ELNGSCRV_Function: NGMM's gas supply curve price (1987$/MMBtu) at national consumption NGSCRV_Q
+    plus `extra_tbtu` (TBtu, converted to Bcf with CFNGU), constant elasticity in five bands around NGSCRV_Q0."""
+    y = year - 1990
+    q0, p0 = float(snapshot["NGTDMREP/ngscrv_q0"][y]), float(snapshot["NGTDMREP/ngscrv_p0"][y])
+    per, el = np.asarray(snapshot["NGTDMREP/ngscrv_per"], float), np.asarray(snapshot["NGTDMREP/ngscrv_elas"], float)
+    q = float(snapshot["NGTDMREP/ngscrv_q"][y]) + np.asarray(extra_tbtu, float) / float(snapshot["CONVFACT/cfngu"][y])
+    aq, bq = q0 * (1 - per[0]), q0 * (1 + per[0])
+    ap, bp = p0 * (1 - per[0] / el[2]), p0 * (1 + per[0] / el[2])
+    cq, dq = aq * (1 - per[1]), bq * (1 + per[1])
+    cp, dp = ap * (1 - per[1] / el[1]), bp * (1 + per[1] / el[3])
+    qb = np.select([q <= cq, q <= aq, q >= dq, q >= bq], [cq, aq, dq, bq], q0)
+    pb = np.select([q <= cq, q <= aq, q >= dq, q >= bq], [cp, ap, dp, bp], p0)
+    e = np.select([q <= cq, q <= aq, q >= dq, q >= bq], [el[0], el[1], el[4], el[3]], el[2])
+    out = pb * ((q - qb) / qb / e + 1.0)
+    return np.where(out <= 0.0, p0, out)      # XPBASE where the curve would go below zero
+
+
+def gas_curve_steps(snapshot, year: int) -> tuple:
+    """ECP's power-sector gas steps for `year`: (upper bound TBtu of each of the 2 x GAS_CURVE_STEPS + 1 steps, the
+    last unbounded; the price ratio PDEL of each). Step 1 holds everything up to 20 steps below QBASE; step k > 1 is
+    the k - 21st 2% step away from it (step 21 ends at QBASE)."""
+    from . import dispatch_report
+    qbase = dispatch_report.reference(snapshot, year)["fuel_gas"]
+    w = GAS_CURVE_SIZE * float(snapshot["QBLK/qngel"][10, year - 1990])
+    n = 2 * GAS_CURVE_STEPS + 1
+    k = np.arange(1, n + 1)
+    dev = (k - (GAS_CURVE_STEPS + 1)) * w
+    ratio = ngmm_gas_price(snapshot, year, dev) / ngmm_gas_price(snapshot, year, 0.0)
+    bound = np.full(n, w)
+    bound[0] = qbase - GAS_CURVE_STEPS * w
+    bound[-1] = np.inf
+    return bound, ratio
+
+
 ECP_BATTERY_SR_EX = (0.241, 0.285, 0.416, 0.220, 0.227, 0.460, 0.283, 0.213, 0.455)
 ECP_BATTERY_SR_NW = (0.097, 0.067, 0.065, 0.125, 0.187, 0.199, 0.087, 0.064, 0.090)
 
@@ -1046,6 +1094,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         m.add_constraints((g_th * hours_w).sum(["day", "block"]) - capv_p * (mcf * 8760.0) <= 0, name=f"energy_limit{tag}")
 
         cost = np.zeros((NUM_R, len(TG)))
+        gas_frac = np.zeros((NUM_R, len(TG)))
         for k, g in enumerate(TG):
             oil_price = cs.price["residual"] if g == "steam" else cs.price["distillate"]
             is_coal = g.startswith("coal")
@@ -1054,10 +1103,13 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 # EPA 111 cofiring: at most UEPA_CGSH of the fuel is coal (udat.f 6457), the rest gas
                 fuel = rule["cofire_coal_share"] * cs.price["coal"] + (1.0 - rule["cofire_coal_share"]) * cs.price["gas"]
             cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
+            if not is_coal:
+                gas_frac[:, k] = (1.0 - rule["cofire_coal_share"]) if (g == "gas_conv" and rule["switch"]) else 1 - oil_share[g]
             if g in dispatch.CAPTURE_GROUPS:
                 share = cs.credit_share[g] if cs.credit_share is not None else 1.0
                 cost[:, k] -= cs.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
         cost_da = xr.DataArray(cost, coords=[R, T])
+        heat_arr = np.stack([heat[g] for g in TG], axis=1)
 
         wind_out = wind_tot * prof["wind"]
         solar_out = solar_tot * prof["solar"]
@@ -1144,6 +1196,17 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
             + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum() \
             + (shortfall * RESERVE_SHORTFALL_COST).sum()
+        gas_steps = None
+        if ECP_GAS_CURVE and tag == "":
+            # ECP's gas supply steps (cSUNGX on rFUELNGXle): the burn fills them cheapest first; each step adds
+            # WHDEX x (PDEL - 1) to the delivered price already in `cost` (k$ = TBtu x $/MMBtu x 1000).
+            bound, ratio = gas_curve_steps(snapshot, year)
+            wh = float(snapshot["NGTDMREP/ngscrv_p"][year - 1990])
+            S = pd.Index(np.arange(len(bound)), name="gas_step")
+            gas_steps = m.add_variables(lower=0, upper=xr.DataArray(bound, coords=[S]), name="gas_step")
+            burn = (g_th * xr.DataArray(heat_arr * gas_frac / 1.0e6, coords=[R, T]) * hours_w).sum()
+            m.add_constraints(gas_steps.sum() - burn == 0, name="gas_curve")
+            operating = operating + (gas_steps * xr.DataArray(wh * (ratio - 1.0) * 1000.0, coords=[S])).sum()
         spin = {}
         if SPIN_RESERVE:
             # ECP's spinning reserve rows (EP$MRM,8-13). A dispatchable unit carries reserve only while it runs: in

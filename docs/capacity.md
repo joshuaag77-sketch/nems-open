@@ -553,3 +553,37 @@ So the rows with ECP's battery treatment still price reserve at a third of ECP a
 **What remains.** ECP's reserve price comes from combined cycle being fully committed in every season and new turbines covering the last of the base-slice requirement at minimum load. This LP's combined cycle is part loaded in the base hours with free headroom. Earlier lanes ruled out the seasonal mode ties (ECP_DISPATCH_MODES, and EFD_DISPATCH_MODES in the dispatch), and this lane ruled out batteries as the whole story and coal. Left untested: what keeps ECP's combined cycle fully loaded in base slices, which needs ECP's mode column levels (cO, cJ, cU by slice) from an oracle ECP solve with its solution kept. That is the next oracle-rerun question, not a coefficient that can be read from the composite.
 
 Pinned by `tests/test_emm_capacity.py::test_ecp_battery_spin_reserve_is_restore_share`. Scripts: scratchpad `sr2/` (comp.py and tab.py read the storage tables from the composite, diag.py the 2031 duals and supply by slice, one.py the one-step solves, chain.py and summ.py the chains; base.json and spin.json the results).
+
+## Wind's 2031 build column against ECP's, term by term (branch wind-builds)
+
+**Line-up.** ECP's 2030 solve, year-1 step-1 WN column (online 2031), against this LP's one step 2031 from EIA's 2030 fleet. ECP's terms are nominal and discounted; dividing by UPGNPD(2031) = 2.76 and the year-2 present-worth factor 1 / 1.0729 (EPDSCRT) puts them in 1987$/kW-year. Region medians, ECP / this LP:
+
+| term | ECP | this LP |
+|---|---|---|
+| annual cost (dC, one year online) | 69.9 | 74.8 |
+| capacity factor (UPICFC1, hour weighted) | 0.399 | 0.371 |
+| energy value | 63.8 | 52.7 |
+| price received, 1987$/MWh | 18.8 | 17.2 |
+| flat (all-hours) energy value, ECP over LP | 1.15 | |
+| wind's value over flat | 0.389 | 0.369 |
+| capacity credit (EPIRCCR) | 0.28 | 0.26 |
+| reserve value | 4.8 | 6.0 |
+| value over cost | 1.00 | 0.78 |
+
+**The term that differs is energy.** Cost, credit and reserve value agree within about 7% at the median. The tax credit is not it either: UPGSYL is 2029 and the 2030 composite has no UPGSUBYR for WN, so neither model pays a PTC from 2030; regional multipliers (EPRGM) are this LP's. ECP's cost is lower in the main wind regions (SPPS 57 / 66, SPPC 59 / 69, SRCE 59 / 76) and higher in TRE, SPPN and RMRG (67 / 61, 70 / 62, 70 / 62); the source of that spread was not found in Calculate_INTBLDCOSTS and is left open. The energy gap has two parts. The capacity factor is 7.5% higher in ECP (UPICFC1 has no outage derate; ECP_BUILD_CF, tried before). The price level is about 12% higher in ECP (flat value 1.15 x at the median; with the AT build cost as the unit instead, 1.15 too), while wind's shape against flat is the same in both (value factor about 1.0). So ECP pays a new wind plant more because every hour's energy is dearer, not because wind's hours are.
+
+**Why ECP's energy is dearer.** ECP buys the power sector's gas on a national supply curve (cSUNGX on rFUELNGXle; ELNGSCRV_Function with UPCRVSW = 2): 20 steps of 2% of QNGEL below the expected burn and 20 above, priced at the wellhead price times NGMM's curve (NGSCRV_Q0, P0, PER, ELAS) over its value at no change. In the 2030 solve's year 2 the marginal step is 26, five steps above the expected burn: ECP's planning dispatch burns 13.35 quads against QNGEL's 12.18, so its marginal gas costs 12.4% more than the curve's centre (step 26 over step 21: 1.1243). That is the same planning dispatch the spinning reserve lanes found (ECP's coal at about 200 TWh in 2031 against EFD's 419: about 1.5 quads of gas in its place). EFD burns 11.0 quads in 2031 after cogeneration, and this LP 10.9. So the premium is ECP's planning estimate, not a coefficient this LP lacks.
+
+**Ported, on** (`capacity.ECP_GAS_CURVE`, `gas_curve_steps`, `ngmm_gas_price`): the 41 steps from the restart's NGSCRV inputs, centred on EIA's dispatched burn (QNGEL less cogeneration), each step adding wellhead x (PDEL - 1) to the delivered price. The step prices reproduce ECP's 2031 ratios to four digits (0.754, 0.9774, 1.0249, 1.1243 for steps 1, 20, 22, 26). One step 2031 from EIA's 2030 fleet, off / on: wind built 4.2 / 0 GW, CC 3.3 / 3.3, CT 8.4 / 8.4, batteries 1.2 / 1.2; wind's energy value falls about 3%, since this LP's burn sits just under the curve's centre.
+
+Chain 2027-2040 from EIA's 2026 fleet, wind GW, before (main) / with the curve / EIA:
+
+| | 2028 | 2029 | 2030 | 2031 | 2032 | 2033 | 2034 | 2035 | 2036 | 2037 | 2038 | 2039 | 2040 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| wind | 187 / 187 / 178 | 202 / 202 / 193 | 204 / 204 / 212 | 204 / 204 / 234 | 222 / 219 / 262 | 232 / 232 / 296 | 249 / 249 / 330 | 268 / 271 / 344 | 290 / 297 / 350 | 319 / 330 / 356 | 323 / 349 / 368 | 355 / 386 / 392 | 362 / 414 / 404 |
+
+2040 GW, before / after / EIA: CC (with CCS) 428 / 425 / 431, CT 246 / 245 / 267, batteries 108 / 107 / 103, solar 344 / 344 / 323, wind 362 / 414 / 404, coal 15 / 15 / 16, steam 56 / 57 / 52. A year takes 20 to 75 s, as before. The curve is ECP's own structure and leaves every other type within 1%, so it is on. It does not touch the 2031-2034 stall: there this LP's burn sits at the curve's centre, so its marginal gas is the delivered price, while ECP's planning dispatch sits five steps up. Why the curve lifts wind only from 2035 (presumably this LP's burn runs above EIA's once the coal rule has passed and load grows) was not measured year by year.
+
+**What remains.** The 2031-2034 wind gap is ECP's energy price, which comes from its planning dispatch burning 1.2 quads more gas than EFD (low coal), plus UPICFC1's missing derate. Neither is a coefficient: the first needs ECP's planning dispatch (its coal), the second ran away on its own (ECP_BUILD_CF). The regional spread of ECP's wind cost (cheaper in SPP and SRCE, dearer in TRE, SPPN and RMRG than EPRGM alone gives) is the one cost term left to trace.
+
+Pinned by `tests/test_emm_capacity.py::test_gas_curve_steps_match_ecp_2031`. Scripts: scratchpad `wb/` (one.py the one-step solves, cmp.py the term-by-term line-up, gas.py the burns, chain.py the chain; chain_gas.json the result).
