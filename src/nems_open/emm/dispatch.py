@@ -232,6 +232,14 @@ COAL_BY_CONFIGURATION = True
 # costs (PJMW 15.5 1987$/MWh load-weighted against the oracle EFD's 18.0) idles WV units EIA runs. 2030 coal against
 # EIA: -1.7% (False) and -2.9% (True); 2025 -4.8% and -8.6%.
 COAL_PRICE_BY_CLASS = False
+# Whether the classes pay the regional price at all. EFD's coal columns carry a token fuel cost (ED$BTU: FLCST =
+# 0.001, uefd.f 7763) and the coal itself is costed only in ED$COL: supply steps at XCL_PECP (16826-16828) and routes at
+# the transport rate plus activated carbon (17134-17170). Shifting every class by UPCOALAVG less its own price at EIA's
+# burn makes all classes in a region cost the regional price at that burn, which cancels the differences in delivered
+# cost between them. Off (EIA): a class pays what the coal LP charges and nothing else; COAL_PRICE_BY_CLASS is then
+# unused. On: the shift, as before (Codex finding 5). Each region's rest (coal capacity outside the CMM's units) pays
+# the regional price either way.
+COAL_PRICE_ANCHOR = False
 COAL_CONFIG_LAST = "HC"         # the coal configurations are the ECP types up to HC
 COAL_FUELS = ("B", "C", "H")   # plant-file fuel codes of the coal supply curves (B1..B8, C1..CX, H1..HC)
 # EFD's dispatch modes (uefd.f OPBSLD 9715-9870). EFD commits a thermal group per season, not per hour: one column
@@ -1159,7 +1167,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         PL = pd.Index(lp, name="coal_pair")
         base = cl.ref[cl.region - 1] if COAL_PRICE_BY_CLASS else cl.pay[np.maximum(cl.klass, 0)]
         mmbtu = cl.heat_rate / 1000.0
-        pc = mmbtu * (case.price["coal"][cl.region - 1] - np.where(cl.klass >= 0, base, 0.0)) + cl.vom \
+        regional = case.price["coal"][cl.region - 1]
+        anchor = np.where(cl.klass >= 0, regional - base if COAL_PRICE_ANCHOR else 0.0, regional)
+        pc = mmbtu * anchor + cl.vom \
             + case.carbon_price * mmbtu * CO2_PER_TBTU["coal"]
         up = upper.sel(group="coal", drop=True).sel(region=reg_of) * xr.DataArray(cl.share, coords=[P])
         gc = m.add_variables(lower=0, upper=up.transpose("coal_pair", "day", "hour"), name="coal_class_gen")
