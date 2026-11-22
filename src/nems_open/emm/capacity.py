@@ -315,6 +315,20 @@ def gas_curve_steps(snapshot, year: int) -> tuple:
     return bound, ratio
 
 
+# The price ECP scales by PDEL / PBASE: WHDEX = XOGWPRNG(MNUMOR) / CFNGU (uecp.f 6258, 6266-6269), the wellhead price
+# NGMM hands EMM, in 1987$ per MMBtu (UPGNPD and PWF only move it to ECP's nominal present value). The port used
+# NGSCRV_P, the supply curve's own price (2030: 1.4416 against WHDEX's 1.4248). On: WHDEX. Off: NGSCRV_P.
+GAS_CURVE_WHDEX = True
+
+
+def gas_curve_wellhead(snapshot, year: int) -> float:
+    """1987$/MMBtu the gas curve's step premiums scale: WHDEX (GAS_CURVE_WHDEX) or NGSCRV_P."""
+    if not GAS_CURVE_WHDEX:
+        return float(snapshot["NGTDMREP/ngscrv_p"][year - 1990])
+    k = min(year, LAST_MODEL_YEAR) - 1990
+    return float(snapshot["MXPBLK/xogwprng"][-1, year - 1990]) / float(snapshot["CONVFACT/cfngu"][k])
+
+
 ECP_BATTERY_SR_EX = (0.241, 0.285, 0.416, 0.220, 0.227, 0.460, 0.283, 0.213, 0.455)
 ECP_BATTERY_SR_NW = (0.097, 0.067, 0.065, 0.125, 0.187, 0.199, 0.087, 0.064, 0.090)
 
@@ -1354,7 +1368,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             # ECP's gas supply steps (cSUNGX on rFUELNGXle): the burn fills them cheapest first; each step adds
             # WHDEX x (PDEL - 1) to the delivered price already in `cost` (k$ = TBtu x $/MMBtu x 1000).
             bound, ratio = gas_curve_steps(snapshot, year)
-            wh = float(snapshot["NGTDMREP/ngscrv_p"][year - 1990])
+            wh = gas_curve_wellhead(snapshot, year)
             S = pd.Index(np.arange(len(bound)), name="gas_step")
             gas_steps = m.add_variables(lower=0, upper=xr.DataArray(bound, coords=[S]), name="gas_step")
             burn = (g_th * xr.DataArray(heat_arr * gas_frac / 1.0e6, coords=[R, T]) * hours_w).sum()

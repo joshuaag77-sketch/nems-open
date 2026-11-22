@@ -695,3 +695,11 @@ def test_gas_curve_steps_match_ecp_2031():
     assert np.allclose(ratio[[0, 19, 20, 21, 25]], [0.754, 0.9774, 1.0, 1.0249, 1.1243], atol=1.5e-3)
     assert np.all(np.diff(ratio) > 0)
     assert capacity.ECP_GAS_CURVE is True
+
+
+def test_gas_curve_scales_ecp_wellhead_price():
+    """uecp.f 6258, 6266-6269: the step price is WHDEX x PDEL / PBASE, WHDEX = XOGWPRNG(MNUMOR) / CFNGU, 1.4248 1987$
+    per MMBtu in 2030 (NGSCRV_P, which the port used before, is 1.4416)."""
+    s = Snapshot()
+    assert capacity.gas_curve_wellhead(s, 2030) == pytest.approx(1.4248, abs=1e-4)
+    assert float(s["NGTDMREP/ngscrv_p"][2030 - 1990]) == pytest.approx(1.4416, abs=1e-4)

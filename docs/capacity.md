@@ -654,3 +654,5 @@ An independent Codex review (docs/reviews/codex-emm-2026-11-22.txt) listed 17 po
 
 **Finding 16, true** (`GAS_CURVE_LAST_BOUNDED`, on). EP$FLCRV,7 (uecp.f 6185-6200; ecp.ams ccalc_cSUNGX_UBOUND) bounds every step after the first at QSIZE, the last one included. The port had left the last step open. Now the sector can burn at most QBASE + 20 x QSIZE, as in ECP; no other column supplies row FUELNGX, so a burn past that would make ECP infeasible too.
 
+**Finding 17, true** (`GAS_CURVE_WHDEX`, on). ECP scales PDEL / PBASE by WHDEX = XOGWPRNG(MNUMOR) / CFNGU (uecp.f 6258, 6266-6269), the wellhead price NGMM hands EMM. The port used NGSCRV_P, the supply curve's own price. In 2030 that is 1.4248 against 1.4416 1987$/MMBtu, 1.2% on the step premiums only; the delivered price in each plant's cost is unchanged.
+
