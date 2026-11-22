@@ -30,6 +30,8 @@ Be careful quoting results from this model until these are replaced.
 - **Oil, gas, refining, renewable fuels, international and hydrogen** are not ported. Their prices come from the supply stand-in ([docs/supply_standin.md](docs/supply_standin.md)) and their quantities from EIA's restart file. With `--ogs ngmm` or `--ogs hsm`, natural gas prices come from a gas market on NGMM's own supply curve, closed with EIA's HSM ([docs/ngmm.md](docs/ngmm.md)).
 - **Alaska and Hawaii** are not in the power model.
 
+A whole run is checked against EIA's AEO2026 reference table by table (Tables 1, 2, 3, 8, 9, 13, 15, 18 and GDP) with `python scripts/aeo_fidelity.py --run <saved run>`. See [docs/fidelity_report.md](docs/fidelity_report.md) and the latest result in [docs/fidelity/](docs/fidelity/).
+
 ## Run it
 
 You need Python 3.11 or newer. The model reads EIA's AEO2026 release (about 1 GB, Apache 2.0) from a folder called `nems-upstream` next to the code.

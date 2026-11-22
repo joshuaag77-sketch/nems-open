@@ -1,0 +1,7408 @@
+{
+ "schema": "nems-open-fidelity/1",
+ "generated": "2026-11-22",
+ "run": "old-342aa01-reference",
+ "run_path": "C:\\Users\\joshu\\dev\\nems-open-supply\\data\\showroom\\old-342aa01\\reference.npz",
+ "baseline": "AEO2026 reference (cb2026 restart)",
+ "tolerance": {
+  "consumption": [
+   3.0,
+   0.05
+  ],
+  "gas_volume": [
+   5.0,
+   0.1
+  ],
+  "supply": [
+   5.0,
+   0.1
+  ],
+  "generation": [
+   5.0,
+   10.0
+  ],
+  "sales": [
+   3.0,
+   20.0
+  ],
+  "capacity": [
+   15.0,
+   2.0
+  ],
+  "price": [
+   5.0,
+   0.1
+  ],
+  "co2": [
+   3.0,
+   5.0
+  ],
+  "macro": [
+   1.0,
+   0.0
+  ]
+ },
+ "dollar_year": 2025,
+ "first_model_year": 2027,
+ "not_converged": [
+  2030,
+  2047,
+  2049
+ ],
+ "run_status": {
+  "lfmm": "gams",
+  "started": "2026-11-19 10:18",
+  "finished": "2026-11-20 00:14",
+  "error": null,
+  "traceback_logged": true
+ },
+ "worst": [
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Renewable energy",
+   "year": 2050,
+   "diff_pct": 73.01191677822703,
+   "times_tol": 24.337305592742343
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Steam coal",
+   "year": 2040,
+   "diff_pct": 80.93310426668224,
+   "times_tol": 13.822713268237186
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by source: Coal",
+   "year": 2040,
+   "diff_pct": 56.949597762544755,
+   "times_tol": 13.763056285815312
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By fuel: Coal (combustion, fuel use x EIA carbon factors)",
+   "year": 2040,
+   "diff_pct": 44.82833647533948,
+   "times_tol": 12.978636582329386
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Electric power: Natural gas",
+   "year": 2040,
+   "diff_pct": 55.55585523285605,
+   "times_tol": 11.111171046571208
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Prices: Natural gas at Henry Hub",
+   "year": 2040,
+   "diff_pct": 45.0072633726269,
+   "times_tol": 9.001452674525382
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Industrial: Natural gas",
+   "year": 2040,
+   "diff_pct": 44.15722068865114,
+   "times_tol": 8.831444137730225
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Solar (in renewables)",
+   "year": 2030,
+   "diff_pct": 40.4834408873864,
+   "times_tol": 8.09668817747728
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Natural gas",
+   "year": 2030,
+   "diff_pct": -18.97038542900851,
+   "times_tol": 6.323461809669501
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Wind (in renewables)",
+   "year": 2050,
+   "diff_pct": -29.767127305525342,
+   "times_tol": 5.953425461105068
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Emissions from the electric power sector: Carbon dioxide",
+   "year": 2050,
+   "diff_pct": 16.443809782234055,
+   "times_tol": 5.481269927411349
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Coal",
+   "year": 2040,
+   "diff_pct": 62.22617165367554,
+   "times_tol": 3.931353813084949
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Commercial: Natural gas",
+   "year": 2040,
+   "diff_pct": 17.929403403901524,
+   "times_tol": 3.5858806807803063
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Oil and natural gas steam",
+   "year": 2035,
+   "diff_pct": -52.52389097287391,
+   "times_tol": 3.5015927315249273
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Natural gas",
+   "year": 2040,
+   "diff_pct": 17.328532847653545,
+   "times_tol": 3.4657065695307088
+  }
+ ],
+ "lines": [
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Production: Crude oil and lease condensate",
+   "unit": "million barrels per day",
+   "kind": "supply",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "OGSMOUT/OGQCRREP(6)",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 13.616185520119863,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 13.757028574486302,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 12.689070526541096,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 12.532107502140411,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 12.776888912671232,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Production: Dry natural gas",
+   "unit": "trillion cubic feet",
+   "kind": "supply",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "OGSMOUT/OGQNGREP(9)",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 39.15662109375,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 41.4218359375,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 44.93548828125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 46.927582031250004,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 52.70691796875,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by sector: Residential",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -2.174806064221868,
+    "times_tol": 0.7249353547406236
+   },
+   "years": {
+    "2025": {
+     "ours": 11.8018076171875,
+     "eia": 11.8018076171875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 11.819811298370361,
+     "eia": 11.8002314453125,
+     "diff_pct": 0.16592770360990272,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05530923453663527,
+     "converged": false
+    },
+    "2035": {
+     "ours": 11.898393074035646,
+     "eia": 12.0285244140625,
+     "diff_pct": -1.0818562239830465,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.3606187413276813,
+     "converged": true
+    },
+    "2040": {
+     "ours": 12.08993007659912,
+     "eia": 12.358708007812501,
+     "diff_pct": -2.174806064221868,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7249353547406236,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.74280591583252,
+     "eia": 12.8165986328125,
+     "diff_pct": -0.5757589754824655,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.19191965849415368,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by sector: Commercial",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSCM",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -1.8420072754530947,
+    "times_tol": 0.6140024251510331
+   },
+   "years": {
+    "2025": {
+     "ours": 9.995640625,
+     "eia": 9.995640625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 10.493463905334472,
+     "eia": 10.4502841796875,
+     "diff_pct": 0.4131918798045975,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.137730626601529,
+     "converged": false
+    },
+    "2035": {
+     "ours": 10.937831512212753,
+     "eia": 11.045916015625,
+     "diff_pct": -0.9785019482255297,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.32616731607517785,
+     "converged": true
+    },
+    "2040": {
+     "ours": 11.603519927859306,
+     "eia": 11.8212685546875,
+     "diff_pct": -1.8420072754530947,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6140024251510331,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.827362275600434,
+     "eia": 12.8550234375,
+     "diff_pct": -0.21517784105219429,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07172594701739768,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by sector: Industrial",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 3.325683358141718,
+    "times_tol": 1.1085611193805704
+   },
+   "years": {
+    "2025": {
+     "ours": 25.6064921875,
+     "eia": 25.6064921875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 25.528371240615844,
+     "eia": 25.568447265625,
+     "diff_pct": -0.15674015943485387,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05224671981161713,
+     "converged": false
+    },
+    "2035": {
+     "ours": 26.6990186920166,
+     "eia": 26.734375,
+     "diff_pct": -0.13225036300044124,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.044083454333480085,
+     "converged": true
+    },
+    "2040": {
+     "ours": 28.345015209198,
+     "eia": 28.19535546875,
+     "diff_pct": 0.5307957213515957,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.17693190711719814,
+     "converged": true
+    },
+    "2050": {
+     "ours": 32.157897039413456,
+     "eia": 31.122849609375,
+     "diff_pct": 3.325683358141718,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1085611193805704,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by sector: Transportation",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.1153974057707563,
+    "times_tol": 0.038465801923586014
+   },
+   "years": {
+    "2025": {
+     "ours": 28.127603515625,
+     "eia": 28.127603515625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 27.248187865257265,
+     "eia": 27.25865625,
+     "diff_pct": -0.038403891397753576,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0128012971325842,
+     "converged": false
+    },
+    "2035": {
+     "ours": 24.674147145271302,
+     "eia": 24.67481640625,
+     "diff_pct": -0.002712324046016956,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0009041080153382133,
+     "converged": true
+    },
+    "2040": {
+     "ours": 22.696969073295595,
+     "eia": 22.684441406250002,
+     "diff_pct": 0.05522581235850588,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.018408604119504395,
+     "converged": true
+    },
+    "2050": {
+     "ours": 21.036395911693575,
+     "eia": 21.0121484375,
+     "diff_pct": 0.1153974057707563,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.038465801923586014,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by sector: Electric power",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 5.5881842240899315,
+    "times_tol": 1.8627280746966406
+   },
+   "years": {
+    "2025": {
+     "ours": 32.96144140625,
+     "eia": 32.96144140625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 29.921870063757577,
+     "eia": 31.550880859375,
+     "diff_pct": -5.1631230293634705,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.7210410097878235,
+     "converged": false
+    },
+    "2035": {
+     "ours": 31.218468741280205,
+     "eia": 30.76189453125,
+     "diff_pct": 1.4842200618248258,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.49474002060827327,
+     "converged": true
+    },
+    "2040": {
+     "ours": 34.00683186297555,
+     "eia": 32.20704296875,
+     "diff_pct": 5.5881842240899315,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8627280746966406,
+     "converged": true
+    },
+    "2050": {
+     "ours": 36.64470398003811,
+     "eia": 35.179109375,
+     "diff_pct": 4.166093545505256,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.3886978485017487,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by sector: Total",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSAS",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 2.7481425987841535,
+    "times_tol": 0.9160475329280507
+   },
+   "years": {
+    "2025": {
+     "ours": 94.60861132812501,
+     "eia": 94.608609375,
+     "diff_pct": 2.0644262965774374e-06,
+     "graded": false,
+     "ok": true,
+     "times_tol": 6.881420977104147e-07,
+     "converged": true
+    },
+    "2030": {
+     "ours": 90.35719107003334,
+     "eia": 91.986390625,
+     "diff_pct": -1.7711310813448455,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5903770271149503,
+     "converged": false
+    },
+    "2035": {
+     "ours": 89.63235865599567,
+     "eia": 89.417625,
+     "diff_pct": 0.2401469016826141,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.08004896722753586,
+     "converged": true
+    },
+    "2040": {
+     "ours": 91.68361036721373,
+     "eia": 90.0892890625,
+     "diff_pct": 1.769712383463995,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5899041278213294,
+     "converged": true
+    },
+    "2050": {
+     "ours": 96.54542185566429,
+     "eia": 93.9631796875,
+     "diff_pct": 2.7481425987841535,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9160475329280507,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by source: Petroleum and other liquids",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTPAS",
+   "status": "PASS",
+   "worst": {
+    "year": 2030,
+    "diff_pct": -0.05256560555144674,
+    "times_tol": 0.017521868517148705
+   },
+   "years": {
+    "2025": {
+     "ours": 37.375765625,
+     "eia": 37.375765625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 36.26552053357343,
+     "eia": 36.28459375,
+     "diff_pct": -0.05256560555144674,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.017521868517148705,
+     "converged": false
+    },
+    "2035": {
+     "ours": 33.55326755685401,
+     "eia": 33.5611875,
+     "diff_pct": -0.02359851881281738,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.007866172937606023,
+     "converged": true
+    },
+    "2040": {
+     "ours": 31.807935249919645,
+     "eia": 31.8058984375,
+     "diff_pct": 0.006403882674921313,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0021346275583080583,
+     "converged": true
+    },
+    "2050": {
+     "ours": 30.768152571595888,
+     "eia": 30.78425390625,
+     "diff_pct": -0.05230380019326519,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.017434600064422594,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by source: Natural gas",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QNGAS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": -7.688631868725892,
+    "times_tol": 2.5628772895752965
+   },
+   "years": {
+    "2025": {
+     "ours": 30.851515625,
+     "eia": 30.851515625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 26.908637603317786,
+     "eia": 29.14986328125,
+     "diff_pct": -7.688631868725892,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.5628772895752965,
+     "converged": false
+    },
+    "2035": {
+     "ours": 30.00546786384873,
+     "eia": 29.898625,
+     "diff_pct": 0.3573504261441096,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.11911680871470375,
+     "converged": true
+    },
+    "2040": {
+     "ours": 31.867136853246077,
+     "eia": 31.417236328125,
+     "diff_pct": 1.4320181457791792,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4773393819263915,
+     "converged": true
+    },
+    "2050": {
+     "ours": 37.03232401533877,
+     "eia": 35.81877734375,
+     "diff_pct": 3.388018133456816,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.12933937781894,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by source: Coal",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLAS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 56.949597762544755,
+    "times_tol": 13.763056285815312
+   },
+   "years": {
+    "2025": {
+     "ours": 7.925146484375,
+     "eia": 7.925146484375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 6.037913473907223,
+     "eia": 5.33340576171875,
+     "diff_pct": 13.209340216436804,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.403113405478938,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1.9186285528881495,
+     "eia": 1.8577451171875001,
+     "diff_pct": 3.2772760448873006,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0924253482957653,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1.896506940267328,
+     "eia": 1.2083541259765624,
+     "diff_pct": 56.949597762544755,
+     "graded": true,
+     "ok": false,
+     "times_tol": 13.763056285815312,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.3976772864768861,
+     "eia": 0.32757470703125,
+     "diff_pct": 21.400486039036103,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.4020515889127216,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by source: Nuclear",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QUREL",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 8.1876494140625,
+     "eia": 8.1876494140625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.3738515625,
+     "eia": 8.3738515625,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 8.373578125,
+     "eia": 8.373578125,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.3735771484375,
+     "eia": 8.3735771484375,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 8.3732939453125,
+     "eia": 8.3732939453125,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Consumption by source: Renewable energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTRAS",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 6.3368046875,
+     "eia": 6.3368046875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.279443359375,
+     "eia": 8.279443359375,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 10.419455078125,
+     "eia": 10.419455078125,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 11.6003154296875,
+     "eia": 11.6003154296875,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.517369140625,
+     "eia": 12.517369140625,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Prices: Brent spot",
+   "unit": "$/barrel",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "INTOUT/BRENT_PRICE",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 68.75800230482128,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 67.15668030148663,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 71.71797830302239,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 75.70310981398507,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 86.88903624726663,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Prices: West Texas Intermediate spot",
+   "unit": "$/barrel",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "INTOUT/WTI_PRICE",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 65.14800453636781,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 66.55557614521967,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 69.56681084438969,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 72.90924457856818,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 83.55825242815627,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Prices: Natural gas at Henry Hub",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "NGTDMREP/OGHHPRNG",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 45.0072633726269,
+    "times_tol": 9.001452674525382
+   },
+   "years": {
+    "2025": {
+     "ours": 3.467325635429006,
+     "eia": 3.467325635429006,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.8896635595038305,
+     "eia": 4.452014407116849,
+     "diff_pct": -12.631379779770302,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.5262759559540604,
+     "converged": false
+    },
+    "2035": {
+     "ours": 6.619392485213877,
+     "eia": 5.100183491560983,
+     "diff_pct": 29.787339929370216,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.957467985874045,
+     "converged": true
+    },
+    "2040": {
+     "ours": 7.611405836541995,
+     "eia": 5.248982471300678,
+     "diff_pct": 45.0072633726269,
+     "graded": true,
+     "ok": false,
+     "times_tol": 9.001452674525382,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.9148416843279494,
+     "eia": 4.626073761675116,
+     "diff_pct": -15.374421463820909,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.0748842927641817,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 1. Total energy supply, disposition, and price summary",
+   "series": "Prices: Electricity, all sectors",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELAS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 9.45188804101116,
+    "times_tol": 1.8903776082022319
+   },
+   "years": {
+    "2025": {
+     "ours": 13.537390293170036,
+     "eia": 13.537390293170036,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 13.078326754703896,
+     "eia": 13.159402129000329,
+     "diff_pct": -0.6161022628661916,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12322045257323752,
+     "converged": false
+    },
+    "2035": {
+     "ours": 14.427119147624007,
+     "eia": 13.67420722329714,
+     "diff_pct": 5.506073676023493,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1012147352046984,
+     "converged": true
+    },
+    "2040": {
+     "ours": 15.250054815991858,
+     "eia": 13.933112611339995,
+     "diff_pct": 9.45188804101116,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8903776082022319,
+     "converged": true
+    },
+    "2050": {
+     "ours": 14.372148855302136,
+     "eia": 14.051175602574185,
+     "diff_pct": 2.284316001781006,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.45686320035620137,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Residential: Propane",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QLGRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.357800487615223,
+    "times_tol": 0.03188415527343724
+   },
+   "years": {
+    "2025": {
+     "ours": 0.5245,
+     "eia": 0.5245,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.4871246032714844,
+     "eia": 0.48742730712890625,
+     "diff_pct": -0.06210235926356056,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.00605407714843742,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.46558544921875,
+     "eia": 0.46582278442382813,
+     "diff_pct": -0.0509496772193474,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.004746704101562527,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.45602236938476565,
+     "eia": 0.45522628784179686,
+     "diff_pct": 0.1748760043588371,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0159216308593757,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.44715194702148436,
+     "eia": 0.4455577392578125,
+     "diff_pct": 0.357800487615223,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.03188415527343724,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Residential: Distillate fuel oil",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QDSRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.1549382799949761,
+    "times_tol": 0.010297241210937003
+   },
+   "years": {
+    "2025": {
+     "ours": 0.4892799987792969,
+     "eia": 0.4892799987792969,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.4390619812011719,
+     "eia": 0.43924041748046877,
+     "diff_pct": -0.04062382972869205,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.003568725585937349,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.4064014892578125,
+     "eia": 0.4063211364746094,
+     "diff_pct": 0.019775683810174804,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0016070556640623845,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.3788599548339844,
+     "eia": 0.37880453491210936,
+     "diff_pct": 0.014630216052680112,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0011083984375004352,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.3328162536621094,
+     "eia": 0.3323013916015625,
+     "diff_pct": 0.1549382799949761,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.010297241210937003,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Residential: Natural gas",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QNGRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -2.6142151928047697,
+    "times_tol": 0.8714050642682579
+   },
+   "years": {
+    "2025": {
+     "ours": 4.9260800781250005,
+     "eia": 4.9260800781250005,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4.81344970703125,
+     "eia": 4.7895283203125,
+     "diff_pct": 0.49945182738138083,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.16648394246046347,
+     "converged": false
+    },
+    "2035": {
+     "ours": 4.49342626953125,
+     "eia": 4.55922802734375,
+     "diff_pct": -1.4432653382953742,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4810884460984582,
+     "converged": true
+    },
+    "2040": {
+     "ours": 4.28951904296875,
+     "eia": 4.40466650390625,
+     "diff_pct": -2.6142151928047697,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.8714050642682579,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.093273681640625,
+     "eia": 4.0960224609375,
+     "diff_pct": -0.06710850155461356,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.02236950051820358,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Residential: Purchased electricity",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QELRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -2.4216446717942763,
+    "times_tol": 0.807214890598091
+   },
+   "years": {
+    "2025": {
+     "ours": 5.2164853515625005,
+     "eia": 5.2164853515625005,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 5.4115068359375,
+     "eia": 5.4160322265625,
+     "diff_pct": -0.08355545971099332,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.02785181990366549,
+     "converged": false
+    },
+    "2035": {
+     "ours": 5.8031904296875005,
+     "eia": 5.8659301757812505,
+     "diff_pct": -1.0695617611130914,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.35652058703769596,
+     "converged": true
+    },
+    "2040": {
+     "ours": 6.1479423828125,
+     "eia": 6.3005185546875,
+     "diff_pct": -2.4216446717942763,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.807214890598091,
+     "converged": true
+    },
+    "2050": {
+     "ours": 6.81002587890625,
+     "eia": 6.882080078125,
+     "diff_pct": -1.0469828656568092,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.34899428855227005,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Residential: Delivered energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -2.174806064221868,
+    "times_tol": 0.7249353547406236
+   },
+   "years": {
+    "2025": {
+     "ours": 11.8018076171875,
+     "eia": 11.8018076171875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 11.819811298370361,
+     "eia": 11.8002314453125,
+     "diff_pct": 0.16592770360990272,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05530923453663527,
+     "converged": false
+    },
+    "2035": {
+     "ours": 11.898393074035646,
+     "eia": 12.0285244140625,
+     "diff_pct": -1.0818562239830465,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.3606187413276813,
+     "converged": true
+    },
+    "2040": {
+     "ours": 12.08993007659912,
+     "eia": 12.358708007812501,
+     "diff_pct": -2.174806064221868,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7249353547406236,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.74280591583252,
+     "eia": 12.8165986328125,
+     "diff_pct": -0.5757589754824655,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.19191965849415368,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Commercial: Distillate fuel oil",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QDSCM",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.39592793497742473,
+    "times_tol": 0.023384399414062562
+   },
+   "years": {
+    "2025": {
+     "ours": 0.31541986083984375,
+     "eia": 0.31541986083984375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.3292664489746094,
+     "eia": 0.32880072021484374,
+     "diff_pct": 0.14164468966531008,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.009314575195312758,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.3245875244140625,
+     "eia": 0.32378311157226564,
+     "diff_pct": 0.24844187761701164,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.01608825683593773,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.3141730041503906,
+     "eia": 0.3138572692871094,
+     "diff_pct": 0.10059823180084138,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.006314697265624725,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.29648052978515627,
+     "eia": 0.29531130981445314,
+     "diff_pct": 0.39592793497742473,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.023384399414062562,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Commercial: Natural gas",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QNGCM",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -4.403954372184604,
+    "times_tol": 1.467984790728203
+   },
+   "years": {
+    "2025": {
+     "ours": 3.6398037109375,
+     "eia": 3.6398037109375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.494575927734375,
+     "eia": 3.471131103515625,
+     "diff_pct": 0.6754231839588121,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2251410613196024,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3.28709130859375,
+     "eia": 3.37430712890625,
+     "diff_pct": -2.5847030806816496,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.8615676935605482,
+     "converged": true
+    },
+    "2040": {
+     "ours": 3.23455615234375,
+     "eia": 3.38356689453125,
+     "diff_pct": -4.403954372184604,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.467984790728203,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.3570568847656252,
+     "eia": 3.3621926269531253,
+     "diff_pct": -0.15274979031032476,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.050916596770107424,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Commercial: Purchased electricity",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QELCM",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -1.2203071161590806,
+    "times_tol": 0.4067690387196945
+   },
+   "years": {
+    "2025": {
+     "ours": 5.0256181640625,
+     "eia": 5.0256181640625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 5.5625634765625005,
+     "eia": 5.543654296875,
+     "diff_pct": 0.34109593915623293,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.11369864638540877,
+     "converged": false
+    },
+    "2035": {
+     "ours": 6.1500620117187506,
+     "eia": 6.17852783203125,
+     "diff_pct": -0.4607217299390398,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.15357390997968004,
+     "converged": true
+    },
+    "2040": {
+     "ours": 6.7971416015625,
+     "eia": 6.8811123046875,
+     "diff_pct": -1.2203071161590806,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4067690387196945,
+     "converged": true
+    },
+    "2050": {
+     "ours": 7.80886328125,
+     "eia": 7.84240234375,
+     "diff_pct": -0.42766311941045965,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.14255437313681904,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Commercial: Delivered energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSCM",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -1.8420072754530947,
+    "times_tol": 0.6140024251510331
+   },
+   "years": {
+    "2025": {
+     "ours": 9.995640625,
+     "eia": 9.995640625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 10.493463905334472,
+     "eia": 10.4502841796875,
+     "diff_pct": 0.4131918798045975,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.137730626601529,
+     "converged": false
+    },
+    "2035": {
+     "ours": 10.937831512212753,
+     "eia": 11.045916015625,
+     "diff_pct": -0.9785019482255297,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.32616731607517785,
+     "converged": true
+    },
+    "2040": {
+     "ours": 11.603519927859306,
+     "eia": 11.8212685546875,
+     "diff_pct": -1.8420072754530947,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6140024251510331,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.827362275600434,
+     "eia": 12.8550234375,
+     "diff_pct": -0.21517784105219429,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07172594701739768,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Petroleum and other liquids",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTPIN",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": 0.20698634552467343,
+    "times_tol": 0.06899544850822599
+   },
+   "years": {
+    "2025": {
+     "ours": 8.6239072265625,
+     "eia": 8.6239072265625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.800217752456666,
+     "eia": 8.8012001953125,
+     "diff_pct": -0.011162600941150291,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0037208669803826364,
+     "converged": false
+    },
+    "2035": {
+     "ours": 9.222512802124024,
+     "eia": 9.203462890625,
+     "diff_pct": 0.20698634552467343,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06899544850822599,
+     "converged": true
+    },
+    "2040": {
+     "ours": 9.828616619110107,
+     "eia": 9.8094150390625,
+     "diff_pct": 0.19574643310680262,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06524881103560076,
+     "converged": true
+    },
+    "2050": {
+     "ours": 11.085866674423219,
+     "eia": 11.087423828125,
+     "diff_pct": -0.014044323784501156,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.00468144126150096,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Natural gas",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QNGIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -4.450651404753636,
+    "times_tol": 1.483550468251211
+   },
+   "years": {
+    "2025": {
+     "ours": 8.943025390625,
+     "eia": 8.943025390625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.631919668635984,
+     "eia": 8.6122880859375,
+     "diff_pct": 0.22794851382803571,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07598283794267907,
+     "converged": false
+    },
+    "2035": {
+     "ours": 8.941343081652668,
+     "eia": 9.1219873046875,
+     "diff_pct": -1.9803165363100783,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6601055121033588,
+     "converged": true
+    },
+    "2040": {
+     "ours": 9.2005512833363,
+     "eia": 9.629109375,
+     "diff_pct": -4.450651404753636,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.483550468251211,
+     "converged": true
+    },
+    "2050": {
+     "ours": 10.5356381690994,
+     "eia": 10.727705078125,
+     "diff_pct": -1.7903820773116363,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5967940257705452,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Coal (steam and metallurgical)",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLIN + QBLK/QMCIN",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -0.44933586658710833,
+    "times_tol": 0.05966918945312427
+   },
+   "years": {
+    "2025": {
+     "ours": 0.8185184326171875,
+     "eia": 0.8185184326171875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.7711354675292968,
+     "eia": 0.77208544921875,
+     "diff_pct": -0.12304100412906527,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.018999633789062997,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.7316375122070312,
+     "eia": 0.7314686889648437,
+     "diff_pct": 0.02308003674449388,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.003376464843749538,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.6609874572753907,
+     "eia": 0.6639709167480469,
+     "diff_pct": -0.44933586658710833,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05966918945312427,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.5477246704101563,
+     "eia": 0.5505088806152344,
+     "diff_pct": -0.5057520964905415,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05568420410156261,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Renewable energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTRIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 73.01191677822703,
+    "times_tol": 24.337305592742343
+   },
+   "years": {
+    "2025": {
+     "ours": 1.49798876953125,
+     "eia": 1.49798876953125,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1.4579783935546875,
+     "eia": 1.51265087890625,
+     "diff_pct": -3.6143492271722644,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.093449707031251,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1.5176103515625001,
+     "eia": 1.4665225830078126,
+     "diff_pct": 3.4835991717159454,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.021755371093751,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1.9822552490234375,
+     "eia": 1.573519775390625,
+     "diff_pct": 25.97587142057649,
+     "graded": true,
+     "ok": false,
+     "times_tol": 8.174709472656252,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.052326416015625,
+     "eia": 1.76422900390625,
+     "diff_pct": 73.01191677822703,
+     "graded": true,
+     "ok": false,
+     "times_tol": 24.337305592742343,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Purchased electricity",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QELIN",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 2.9657762714997205,
+    "times_tol": 0.9885920904999039
+   },
+   "years": {
+    "2025": {
+     "ours": 3.617697021484375,
+     "eia": 3.617697021484375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.653352742694275,
+     "eia": 3.6553532714843753,
+     "diff_pct": -0.054728740056575464,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.018242913352193323,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3.813984166657742,
+     "eia": 3.75520751953125,
+     "diff_pct": 1.5652037023463627,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5217345674487854,
+     "converged": true
+    },
+    "2040": {
+     "ours": 4.084208908095318,
+     "eia": 3.9665693359375003,
+     "diff_pct": 2.9657762714997205,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9885920904999039,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.213760007712758,
+     "eia": 4.2670488281250005,
+     "diff_pct": -1.2488448705110788,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4162816235036945,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Industrial: Delivered energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 3.325683358141718,
+    "times_tol": 1.1085611193805704
+   },
+   "years": {
+    "2025": {
+     "ours": 25.6064921875,
+     "eia": 25.6064921875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 25.528371240615844,
+     "eia": 25.568447265625,
+     "diff_pct": -0.15674015943485387,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05224671981161713,
+     "converged": false
+    },
+    "2035": {
+     "ours": 26.6990186920166,
+     "eia": 26.734375,
+     "diff_pct": -0.13225036300044124,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.044083454333480085,
+     "converged": true
+    },
+    "2040": {
+     "ours": 28.345015209198,
+     "eia": 28.19535546875,
+     "diff_pct": 0.5307957213515957,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.17693190711719814,
+     "converged": true
+    },
+    "2050": {
+     "ours": 32.157897039413456,
+     "eia": 31.122849609375,
+     "diff_pct": 3.325683358141718,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1085611193805704,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Transportation: Motor gasoline",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QMGTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.15398577081886522,
+    "times_tol": 0.05132859027295503
+   },
+   "years": {
+    "2025": {
+     "ours": 15.7350400390625,
+     "eia": 15.7350400390625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 14.430873046875,
+     "eia": 14.4391689453125,
+     "diff_pct": -0.057454126819356244,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0191513756064517,
+     "converged": false
+    },
+    "2035": {
+     "ours": 11.96896875,
+     "eia": 11.976558593750001,
+     "diff_pct": -0.06337249294602332,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.021124164315341816,
+     "converged": true
+    },
+    "2040": {
+     "ours": 9.9644169921875,
+     "eia": 9.958178710937501,
+     "diff_pct": 0.06264480113362669,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0208816003778792,
+     "converged": true
+    },
+    "2050": {
+     "ours": 7.8821005859375,
+     "eia": 7.86998193359375,
+     "diff_pct": 0.15398577081886522,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05132859027295503,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Transportation: Jet fuel",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QJFTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -0.019661039114804435,
+    "times_tol": 0.006553679704933644
+   },
+   "years": {
+    "2025": {
+     "ours": 3.5570927734375,
+     "eia": 3.5570927734375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.665712890625,
+     "eia": 3.6662548828125,
+     "diff_pct": -0.014783265343631946,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.004927755114542217,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3.8449384765625,
+     "eia": 3.845694580078125,
+     "diff_pct": -0.019661039114804435,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.006553679704933644,
+     "converged": true
+    },
+    "2040": {
+     "ours": 4.03534130859375,
+     "eia": 4.03548193359375,
+     "diff_pct": -0.0034847139031568553,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0011615713010524067,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.32208544921875,
+     "eia": 4.3228369140625,
+     "diff_pct": -0.017383603839082884,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.005794534613028137,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Transportation: Distillate fuel oil",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QDSTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -0.5650171668093451,
+    "times_tol": 0.18833905560311406
+   },
+   "years": {
+    "2025": {
+     "ours": 6.68104736328125,
+     "eia": 6.68104736328125,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 6.62762890625,
+     "eia": 6.63819189453125,
+     "diff_pct": -0.15912447921175854,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05304149307058562,
+     "converged": false
+    },
+    "2035": {
+     "ours": 5.7784580078125005,
+     "eia": 5.7973857421875,
+     "diff_pct": -0.3264874068541368,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.10882913561804673,
+     "converged": true
+    },
+    "2040": {
+     "ours": 5.22144482421875,
+     "eia": 5.24487841796875,
+     "diff_pct": -0.44679002795788847,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.14893000931929778,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.68699609375,
+     "eia": 4.71362890625,
+     "diff_pct": -0.5650171668093451,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.18833905560311406,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Transportation: Natural gas",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QNGTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 3.140283572222402,
+    "times_tol": 0.17589599609375006
+   },
+   "years": {
+    "2025": {
+     "ours": 0.08859622955322266,
+     "eia": 0.08859622955322266,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.10568525695800782,
+     "eia": 0.10540919494628906,
+     "diff_pct": 0.26189556979296924,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.005521240234375169,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.10711599731445312,
+     "eia": 0.10607875061035156,
+     "diff_pct": 0.9778081831973928,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.020744934082031208,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.13133352661132813,
+     "eia": 0.12875312805175781,
+     "diff_pct": 2.004144364192073,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.051607971191406365,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.2888586730957031,
+     "eia": 0.2800638732910156,
+     "diff_pct": 3.140283572222402,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.17589599609375006,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Transportation: Purchased electricity",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QELTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.22144826291010666,
+    "times_tol": 0.0013741683959960643
+   },
+   "years": {
+    "2025": {
+     "ours": 0.024573652267456055,
+     "eia": 0.024573652267456055,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.027089628219604492,
+     "eia": 0.027068960189819337,
+     "diff_pct": 0.07635324608046279,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.00041336059570309946,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.028263898849487306,
+     "eia": 0.02824072074890137,
+     "diff_pct": 0.08207333230629832,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.00046356201171875167,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.029362993240356447,
+     "eia": 0.029321392059326174,
+     "diff_pct": 0.14187996581507267,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0008320236206054571,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.031095558166503907,
+     "eia": 0.031026849746704104,
+     "diff_pct": 0.22144826291010666,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0013741683959960643,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Transportation: Delivered energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.1153974057707563,
+    "times_tol": 0.038465801923586014
+   },
+   "years": {
+    "2025": {
+     "ours": 28.127603515625,
+     "eia": 28.127603515625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 27.248187865257265,
+     "eia": 27.25865625,
+     "diff_pct": -0.038403891397753576,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0128012971325842,
+     "converged": false
+    },
+    "2035": {
+     "ours": 24.674147145271302,
+     "eia": 24.67481640625,
+     "diff_pct": -0.002712324046016956,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0009041080153382133,
+     "converged": true
+    },
+    "2040": {
+     "ours": 22.696969073295595,
+     "eia": 22.684441406250002,
+     "diff_pct": 0.05522581235850588,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.018408604119504395,
+     "converged": true
+    },
+    "2050": {
+     "ours": 21.036395911693575,
+     "eia": 21.0121484375,
+     "diff_pct": 0.1153974057707563,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.038465801923586014,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Petroleum and other liquids",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTPEL",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 0.13768968200683593,
+     "eia": 0.13768968200683593,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.10540042877197266,
+     "eia": 0.10540042877197266,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.08070411682128907,
+     "eia": 0.08070411682128907,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.06809449768066407,
+     "eia": 0.06809449768066407,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.033780689239501956,
+     "eia": 0.033780689239501956,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Natural gas",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QNGEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": -18.97038542900851,
+    "times_tol": 6.323461809669501
+   },
+   "years": {
+    "2025": {
+     "ours": 13.254009765625,
+     "eia": 13.254009765625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 9.860465310170083,
+     "eia": 12.16896484375,
+     "diff_pct": -18.97038542900851,
+     "graded": true,
+     "ok": false,
+     "times_tol": 6.323461809669501,
+     "converged": false
+    },
+    "2035": {
+     "ours": 13.169188121429459,
+     "eia": 12.729720703125,
+     "diff_pct": 3.452294269084577,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.150764756361528,
+     "converged": true
+    },
+    "2040": {
+     "ours": 14.969042280725207,
+     "eia": 13.829005859375,
+     "diff_pct": 8.243806047542822,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.747935349180939,
+     "converged": true
+    },
+    "2050": {
+     "ours": 18.721734552294063,
+     "eia": 17.31703125,
+     "diff_pct": 8.111686593474632,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.703895531158212,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Steam coal",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 80.93310426668224,
+    "times_tol": 13.822713268237186
+   },
+   "years": {
+    "2025": {
+     "ours": 7.51277685546875,
+     "eia": 7.51277685546875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 5.669757040801755,
+     "eia": 4.9642998046875,
+     "diff_pct": 14.210609025831445,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.736869675277147,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1.5450948309643213,
+     "eia": 1.4843807373046876,
+     "diff_pct": 4.09019681634224,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.2142818731926752,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1.545094830892328,
+     "eia": 0.8539591674804687,
+     "diff_pct": 80.93310426668224,
+     "graded": true,
+     "ok": false,
+     "times_tol": 13.822713268237186,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.09412602076033333,
+     "eia": 0.02123965835571289,
+     "diff_pct": 343.1616515856809,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.4577272480924086,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Nuclear",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QUREL",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 8.1876494140625,
+     "eia": 8.1876494140625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.3738515625,
+     "eia": 8.3738515625,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 8.373578125,
+     "eia": 8.373578125,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.3735771484375,
+     "eia": 8.3735771484375,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 8.3732939453125,
+     "eia": 8.3732939453125,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Renewable energy",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTREL",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 3.787033447265625,
+     "eia": 3.787033447265625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 5.655853515625,
+     "eia": 5.655853515625,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 7.76749853515625,
+     "eia": 7.76749853515625,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.7302578125,
+     "eia": 8.7302578125,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 9.1829228515625,
+     "eia": 9.1829228515625,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Electric power: Total",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 5.5881842240899315,
+    "times_tol": 1.8627280746966406
+   },
+   "years": {
+    "2025": {
+     "ours": 32.96144140625,
+     "eia": 32.96144140625,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 29.921870063757577,
+     "eia": 31.550880859375,
+     "diff_pct": -5.1631230293634705,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.7210410097878235,
+     "converged": false
+    },
+    "2035": {
+     "ours": 31.218468741280205,
+     "eia": 30.76189453125,
+     "diff_pct": 1.4842200618248258,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.49474002060827327,
+     "converged": true
+    },
+    "2040": {
+     "ours": 34.00683186297555,
+     "eia": 32.20704296875,
+     "diff_pct": 5.5881842240899315,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8627280746966406,
+     "converged": true
+    },
+    "2050": {
+     "ours": 36.64470398003811,
+     "eia": 35.179109375,
+     "diff_pct": 4.166093545505256,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.3886978485017487,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 2. Energy consumption by sector and source",
+   "series": "Total: Total energy consumption",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QTSAS",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 2.7481425987841535,
+    "times_tol": 0.9160475329280507
+   },
+   "years": {
+    "2025": {
+     "ours": 94.60861132812501,
+     "eia": 94.608609375,
+     "diff_pct": 2.0644262965774374e-06,
+     "graded": false,
+     "ok": true,
+     "times_tol": 6.881420977104147e-07,
+     "converged": true
+    },
+    "2030": {
+     "ours": 90.35719107003334,
+     "eia": 91.986390625,
+     "diff_pct": -1.7711310813448455,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5903770271149503,
+     "converged": false
+    },
+    "2035": {
+     "ours": 89.63235865599567,
+     "eia": 89.417625,
+     "diff_pct": 0.2401469016826141,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.08004896722753586,
+     "converged": true
+    },
+    "2040": {
+     "ours": 91.68361036721373,
+     "eia": 90.0892890625,
+     "diff_pct": 1.769712383463995,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5899041278213294,
+     "converged": true
+    },
+    "2050": {
+     "ours": 96.54542185566429,
+     "eia": 93.9631796875,
+     "diff_pct": 2.7481425987841535,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9160475329280507,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Residential: Electricity",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELRS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 10.855352882656844,
+    "times_tol": 2.1710705765313687
+   },
+   "years": {
+    "2025": {
+     "ours": 16.679383855592036,
+     "eia": 16.679383855592036,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 16.285607271721826,
+     "eia": 16.292762249351174,
+     "diff_pct": -0.04391506805196954,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.008783013610393728,
+     "converged": false
+    },
+    "2035": {
+     "ours": 17.80315850102792,
+     "eia": 16.77941907055038,
+     "diff_pct": 6.101161346368111,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.220232269273624,
+     "converged": true
+    },
+    "2040": {
+     "ours": 18.95972607328696,
+     "eia": 17.10312184325127,
+     "diff_pct": 10.855352882656844,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.1710705765313687,
+     "converged": true
+    },
+    "2050": {
+     "ours": 18.00472681779936,
+     "eia": 17.453078551787854,
+     "diff_pct": 3.160750490949882,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6321500981899779,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Residential: Natural gas",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGRS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 15.506541833459963,
+    "times_tol": 3.101308366691993
+   },
+   "years": {
+    "2025": {
+     "ours": 14.58097332142188,
+     "eia": 14.58097332142188,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 13.535986432026013,
+     "eia": 13.906939216299179,
+     "diff_pct": -2.667393439373078,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.533478687874616,
+     "converged": false
+    },
+    "2035": {
+     "ours": 16.29602764388832,
+     "eia": 14.66002549033874,
+     "diff_pct": 11.159613294177007,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.231922658835401,
+     "converged": true
+    },
+    "2040": {
+     "ours": 17.25128443451201,
+     "eia": 14.935331073615998,
+     "diff_pct": 15.506541833459963,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.101308366691993,
+     "converged": true
+    },
+    "2050": {
+     "ours": 15.085680489850402,
+     "eia": 15.315374852807508,
+     "diff_pct": -1.499763245527097,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.299952649105419,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Residential: Propane",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PLGRS",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 26.50260368922318,
+     "eia": 26.50260368922318,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 26.002168586574044,
+     "eia": 26.002168586574044,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 29.622925639177993,
+     "eia": 29.622925639177993,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 31.20707812908222,
+     "eia": 31.20707812908222,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 32.466980818462616,
+     "eia": 32.466980818462616,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Residential: Distillate fuel oil",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PDSRS",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -1.3972489388908493,
+    "times_tol": 0.2794497877781698
+   },
+   "years": {
+    "2025": {
+     "ours": 26.295755236933473,
+     "eia": 26.295755236933473,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 26.519255642637315,
+     "eia": 26.643526946991187,
+     "diff_pct": -0.46642212422220997,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.09328442484444117,
+     "converged": false
+    },
+    "2035": {
+     "ours": 27.477339108719065,
+     "eia": 27.507089624714354,
+     "diff_pct": -0.1081558114696346,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.021631162293926653,
+     "converged": true
+    },
+    "2040": {
+     "ours": 29.124892705588287,
+     "eia": 29.03373511726386,
+     "diff_pct": 0.3139712749884005,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06279425499768003,
+     "converged": true
+    },
+    "2050": {
+     "ours": 30.871201014026937,
+     "eia": 31.308660946888267,
+     "diff_pct": -1.3972489388908493,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2794497877781698,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Commercial: Electricity",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELCM",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 9.120026787732138,
+    "times_tol": 1.8240053575464297
+   },
+   "years": {
+    "2025": {
+     "ours": 13.479200988327298,
+     "eia": 13.479200988327298,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 12.889270987071782,
+     "eia": 12.998182188403854,
+     "diff_pct": -0.8378956361239198,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.16757912722478296,
+     "converged": false
+    },
+    "2035": {
+     "ours": 14.173581306792764,
+     "eia": 13.442826555669846,
+     "diff_pct": 5.436020081764004,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0872040163528016,
+     "converged": true
+    },
+    "2040": {
+     "ours": 14.90499260076559,
+     "eia": 13.659264059529436,
+     "diff_pct": 9.120026787732138,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8240053575464297,
+     "converged": true
+    },
+    "2050": {
+     "ours": 13.960386224209815,
+     "eia": 13.69008808400949,
+     "diff_pct": 1.9744076045503434,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.3948815209100699,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Commercial: Natural gas",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGCM",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 17.929403403901524,
+    "times_tol": 3.5858806807803063
+   },
+   "years": {
+    "2025": {
+     "ours": 10.274326362518877,
+     "eia": 10.274326362518877,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 10.860427771869961,
+     "eia": 11.200348870829657,
+     "diff_pct": -3.034915277014194,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6069830554028386,
+     "converged": false
+    },
+    "2035": {
+     "ours": 13.792638553293028,
+     "eia": 12.206242465836112,
+     "diff_pct": 12.996596552108963,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.599319310421791,
+     "converged": true
+    },
+    "2040": {
+     "ours": 14.738080760823003,
+     "eia": 12.497375832849684,
+     "diff_pct": 17.929403403901524,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.5858806807803063,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.435811990451173,
+     "eia": 12.677815343436123,
+     "diff_pct": -1.908872675845108,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.38177453516902055,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Industrial: Electricity",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 9.9815965347535,
+    "times_tol": 1.9963193069507004
+   },
+   "years": {
+    "2025": {
+     "ours": 9.074901583901738,
+     "eia": 9.074901583901738,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.595071260892354,
+     "eia": 8.70570156601291,
+     "diff_pct": -1.270779893862406,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.25415597877248153,
+     "converged": false
+    },
+    "2035": {
+     "ours": 9.702279519790743,
+     "eia": 9.114149094739755,
+     "diff_pct": 6.452938381164164,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.2905876762328325,
+     "converged": true
+    },
+    "2040": {
+     "ours": 10.260082542219513,
+     "eia": 9.32890853150817,
+     "diff_pct": 9.9815965347535,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9963193069507004,
+     "converged": true
+    },
+    "2050": {
+     "ours": 9.235455534144583,
+     "eia": 9.211797444748088,
+     "diff_pct": 0.2568238124903921,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.051364762498079,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Industrial: Natural gas",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 44.15722068865114,
+    "times_tol": 8.831444137730225
+   },
+   "years": {
+    "2025": {
+     "ours": 4.507603945505707,
+     "eia": 4.507603945505707,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4.877531217311399,
+     "eia": 5.413229270807278,
+     "diff_pct": -9.896090239236987,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9792180478473984,
+     "converged": false
+    },
+    "2035": {
+     "ours": 7.714644661065365,
+     "eia": 5.890407918202527,
+     "diff_pct": 30.969616505260777,
+     "graded": true,
+     "ok": false,
+     "times_tol": 6.193923301052156,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.5126353380541,
+     "eia": 5.905105063338851,
+     "diff_pct": 44.15722068865114,
+     "graded": true,
+     "ok": false,
+     "times_tol": 8.831444137730225,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.857251005830406,
+     "eia": 5.382285051405233,
+     "diff_pct": -9.75485394326614,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9509707886532275,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Industrial: Steam coal",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PCLIN",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -0.6252709528507094,
+    "times_tol": 0.12505419057014122
+   },
+   "years": {
+    "2025": {
+     "ours": 3.9844878277085627,
+     "eia": 3.9844878277085627,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.72774197820967,
+     "eia": 3.7257184845793745,
+     "diff_pct": 0.054311500954007386,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.010862300190799758,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3.641483827333292,
+     "eia": 3.6643962325729262,
+     "diff_pct": -0.6252709528507094,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12505419057014122,
+     "converged": true
+    },
+    "2040": {
+     "ours": 3.674016354249163,
+     "eia": 3.67342456975166,
+     "diff_pct": 0.016109885646642397,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.003221977129330164,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.656413738909095,
+     "eia": 3.644975851914296,
+     "diff_pct": 0.3137987042847401,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06275974085694876,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Transportation: Motor gasoline",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PMGTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 0.9674903496277532,
+    "times_tol": 0.1934980699255485
+   },
+   "years": {
+    "2025": {
+     "ours": 26.3451540229471,
+     "eia": 26.3451540229471,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 22.885363911764397,
+     "eia": 22.96003015122551,
+     "diff_pct": -0.3252009643250675,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06504019286501457,
+     "converged": false
+    },
+    "2035": {
+     "ours": 22.60363006199897,
+     "eia": 22.463106679051634,
+     "diff_pct": 0.6255741245194013,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.1251148249038799,
+     "converged": true
+    },
+    "2040": {
+     "ours": 20.203420154623593,
+     "eia": 20.14817185794527,
+     "diff_pct": 0.2742099733308301,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05484199466616613,
+     "converged": true
+    },
+    "2050": {
+     "ours": 20.244405787435255,
+     "eia": 20.050419909748598,
+     "diff_pct": 0.9674903496277532,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.1934980699255485,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Transportation: Jet fuel",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PJFTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -2.019834315964053,
+    "times_tol": 0.4039668631928102
+   },
+   "years": {
+    "2025": {
+     "ours": 16.22592814307609,
+     "eia": 16.22592814307609,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 16.39292342458754,
+     "eia": 16.513719909153224,
+     "diff_pct": -0.7314916640842939,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.14629833281685836,
+     "converged": false
+    },
+    "2035": {
+     "ours": 17.396933032274454,
+     "eia": 17.425067827266503,
+     "diff_pct": -0.1614616096244026,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.03229232192488089,
+     "converged": true
+    },
+    "2040": {
+     "ours": 19.2500906716649,
+     "eia": 19.15929856677394,
+     "diff_pct": 0.4738801087865063,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.09477602175729988,
+     "converged": true
+    },
+    "2050": {
+     "ours": 21.498433657264414,
+     "eia": 21.941617986840356,
+     "diff_pct": -2.019834315964053,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4039668631928102,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Transportation: Diesel fuel (distillate)",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PDSTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -1.5226001138266998,
+    "times_tol": 0.3045200227653399
+   },
+   "years": {
+    "2025": {
+     "ours": 26.376060072452674,
+     "eia": 26.376060072452674,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 25.236858506155098,
+     "eia": 25.363563085356873,
+     "diff_pct": -0.4995535476438051,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.09991070952876092,
+     "converged": false
+    },
+    "2035": {
+     "ours": 25.660734296538095,
+     "eia": 25.694958753165338,
+     "diff_pct": -0.13319521917125599,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.026639043834251447,
+     "converged": true
+    },
+    "2040": {
+     "ours": 27.405765003212778,
+     "eia": 27.312258906495117,
+     "diff_pct": 0.34235944027105614,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06847188805421323,
+     "converged": true
+    },
+    "2050": {
+     "ours": 29.107494042448703,
+     "eia": 29.557537136533938,
+     "diff_pct": -1.5226001138266998,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.3045200227653399,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Electric power: Natural gas",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 55.55585523285605,
+    "times_tol": 11.111171046571208
+   },
+   "years": {
+    "2025": {
+     "ours": 3.81023704533618,
+     "eia": 3.81023704533618,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4.042238175799506,
+     "eia": 4.704033172722575,
+     "diff_pct": -14.068671980474978,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.8137343960949956,
+     "converged": false
+    },
+    "2035": {
+     "ours": 7.243225715581472,
+     "eia": 5.08540769330466,
+     "diff_pct": 42.43156404387696,
+     "graded": true,
+     "ok": false,
+     "times_tol": 8.48631280877539,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.047384029353001,
+     "eia": 5.173308338221432,
+     "diff_pct": 55.55585523285605,
+     "graded": true,
+     "ok": false,
+     "times_tol": 11.111171046571208,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.287699285527138,
+     "eia": 4.615638054146984,
+     "diff_pct": -7.104949841662855,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.4209899683325704,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 3. Energy prices by sector and source (delivered prices)",
+   "series": "Electric power: Steam coal",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PCLEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 5.161248773195948,
+    "times_tol": 1.0322497546391896
+   },
+   "years": {
+    "2025": {
+     "ours": 2.559636822390985,
+     "eia": 2.559636822390985,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 2.4657874427255044,
+     "eia": 2.46093236177785,
+     "diff_pct": 0.19728624090045166,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.03945724818009185,
+     "converged": false
+    },
+    "2035": {
+     "ours": 2.5142443629058855,
+     "eia": 2.4830541301093945,
+     "diff_pct": 1.2561237557522364,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2512247511504463,
+     "converged": true
+    },
+    "2040": {
+     "ours": 2.702684803702259,
+     "eia": 2.642094787070164,
+     "diff_pct": 2.293256734338578,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4586513468677166,
+     "converged": true
+    },
+    "2050": {
+     "ours": 2.5511583401168014,
+     "eia": 2.4259490733311395,
+     "diff_pct": 5.161248773195948,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0322497546391896,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Coal",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNCLNR + UEFDOUT/UGNCFNR",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 62.22617165367554,
+    "times_tol": 3.931353813084949
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 727.9338735675724,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 506.2364682125759,
+     "eia": 465.34368624606634,
+     "diff_pct": 8.78765161646271,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.7575303232925403,
+     "converged": false
+    },
+    "2035": {
+     "ours": 102.49199999999988,
+     "eia": 121.78633610215039,
+     "diff_pct": -15.842775733040405,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9294336102150509,
+     "converged": true
+    },
+    "2040": {
+     "ours": 102.49199999999989,
+     "eia": 63.178461869150404,
+     "diff_pct": 62.22617165367554,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.931353813084949,
+     "converged": true
+    },
+    "2050": {
+     "ours": 6.209439598167645,
+     "eia": 0.29868586710095363,
+     "diff_pct": 1978.9197890199805,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5910753731066691,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Natural gas",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNGFNR + UEFDOUT/UGNGINR + UEFDOUT/UGNGCNR",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 17.328532847653545,
+    "times_tol": 3.4657065695307088
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 1569.7233840736808,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1334.253303607865,
+     "eia": 1468.8973895825657,
+     "diff_pct": -9.166337072255537,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8332674144511079,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1822.7436893658887,
+     "eia": 1576.8580539163668,
+     "diff_pct": 15.593390593327516,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.1186781186655015,
+     "converged": true
+    },
+    "2040": {
+     "ours": 2086.880709919559,
+     "eia": 1778.6642850373755,
+     "diff_pct": 17.328532847653545,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.4657065695307088,
+     "converged": true
+    },
+    "2050": {
+     "ours": 2693.0911586844395,
+     "eia": 2303.509067161096,
+     "diff_pct": 16.91254864490177,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.382509728980355,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Nuclear power",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNURNR",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -2.098699664558168,
+    "times_tol": 0.4197399329116326
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 783.9165124893188,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 785.1265019301796,
+     "eia": 801.7442584037781,
+     "diff_pct": -2.072700402829619,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4145400805659234,
+     "converged": false
+    },
+    "2035": {
+     "ours": 784.8923824388719,
+     "eia": 801.7180361747742,
+     "diff_pct": -2.098699664558168,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4197399329116326,
+     "converged": true
+    },
+    "2040": {
+     "ours": 785.3189667325086,
+     "eia": 801.7180247306824,
+     "diff_pct": -2.045489497842168,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4090978995684344,
+     "converged": true
+    },
+    "2050": {
+     "ours": 785.6315093253288,
+     "eia": 801.6907839775085,
+     "diff_pct": -2.003175659885126,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.40063513197702616,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Renewable sources",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNHONR",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": 14.671496893467895,
+    "times_tol": 2.934299378693577
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 1011.3243483304977,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1779.7288038722072,
+     "eia": 1552.0236955881119,
+     "diff_pct": 14.671496893467895,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.934299378693577,
+     "converged": false
+    },
+    "2035": {
+     "ours": 2050.2023024821847,
+     "eia": 2157.2528198957443,
+     "diff_pct": -4.962353806019504,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9924707612039017,
+     "converged": true
+    },
+    "2040": {
+     "ours": 2180.5888706429987,
+     "eia": 2430.869199037552,
+     "diff_pct": -10.295919191935376,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.059183838387076,
+     "converged": true
+    },
+    "2050": {
+     "ours": 2247.3352046653476,
+     "eia": 2551.013405561447,
+     "diff_pct": -11.904218152442969,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.3808436304885947,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Conventional hydroelectric power (in renewables)",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNHYNR",
+   "status": "FLAG",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -5.476191123292573,
+    "times_tol": 1.0952382246585155
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 242.6222127364017,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 260.99544736205706,
+     "eia": 274.489183739759,
+     "diff_pct": -4.915944662684879,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.983188932536975,
+     "converged": false
+    },
+    "2035": {
+     "ours": 260.9826892010481,
+     "eia": 276.1025949995965,
+     "diff_pct": -5.476191123292573,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0952382246585155,
+     "converged": true
+    },
+    "2040": {
+     "ours": 260.9826892010481,
+     "eia": 276.01809209771454,
+     "diff_pct": -5.447252671880531,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0894505343761065,
+     "converged": true
+    },
+    "2050": {
+     "ours": 260.97150301137367,
+     "eia": 276.0614130469039,
+     "diff_pct": -5.466142431490928,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.093228486298185,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Wind (in renewables)",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNWNNR + UEFDOUT/UGNWLNR + UEFDOUT/UGNWFNR",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -29.767127305525342,
+    "times_tol": 5.953425461105068
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 462.7738479548134,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 671.3010501096957,
+     "eia": 657.4217166900635,
+     "diff_pct": 2.1111765959772155,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.42223531919544105,
+     "converged": false
+    },
+    "2035": {
+     "ours": 858.4195404119209,
+     "eia": 1131.889360576868,
+     "diff_pct": -24.16047271842656,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.832094543685313,
+     "converged": true
+    },
+    "2040": {
+     "ours": 978.2602031797845,
+     "eia": 1349.3269965797663,
+     "diff_pct": -27.500138538734554,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.50002770774691,
+     "converged": true
+    },
+    "2050": {
+     "ours": 1017.7061512836734,
+     "eia": 1449.0453148782253,
+     "diff_pct": -29.767127305525342,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.953425461105068,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation by fuel: Solar (in renewables)",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "UEFDOUT/UGNSONR + UEFDOUT/UGNPVNR + UEFDOUT/UGNPTNR",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": 40.4834408873864,
+    "times_tol": 8.09668817747728
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 274.19101834774483,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 810.6982191143311,
+     "eia": 577.0774220743915,
+     "diff_pct": 40.4834408873864,
+     "graded": true,
+     "ok": false,
+     "times_tol": 8.09668817747728,
+     "converged": false
+    },
+    "2035": {
+     "ours": 894.0652518192937,
+     "eia": 685.4569534375332,
+     "diff_pct": 30.433464470029815,
+     "graded": true,
+     "ok": false,
+     "times_tol": 6.086692894005964,
+     "converged": true
+    },
+    "2040": {
+     "ours": 904.4695735665268,
+     "eia": 727.8634384375764,
+     "diff_pct": 24.263635979305565,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.852727195861113,
+     "converged": true
+    },
+    "2050": {
+     "ours": 931.7785400698539,
+     "eia": 736.5606733188033,
+     "diff_pct": 26.503976362386506,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.300795272477302,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Generation: Coal, natural gas, nuclear and renewables together",
+   "unit": "billion kWh",
+   "kind": "generation",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 10.0,
+   "source": "sum of the four lines above",
+   "status": "PASS",
+   "worst": {
+    "year": 2030,
+    "diff_pct": 2.736375949451242,
+    "times_tol": 0.547275189890247
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 4092.8981184610698,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4405.345077622827,
+     "eia": 4288.009029820521,
+     "diff_pct": 2.736375949451242,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.547275189890247,
+     "converged": false
+    },
+    "2035": {
+     "ours": 4760.330374286945,
+     "eia": 4657.615246089035,
+     "diff_pct": 2.205315870265556,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4410631740531107,
+     "converged": true
+    },
+    "2040": {
+     "ours": 5155.280547295066,
+     "eia": 5074.429970674761,
+     "diff_pct": 1.5932937706804928,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.31865875413609973,
+     "converged": true
+    },
+    "2050": {
+     "ours": 5732.267312273283,
+     "eia": 5656.511942567153,
+     "diff_pct": 1.3392594318778928,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2678518863755796,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Electricity sales",
+   "unit": "billion kWh",
+   "kind": "sales",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 20.0,
+   "source": "QBLK/QELAS",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -0.8348687125053877,
+    "times_tol": 0.2782895708351292
+   },
+   "years": {
+    "2025": {
+     "ours": 4069.277263610053,
+     "eia": 4069.277263610053,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4294.992175645423,
+     "eia": 4291.356792203986,
+     "diff_pct": 0.08471408035897188,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.028238026786321962,
+     "converged": false
+    },
+    "2035": {
+     "ours": 4629.396397661439,
+     "eia": 4638.893977139508,
+     "diff_pct": -0.20473801567514327,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06824600522504934,
+     "converged": true
+    },
+    "2040": {
+     "ours": 4999.606032448373,
+     "eia": 5034.443576897714,
+     "diff_pct": -0.69198400810776,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2306613360359194,
+     "converged": true
+    },
+    "2050": {
+     "ours": 5528.646912929017,
+     "eia": 5575.192450359027,
+     "diff_pct": -0.8348687125053877,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2782895708351292,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "End-use prices: Residential",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELRS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 10.855352882656844,
+    "times_tol": 2.1710705765313687
+   },
+   "years": {
+    "2025": {
+     "ours": 16.679383855592036,
+     "eia": 16.679383855592036,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 16.285607271721826,
+     "eia": 16.292762249351174,
+     "diff_pct": -0.04391506805196954,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.008783013610393728,
+     "converged": false
+    },
+    "2035": {
+     "ours": 17.80315850102792,
+     "eia": 16.77941907055038,
+     "diff_pct": 6.101161346368111,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.220232269273624,
+     "converged": true
+    },
+    "2040": {
+     "ours": 18.95972607328696,
+     "eia": 17.10312184325127,
+     "diff_pct": 10.855352882656844,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.1710705765313687,
+     "converged": true
+    },
+    "2050": {
+     "ours": 18.00472681779936,
+     "eia": 17.453078551787854,
+     "diff_pct": 3.160750490949882,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6321500981899779,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "End-use prices: Commercial",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELCM",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 9.120026787732138,
+    "times_tol": 1.8240053575464297
+   },
+   "years": {
+    "2025": {
+     "ours": 13.479200988327298,
+     "eia": 13.479200988327298,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 12.889270987071782,
+     "eia": 12.998182188403854,
+     "diff_pct": -0.8378956361239198,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.16757912722478296,
+     "converged": false
+    },
+    "2035": {
+     "ours": 14.173581306792764,
+     "eia": 13.442826555669846,
+     "diff_pct": 5.436020081764004,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0872040163528016,
+     "converged": true
+    },
+    "2040": {
+     "ours": 14.90499260076559,
+     "eia": 13.659264059529436,
+     "diff_pct": 9.120026787732138,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8240053575464297,
+     "converged": true
+    },
+    "2050": {
+     "ours": 13.960386224209815,
+     "eia": 13.69008808400949,
+     "diff_pct": 1.9744076045503434,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.3948815209100699,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "End-use prices: Industrial",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 9.9815965347535,
+    "times_tol": 1.9963193069507004
+   },
+   "years": {
+    "2025": {
+     "ours": 9.074901583901738,
+     "eia": 9.074901583901738,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.595071260892354,
+     "eia": 8.70570156601291,
+     "diff_pct": -1.270779893862406,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.25415597877248153,
+     "converged": false
+    },
+    "2035": {
+     "ours": 9.702279519790743,
+     "eia": 9.114149094739755,
+     "diff_pct": 6.452938381164164,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.2905876762328325,
+     "converged": true
+    },
+    "2040": {
+     "ours": 10.260082542219513,
+     "eia": 9.32890853150817,
+     "diff_pct": 9.9815965347535,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9963193069507004,
+     "converged": true
+    },
+    "2050": {
+     "ours": 9.235455534144583,
+     "eia": 9.211797444748088,
+     "diff_pct": 0.2568238124903921,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.051364762498079,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "End-use prices: Transportation",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELTR",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 3.807636445276641,
+    "times_tol": 0.7615272890553272
+   },
+   "years": {
+    "2025": {
+     "ours": 15.411068228625068,
+     "eia": 15.411068228625068,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 14.604436165531657,
+     "eia": 14.698633242250668,
+     "diff_pct": -0.640856024955061,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12817120499101242,
+     "converged": false
+    },
+    "2035": {
+     "ours": 15.592503197223726,
+     "eia": 15.251583974544818,
+     "diff_pct": 2.2353037117187835,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.447060742343757,
+     "converged": true
+    },
+    "2040": {
+     "ours": 16.148028356654603,
+     "eia": 15.555722979173327,
+     "diff_pct": 3.807636445276641,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7615272890553272,
+     "converged": true
+    },
+    "2050": {
+     "ours": 15.899029826974054,
+     "eia": 15.798213934841726,
+     "diff_pct": 0.63814740418211,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12762948083642076,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "End-use prices: All sectors average",
+   "unit": "cents/kWh",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PELAS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 9.45188804101116,
+    "times_tol": 1.8903776082022319
+   },
+   "years": {
+    "2025": {
+     "ours": 13.537390293170036,
+     "eia": 13.537390293170036,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 13.078326754703896,
+     "eia": 13.159402129000329,
+     "diff_pct": -0.6161022628661916,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12322045257323752,
+     "converged": false
+    },
+    "2035": {
+     "ours": 14.427119147624007,
+     "eia": 13.67420722329714,
+     "diff_pct": 5.506073676023493,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1012147352046984,
+     "converged": true
+    },
+    "2040": {
+     "ours": 15.250054815991858,
+     "eia": 13.933112611339995,
+     "diff_pct": 9.45188804101116,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8903776082022319,
+     "converged": true
+    },
+    "2050": {
+     "ours": 14.372148855302136,
+     "eia": 14.051175602574185,
+     "diff_pct": 2.284316001781006,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.45686320035620137,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 8. Electricity supply, disposition, prices, and emissions",
+   "series": "Emissions from the electric power sector: Carbon dioxide",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "EMISSION/EMELC(11,1) x 44/12",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 16.443809782234055,
+    "times_tol": 5.481269927411349
+   },
+   "years": {
+    "2025": {
+     "ours": 1436.2772420247395,
+     "eia": 1436.2772420247395,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 974.1239698459614,
+     "eia": 1108.515421549479,
+     "diff_pct": -12.123552734671538,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.041184244890514,
+     "converged": false
+    },
+    "2035": {
+     "ours": 658.4219213145071,
+     "eia": 706.4898376464844,
+     "diff_pct": -6.803766136552647,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.2679220455175475,
+     "converged": true
+    },
+    "2040": {
+     "ours": 672.7609038975538,
+     "eia": 624.155278523763,
+     "diff_pct": 7.787425188288366,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.59580839609612,
+     "converged": true
+    },
+    "2050": {
+     "ours": 966.962448742259,
+     "eia": 830.4112091064453,
+     "diff_pct": 16.443809782234055,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.481269927411349,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Coal",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPCSU,N + UDATOUT/UCAPIGU,N + UDATOUT/UCAPPQU,N + UDATOUT/UCAPISU,N + UDATOUT/UCAPOCU,N",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 8263.99493917152,
+    "times_tol": 2.338710751022504
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 159.21131049841642,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 101.08536575786746,
+     "eia": 88.23850338160992,
+     "diff_pct": 14.559247815772691,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9706165210515123,
+     "converged": false
+    },
+    "2035": {
+     "ours": 18.0,
+     "eia": 16.265700664371252,
+     "diff_pct": 10.662309428991247,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7108206285994165,
+     "converged": true
+    },
+    "2040": {
+     "ours": 18.0,
+     "eia": 16.22270068153739,
+     "diff_pct": 10.955631576715863,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7303754384477243,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.734021506479594,
+     "eia": 0.05660000443458557,
+     "diff_pct": 8263.99493917152,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.338710751022504,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Oil and natural gas steam",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPOSU,N + UDATOUT/UCAPNGU,N",
+   "status": "FLAG",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -52.52389097287391,
+    "times_tol": 3.5015927315249273
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 87.29960619425401,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 52.759312869195924,
+     "eia": 109.69770570611581,
+     "diff_pct": -51.904816486736685,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.4603210991157796,
+     "converged": false
+    },
+    "2035": {
+     "ours": 47.82178527208874,
+     "eia": 100.72810567682609,
+     "diff_pct": -52.52389097287391,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.5015927315249273,
+     "converged": true
+    },
+    "2040": {
+     "ours": 34.11234610806947,
+     "eia": 51.96430437033996,
+     "diff_pct": -34.35427160737666,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.2902847738251113,
+     "converged": true
+    },
+    "2050": {
+     "ours": 33.99084244399948,
+     "eia": 51.18020452326164,
+     "diff_pct": -33.58595816366757,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.239063877577838,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Combined cycle",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPCCU,N + UDATOUT/UCAPFCU,N",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 12.442287732122704,
+    "times_tol": 0.8294858488081807
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 265.52223582880106,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 279.7559781224323,
+     "eia": 290.568220693036,
+     "diff_pct": -3.7210685135543597,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2480712342369572,
+     "converged": false
+    },
+    "2035": {
+     "ours": 395.7296437654111,
+     "eia": 356.4591188788181,
+     "diff_pct": 11.016838343233237,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7344558895488823,
+     "converged": true
+    },
+    "2040": {
+     "ours": 477.1512072517014,
+     "eia": 430.5060227945214,
+     "diff_pct": 10.834966757118636,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.7223311171412429,
+     "converged": true
+    },
+    "2050": {
+     "ours": 603.9284222796537,
+     "eia": 537.1007958486443,
+     "diff_pct": 12.442287732122704,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.8294858488081807,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Combustion turbine/diesel",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPCTU,N + UDATOUT/UCAPICU,N + UDATOUT/UCAPI2U,N",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -33.40725050234013,
+    "times_tol": 2.2271500334893424
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 147.67004396859556,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 154.80064537215546,
+     "eia": 170.5997739965096,
+     "diff_pct": -9.260931743483669,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6173954495655778,
+     "converged": false
+    },
+    "2035": {
+     "ours": 172.64671858124592,
+     "eia": 207.516829890199,
+     "diff_pct": -16.803510022489988,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1202340014993324,
+     "converged": true
+    },
+    "2040": {
+     "ours": 178.1335802945845,
+     "eia": 266.64529920369387,
+     "diff_pct": -33.194554403711464,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.212970293580764,
+     "converged": true
+    },
+    "2050": {
+     "ours": 201.13159410394175,
+     "eia": 302.0322717130184,
+     "diff_pct": -33.40725050234013,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.2271500334893424,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Nuclear",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPNUU,N + UDATOUT/UCAPSMU,N",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 96.86490720510483,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 98.63290723514557,
+     "eia": 98.63290655612946,
+     "diff_pct": 6.884275594032374e-07,
+     "graded": true,
+     "ok": true,
+     "times_tol": 4.589517059450579e-08,
+     "converged": false
+    },
+    "2035": {
+     "ours": 98.63290723514557,
+     "eia": 98.63290655612946,
+     "diff_pct": 6.884275594032374e-07,
+     "graded": true,
+     "ok": true,
+     "times_tol": 4.589517059450579e-08,
+     "converged": true
+    },
+    "2040": {
+     "ours": 98.63290723514557,
+     "eia": 98.63290655612946,
+     "diff_pct": 6.884275594032374e-07,
+     "graded": true,
+     "ok": true,
+     "times_tol": 4.589517059450579e-08,
+     "converged": true
+    },
+    "2050": {
+     "ours": 98.63290723514557,
+     "eia": 98.63290655612946,
+     "diff_pct": 6.884275594032374e-07,
+     "graded": true,
+     "ok": true,
+     "times_tol": 4.589517059450579e-08,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Pumped storage",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPPSU,N + UDATOUT/UCAPP2U,N",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 23.15660411119461,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 23.15660411119461,
+     "eia": 23.15660411119461,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 23.15660411119461,
+     "eia": 23.15660411119461,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 23.15660411119461,
+     "eia": 23.15660411119461,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 23.15660411119461,
+     "eia": 23.15660411119461,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Diurnal storage",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPDSU,N + UDATOUT/UCAPDPU,N + UDATOUT/UCAPDBU,N",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 8.154297000170786,
+    "times_tol": 0.5436198000113863
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 43.67630616761744,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 82.23552506252247,
+     "eia": 88.03060925775208,
+     "diff_pct": -6.583033156412332,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4388688770941557,
+     "converged": false
+    },
+    "2035": {
+     "ours": 107.29331709251024,
+     "eia": 100.0041391972918,
+     "diff_pct": 7.288876194252403,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4859250796168263,
+     "converged": true
+    },
+    "2040": {
+     "ours": 110.29331709251025,
+     "eia": 103.30844737333246,
+     "diff_pct": 6.76117964868459,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4507453099123067,
+     "converged": true
+    },
+    "2050": {
+     "ours": 112.57567877634514,
+     "eia": 104.08803154272027,
+     "diff_pct": 8.154297000170786,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5436198000113863,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Conventional hydroelectric power",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPHYU,N",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -1.089121876138066,
+    "times_tol": 0.07260812507587093
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 79.22290482465178,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 79.22980481904224,
+     "eia": 79.77621703082696,
+     "diff_pct": -0.6849312139902142,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.045662080932681065,
+     "converged": false
+    },
+    "2035": {
+     "ours": 79.22800481904224,
+     "eia": 80.10038033034652,
+     "diff_pct": -1.0891028328535612,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07260685552357103,
+     "converged": true
+    },
+    "2040": {
+     "ours": 79.22800481904224,
+     "eia": 80.10038033034652,
+     "diff_pct": -1.0891028328535612,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07260685552357103,
+     "converged": true
+    },
+    "2050": {
+     "ours": 79.22660481904224,
+     "eia": 80.09898033645004,
+     "diff_pct": -1.089121876138066,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07260812507587093,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Wind",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPWNU,N + UDATOUT/UCAPWFU,N + UDATOUT/UCAPWLU,N",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -14.10037405203839,
+    "times_tol": 0.9400249368025593
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 159.00600316911004,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 205.7432110462185,
+     "eia": 211.67824365734123,
+     "diff_pct": -2.8037990624724674,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.1869199374981646,
+     "converged": false
+    },
+    "2035": {
+     "ours": 295.5694942261697,
+     "eia": 344.0870562174823,
+     "diff_pct": -14.10037405203839,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9400249368025593,
+     "converged": true
+    },
+    "2040": {
+     "ours": 379.2330534447125,
+     "eia": 403.5407837012317,
+     "diff_pct": -6.023611797938089,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4015741198625394,
+     "converged": true
+    },
+    "2050": {
+     "ours": 412.4635836908853,
+     "eia": 427.6202273943927,
+     "diff_pct": -3.5444169224316147,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2362944614954413,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Solar",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPPVU,N + UDATOUT/UCAPPTU,N + UDATOUT/UCAPSTU,N + UDATOUT/UCAPSOU,N + UDATOUT/UCAPSSU,N + UDATOUT/UCAPS2U,N",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": 36.42018371562386,
+    "times_tol": 2.4280122477082573
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 154.47816671978217,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 351.4664870805618,
+     "eia": 257.63525418879,
+     "diff_pct": 36.42018371562386,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.4280122477082573,
+     "converged": false
+    },
+    "2035": {
+     "ours": 397.85769554715233,
+     "eia": 304.8497090184828,
+     "diff_pct": 30.509455570131607,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.0339637046754406,
+     "converged": true
+    },
+    "2040": {
+     "ours": 397.8554955471524,
+     "eia": 323.17432700970676,
+     "diff_pct": 23.108632801516606,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.5405755201011067,
+     "converged": true
+    },
+    "2050": {
+     "ours": 399.9548955471523,
+     "eia": 326.2015493599465,
+     "diff_pct": 22.60974735770578,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.5073164905137184,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Other renewable and other",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "UDATOUT/UCAPGEU,N + UDATOUT/UCAPWDU,N + UDATOUT/UCAPMSU,N + UDATOUT/UCAPBIU,N + UDATOUT/UCAPGNU,N + UDATOUT/UCAPAGU,N + UDATOUT/UCAPTIU,N + UDATOUT/UCAPHIU,N + UDATOUT/UCAPHOU,N",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -50.366474012103765,
+    "times_tol": 3.3577649341402513
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 6.722001386922784,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 6.8606188671695065,
+     "eia": 8.002212787163444,
+     "diff_pct": -14.265978053285433,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5707969599969687,
+     "converged": false
+    },
+    "2035": {
+     "ours": 6.8606188671695065,
+     "eia": 10.632841211860068,
+     "diff_pct": -35.47708716352271,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.8861111723452808,
+     "converged": true
+    },
+    "2040": {
+     "ours": 6.879618867169507,
+     "eia": 12.412570715066977,
+     "diff_pct": -44.5753903434468,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.766475923948735,
+     "converged": true
+    },
+    "2050": {
+     "ours": 6.879618867169507,
+     "eia": 13.860830417019315,
+     "diff_pct": -50.366474012103765,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.3577649341402513,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 9. Electricity generating capacity",
+   "series": "Electric power sector capacity: Total",
+   "unit": "gigawatts",
+   "kind": "capacity",
+   "tolerance_pct": 15.0,
+   "tolerance_floor": 2.0,
+   "source": "sum of the lines above",
+   "status": "PASS",
+   "worst": {
+    "year": 2030,
+    "diff_pct": 0.6809325607426864,
+    "times_tol": 0.04539550404951307
+   },
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 1222.8300900744507,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1435.7264603435058,
+     "eia": 1426.016251366469,
+     "diff_pct": 0.6809325607426864,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.04539550404951307,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1642.79678951713,
+     "eia": 1642.433391753002,
+     "diff_pct": 0.022125570872622013,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0014750380581749919,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1802.6761347712822,
+     "eia": 1809.6643468471011,
+     "diff_pct": -0.3861606760388492,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.02574404506925689,
+     "converged": true
+    },
+    "2050": {
+     "ours": 1976.6747733810091,
+     "eia": 1964.029001807212,
+     "diff_pct": 0.6438688818831695,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.04292459212554446,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Dry gas production",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "OGSMOUT/OGQNGREP(9)",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 39.15662109375,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 41.4218359375,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 44.93548828125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 46.927582031250004,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 52.70691796875,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Pipeline imports",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "NGTDMREP/NGIMPVOL(4)",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 3.176341796875,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 2.92272705078125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 2.168029052734375,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 2.303009033203125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 2.741156982421875,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Pipeline exports",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "NGTDMREP/NGEXPVOL(1)+(2)",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 3.470258544921875,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 3.7755343017578125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 4.014469970703125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 4.2810166015625,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 4.60291162109375,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Liquefied natural gas exports",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "NGTDMREP/NGEXPVOL(3)",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 5.42533984375,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 8.3679033203125,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 9.79421484375,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 10.124181640625,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 11.2209951171875,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Consumption by sector: Residential",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "QBLK/QNGRS / 1.037",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -2.6142151928047808,
+    "times_tol": 0.5228430385609559
+   },
+   "years": {
+    "2025": {
+     "ours": 4.750318300988429,
+     "eia": 4.750318300988429,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4.641706564157426,
+     "eia": 4.618638688825941,
+     "diff_pct": 0.49945182738138083,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.09989036547627698,
+     "converged": false
+    },
+    "2035": {
+     "ours": 4.333101513530618,
+     "eia": 4.396555474777002,
+     "diff_pct": -1.443265338295363,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.28865306765907356,
+     "converged": true
+    },
+    "2040": {
+     "ours": 4.136469665350772,
+     "eia": 4.247508682648265,
+     "diff_pct": -2.6142151928047808,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5228430385609559,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.9472263082358974,
+     "eia": 3.9498770115115724,
+     "diff_pct": -0.06710850155460246,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.013421700310920196,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Consumption by sector: Commercial",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "QBLK/QNGCM / 1.037",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -4.403954372184615,
+    "times_tol": 0.8807908744369232
+   },
+   "years": {
+    "2025": {
+     "ours": 3.5099360761210225,
+     "eia": 3.5099360761210225,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.369889997815213,
+     "eia": 3.347281681307257,
+     "diff_pct": 0.6754231839588121,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.13508463679176405,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3.169808397872469,
+     "eia": 3.253912371172855,
+     "diff_pct": -2.5847030806816385,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5169406161363286,
+     "converged": true
+    },
+    "2040": {
+     "ours": 3.1191476878917554,
+     "eia": 3.2628417497890556,
+     "diff_pct": -4.403954372184615,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.8807908744369232,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.237277613081606,
+     "eia": 3.242230112780256,
+     "diff_pct": -0.15274979031031366,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.030549958062063794,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Consumption by sector: Industrial",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "QBLK/QNGIN / 1.037",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -4.450651404753614,
+    "times_tol": 0.8901302809507231
+   },
+   "years": {
+    "2025": {
+     "ours": 8.623939624517842,
+     "eia": 8.623939624517842,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 8.32393410668851,
+     "eia": 8.305002975831727,
+     "diff_pct": 0.22794851382803571,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.04558970276560926,
+     "converged": false
+    },
+    "2035": {
+     "ours": 8.622317340070078,
+     "eia": 8.796516205098843,
+     "diff_pct": -1.980316536310045,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.39606330726200983,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.872277033111187,
+     "eia": 9.285544238187079,
+     "diff_pct": -4.450651404753614,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.8901302809507231,
+     "converged": true
+    },
+    "2050": {
+     "ours": 10.159728224782452,
+     "eia": 10.344942216128256,
+     "diff_pct": -1.7903820773116252,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.35807641546232555,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Consumption by sector: Electric power",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "QBLK/QNGEL / 1.037",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": -18.97038542900851,
+    "times_tol": 3.794077085801702
+   },
+   "years": {
+    "2025": {
+     "ours": 12.7811087421649,
+     "eia": 12.7811087421649,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 9.508645429286483,
+     "eia": 11.73477805568949,
+     "diff_pct": -18.97038542900851,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.794077085801702,
+     "converged": false
+    },
+    "2035": {
+     "ours": 12.69931352114702,
+     "eia": 12.275526232521699,
+     "diff_pct": 3.452294269084577,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6904588538169174,
+     "converged": true
+    },
+    "2040": {
+     "ours": 14.4349491617408,
+     "eia": 13.335589064006752,
+     "diff_pct": 8.243806047542822,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.6487612095085635,
+     "converged": true
+    },
+    "2050": {
+     "ours": 18.053745952067565,
+     "eia": 16.699162246865964,
+     "diff_pct": 8.111686593474632,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.6223373186949244,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Consumption by sector: Transportation",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "QBLK/QNGTR / 1.037",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 3.14028357222238,
+    "times_tol": 0.08481002704616658
+   },
+   "years": {
+    "2025": {
+     "ours": 0.08543512975238444,
+     "eia": 0.08543512975238444,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.10191442329605384,
+     "eia": 0.10164821113431927,
+     "diff_pct": 0.26189556979294704,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0026621216173457196,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.10329411505733187,
+     "eia": 0.10229387715559458,
+     "diff_pct": 0.9778081831973928,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.010002379017372831,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.12664756664544663,
+     "eia": 0.12415923630834892,
+     "diff_pct": 2.0041443641920953,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.024883303370977078,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.2785522402080069,
+     "eia": 0.27007123750339024,
+     "diff_pct": 3.14028357222238,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.08481002704616658,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Consumption by sector: Total",
+   "unit": "trillion cubic feet",
+   "kind": "gas_volume",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "QBLK/QNGAS / 1.037",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": -7.688631868725892,
+    "times_tol": 1.5377263737451785
+   },
+   "years": {
+    "2025": {
+     "ours": 29.750738307618132,
+     "eia": 29.750738307618132,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 25.94854156539806,
+     "eia": 28.109800656943108,
+     "diff_pct": -7.688631868725892,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.5377263737451785,
+     "converged": false
+    },
+    "2035": {
+     "ours": 28.934877400046993,
+     "eia": 28.831846673095473,
+     "diff_pct": 0.3573504261441096,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.07147008522881974,
+     "converged": true
+    },
+    "2040": {
+     "ours": 30.73012232714183,
+     "eia": 30.296274183341374,
+     "diff_pct": 1.432018145779157,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.28640362915583306,
+     "converged": true
+    },
+    "2050": {
+     "ours": 35.711016408234116,
+     "eia": 34.540768894648025,
+     "diff_pct": 3.388018133456838,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6776036266913656,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Henry Hub spot price",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "NGTDMREP/OGHHPRNG",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 45.0072633726269,
+    "times_tol": 9.001452674525382
+   },
+   "years": {
+    "2025": {
+     "ours": 3.467325635429006,
+     "eia": 3.467325635429006,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.8896635595038305,
+     "eia": 4.452014407116849,
+     "diff_pct": -12.631379779770302,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.5262759559540604,
+     "converged": false
+    },
+    "2035": {
+     "ours": 6.619392485213877,
+     "eia": 5.100183491560983,
+     "diff_pct": 29.787339929370216,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.957467985874045,
+     "converged": true
+    },
+    "2040": {
+     "ours": 7.611405836541995,
+     "eia": 5.248982471300678,
+     "diff_pct": 45.0072633726269,
+     "graded": true,
+     "ok": false,
+     "times_tol": 9.001452674525382,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.9148416843279494,
+     "eia": 4.626073761675116,
+     "diff_pct": -15.374421463820909,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.0748842927641817,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Delivered prices: Residential",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGRS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 15.506541833459963,
+    "times_tol": 3.101308366691993
+   },
+   "years": {
+    "2025": {
+     "ours": 14.58097332142188,
+     "eia": 14.58097332142188,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 13.535986432026013,
+     "eia": 13.906939216299179,
+     "diff_pct": -2.667393439373078,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.533478687874616,
+     "converged": false
+    },
+    "2035": {
+     "ours": 16.29602764388832,
+     "eia": 14.66002549033874,
+     "diff_pct": 11.159613294177007,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.231922658835401,
+     "converged": true
+    },
+    "2040": {
+     "ours": 17.25128443451201,
+     "eia": 14.935331073615998,
+     "diff_pct": 15.506541833459963,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.101308366691993,
+     "converged": true
+    },
+    "2050": {
+     "ours": 15.085680489850402,
+     "eia": 15.315374852807508,
+     "diff_pct": -1.499763245527097,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.299952649105419,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Delivered prices: Commercial",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGCM",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 17.929403403901524,
+    "times_tol": 3.5858806807803063
+   },
+   "years": {
+    "2025": {
+     "ours": 10.274326362518877,
+     "eia": 10.274326362518877,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 10.860427771869961,
+     "eia": 11.200348870829657,
+     "diff_pct": -3.034915277014194,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6069830554028386,
+     "converged": false
+    },
+    "2035": {
+     "ours": 13.792638553293028,
+     "eia": 12.206242465836112,
+     "diff_pct": 12.996596552108963,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.599319310421791,
+     "converged": true
+    },
+    "2040": {
+     "ours": 14.738080760823003,
+     "eia": 12.497375832849684,
+     "diff_pct": 17.929403403901524,
+     "graded": true,
+     "ok": false,
+     "times_tol": 3.5858806807803063,
+     "converged": true
+    },
+    "2050": {
+     "ours": 12.435811990451173,
+     "eia": 12.677815343436123,
+     "diff_pct": -1.908872675845108,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.38177453516902055,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Delivered prices: Industrial",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGIN",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 44.15722068865114,
+    "times_tol": 8.831444137730225
+   },
+   "years": {
+    "2025": {
+     "ours": 4.507603945505707,
+     "eia": 4.507603945505707,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4.877531217311399,
+     "eia": 5.413229270807278,
+     "diff_pct": -9.896090239236987,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9792180478473984,
+     "converged": false
+    },
+    "2035": {
+     "ours": 7.714644661065365,
+     "eia": 5.890407918202527,
+     "diff_pct": 30.969616505260777,
+     "graded": true,
+     "ok": false,
+     "times_tol": 6.193923301052156,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.5126353380541,
+     "eia": 5.905105063338851,
+     "diff_pct": 44.15722068865114,
+     "graded": true,
+     "ok": false,
+     "times_tol": 8.831444137730225,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.857251005830406,
+     "eia": 5.382285051405233,
+     "diff_pct": -9.75485394326614,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.9509707886532275,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 13. Natural gas supply, disposition, and prices",
+   "series": "Delivered prices: Electric power",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PNGEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 55.55585523285605,
+    "times_tol": 11.111171046571208
+   },
+   "years": {
+    "2025": {
+     "ours": 3.81023704533618,
+     "eia": 3.81023704533618,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4.042238175799506,
+     "eia": 4.704033172722575,
+     "diff_pct": -14.068671980474978,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.8137343960949956,
+     "converged": false
+    },
+    "2035": {
+     "ours": 7.243225715581472,
+     "eia": 5.08540769330466,
+     "diff_pct": 42.43156404387696,
+     "graded": true,
+     "ok": false,
+     "times_tol": 8.48631280877539,
+     "converged": true
+    },
+    "2040": {
+     "ours": 8.047384029353001,
+     "eia": 5.173308338221432,
+     "diff_pct": 55.55585523285605,
+     "graded": true,
+     "ok": false,
+     "times_tol": 11.111171046571208,
+     "converged": true
+    },
+    "2050": {
+     "ours": 4.287699285527138,
+     "eia": 4.615638054146984,
+     "diff_pct": -7.104949841662855,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.4209899683325704,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Consumption by sector: Commercial and institutional",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLCM",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 0.012012152671813965,
+     "eia": 0.012012152671813965,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.013295665740966797,
+     "eia": 0.013295665740966797,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.013295665740966797,
+     "eia": 0.013295665740966797,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.013295665740966797,
+     "eia": 0.013295665740966797,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.013295665740966797,
+     "eia": 0.013295665740966797,
+     "diff_pct": 0.0,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Consumption by sector: Coke plants (metallurgical coal)",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QMCIN",
+   "status": "HELD",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": 0.41816119384765627,
+     "eia": 0.41816119384765627,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.41369390869140626,
+     "eia": 0.4136943664550781,
+     "diff_pct": -0.0001106526240080008,
+     "graded": true,
+     "ok": true,
+     "times_tol": 9.155273437144729e-06,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.3777391052246094,
+     "eia": 0.3777396240234375,
+     "diff_pct": -0.00013734297255041383,
+     "graded": true,
+     "ok": true,
+     "times_tol": 1.0375976562393419e-05,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.3300888366699219,
+     "eia": 0.3300894470214844,
+     "diff_pct": -0.00018490490018008288,
+     "graded": true,
+     "ok": true,
+     "times_tol": 1.2207031250266454e-05,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.2552858581542969,
+     "eia": 0.2552862854003906,
+     "diff_pct": -0.0001673595951490192,
+     "graded": true,
+     "ok": true,
+     "times_tol": 8.544921874520384e-06,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Consumption by sector: Other industrial",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLIN",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -0.8933856447728594,
+    "times_tol": 0.059656982421875115
+   },
+   "years": {
+    "2025": {
+     "ours": 0.4003572387695313,
+     "eia": 0.4003572387695313,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 0.35744155883789064,
+     "eia": 0.3583910827636719,
+     "diff_pct": -0.2649407229831535,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.018990478515624742,
+     "converged": false
+    },
+    "2035": {
+     "ours": 0.35389840698242186,
+     "eia": 0.35372906494140627,
+     "diff_pct": 0.04787337479426057,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0033868408203119316,
+     "converged": true
+    },
+    "2040": {
+     "ours": 0.33089862060546876,
+     "eia": 0.3338814697265625,
+     "diff_pct": -0.8933856447728594,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.059656982421875115,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.2924388122558594,
+     "eia": 0.29522259521484373,
+     "diff_pct": -0.942943732663315,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.055675659179686976,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Consumption by sector: Electric power",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 80.93310426668224,
+    "times_tol": 13.822713268237186
+   },
+   "years": {
+    "2025": {
+     "ours": 7.51277685546875,
+     "eia": 7.51277685546875,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 5.669757040801755,
+     "eia": 4.9642998046875,
+     "diff_pct": 14.210609025831445,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.736869675277147,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1.5450948309643213,
+     "eia": 1.4843807373046876,
+     "diff_pct": 4.09019681634224,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.2142818731926752,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1.545094830892328,
+     "eia": 0.8539591674804687,
+     "diff_pct": 80.93310426668224,
+     "graded": true,
+     "ok": false,
+     "times_tol": 13.822713268237186,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.09412602076033333,
+     "eia": 0.02123965835571289,
+     "diff_pct": 343.1616515856809,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.4577272480924086,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Consumption by sector: Total coal consumption",
+   "unit": "quads",
+   "kind": "consumption",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 0.05,
+   "source": "QBLK/QCLAS",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 56.949597762544755,
+    "times_tol": 13.763056285815312
+   },
+   "years": {
+    "2025": {
+     "ours": 7.925146484375,
+     "eia": 7.925146484375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 6.037913473907223,
+     "eia": 5.33340576171875,
+     "diff_pct": 13.209340216436804,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.403113405478938,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1.9186285528881495,
+     "eia": 1.8577451171875001,
+     "diff_pct": 3.2772760448873006,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0924253482957653,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1.896506940267328,
+     "eia": 1.2083541259765624,
+     "diff_pct": 56.949597762544755,
+     "graded": true,
+     "ok": false,
+     "times_tol": 13.763056285815312,
+     "converged": true
+    },
+    "2050": {
+     "ours": 0.3976772864768861,
+     "eia": 0.32757470703125,
+     "diff_pct": 21.400486039036103,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.4020515889127216,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Delivered prices: Electric power",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PCLEL",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 5.161248773195948,
+    "times_tol": 1.0322497546391896
+   },
+   "years": {
+    "2025": {
+     "ours": 2.559636822390985,
+     "eia": 2.559636822390985,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 2.4657874427255044,
+     "eia": 2.46093236177785,
+     "diff_pct": 0.19728624090045166,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.03945724818009185,
+     "converged": false
+    },
+    "2035": {
+     "ours": 2.5142443629058855,
+     "eia": 2.4830541301093945,
+     "diff_pct": 1.2561237557522364,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2512247511504463,
+     "converged": true
+    },
+    "2040": {
+     "ours": 2.702684803702259,
+     "eia": 2.642094787070164,
+     "diff_pct": 2.293256734338578,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4586513468677166,
+     "converged": true
+    },
+    "2050": {
+     "ours": 2.5511583401168014,
+     "eia": 2.4259490733311395,
+     "diff_pct": 5.161248773195948,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.0322497546391896,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 15. Coal supply, disposition, and prices",
+   "series": "Delivered prices: Industrial (steam coal)",
+   "unit": "$/MMBtu",
+   "kind": "price",
+   "tolerance_pct": 5.0,
+   "tolerance_floor": 0.1,
+   "source": "MPBLK/PCLIN",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -0.6252709528507094,
+    "times_tol": 0.12505419057014122
+   },
+   "years": {
+    "2025": {
+     "ours": 3.9844878277085627,
+     "eia": 3.9844878277085627,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 3.72774197820967,
+     "eia": 3.7257184845793745,
+     "diff_pct": 0.054311500954007386,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.010862300190799758,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3.641483827333292,
+     "eia": 3.6643962325729262,
+     "diff_pct": -0.6252709528507094,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12505419057014122,
+     "converged": true
+    },
+    "2040": {
+     "ours": 3.674016354249163,
+     "eia": 3.67342456975166,
+     "diff_pct": 0.016109885646642397,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.003221977129330164,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3.656413738909095,
+     "eia": 3.644975851914296,
+     "diff_pct": 0.3137987042847401,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.06275974085694876,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By sector: Residential",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "EMISSION/EMRSC(11,1) x 44/12",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -2.0838795484529826,
+    "times_tol": 0.6946265161509957
+   },
+   "years": {
+    "2025": {
+     "ours": 329.8964665730794,
+     "eia": 329.8964665730794,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 317.86370092995554,
+     "eia": 316.6302846272786,
+     "diff_pct": 0.38954464009304246,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.12984821336434815,
+     "converged": false
+    },
+    "2035": {
+     "ours": 297.155371325982,
+     "eia": 300.6459096272786,
+     "diff_pct": -1.1610130687039644,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.3870043562346558,
+     "converged": true
+    },
+    "2040": {
+     "ours": 283.72332896802294,
+     "eia": 289.76161193847656,
+     "diff_pct": -2.0838795484529826,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.6946265161509957,
+     "converged": true
+    },
+    "2050": {
+     "ours": 269.36852473894845,
+     "eia": 269.3755416870117,
+     "diff_pct": -0.0026048942748602144,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0008682980916186457,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By sector: Commercial",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "EMISSION/EMCMC(11,1) x 44/12",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -3.04405327942473,
+    "times_tol": 1.014684426474911
+   },
+   "years": {
+    "2025": {
+     "ours": 260.41166178385413,
+     "eia": 260.41166178385413,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 256.66996334290894,
+     "eia": 255.378667195638,
+     "diff_pct": 0.5056397863810957,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.16854659546036888,
+     "converged": false
+    },
+    "2035": {
+     "ours": 248.21958594145664,
+     "eia": 252.71569569905597,
+     "diff_pct": -1.7791177335314656,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5930392445104895,
+     "converged": true
+    },
+    "2040": {
+     "ours": 247.78872481599055,
+     "eia": 255.5683619181315,
+     "diff_pct": -3.04405327942473,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.014684426474911,
+     "converged": true
+    },
+    "2050": {
+     "ours": 258.07380732783326,
+     "eia": 258.2010091145833,
+     "diff_pct": -0.049264635791412825,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.016421545263803933,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By sector: Industrial",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "EMISSION/EMINCC(11,1) x 44/12",
+   "status": "PASS",
+   "worst": {
+    "year": 2040,
+    "diff_pct": -1.645707865558721,
+    "times_tol": 0.5485692885195731
+   },
+   "years": {
+    "2025": {
+     "ours": 1012.4370727539062,
+     "eia": 1012.4370727539062,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1016.1536721859409,
+     "eia": 1014.394053141276,
+     "diff_pct": 0.17346503947019976,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.05782167982339992,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1059.7866387985498,
+     "eia": 1066.8240966796875,
+     "diff_pct": -0.6596643160799109,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.21988810535996872,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1100.8817009392499,
+     "eia": 1119.3021443684895,
+     "diff_pct": -1.645707865558721,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5485692885195731,
+     "converged": true
+    },
+    "2050": {
+     "ours": 1203.8790855721272,
+     "eia": 1212.4251607259114,
+     "diff_pct": -0.7048744475632085,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.2349581491877375,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By sector: Transportation",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "EMISSION/EMTRC(11,1) x 44/12",
+   "status": "PASS",
+   "worst": {
+    "year": 2035,
+    "diff_pct": -0.11265896170353784,
+    "times_tol": 0.037552987234511
+   },
+   "years": {
+    "2025": {
+     "ours": 1792.8973897298176,
+     "eia": 1792.8973897298176,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1706.2803524309518,
+     "eia": 1707.3890177408853,
+     "diff_pct": -0.06493337478534755,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.021644458261781192,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1484.635637758306,
+     "eia": 1486.310099283854,
+     "diff_pct": -0.11265896170353784,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.037552987234511,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1318.809178105664,
+     "eia": 1319.9123840332031,
+     "diff_pct": -0.08358175443192728,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.027860584810641523,
+     "converged": true
+    },
+    "2050": {
+     "ours": 1165.7458667221276,
+     "eia": 1166.5108133951821,
+     "diff_pct": -0.06557561784001908,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.021858539280005997,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By sector: Electric power",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "EMISSION/EMELC(11,1) x 44/12",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 16.443809782234055,
+    "times_tol": 5.481269927411349
+   },
+   "years": {
+    "2025": {
+     "ours": 1436.2772420247395,
+     "eia": 1436.2772420247395,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 974.1239698459614,
+     "eia": 1108.515421549479,
+     "diff_pct": -12.123552734671538,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.041184244890514,
+     "converged": false
+    },
+    "2035": {
+     "ours": 658.4219213145071,
+     "eia": 706.4898376464844,
+     "diff_pct": -6.803766136552647,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.2679220455175475,
+     "converged": true
+    },
+    "2040": {
+     "ours": 672.7609038975538,
+     "eia": 624.155278523763,
+     "diff_pct": 7.787425188288366,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.59580839609612,
+     "converged": true
+    },
+    "2050": {
+     "ours": 966.962448742259,
+     "eia": 830.4112091064453,
+     "diff_pct": 16.443809782234055,
+     "graded": true,
+     "ok": false,
+     "times_tol": 5.481269927411349,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By sector: Total carbon dioxide",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "sum of the five sectors",
+   "status": "FLAG",
+   "worst": {
+    "year": 2050,
+    "diff_pct": 3.4013538439843005,
+    "times_tol": 1.1337846146614323
+   },
+   "years": {
+    "2025": {
+     "ours": 4831.9198328653965,
+     "eia": 4831.9198328653965,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 4271.091658735719,
+     "eia": 4402.307444254557,
+     "diff_pct": -2.9806138526305648,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9935379508768553,
+     "converged": false
+    },
+    "2035": {
+     "ours": 3748.2191551388014,
+     "eia": 3812.9856389363604,
+     "diff_pct": -1.6985766517501388,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.5661922172500473,
+     "converged": true
+    },
+    "2040": {
+     "ours": 3623.963836726481,
+     "eia": 3608.6997807820635,
+     "diff_pct": 0.4229793796010739,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.140993126533694,
+     "converged": true
+    },
+    "2050": {
+     "ours": 3864.0297331032953,
+     "eia": 3736.923734029134,
+     "diff_pct": 3.4013538439843005,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1337846146614323,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By fuel: Petroleum and other liquids (combustion, fuel use x EIA carbon factors)",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "QBLK fuel use x EMEBLK factors x 44/12",
+   "status": "PASS",
+   "worst": {
+    "year": 2050,
+    "diff_pct": -0.08963511377839684,
+    "times_tol": 0.0298783712594674
+   },
+   "years": {
+    "2025": {
+     "ours": 2465.504894640475,
+     "eia": 2465.504894640475,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 2377.9755394090967,
+     "eia": 2378.6511809624744,
+     "diff_pct": -0.028404398206227643,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.009468132735409985,
+     "converged": false
+    },
+    "2035": {
+     "ours": 2175.6757147273497,
+     "eia": 2177.264807011711,
+     "diff_pct": -0.07298571488612016,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0243285716287069,
+     "converged": true
+    },
+    "2040": {
+     "ours": 2028.002658138657,
+     "eia": 2027.8328161250906,
+     "diff_pct": 0.008375543201366575,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0027918477337925056,
+     "converged": true
+    },
+    "2050": {
+     "ours": 1904.5481713138984,
+     "eia": 1906.2568468074428,
+     "diff_pct": -0.08963511377839684,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.0298783712594674,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By fuel: Natural gas (combustion, fuel use x EIA carbon factors)",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "QBLK fuel use x EMEBLK factors x 44/12",
+   "status": "FLAG",
+   "worst": {
+    "year": 2030,
+    "diff_pct": -7.689302340202464,
+    "times_tol": 2.563100780067488
+   },
+   "years": {
+    "2025": {
+     "ours": 1632.3537024243078,
+     "eia": 1632.3537024243078,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 1423.6015626170517,
+     "eia": 1542.1848157443274,
+     "diff_pct": -7.689302340202464,
+     "graded": true,
+     "ok": false,
+     "times_tol": 2.563100780067488,
+     "converged": false
+    },
+    "2035": {
+     "ours": 1587.202931998859,
+     "eia": 1581.549875953068,
+     "diff_pct": 0.35743773444920635,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.11914591148306901,
+     "converged": true
+    },
+    "2040": {
+     "ours": 1683.860906562957,
+     "eia": 1660.056669275372,
+     "diff_pct": 1.4339412459922762,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.4779804153307559,
+     "converged": true
+    },
+    "2050": {
+     "ours": 1957.48813474931,
+     "eia": 1893.2793789976165,
+     "diff_pct": 3.3914041669691697,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.1304680556563935,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Table 18. Energy-related carbon dioxide emissions by sector and source",
+   "series": "By fuel: Coal (combustion, fuel use x EIA carbon factors)",
+   "unit": "million metric tons",
+   "kind": "co2",
+   "tolerance_pct": 3.0,
+   "tolerance_floor": 5.0,
+   "source": "QBLK fuel use x EMEBLK factors x 44/12",
+   "status": "FLAG",
+   "worst": {
+    "year": 2040,
+    "diff_pct": 44.82833647533948,
+    "times_tol": 12.978636582329386
+   },
+   "years": {
+    "2025": {
+     "ours": 787.2389295427375,
+     "eia": 787.2389295427375,
+     "diff_pct": 0.0,
+     "graded": false,
+     "ok": true,
+     "times_tol": 0.0,
+     "converged": true
+    },
+    "2030": {
+     "ours": 609.0265639537627,
+     "eia": 542.5881577426387,
+     "diff_pct": 12.244721021470784,
+     "graded": true,
+     "ok": false,
+     "times_tol": 4.081573673823596,
+     "converged": false
+    },
+    "2035": {
+     "ours": 216.32807458982347,
+     "eia": 210.58617363333389,
+     "diff_pct": 2.7266277065688183,
+     "graded": true,
+     "ok": true,
+     "times_tol": 0.9088759021896039,
+     "converged": true
+    },
+    "2040": {
+     "ours": 209.65247583643645,
+     "eia": 144.75929292478952,
+     "diff_pct": 44.82833647533948,
+     "graded": true,
+     "ok": false,
+     "times_tol": 12.978636582329386,
+     "converged": true
+    },
+    "2050": {
+     "ours": 62.11159466255603,
+     "eia": 55.5043731151255,
+     "diff_pct": 11.90396571766701,
+     "graded": true,
+     "ok": false,
+     "times_tol": 1.3214443094861053,
+     "converged": true
+    }
+   }
+  },
+  {
+   "table": "Macroeconomic indicators (Table 20)",
+   "series": "Real gross domestic product",
+   "unit": "billion chained 2017 dollars",
+   "kind": "macro",
+   "tolerance_pct": 1.0,
+   "tolerance_floor": 0.0,
+   "source": "MACOUT/MC_GDPR",
+   "status": "NOT IN RUN",
+   "worst": null,
+   "years": {
+    "2025": {
+     "ours": null,
+     "eia": 22086.083984375,
+     "diff_pct": null,
+     "graded": false,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2030": {
+     "ours": null,
+     "eia": 24183.123046875,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": false
+    },
+    "2035": {
+     "ours": null,
+     "eia": 26608.357421875,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2040": {
+     "ours": null,
+     "eia": 28973.572265625,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    },
+    "2050": {
+     "ours": null,
+     "eia": 33557.46484375,
+     "diff_pct": null,
+     "graded": true,
+     "ok": null,
+     "times_tol": null,
+     "converged": true
+    }
+   }
+  }
+ ]
+}
