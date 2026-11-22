@@ -606,7 +606,7 @@ def main(argv=None) -> int:
     res["run_status"] = run_status(path)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / f"{name}.md").write_text(markdown(res, name), encoding="utf-8")
-    (a.out / f"{name}.json").write_text(json.dumps(to_json(res, name, str(path)), indent=1), encoding="utf-8")
+    (a.out / f"{name}.json").write_text(json.dumps(to_json(res, name, f"{path.parent.name}/{path.name}"), indent=1), encoding="utf-8")
     print(f"{path} -> {a.out / name}.md, .json")
     for i, r in enumerate(worst(res), 1):
         c = r["years"][r["worst"]["year"]]

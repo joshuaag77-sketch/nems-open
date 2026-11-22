@@ -2,7 +2,7 @@
  "schema": "nems-open-fidelity/1",
  "generated": "2026-11-22",
  "run": "old-342aa01-reference",
- "run_path": "C:\\Users\\joshu\\dev\\nems-open-supply\\data\\showroom\\old-342aa01\\reference.npz",
+ "run_path": "old-342aa01/reference.npz",
  "baseline": "AEO2026 reference (cb2026 restart)",
  "tolerance": {
   "consumption": [
