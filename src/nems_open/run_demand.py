@@ -132,14 +132,19 @@ class ResidentialSector:
 
     def iteration(self, s, year: int, itr: int, inputs: Inputs) -> None:
         from nems_open.residential import resd
-        from nems_open.residential.reports import nhtshr, resdrp2
         s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, itr
         inputs.apply(s)
         if self.levers and year >= self.levers.year and not s.get("_levers_applied"):
             from nems_open.residential import levers
             s["_levers_applied"] = levers.apply(self.levers, s)
         resd.projection_year(s)
-        if year == resd.LASTYEAR and itr == 2:
+
+    def end_year(self, s, year: int) -> None:
+        """NHTSHR and RESDRP2, which EIA runs on the last year's FCRL pass (resd.f 594, 16696): once, after the
+        year's last call. They ran on iteration 2, before the loop's later iterations."""
+        from nems_open.residential import resd
+        from nems_open.residential.reports import nhtshr, resdrp2
+        if year == resd.LASTYEAR:
             nhtshr(s)
             resdrp2(s)
 
