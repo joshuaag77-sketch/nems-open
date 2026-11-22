@@ -49,12 +49,17 @@ class EiaCalls:
     def __init__(self):
         self.year, self.saved = None, None
 
-    def before(self, year: int, call: int, arrays: dict) -> None:
+    def before(self, year: int, call: int, arrays: dict, scalars: dict | None = None) -> None:
+        """scalars: a dict whose plain (non-array) entries are held too, by key."""
         if call == EIA_CALLS:
             self.year, self.saved = year, {n: np.array(a, copy=True) for n, a in arrays.items()}
+            self.scalars = {k: v for k, v in (scalars or {}).items() if np.isscalar(v)}
         elif call > EIA_CALLS and self.year == year:
             for n, a in arrays.items():
-                a[...] = self.saved[n]
+                if n in self.saved and self.saved[n].shape == a.shape:
+                    a[...] = self.saved[n]
+            if scalars is not None:
+                scalars.update(self.scalars)
 DIVISIONS = slice(0, 9)
 
 

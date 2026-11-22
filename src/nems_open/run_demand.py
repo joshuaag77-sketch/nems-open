@@ -463,6 +463,7 @@ class TransportationSector:
         s = t["s"]
         # A fresh start is at iteration 1 even when the runner asks for iteration 2.
         for i in range(min(t["next_itr"], itr), itr + 1):
+            t.setdefault("eia_calls", EiaCalls()).before(year, i, tran_state(s, t["carry"]), s)
             s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, i
             apply_transportation(inputs, s)
             tran.tran(s, t["carry"])
@@ -472,6 +473,34 @@ class TransportationSector:
 
     def quantities(self, t) -> dict:
         return {k: t["s"][k] for k in SECTOR_QUANTITIES["tr"] if k in t["s"]}
+
+
+def tran_state(s: dict, carry) -> dict:
+    """Every array TRAN keeps between calls (its state and its saved locals), by name.
+
+    EIA's TRAN changes some of its state on every call, so EIA's answer is the one after its three calls a year.
+    The audit found (docs/per_call_state_audit.md):
+    - the heavy-duty GHG credit bank (tranfrt.f 2572-2629, a SAVEd local): a short averaging set spends past years'
+      credits on every call, so each extra call spends them again;
+    - TRUCK_PBK's curve history (tranfrt.f 1325-1347): a curve that starts on any call stays started;
+    - FEM's OLD_PMAX (tran.f 4197): the most a technology has penetrated, carried from call to call;
+    - the air load-factor sums LFDOMAVG and LFINTAVG (tranair.f 612-613), added to on every call, never zeroed.
+    Holding only those left a slow drift (about 3e-5 of gasoline use over 21 calls), so the whole state is held:
+    from call 4 on, TRAN starts each call from where EIA's third call started, and call N is EIA's third call on
+    the loop's latest inputs (about 330 MB more memory)."""
+    out = {}
+
+    def walk(prefix, d):
+        for k, v in d.items():
+            a = getattr(v, "a", v)
+            if isinstance(a, np.ndarray):
+                out[prefix + str(k)] = a
+            elif isinstance(v, dict):
+                walk(prefix + str(k) + "/", v)
+
+    walk("s/", s)
+    walk("carry/", carry)
+    return out
 
 
 # Inputs TRAN writes itself: TRANREP is its own report block (an input only to the
