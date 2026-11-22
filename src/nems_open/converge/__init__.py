@@ -32,6 +32,29 @@ import pandas as pd
 HERE = Path(__file__).parent
 MAXITR = 2       # scedes.cb2026.csv: MAXITR
 NRUNS = 5        # scedes.cb2026.csv: NRUNS, cycles of the whole run
+# Calls a year EIA's loop makes to every module: CURITR 1 to MAXITR, then the FCRL pass (nems_flow.py nsolve). It
+# never takes fewer, since iteration 1 cannot pass the test. The cb2026 restart ends 2050 at CURITR 4, FCRL 1, NCRL 1.
+# IDM, HSM, NGMM and CCATS then get one more call with NCRL = 1. State a module updates on every call carries EIA's
+# answer for this many calls; our loop makes up to maxitr + 1 (docs/per_call_state_audit.md).
+EIA_CALLS = MAXITR + 1
+
+
+class EiaCalls:
+    """Holds state that EIA's module updates on every call at what EIA's last call of the year starts from.
+
+    EIA's own answer for such state is the one after EIA_CALLS calls. Before each call, pass the call's number in the
+    year (1, 2, ...) and the arrays: call EIA_CALLS saves them, and every later call starts from that copy, so call N
+    is EIA's last call run on the loop's latest inputs. Arrays are changed in place."""
+
+    def __init__(self):
+        self.year, self.saved = None, None
+
+    def before(self, year: int, call: int, arrays: dict) -> None:
+        if call == EIA_CALLS:
+            self.year, self.saved = year, {n: np.array(a, copy=True) for n, a in arrays.items()}
+        elif call > EIA_CALLS and self.year == year:
+            for n, a in arrays.items():
+                a[...] = self.saved[n]
 DIVISIONS = slice(0, 9)
 
 

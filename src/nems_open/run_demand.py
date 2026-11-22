@@ -32,6 +32,7 @@ import sys
 
 import numpy as np
 
+from nems_open.converge import EIA_CALLS, EiaCalls
 from nems_open.fortran_array import FArray
 from nems_open.snapshot import Snapshot
 
@@ -289,6 +290,13 @@ class IndustrialState:
         self.first_itr = {}   # year -> the loop's iteration number on IND's first call that year
 
 
+def end_year(sector, state, year: int) -> None:
+    """A sector's once-a-year call after the year's last iteration (EIA's NCRL call, or reports EIA writes on the
+    final FCRL pass), for sectors that have one."""
+    if hasattr(sector, "end_year"):
+        sector.end_year(state, year)
+
+
 def _set_year(s: dict, year: int) -> None:
     s["curiyr"] = np.int32(year - BASEYR + 1)
     s["curcalyr"] = np.int32(year)
@@ -325,6 +333,9 @@ class InProcess:
 
     def iteration(self, handle, year: int, itr: int, inputs: Inputs) -> None:
         self.conn.send(("iteration", year, itr, inputs.overrides))
+
+    def end_year(self, handle, year: int) -> None:
+        self.conn.send(("end_year", year))
 
     def quantities(self, handle) -> dict:
         self.conn.send(("quantities",))
@@ -366,6 +377,8 @@ def _sector_worker(conn, name: str, year: int, snapshot_path: str, options: dict
                 _, y, itr, overrides = msg
                 inputs.overrides = overrides
                 sector.iteration(state, y, itr, inputs)
+            elif msg[0] == "end_year":
+                end_year(sector, state, msg[1])
             else:
                 conn.send((True, sector.quantities(state)))
         except Exception:
@@ -605,6 +618,8 @@ class DemandRunner:
                 if itr < self.first_iteration and not getattr(state, "needs_first_iteration", False):
                     continue
                 sector.iteration(state, year, itr, self.inputs)
+        for sector, state in self.sectors:
+            end_year(sector, state, year)
         for _, state in self.sectors:
             if hasattr(state, "needs_first_iteration"):
                 state.needs_first_iteration = False
