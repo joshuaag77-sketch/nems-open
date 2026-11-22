@@ -88,6 +88,12 @@ def make_standin(ref: Reference):
         qr[1:9, r] = ref.qr[k, r, :, j] * scale
         s["elown"] = f32(ref.elown[k, r, j] * scale)
         s["elsale"] = f32(ref.elsale[k, r, j] * scale)
+        # EIA's process models rebuild these on every call; the stand-in does not compute them. Left as they were,
+        # CALIBRATE_COAL_ELEC scaled the saved copies by its factor on every call (h**calls a year, compounding
+        # across years: a float32 overflow by 2041 at 6 calls a year) and CALIBRATE by BF once a year. Nothing reads
+        # them for these industries, so they are zero: not computed (docs/per_call_state_audit.md).
+        for n in ("enpmqty", "ensqty", "bypbscm"):
+            s[n].a[...] = 0.0
         add_to_electricity_groups(s, inddir, indreg)
         if indreg == 4:
             nattotal(s, inddir)

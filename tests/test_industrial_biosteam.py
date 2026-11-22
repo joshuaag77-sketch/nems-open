@@ -1,13 +1,15 @@
 """Biomass steam in the industrial year loop does not depend on how many times the coupled loop calls IND.
 
 ind.f (CALSTOT, lines 8419-8421) grows BIOSTEAMLAG by output growth on every ISEAM call, so biomass steam compounds
-once per call. EIA's run calls ISEAM twice a year. The coupled loop calls it up to 21 times, which grew industrial
-biomass (QBMIN) to 2.85 quads in 2050 against EIA's 1.56. See docs/industrial_biomass_steam.md."""
+once per call. EIA's run calls ISEAM three times a year (CURITR 1, 2 and the FCRL pass); the industrial oracle runs
+two. The coupled loop calls it up to 21 times, which grew industrial biomass (QBMIN) to 2.85 quads in 2050 against
+EIA's 1.56. See docs/industrial_biomass_steam.md and docs/per_call_state_audit.md."""
 
 import numpy as np
 import pytest
 
 from nems_open import oracle_state
+from nems_open.converge import EIA_CALLS
 from nems_open.industrial.standin import Reference, make_standin
 from nems_open.industrial.year import run_year, start_state
 
@@ -32,7 +34,7 @@ def _year(y, iterations, standin):
 
 @pytest.mark.parametrize("y", [51, 61], ids=["2040", "2050"])
 def test_extra_iterations_do_not_compound_biomass_steam(y, standin):
-    s2, b2 = _year(y, 2, standin)
+    s2, b2 = _year(y, EIA_CALLS, standin)
     s6, b6 = _year(y, 6, standin)
     for key in b2:
         assert b6[key]["biosteam"] == pytest.approx(float(b2[key]["biosteam"]), rel=1e-6), key
@@ -41,7 +43,7 @@ def test_extra_iterations_do_not_compound_biomass_steam(y, standin):
 
 
 def test_two_iterations_still_match_the_oracle(standin):
-    """EIA's own count: the fix leaves the oracle's two-iteration year unchanged."""
+    """The cap is at or above the oracle's two calls, so the oracle's two-iteration year is unchanged."""
     y = 61
     s, _ = _year(y, 2, standin)
     after = oracle_state.load("wx_out", y, "ind", only=["qbmin", "qtrin"])

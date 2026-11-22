@@ -37,10 +37,11 @@ We checked both by driving the ported module the way the coupled loop does, on E
 
 After the fix, the same emulation gives the oracle's path to the decimal with 2 or 6 calls a year: 1.426 quads in 2027, 1.370 in 2040, 1.523 in 2050. EIA's restart has 1.418, 1.397 and 1.558. The 1 to 2% left over is the oracle's own gap to the restart. With 3 calls a year the oracle path would sit 2 to 3% above EIA, so EIA's own run used about 2.
 
-Tests: `tests/test_industrial_biosteam.py`. Six iterations give the same biomass steam and the same QBMIN, QTRIN, gas, electricity and total as two. Two iterations still match the oracle. The coupled first year (iterations 2 and 3) matches two plain iterations from the same dump.
+Tests: `tests/test_industrial_biosteam.py`. Six iterations give the same biomass steam and the same QBMIN, QTRIN, gas, electricity and total as three (EIA's count; two before the audit). Two iterations still match the oracle. The coupled first year (iterations 2 and 3) matches two plain iterations from the same dump.
 
-## Still open
+## Since then (docs/per_call_state_audit.md)
 
-- After iteration 2 the coupled loop runs CALIBRATE (EIA's reporting call), then keeps iterating. EIA calibrates once, after the last iteration. QBLK is benchmarked in WEXOG either way, but the saved buffers that seed next year are the last iteration's, uncalibrated.
-- With 6 calls a year, CALIBRATE_COAL_ELEC overflows a steam coal factor in 2041 (`enpm[7] * h`). It does not reach QBMIN. It is worth a look by whoever owns coal in industry.
-- The fix has not been through a full coupled run yet. The 2050 number to expect is about 1.52 quads for QBMIN and about 1.73 for QTRIN, before price and macro effects.
+- EIA's integrator calls ISEAM three times a year, not twice: CURITR 1 and 2, then the FCRL pass (nems_flow.py; the cb2026 restart ends 2050 at CURITR 4). Twice is the industrial oracle's driver. The cap is now `converge.EIA_CALLS = 3`; two calls still reproduce the oracle.
+- CALIBRATE now runs once, after the year's last call (EIA's NCRL call), through `IndustrialSector.end_year`.
+- The 2041 overflow in CALIBRATE_COAL_ELEC came from the stand-in industries' saved steam and process fuel, scaled on every call and never rebuilt. The stand-in now zeroes them.
+- The fix has not been through a full coupled run yet.

@@ -261,27 +261,34 @@ class IndustrialSector:
         s, bufs = start_state(oracle_state.load("ys_in", first - BASEYR + 1, "ind"))
         standin = make_standin(Reference.load())
         state = IndustrialState(s, bufs, standin)
-        for y in range(first, year):  # years between the dump and the start year, with EIA's inputs
+        for y in range(first, year):  # years between the dump and the start year, with EIA's inputs and call count
             _set_year(s, y)
             inputs.apply(s) if inputs is not None else None
-            run_year(s, bufs, 2, standin)
+            run_year(s, bufs, EIA_CALLS, standin)
         state.needs_first_iteration = True
         return state
 
     def iteration(self, state, year: int, itr: int, inputs: Inputs) -> None:
         if self.ind != "ported":
             return  # fixed at the oracle's values
-        from nems_open.industrial.year import calibrate, run_iteration
+        from nems_open.industrial.year import run_iteration
         # The 'ys_in' dump is the top of the year's FIRST iteration, but the coupled loop's first year starts at
         # iteration 2 (the other sectors' dumps are the top of the final iteration). Count from IND's own first call
         # so ISEAM's first-iteration block (the lag roll) runs and the year's benchmarking follows EIA's order.
         itr = itr - state.first_itr.setdefault(year, itr) + 1
         _set_year(state.s, year)
         inputs.apply(state.s)
-        run_iteration(state.s, state.bufs, itr, itr == 2, state.standin)
-        if itr == 2:
-            state.s["ncrl"] = np.int32(1)
-            calibrate(state.s, state.bufs)  # the reporting call that leaves next year's starting state
+        run_iteration(state.s, state.bufs, itr, itr >= EIA_CALLS, state.standin)   # EIA's FCRL pass is call 3
+
+    def end_year(self, state, year: int) -> None:
+        """IND's NCRL call, once after the year's last iteration as in EIA (nems_flow.py step d): CALIBRATE, which
+        leaves the buffers next year starts from. It used to run after iteration 2, and later iterations rebuilt
+        the buffers uncalibrated (docs/per_call_state_audit.md)."""
+        if self.ind != "ported" or year not in state.first_itr:
+            return
+        from nems_open.industrial.year import ncrl_call
+        _set_year(state.s, year)
+        ncrl_call(state.s, state.bufs)
 
     def quantities(self, rows) -> dict:
         if self.ind != "ported":

@@ -337,6 +337,7 @@ def run_iteration(s: dict, bufs: dict, itr: int, last: bool, standin=None) -> No
     from nems_open.industrial.wexog import wexog
     s["curitr"] = np.int32(itr)
     s["fcrl"] = np.int32(1 if last else 0)
+    s["ncrl"] = np.int32(0)
     s["iyr"] = np.int32(s["curcalyr"])  # IND sets IYR = CURCALYR after its early-year exit
     for d in range(1, 12):
         if s["ph2in"][d, int(s["curiyr"])] <= 0:
@@ -348,11 +349,16 @@ def run_iteration(s: dict, bufs: dict, itr: int, last: bool, standin=None) -> No
     wexog(s)
 
 
+def ncrl_call(s: dict, bufs: dict) -> None:
+    """IND with NCRL = 1 (ind.f 1099-1112), once a year after the last iteration: CALIBRATE. CO2CALC and
+    INDUSREPORT are not ported. It leaves the buffers next year's first call starts from."""
+    s["ncrl"] = np.int32(1)
+    calibrate(s, bufs)
+
+
 def run_year(s: dict, bufs: dict, iterations: int = 2, standin=None, reporting_call: bool = True) -> None:
     """The year's iterations, then the reporting call (CALIBRATE) that leaves the state next year starts from."""
     for itr in range(1, iterations + 1):
         run_iteration(s, bufs, itr, itr == iterations, standin)
     if reporting_call:
-        s["curitr"] = np.int32(iterations)
-        s["ncrl"] = np.int32(1)
-        calibrate(s, bufs)
+        ncrl_call(s, bufs)
