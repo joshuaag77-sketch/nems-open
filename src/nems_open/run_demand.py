@@ -188,6 +188,10 @@ class CommercialSector:
         inputs.apply(c.s)
         c.iteration(year - BASEYR + 1, itr, inputs.array("MACOUT/mc_commflsp"))
 
+    def end_year(self, c, year: int) -> None:
+        """COMReport, which EIA runs on the last year's FCRL pass (comm.f 820): once, after the year's last call."""
+        c.end_year(year - BASEYR + 1)
+
     def quantities(self, c) -> dict:
         return c.qblk()
 

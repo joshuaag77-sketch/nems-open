@@ -24,6 +24,7 @@ from nems_open.commercial.floorspace import FIRST_YEAR, NUM_BLDG, NUM_DIV, Floor
 from nems_open.commercial.report import report
 from nems_open.commercial.service_demand import service_demand
 from nems_open.commercial.technology_choice import Carry, technology_choice
+from nems_open.converge import EIA_CALLS
 from nems_open.fortran_array import FArray
 
 f32 = np.float32
@@ -307,8 +308,14 @@ class Commercial:
         for attr, (key, _) in DG_CARRIED.items():
             s[key] = undense(getattr(self.dg, attr), self.dg_templates[key])
 
-    def technology_choice(self, y: int) -> None:
-        self.s.update(technology_choice(self.s, self.carry, y))
+    def technology_choice(self, y: int, itr: int = 2) -> None:
+        c = self.carry   # PITC's shift ratchets down on every call, in EIA too: held at EIA's last call (EiaCalls)
+        if itr == EIA_CALLS:
+            self._pitc_held = (y, list(c.iforward), c.ifwd, c.keq_ifwd)
+        elif itr > EIA_CALLS and getattr(self, "_pitc_held", (None,))[0] == y:
+            _, iforward, c.ifwd, c.keq_ifwd = self._pitc_held
+            c.iforward = list(iforward)
+        self.s.update(technology_choice(self.s, c, y, itr))
 
     def consumption(self, y: int, itr: int = 2) -> None:
         if itr == 1 and y > CMFIRSTYR - 1 and int(self.s["nrgbill"]) > 0:
@@ -328,10 +335,13 @@ class Commercial:
         self.start_iteration(y, itr)
         self.service_demand(y)
         self.distgen(y)
-        self.technology_choice(y)
+        self.technology_choice(y, itr)
         self.consumption(y, itr)
         self.benchmarking(y, itr)
-        if y == LAST_YEAR and itr == 2:
+
+    def end_year(self, y: int) -> None:
+        """Once after the year's last call: COMReport in the last year (EIA: the FCRL pass, comm.f 820)."""
+        if y == LAST_YEAR:
             self.report()
 
     def qblk(self) -> dict:
