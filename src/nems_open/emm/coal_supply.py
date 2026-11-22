@@ -50,6 +50,10 @@ CAP_FLOOR = 0.05           # the CMM adds 0.05 TBtu to every cap
 ROUTE_MAX = 800.0          # TOT_RATE1 at or above this is no route
 BASE_STEP = 5              # XCL_STEPS index of 0.0: the curve's base quantity, for the reference price
 MATS_MEF_LIMIT = 0.101     # as coal.electric.mats_adder: no-ACI burning allowed only at or under this factor
+# The reference price fills a class's EIA burn from its cheapest routes. The sub-bituminous (lignite) cap is one row
+# per class over every curve of that rank (uefd.f 17199-17209: each rank-2 column gets 1.0 in ROW_DS). On: the routes
+# share the cap. Off: each route could take the whole cap (Codex finding 14).
+SHARED_DIVERSITY_CAP = True
 # EFD puts EFD_SB_DVLIM and EFD_LG_DVLIM on the rows as they are (uefd.f 16738-16740, 16765-16767), the CMM's 0.05 TBtu
 # allowance included (coal.ams 10540-10547), and writes no row where the value is negative. The coal group gets its
 # part of the burn under the cap. On: that part of the cap less the allowance, plus the whole allowance; no row where
@@ -226,8 +230,14 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
     for k in range(len(cls_c)):
         rows = np.flatnonzero(route_class == k)
         left, paid = group_burn[k], 0.0
+        room = {2: sub_cap[k], 3: lig_cap[k]}       # one diversity row per class and rank, over all its routes
         for j in rows[np.argsort(deliv[rows])]:
-            take = left if route_rank[j] == 1 else min(left, sub_cap[k] if route_rank[j] == 2 else lig_cap[k])
+            rk = int(route_rank[j])
+            if rk == 1:
+                take = left
+            else:
+                take = min(left, room[rk]) if SHARED_DIVERSITY_CAP else min(left, sub_cap[k] if rk == 2 else lig_cap[k])
+                room[rk] -= take
             paid += take * deliv[j]
             left -= take
             if left <= 1e-9:
