@@ -494,6 +494,33 @@ Scripts: scratchpad `bt/` (windyears.py and split.py read ECP's WN columns 2026-
 
 Pinned by `tests/test_emm_capacity.py::test_conversion_credit_only_when_no_later_conversion_column`. Scripts: scratchpad `bt/` (conv30.py, chain.py).
 
+## Conversions by coal group (branch conversions, off)
+
+**What spreads EIA's conversions.** No bound, step, lead time or age rule does. EP$COAL,19-28 (uecp.f 9348-9565, ecp.ams Calculate_CL_NNGCOSTS) gives each coal group its own conversion column: bounded at the group's capacity, priced at the group's own ECL_CL_NG_COST + ECL_CL_NG_TRAN, with converted fixed O&M of 0.67 x the group's ECL_FOM (fixed O&M + G&A + capital additions + age adder, udat.f 9424). The cofiring column GCL (coal part at most 60%, row GCF) pays the same cost. So the spread comes from unit costs. EIA's conversions land in 5 regions in 2028 and 11 in 2029, and most regions convert in two or three of the years (EMM 4: 1.2, 1.6, 2.9 GW). Plant-file conversion costs run 113 / 174 / 383 $/kW (p10 / p50 / p90). Annualized at 7.1% over 30 years, less the fixed O&M saved, 9.4 GW of the 94 GW eligible pays for itself in one year. A region-average column converts all of a region or none. On average no region pays in 2028-2029, so with ECP's timing the chain converted nothing until 2030.
+
+The oracle's own ECP does the same. Its year-2 columns (cNNG + cNNGCL, the ones carried out) convert 2.2, 2.6 and 5.8 GW in its 2027, 2028 and 2029 solves. Its year-3 columns plan 23.9 (2026 solve), 16.9 and 4.3 GW that the next solve mostly defers again. So standalone ECP converts about 11 GW by 2030, against 36 in EIA's coupled run.
+
+**Ported, off** (`capacity.CONVERT_BY_UNIT`, `conversion_steps`). Each region's eligible units are sorted by their own one-year cost and split into 5 steps of equal capacity, each with its units' capacity-weighted capital and keep cost. The horizon credit is per step. It needs `ECP_CONVERT_TIMING` too: alone, the credit every year still converts everything in 2028.
+
+Chain 2027-2040 from EIA's 2026 fleet, GW. Before = this branch's base (378d608), after = both switches on:
+
+| | conv before / after / EIA | coal before / after / EIA | steam before / after / EIA |
+|---|---|---|---|
+| 2028 | 32.1 / 3.4 / 4.3 | 96 / 124 / 137 | 112 / 83 / 82 |
+| 2029 | 3.2 / 2.8 / 12.7 | 89 / 115 / 111 | 112 / 83 / 92 |
+| 2030 | 0 / 12.0 / 18.9 | 87 / 101 / 88 | 111 / 94 / 110 |
+| 2031 | 0 / 0 / 0 | 85 / 96 / 78 | 110 / 93 / 104 |
+| 2032 | | 18 / 18 / 16 | 110 / 93 / 104 |
+| 2035 | | 18 / 18 / 16 | 107 / 90 / 101 |
+
+2040, before / after / EIA: CC 424 / 419 / 431, CT 244 / 249 / 267, batteries 108 / 109 / 103, solar 344 / 373 / 323, wind 423 / 404 / 404, coal 15 / 18 / 16, steam 57 / 57 / 52.
+
+The timing is now EIA's in 2028 and close in 2029, and 2028-2029 steam lands on EIA's. The volume is half of EIA's (18 against 36 GW). In 2030, the last year with a column, most steps whose cost less the credit is negative still do not convert (EMM 1, 3, 4, 14, 15: 7 to 15 GW of coal left each). Something in the LP outweighs a credit of 11 to 22 $/kW-year, likely the cofired unit's 40% gas burn. Steam is then 11 to 16 GW under EIA's from 2030, and solar is 50 GW over in 2040. So both switches stay off.
+
+What remains: the 2030 volume. Candidates: the converted unit's fuel and dispatch value against coal in 2030-2031 (EIA's cofiring units burn the plant file's shares until UEPA_GSYR, udat.f 6457), and whether ECP's credit counts cofired units only to UEPA_CLCFYR (ours runs to the horizon end, as ECP's columns do). EIA's 12.7 GW in 2029 is above what either ECP (2.6) or this LP (2.8) converts, so part of the gap may sit in the coupled run, not in ECP.
+
+Pinned by `tests/test_emm_capacity.py::test_conversion_steps_split_each_region_by_unit_cost`. Scripts: scratchpad `cv/` (chain.py with FLAGS, eia.py, unit.py, d2030.py, sumc.py).
+
 ## ECP's spinning reserve rows and its wind build capacity factor (branch ecp-spin-reserve, off)
 
 **What ECP does.** uecp.f EP$MRM,8-13 writes one row per region, ECP load slice and planning year (rRSRge: 25 regions x 9 slices x 3 years, 675 rows in the 2030 solve). Each row is spinning reserve >= cSR, and cSR is bounded below by SR_RQMT_HGHT x (slice height + ADJ_HGHT) + SR_RQMT_DIFF x (the season's peak slice - that height), 0.1 and 0.3 in every region (composite_2030). The slices are LDSM's (DSMLCP): three seasons (winter Dec-Mar, summer Jun-Sep, shoulder), each cut at 1% / 49% / 50% of its hours sorted by net load (NL_SLICE_SW), each slice at the average load of its hours. Supply (SR_CREDIT 1 for every dispatchable type): a dispatched unit's headroom, with ECP's dispatch modes letting a committed unit run down to SR_MIN_CF of its capacity (ecpdaty.xlsx SPNRSV: coal and steam 0.3, combined cycle 0.2, turbines and pumped storage 0.1); nuclear and other renewables their capacity less output; batteries ReStore's StoSR. Conventional hydro carries none (ecp.ams leaves WIHY out of EP$ORNW,113-116). Wind and solar carry -SR_INT x their output (0.25, EP$INT,8/23/52). SR_TRAN_CREDIT is 0, so no reserve over the links. EFD has its own spinning reserve rows too (uefd.f 11473, SR_INT_REQ), which the dispatch model lacks; not needed for this change, since the capacity LP carries its own dispatch.

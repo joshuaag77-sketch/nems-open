@@ -603,6 +603,42 @@ def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon:
 ECP_CONVERT_TIMING = False
 
 
+# ECP's conversion columns are per coal group (uecp.f EP$COAL,19-28: cNNG bounded at the group's capacity, its cost the
+# group's own ECL_CL_NG_COST + ECL_CL_NG_TRAN, its converted fixed O&M the group's own ECL_FOM x UCL_CL_NG_FOM_ADJ,
+# where ECL_FOM is fixed O&M + G&A + capital additions + age adder, udat.f 9424). A region-average column converts all of
+# a region's eligible coal or none; the cheap units EIA converts in 2028-2029 (4.3 and 12.7 GW, spread over 5 and 11
+# regions) never pay on the average. On: each region's eligible units are sorted by their own one-year cost (conversion
+# capital annualized, less the fixed O&M the conversion saves) and split into CONVERT_STEPS steps of equal capacity, each
+# with its units' capacity-weighted capital and keep cost.
+CONVERT_BY_UNIT = False
+CONVERT_STEPS = 5
+
+
+def conversion_steps(capital, keep, mw, region, crf: float, steps: int = CONVERT_STEPS, num_r: int = NUM_R):
+    """Split each region's eligible coal units into `steps` steps of about equal capacity, cheapest one-year
+    conversion first. capital, keep: $/kW and $/kW-year per unit; mw: unit capacity (only eligible units);
+    region: 1-based. Returns (gw, capital, keep), each (num_r, steps), capital and keep capacity-weighted."""
+    capital, keep, mw, region = (np.asarray(a, dtype=float) for a in (capital, keep, mw, region))
+    gw, cap_k, keep_k = np.zeros((num_r, steps)), np.zeros((num_r, steps)), np.zeros((num_r, steps))
+    net = capital * crf - (1.0 - CONVERT_FOM_ADJ) * keep
+    for r in range(num_r):
+        idx = np.flatnonzero((region == r + 1) & (mw > 0))
+        if idx.size == 0:
+            continue
+        idx = idx[np.argsort(net[idx], kind="stable")]
+        cum = np.cumsum(mw[idx]) - 0.5 * mw[idx]
+        k = np.minimum((cum / mw[idx].sum() * steps).astype(int), steps - 1)
+        for j in range(steps):
+            sel = idx[k == j]
+            w = mw[sel].sum()
+            if w <= 0:
+                continue
+            gw[r, j] = w / 1000.0
+            cap_k[r, j] = (capital[sel] * mw[sel]).sum() / w
+            keep_k[r, j] = (keep[sel] * mw[sel]).sum() / w
+    return gw, cap_k, keep_k
+
+
 def conversion_is_last_chance(year: int, rule: dict) -> bool:
     """True when converting in `year` is the last option ECP has (no tail conversion column after it), so the
     conversion earns the horizon's firm-capacity credit; False when it could also convert a year later."""
@@ -960,6 +996,18 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     np.add.at(conv_gw, u.region[conv_elig] - 1, u.summer_mw[conv_elig] / 1000.0)
     conv_gw = np.minimum(conv_gw, cap0["coal"])
     conv_capital = _weighted_by_region(conv_unit, u.summer_mw, conv_elig, CONVERT_COST_KW)
+    if CONVERT_BY_UNIT:
+        age_c = np.maximum(year - u.online_year, 0)
+        keep_u = (np.asarray(tb["T_FOM"], dtype=float) + np.asarray(tb["T_CAPAD"], dtype=float)
+                  + np.where(age_c >= 30, AGE_ADDER_1987, 0.0)) * (1.0 - RETIREMENT_HURDLE)
+        conv_step_gw, conv_step_capital, conv_step_keep = conversion_steps(
+            conv_unit[conv_elig], keep_u[conv_elig], u.summer_mw[conv_elig], u.region[conv_elig],
+            _crf(discount_rate(snapshot, year), HORIZON_YEARS))
+        # the plant file's eligible units can exceed this year's coal in the LP: scale every step down alike
+        tot = conv_step_gw.sum(axis=1)
+        conv_step_gw = conv_step_gw * np.where(tot > conv_gw, conv_gw / np.maximum(tot, 1e-9), 1.0)[:, None]
+    else:
+        conv_step_gw = conv_gw[:, None]
     retro_cost = _weighted_by_region(tb["T_CCSROV"], u.summer_mw, elig, 1100.0)
     retro_fom = _weighted_by_region(tb["T_CCSF"], u.summer_mw, elig, 8.0)
     retro_tons = case.heat_rate["coal_ccs"] / 1000.0 * dispatch.CO2_PER_TBTU["coal"] * dispatch.capture_rate("coal_ccs")
@@ -1022,8 +1070,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     # UCL_CL_NG_SYR = max(2014, first ECP year + the conversion's lead time (NG, UPCLYR 2) + 1) (udat.f 13042): 2028
     first_convert = START_YEAR + int(lead[codes.index("NG")]) + 1
     can_convert = year >= first_convert and decide and (not rule["switch"] or year <= rule["gas_switch_last"])
-    convert = m.add_variables(lower=0, upper=xr.DataArray(conv_gw * can_convert, coords=[R]),
-                              name="convert")
+    CS = pd.Index(np.arange(conv_step_gw.shape[1]), name="cstep")
+    convert_k = m.add_variables(lower=0, upper=xr.DataArray(conv_step_gw * can_convert, coords=[R, CS]),
+                                name="convert")
+    convert = convert_k.sum("cstep")
     m.add_constraints(retrofit.sum() <= RETROFIT_LIMIT_GW, name="retrofit_limit")
     step_premium = 0
     if BUILD_STEPS and room > 0:
@@ -1372,10 +1422,18 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 keep = fom_exist[g] if g in fom_exist else fom_made[g]
                 tv = retirement_tail_value(year, firm[:, 0], keep, rate_now, last)
                 tail = tail + (retire.sel(group=g) * xr.DataArray(tv, coords=[R])).sum()
-    conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
-    if conversion_is_last_chance(year, rule):
-        conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
-    retro = retro + (convert * xr.DataArray(conv_cost, coords=[R])).sum()
+    if CONVERT_BY_UNIT:
+        keep_k = conv_step_keep * 1.0e3                           # k$ per GW-year, hurdle already in
+        conv_cost = conv_step_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * keep_k
+        if conversion_is_last_chance(year, rule):
+            conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"][:, None], CONVERT_FOM_ADJ * keep_k,
+                                                      rate_now)
+    else:
+        conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
+        if conversion_is_last_chance(year, rule):
+            conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
+        conv_cost = conv_cost[:, None]
+    retro = retro + (convert_k * xr.DataArray(conv_cost, coords=[R, CS])).sum()
     m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal
                     + tail)
     opts = HORIZON_SOLVER_OPTIONS if (solver == "highs" and horizon and decide) else {}

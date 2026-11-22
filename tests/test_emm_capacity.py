@@ -519,6 +519,24 @@ def test_conversion_credit_only_when_no_later_conversion_column(monkeypatch):
     assert capacity.conversion_is_last_chance(2028, rule)                         # off: the old credit every year
 
 
+def test_conversion_steps_split_each_region_by_unit_cost():
+    """ECP's conversion columns are per coal group, each at its own cost and fixed O&M (uecp.f EP$COAL,19-28). The
+    steps sort a region's units by one-year cost (annualized capital less the fixed O&M saved) and keep each step's
+    capacity-weighted capital and keep cost, so cheap units can convert before the rest."""
+    crf = 0.08
+    capital = np.array([100.0, 300.0, 120.0, 500.0, 200.0])
+    keep = np.array([40.0, 40.0, 30.0, 30.0, 50.0])
+    mw = np.array([500.0, 500.0, 1000.0, 1000.0, 800.0])
+    region = np.array([1, 1, 2, 2, 3])
+    gw, cap_k, keep_k = capacity.conversion_steps(capital, keep, mw, region, crf, steps=2, num_r=3)
+    assert gw.sum() == pytest.approx(mw.sum() / 1000.0)
+    assert gw[0] == pytest.approx([0.5, 0.5]) and cap_k[0] == pytest.approx([100.0, 300.0])
+    assert cap_k[1] == pytest.approx([120.0, 500.0]) and keep_k[1] == pytest.approx([30.0, 30.0])
+    net = cap_k * crf - (1.0 - capacity.CONVERT_FOM_ADJ) * keep_k
+    assert net[0, 0] < 0 < net[0, 1]                      # the cheap unit pays in one year, the other does not
+    assert gw[2].sum() == pytest.approx(0.8) and cap_k[2][gw[2] > 0] == pytest.approx([200.0])
+
+
 def test_spin_reserve_inputs_follow_ecpdaty():
     """SR_MIN_CF (ecpdaty.xlsx SPNRSV) as the 2030 composite carries it: coal and steam 0.3, combined cycle 0.2,
     turbines and pumped storage 0.1; ECP's seasons are LDSM's (winter Dec-Mar, summer Jun-Sep, shoulder)."""
