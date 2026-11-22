@@ -1039,6 +1039,11 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         vom[g] = np.full(NUM_R, float(params["vom"][i]))
         oil_share[g] = np.zeros(NUM_R)
         avail[g] = avail[base]
+    # ECP's conversion column burns gas at the coal group's ECP heat rate times 1 + UCL_CL_NG_HR_PEN (ecp.ams EP$COAL,27:
+    # ULHTRT_ECP x (1 + pen) less the gas steam average). ULHTRT_ECP is WHRATEA x Target_EFF / Max_EFF (udat.f
+    # 7280-7285), the part-load heat rate, which is what heat["coal"] carries here (dispatch.COAL_PART_LOAD_HEAT_RATE).
+    # EFD differs on purpose: uecp.f 28113 writes WHRATE x (1 + pen) into the converted unit's record, and the
+    # converted type has no part-load curve, so dispatch uses the plain coal heat rate (coal_plain).
     heat["gas_conv"] = heat["coal"] * (1.0 + CONVERT_HR_PENALTY)
     vom["gas_conv"] = vom["coal"] * CONVERT_VOM_ADJ
     oil_share["gas_conv"] = np.zeros(NUM_R)
