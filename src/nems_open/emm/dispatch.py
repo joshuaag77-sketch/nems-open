@@ -285,6 +285,15 @@ TIER_GROUPS = ("gas_ct",)     # with gas_cc too, 2030 combined cycle falls anoth
 N_TIERS = 3
 EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
 EFD_NUCLEAR_SR = 0.04
+# The load behind EFD's spinning reserve requirement and the maximum-load shapes. ED$LOAD (uefd.f 9179-9227) sets
+# SP_RES_RQMT_IN = SR_RQMT_HGHT x LOAD + SR_RQMT_DIFF x (MAX_HGHT - LOAD) with LOAD = UTHGHT, and OPBSLD's DRAT_MAX
+# (uefd.f 9769) uses UTHGHT / MAX_SP_LOAD. UTHGHT is LDSM's load: sales grossed up for losses. End-use generators'
+# grid sales (BTCOGEN, a fixed column on the load rows), the electric power sector's CHP and imports supply part of
+# that load as columns of the LP; they do not lower it. On: the requirement and the shapes are built on that gross
+# load, the hourly net load x the case's gross_ratio (demand.gross_load_twh over net_load_twh, so it follows the
+# loop's and the capacity LP's load); the balance keeps the net load.
+# Off: both on the net load (Codex finding 8).
+GROSS_LOAD_HEIGHTS = True
 SPIN_SHORTFALL_COST = 100.0   # 1987$/MWh of missing reserve, below UNSERVED_COST so no load is shed to make reserve
 
 
@@ -321,6 +330,7 @@ class DispatchCase:
     tiers: dict = None                  # group -> (share (25, T), heat rate (25, T)) (HEAT_RATE_TIERS; None: one tier)
     tier_max_cf: dict = None            # tiered group -> (25, T) maximum capacity factor of each tier (None: the group's)
     tier_vom: dict = None               # tiered group -> (25, T) variable O&M of each tier (None: the group's)
+    gross_ratio: np.ndarray = None      # (25,) LDSM's load before outside supply over net_load_twh (None: 1)
 
 
 @dataclass
@@ -701,6 +711,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     if trade == "reference":
         nl = snapshot["UEFDOUT/ugntlnr"][:, :NUM_R, y].sum(axis=0).astype(float)
     links = build_links(snapshot, year) if trade != "reference" else None
+    gross = np.divide(demand.gross_load_twh(snapshot, year), nl, out=np.ones(NUM_R), where=nl > 0)
     credit = float(snapshot["TCS45Q/ccs_saline_45q"][y])
     # Oil steam units flagged must-run (plant file T_MRUN at or after the year) burn residual oil at their
     # historical capacity factor whatever it costs, as EFD's minimum-run rows force them to. They leave the
@@ -746,7 +757,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
                         coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers,
-                        tier_max_cf=tier_max_cf, tier_vom=tier_vom)
+                        tier_max_cf=tier_max_cf, tier_vom=tier_vom, gross_ratio=gross)
 
 
 def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr: np.ndarray) -> tuple:
@@ -993,6 +1004,11 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     flat = case.flat_twh if case.flat_twh is not None else np.zeros(NUM_R)
     flat_gw = flat * 1000.0 / HOURS_PER_YEAR
     load_gw = xr.DataArray((case.net_load_twh - flat)[:, None, None] * 1000.0 * case.shapes + flat_gw[:, None, None], coords=[R, D, H])
+    # The load EFD's reserve requirement and maximum-load shapes read: UTHGHT, LDSM's load before the supply that
+    # comes from outside the dispatched fleet (GROSS_LOAD_HEIGHTS).
+    height_np = load_gw.transpose("region", "day", "hour").values
+    if GROSS_LOAD_HEIGHTS and case.gross_ratio is not None:
+        height_np = height_np * np.asarray(case.gross_ratio, dtype=float)[:, None, None]
     m = linopy.Model()
 
     # Thermal plants
@@ -1008,7 +1024,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         committable = xr.DataArray(cap_g[:, :, None, None] * (1.0 - out)[..., None] * np.ones(nh), coords=[R, TH, D, H])
         upper = committable * xr.DataArray(avail, coords=[TH])
         if EFD_MAX_LOAD_SHAPE:
-            load_np = load_gw.transpose("region", "day", "hour").values
+            load_np = height_np
             wind_solar = sum(case.capacity[k][:, None, None] * case.profile[k] for k in ("wind", "solar"))
             from nems_open.emm import capacity as ecp
             sl, ht = ecp.ecp_slice_heights(load_np, case.weights, month_of_day, load_np - wind_solar)
@@ -1165,7 +1181,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         from nems_open.emm import capacity as ecp
         mins = ecp.spin_min_cf()
         intermittent = (ren_gw["wind"] + ren_gw["solar"]).transpose("region", "day", "hour")
-        load_np = load_gw.transpose("region", "day", "hour").values
+        load_np = height_np
         slice_of, height = ecp.ecp_slice_heights(load_np, case.weights, month_of_day, load_np - intermittent.values)
         peak = height[:, (np.arange(9) // 3) * 3]
         req = ecp.SR_RQMT_HGHT * height + ecp.SR_RQMT_DIFF * (peak - height)                  # (25, 9) GW
@@ -1268,7 +1284,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         m.add_constraints(ss - di * (1.0 / mins["pumped"] - 1.0) <= 0, name="spin_pumped_committed")
         supply = supply + ss
         intermittent = (ren_gw["wind"] + ren_gw["solar"]).transpose("region", "day", "hour")
-        load_np = load_gw.transpose("region", "day", "hour").values
+        load_np = height_np
         slice_of, req = spin_requirement(load_np, case.weights, load_np - intermittent.values)
         battery_sr = xr.DataArray(np.asarray(EFD_BATTERY_SR)[slice_of] * case.capacity["battery"][:, None, None], coords=[R, D, H])
         idle = (by_region(case.capacity["nuclear"]) * EFD_NUCLEAR_SR + by_region(case.capacity["other"]) - ren_gw["other"]

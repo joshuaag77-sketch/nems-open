@@ -135,6 +135,13 @@ def international_net_imports_twh(snapshot, year: int) -> np.ndarray:
     return g / 1000.0
 
 
+def gross_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
+    """LDSM's load on the EMM regions, sales x (1 + ULOSSADJ x UQTDLS) (uldsm.f 2011), shape (25,), TWh: what EFD's
+    load rows hold (UTHGHT) before the supply from outside the dispatched fleet. `sales` as in net_load_twh."""
+    loss = load.region_parameters()["td_loss"]
+    return regional_sales_twh(sales if sales is not None else snapshot, year).sum(axis=1) * (1.0 + loss_adjustment(year) * loss)
+
+
 def net_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
     """Energy the dispatched EMM fleet must supply, by region, shape (25,), TWh.
 
@@ -143,7 +150,6 @@ def net_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
     mapping with the restart's QBLK/qel* arrays (the default is the snapshot); the rest comes from the snapshot.
     Trade between EMM regions, storage losses and the LP's own line losses are not in this number.
     """
-    loss = load.region_parameters()["td_loss"]
-    need = regional_sales_twh(sales if sales is not None else snapshot, year).sum(axis=1) * (1.0 + loss_adjustment(year) * loss)
+    need = gross_load_twh(snapshot, year, sales)
     return np.maximum(need - end_user_grid_sales_twh(snapshot, year) - nontraditional_cogen_twh(snapshot, year)
                       - international_net_imports_twh(snapshot, year), 0.0)
