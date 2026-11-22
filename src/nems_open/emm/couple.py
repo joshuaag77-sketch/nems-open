@@ -32,6 +32,12 @@ PACIFIC = 8                # census division of Alaska and Hawaii (0-based)
 # added to the loop's totals and held in the Pacific division; the rest of each total is spread as in the baseline.
 # Off: the US totals leave them out and the Pacific division takes its baseline share of that (Codex finding 7).
 NONCONTIGUOUS = True
+# The fleet's make-up follows its capacity. A case's heat rates, VOM, heat-rate tiers, coal and cofire shares and the
+# new-CC share under EPA 111 are built from the existing / new split of its capacity (dispatch.build_case). EFD builds
+# them from the units the run has (udat.f: each plant group's UG_HTRT and W_CF from its own units, 6446-6447,
+# 7249-7263). On: when the fleet is not the reference run's (capacity="lp" or a lever), the case is rebuilt on it.
+# Off: the reference case's make-up with the new capacity put in (Codex finding 3).
+COMPOSITION_FOLLOWS_CAPACITY = True
 
 
 @dataclass
@@ -71,6 +77,7 @@ class ElectricityLP:
         self.added_load = added_load          # datacenter.AddedLoad: already in the loop's commercial sales
         self.capacity_scale = capacity_scale   # year -> {group: multiplier}, from a lever (nems_open.levers)
         self._cases = {}
+        self._fleet_cases = {}
         self._census = _census_of_region()
         self.last: dict[int, LPResult] = {}
         if capacity not in ("eia", "lp"):
@@ -85,6 +92,14 @@ class ElectricityLP:
         if year not in self._cases:
             self._cases[year] = dispatch.reduce_hours(dispatch.build_case(self.snapshot, year, "none"), self.hours_per_block)
         return self._cases[year]
+
+    def fleet_case(self, year: int, capacity: dict) -> dispatch.DispatchCase:
+        """The year's case rebuilt on `capacity` (COMPOSITION_FOLLOWS_CAPACITY), built once per year: the capacity
+        path solves a year once and a lever's scale is fixed."""
+        if year not in self._fleet_cases:
+            full = dispatch.build_case(self.snapshot, year, "none", capacity=capacity)
+            self._fleet_cases[year] = dispatch.reduce_hours(full, self.hours_per_block)
+        return self._fleet_cases[year]
 
     def _scaled_prices(self, case, prices: dict, j: int) -> dict:
         out = dict(case.price)
@@ -116,6 +131,8 @@ class ElectricityLP:
             fleet = self.capacity_fleet(year, net, prices, j, cp87)
             extra["credit_share"] = self.capacity_path.credit_share(year)    # the path's own CCS cohorts
         capacity = {g: v * scale.get(g, 1.0) for g, v in fleet.items()}
+        if COMPOSITION_FOLLOWS_CAPACITY and (self.capacity_path is not None or scale):
+            case0 = self.fleet_case(year, capacity)
         case = replace(case0, capacity=capacity, net_load_twh=net, price=self._scaled_prices(case0, prices, j),
                        carbon_price=float(cp87), **extra)
         res = dispatch.solve(case)

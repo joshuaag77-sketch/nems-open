@@ -615,12 +615,16 @@ def restart_capture_capacity(snapshot, year: int) -> dict:
     return {g: _ucap(snapshot, CAPACITY_PREFIXES[g], y) for g in CAPTURE_GROUPS}
 
 
-def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
+def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) -> DispatchCase:
     """Assemble a year's inputs from the reference run's capacity and fuel prices.
 
     trade="none": regions meet their own net load from sales (demand.net_load_twh).
     trade="reference": each region's net load is the reference run's generation in that
     region, which fixes the interregional exchange at EIA's result.
+    capacity: {group: (25,) GW} in place of the reference run's (the capacity LP's fleet, a lever). Everything that
+    depends on the fleet's make-up is built on it: the existing / new split behind each group's heat rate and VOM,
+    the heat-rate tiers, the new-CC share EPA 111 caps, the cofired units' coal share. The case's capacity is
+    `capacity` itself.
     """
     y = year - history.FIRST_YEAR
     cap = {g: _in_service(snapshot, p, EXISTING_TYPES.get(g), year) for g, p in CAPACITY_PREFIXES.items()}
@@ -631,6 +635,8 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         cap["steam"] = cap["steam"] - cap["cofire"]
     else:
         cap["cofire"] = np.zeros(NUM_R)
+    if capacity is not None:
+        cap.update({g: np.asarray(v, dtype=float) for g, v in capacity.items()})
     u = plants.load_units()
     ptype = {t.code: t for t in technology.efd_plant_types()}
     params = technology.type_parameters()
@@ -769,6 +775,8 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
                 f_new, p_new = capped_outage_rates(f, p, min(mcf_cc, epa["new_cc_cf"]))
                 tier_outage = {"gas_cc": (np.column_stack([np.full((NUM_R, n_old), f), np.full(NUM_R, f_new)]),
                                           np.column_stack([np.full((NUM_R, n_old), p), np.full(NUM_R, p_new)]))}
+    if capacity is not None:
+        cap.update({g: np.asarray(v, dtype=float) for g, v in capacity.items()})
     return DispatchCase(year, cap, heat, vom, price, oil, avail, max_cf, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
