@@ -549,6 +549,20 @@ def test_conversion_credit_stops_when_cofiring_ends():
     assert 0 < cut[0] < 0.5 * full[0]
 
 
+def test_cofired_conversion_credit_cuts_only_the_coal_part(monkeypatch):
+    """ECP keeps the gas part (cNNG) in every reserve row and the coal part (cNNGCL, UEPA_CGSH of the unit) in the
+    tail only to UEPA_CLCFYR (EPA_YRSHR, ecp.ams 11604-11609 and 12187-12201)."""
+    rule = capacity.epa111()
+    args = (2030, np.array([40.0]), np.array([15.0]), 0.07)
+    full = capacity.conversion_credit(*args)
+    cut = capacity.conversion_credit(*args, last=rule["cofire_last"])
+    monkeypatch.setattr(capacity, "CONVERT_CREDIT_TO_CLCFYR", True)
+    got = capacity.cofired_conversion_credit(*args, rule)
+    assert got[0] == pytest.approx(0.4 * full[0] + 0.6 * cut[0])
+    monkeypatch.setattr(capacity, "CONVERT_CREDIT_TO_CLCFYR", False)
+    assert capacity.cofired_conversion_credit(*args, rule)[0] == pytest.approx(full[0])
+
+
 def test_spin_reserve_inputs_follow_ecpdaty():
     """SR_MIN_CF (ecpdaty.xlsx SPNRSV) as the 2030 composite carries it: coal and steam 0.3, combined cycle 0.2,
     turbines and pumped storage 0.1; ECP's seasons are LDSM's (winter Dec-Mar, summer Jun-Sep, shoulder)."""

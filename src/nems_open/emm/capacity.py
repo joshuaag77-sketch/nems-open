@@ -621,9 +621,25 @@ CONVERT_STEPS = 5
 # 40% gas where ECP's burns almost none. On: gas_conv runs at coal cost up to UEPA_CGSH of its available capacity in
 # each block, and pays the gas premium above that.
 CONVERT_SPLIT_FUEL = False
-# The conversion's horizon credit runs to the end of ECP's horizon, as its columns do (they stay in every later reserve
-# row). Under EPA 111 a cofiring plant retires at the end of UEPA_CLCFYR (udat.f 6451). On: the credit stops there.
-CONVERT_CREDIT_TO_CLCFYR = False
+# How far the conversion's horizon credit runs. ECP's gas part (cNNG) sits in every later reserve row at full capacity
+# (EP$COAL,23: no year limit). Its coal part (cNNGCL, at most UEPA_CGSH of the unit through row NGCLCF, EP$COAL,28c)
+# sits in the explicit years' reserve rows in full but in the tail row only at EPA_YRSHR, the discounted share of the
+# tail years up to UEPA_CLCFYR (ecp.ams EP_COAL_Calculations 11604-11609, ccalc_cNNGCL_rRXXXXXge 12187-12201). So in
+# ECP the coal part's credit stops at UEPA_CLCFYR and the gas part's does not. (EIA then retires the whole cofiring
+# plant at UEPA_CLCFYR, udat.f 6451 and uecp.f 28161, but ECP's LP does not price that.) On: the credit is
+# (1 - UEPA_CGSH) x the full-horizon credit + UEPA_CGSH x the credit to UEPA_CLCFYR. Off: full horizon for all of it.
+CONVERT_CREDIT_TO_CLCFYR = True
+
+
+def cofired_conversion_credit(year: int, firm_annual, keep_annual, rate: float, rule: dict) -> np.ndarray:
+    """conversion_credit for a cofired conversion as ECP's columns see it (CONVERT_CREDIT_TO_CLCFYR): the gas part
+    (1 - UEPA_CGSH) to the end of the horizon, the coal part (UEPA_CGSH) only to UEPA_CLCFYR."""
+    full = conversion_credit(year, firm_annual, keep_annual, rate)
+    if not (CONVERT_CREDIT_TO_CLCFYR and rule["switch"]):
+        return full
+    share = float(rule["cofire_coal_share"])
+    cut = conversion_credit(year, firm_annual, keep_annual, rate, last=rule["cofire_last"])
+    return (1.0 - share) * full + share * cut
 
 
 def conversion_steps(capital, keep, mw, region, crf: float, steps: int = CONVERT_STEPS, num_r: int = NUM_R):
@@ -1454,13 +1470,13 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         keep_k = conv_step_keep * 1.0e3                           # k$ per GW-year, hurdle already in
         conv_cost = conv_step_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * keep_k
         if conversion_is_last_chance(year, rule):
-            conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"][:, None], CONVERT_FOM_ADJ * keep_k,
-                                                      rate_now, last=rule["cofire_last"] if (
-                                                          CONVERT_CREDIT_TO_CLCFYR and rule["switch"]) else None)
+            conv_cost = conv_cost - cofired_conversion_credit(year, capital["gas_ct_new"][:, None],
+                                                              CONVERT_FOM_ADJ * keep_k, rate_now, rule)
     else:
         conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
         if conversion_is_last_chance(year, rule):
-            conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
+            conv_cost = conv_cost - cofired_conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now,
+                                                              rule)
         conv_cost = conv_cost[:, None]
     retro = retro + (convert_k * xr.DataArray(conv_cost, coords=[R, CS])).sum()
     m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal

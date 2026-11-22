@@ -527,7 +527,7 @@ Pinned by `tests/test_emm_capacity.py::test_conversion_steps_split_each_region_b
 
 **Ported, off** (`capacity.CONVERT_SPLIT_FUEL`). gas_conv runs at coal cost up to UEPA_CGSH of its available capacity in each block and pays the gas premium above that (variable `conv_gas`, also counted in ECP's gas supply curve). With the credit to the end of the horizon, 2030 then converts 63.9 GW (steam 146 against EIA's 110).
 
-**Credit to 2038** (`capacity.CONVERT_CREDIT_TO_CLCFYR`, off). A cofiring plant retires at the end of UEPA_CLCFYR (udat.f 6451), so its credit counts 2032-2038 only. ECP's own columns stay in every later reserve row, so this is the retirement EIA carries out, not what ECP prices. It brings 2030 down to 17.8 GW.
+**Credit to 2038** (`capacity.CONVERT_CREDIT_TO_CLCFYR`). This branch first cut the whole credit at UEPA_CLCFYR. That is the retirement EIA carries out (udat.f 6451, uecp.f 28161), not what ECP prices. The Codex review of 2026-11-22 (finding 2) pointed at EPA_YRSHR, and the source settles it. ECP's gas part, cNNG, sits in every later reserve row at full capacity (EP$COAL,23). Its coal part, cNNGCL, is at most UEPA_CGSH (0.6) of the unit (row NGCLCF, EP$COAL,28c). It counts in full in the explicit years but in the tail row only at EPA_YRSHR, the discounted share of tail years up to UEPA_CLCFYR (ecp.ams 11604-11609, 12187-12201). Now on, as `cofired_conversion_credit`: 0.4 x the full-horizon credit plus 0.6 x the credit to 2038, in both the region-average and the by-unit conversion columns. With the whole credit cut, the all-on chain converted 17.8 GW in 2030.
 
 Chain 2027-2040 from EIA's 2026 fleet, GW. Base = 378d608 (all off), all on = CONVERT_BY_UNIT, ECP_CONVERT_TIMING, CONVERT_SPLIT_FUEL, CONVERT_CREDIT_TO_CLCFYR:
 
