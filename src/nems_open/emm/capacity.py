@@ -744,28 +744,39 @@ def conversion_is_last_chance(year: int, rule: dict) -> bool:
     return bool(rule["switch"]) and year + 1 > rule["gas_switch_last"]
 
 
-# ECP keeps or retires an existing gas or oil plant for its whole planning horizon, not for one year. Combined cycle and
-# steam are EP$NGBS gas plant groups (uecp.f 36045-36680): each group's options run it for period 1 only (the one that
-# retires it), periods 1-2, or all of the UNFPH horizon at ENG_FOM a year (FOM + G&A + capital additions + age adder,
-# no hurdle), and the kept options count on the reserve rows of years 2 and 3. Turbines are retirement-group columns
-# (EP$BDSP,5-8) priced at the present value of EPGFOM over the horizon and counted on every year's reserve row. The
-# tail year's reserve row binds in almost every region (OutToNEMS_2026: 21 of 25), so a kept GW is firm capacity the
-# tail would otherwise have to build. ECP's 2026-2049 solves retire 2.5 GW of EC, ST and ET in all; a one-year LP with a
-# zero reserve price this year retired 28 GW of them in 2027-2033 (EIA: about 7 GW of steam). Off: retirements see
-# only this year.
-RETIRE_HORIZON = True
+# ECP keeps or retires an existing plant with option columns that span its horizon. For gas CC and steam (EP$NGBS,
+# uecp.f 36373-36690) each plant group has three columns sharing its capacity: run period 1 only (it retires), periods
+# 1-2, or the whole horizon. The last pays fixed O&M (GRP_FOM) for all UNFPH years and sits in the reserve row of the
+# tail year, which stands for years 3 to 30 (EP$NGBS,9). Turbines (EP$BDSP,5-8) and coal (EP$COAL) have the same
+# shape. So keeping a plant is worth the tail reserve row's dual, the present value of whatever firm capacity the tail
+# would otherwise build, less the horizon's fixed O&M. The dual is ECP's own: zero where the tail row is slack.
+#
+# This LP has no tail period, so it does not have that dual. RETIRE_TAIL_PROXY is an approximation of it, not ECP's
+# method: it prices the tail's firm capacity at a new turbine's annual cost (capital plus fixed O&M, no energy margin)
+# in every region and every year, as if the tail row always bound. In ECP's 2030 solve the tail row binds in 21 of 25
+# regions and steam's value of keeping is about a turbine's annual cost, which is why the proxy fits on average. It
+# overstates where the tail is slack and wherever a turbine earns energy margin. Its effect: without it the 2027-2033
+# chain retired about 28 GW of CC, CT and steam where EIA retires about 3; with it, about 3. The faithful port is a
+# tail period in this LP: a reserve row for ECP's year 3 (load and capacity credits of E + 2, every existing and kept
+# group, year-2 build columns paying the horizon's present value) and, per retirement group, the three option columns
+# with their horizon fixed O&M. That is the HORIZON code path plus option columns, a few hundred lines and a tail
+# solve per year (HORIZON's own years took 20 to 140 s; it is off because it did not close the build gap). On: proxy.
+# Off: retirements see only this year.
+RETIRE_TAIL_PROXY = True
 # Coal (EP$COAL's commit vectors also run to the end of the horizon) counts only the years before the 2032 rule, and
-# coal cofired with gas (gas_conv) only to UEPA_CLCFYR.
-RETIRE_HORIZON_GROUPS = ("gas_cc", "gas_ct", "steam", "gas_conv", "coal")
+# coal cofired with gas (gas_conv) only to UEPA_CLCFYR. (ECP's option 3 exists while the group's retirement year is at
+# least E + 2 and then counts the whole tail, so cutting gas_conv at UEPA_CLCFYR is a further approximation.)
+RETIRE_TAIL_PROXY_GROUPS = ("gas_cc", "gas_ct", "steam", "gas_conv", "coal")
 
 
-def retirement_tail_value(year: int, firm_annual, keep_annual, rate: float, last_year: int | None = None,
+def retirement_tail_proxy(year: int, firm_annual, keep_annual, rate: float, last_year: int | None = None,
                           horizon: int = HORIZON_YEARS) -> np.ndarray:
     """What retiring a GW of existing gas or oil capacity in `year` gives up in the rest of ECP's horizon, in this year's
     money (k$ per GW): each later year to `last_year` in which the plant could still run, the firm capacity the plan
     would then have to build, `firm_annual` (a new turbine's annual cost, the cheapest firm type), less the plant's own
     `keep_annual`, never below zero, discounted at `rate`. Charged on the retirement column, it makes the one-year LP
-    keep a plant whenever keeping it is cheaper than replacing it later, which is ECP's option-3 test."""
+    keep a plant whenever keeping it is cheaper than a new turbine later. An approximation of ECP's option-3 test
+    (RETIRE_TAIL_PROXY): ECP values the tail's firm capacity at its own tail reserve dual, not a turbine's cost."""
     gain = np.maximum(np.asarray(firm_annual, dtype=float) - np.asarray(keep_annual, dtype=float), 0.0)
     last = year + horizon - 1 if last_year is None else last_year
     pv = sum((1.0 + rate) ** -k for k in range(1, horizon) if year + k <= last)
@@ -1527,19 +1538,19 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
     rate_now = discount_rate(snapshot, year)
     tail = 0
-    if RETIRE_HORIZON and decide and not horizon:
-        # ECP's keep-or-retire test spans its horizon (RETIRE_HORIZON): retiring now also gives up the plant's firm
-        # capacity later, worth a new turbine's annual cost less the plant's own fixed cost in each later year.
+    if RETIRE_TAIL_PROXY and decide and not horizon:
+        # Proxy for ECP's option-3 columns (RETIRE_TAIL_PROXY): retiring now also gives up the plant's firm capacity
+        # later, priced at a new turbine's annual cost less the plant's own fixed cost in each later year.
         firm = capital["gas_ct_new"][:, None]
-        for g in RETIRE_HORIZON_GROUPS:
+        for g in RETIRE_TAIL_PROXY_GROUPS:
             last = rule["cofire_last"] if (g == "gas_conv" and rule["switch"]) else (RULE_YEAR - 1 if g == "coal" else None)
             if use_groups and g in RETIRABLE:
                 j = RETIRABLE.index(g)
-                tv = retirement_tail_value(year, firm, gcost[:, j, :], rate_now, last)
+                tv = retirement_tail_proxy(year, firm, gcost[:, j, :], rate_now, last)
                 tail = tail + (rg.sel(group=g) * xr.DataArray(tv, coords=[R, K])).sum()
             else:
                 keep = fom_exist[g] if g in fom_exist else fom_made[g]
-                tv = retirement_tail_value(year, firm[:, 0], keep, rate_now, last)
+                tv = retirement_tail_proxy(year, firm[:, 0], keep, rate_now, last)
                 tail = tail + (retire.sel(group=g) * xr.DataArray(tv, coords=[R])).sum()
     if CONVERT_BY_UNIT:
         keep_k = conv_step_keep * 1.0e3                           # k$ per GW-year, hurdle already in

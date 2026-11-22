@@ -511,22 +511,22 @@ def test_new_gas_heat_rates_are_ecp_uphtrt():
     assert np.allclose(hr, np.asarray(o["UPPHRT0"], dtype=float))
 
 
-def test_retirement_tail_value_is_the_avoided_replacement_over_ecp_horizon():
-    """ECP keeps an existing gas or oil plant for its whole horizon (EP$NGBS option 3, EP$BDSP's EPGFOM over UNFPH), so
-    retiring it now also gives up its firm capacity in every later year it could run. Each such year is worth a new
-    turbine less the plant's own fixed cost, never below zero, discounted from next year."""
+def test_retirement_tail_proxy_is_a_turbine_over_ecp_horizon():
+    """ECP can keep an existing plant for its whole horizon (EP$NGBS option 3, EP$BDSP's EPGFOM over UNFPH), valued at
+    its tail reserve row's dual. The proxy prices each later year the plant could run at a new turbine less the plant's
+    own fixed cost, never below zero, discounted from next year, as if that row always bound."""
     from nems_open.emm import capacity as cap
     r = 0.07
     firm, keep = np.array([40.0e3, 10.0e3]), np.array([15.0e3, 20.0e3])
-    got = cap.retirement_tail_value(2027, firm, keep, r)
+    got = cap.retirement_tail_proxy(2027, firm, keep, r)
     pv = sum((1 + r) ** -k for k in range(1, cap.HORIZON_YEARS))
     assert got[0] == pytest.approx(25.0e3 * pv)                      # about 12 years of the gap: keeping wins
     assert got[1] == 0.0                                             # dearer to keep than to replace: no value
     # cofired coal stops at UEPA_CLCFYR, coal at the 2032 rule: only the years it can still run count
-    assert cap.retirement_tail_value(2027, firm, keep, r, last_year=2031)[0] == pytest.approx(
+    assert cap.retirement_tail_proxy(2027, firm, keep, r, last_year=2031)[0] == pytest.approx(
         25.0e3 * sum((1 + r) ** -k for k in range(1, 5)))
-    assert cap.retirement_tail_value(2031, firm, keep, r, last_year=2031)[0] == 0.0
-    assert {"steam", "gas_cc", "gas_ct", "coal"} <= set(cap.RETIRE_HORIZON_GROUPS)
+    assert cap.retirement_tail_proxy(2031, firm, keep, r, last_year=2031)[0] == 0.0
+    assert {"steam", "gas_cc", "gas_ct", "coal"} <= set(cap.RETIRE_TAIL_PROXY_GROUPS)
 
 
 def test_conversion_credit_only_when_no_later_conversion_column(monkeypatch):
