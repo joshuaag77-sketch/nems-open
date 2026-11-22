@@ -848,7 +848,7 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
                                 cost_year, snapshot)
             annual = annual - credit * cf * 8.76      # $/MWh x GWh per MW-year -> $/kW-year
         if g in dispatch.CAPTURE_GROUPS:
-            tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
+            tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.capture_rate(g)
             annual = annual + _credit_overpaid(case, g, params["economic_life"][i], year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
         capital[g] = annual * 1.0e3                   # $/kW-year -> k$ per GW-year
     return capital
@@ -962,7 +962,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     conv_capital = _weighted_by_region(conv_unit, u.summer_mw, conv_elig, CONVERT_COST_KW)
     retro_cost = _weighted_by_region(tb["T_CCSROV"], u.summer_mw, elig, 1100.0)
     retro_fom = _weighted_by_region(tb["T_CCSF"], u.summer_mw, elig, 8.0)
-    retro_tons = case.heat_rate["coal_ccs"] / 1000.0 * dispatch.CO2_PER_TBTU["coal"] * dispatch.CAPTURE_RATE
+    retro_tons = case.heat_rate["coal_ccs"] / 1000.0 * dispatch.CO2_PER_TBTU["coal"] * dispatch.capture_rate("coal_ccs")
     retro_lost = _credit_overpaid(case, "coal_ccs", 20.0, year, snapshot) * case.credit_45q * retro_tons * 0.6 * 8.76     # coal runs about 60%
     retro_annual = (retro_cost * _crf(discount_rate(snapshot, year), 20.0) + retro_fom + retro_lost) * 1.0e3
     fom_made = {"coal_ccs": fom_exist["coal"] + retro_fom * 1.0e3 * (1.0 - RETIREMENT_HURDLE),
@@ -1107,7 +1107,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 gas_frac[:, k] = (1.0 - rule["cofire_coal_share"]) if (g == "gas_conv" and rule["switch"]) else 1 - oil_share[g]
             if g in dispatch.CAPTURE_GROUPS:
                 share = cs.credit_share[g] if cs.credit_share is not None else 1.0
-                cost[:, k] -= cs.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.CAPTURE_RATE
+                cost[:, k] -= cs.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.capture_rate(g)
         cost_da = xr.DataArray(cost, coords=[R, T])
         heat_arr = np.stack([heat[g] for g in TG], axis=1)
 

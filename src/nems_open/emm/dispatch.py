@@ -12,6 +12,7 @@ trillion Btu, CO2 million metric tons.
 """
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import linopy
 import numpy as np
@@ -75,6 +76,26 @@ AVAIL_TYPE = {"coal": "CSC", "coal_ccs": "CSC", "gas_cc": "CCG", "gas_ccs": "CCG
 # Carbon capture: groups that capture CO2 (and the fuel they burn), the share captured, and the 45Q credit.
 CAPTURE_GROUPS = {"coal_ccs": "coal", "gas_ccs": "gas"}
 CAPTURE_RATE = 0.9
+# Capture rate by group. EFD releases (1 - ECSEQS) of a capturing unit's CO2 (uefd.f 3122-3232) and reports the rest
+# to CCATS (SUP_EMM_45Q / SUP_EMM_NTC, uefd.f 2876-2895). ECSEQS is the unit's WSEQEF (udat.f 10401): 0.90 for a coal
+# retrofit (udat.f 9262 ECL_CCS_R, uecp.f 27648) and UPPCEF of the ECP type for a new plant (uecp.f 25645), 0.95 for
+# gas with CCS (CS, ecpdaty.xlsx COSTPERF). Once its 45Q years end a unit may run in a reduced-capture mode at
+# UPPCEF_MIN, but with EPA 111 on UPPCEF_MIN = UPPCEF for existing coal from UEPA_CLYR and new gas from UEPA_NWGSYR
+# (udat.f 5175-5183), so in cb2026 every capturing unit keeps its full rate. On: those rates. Off: CAPTURE_RATE for both.
+CAPTURE_BY_TYPE = True
+COAL_RETROFIT_CAPTURE = 0.90
+# EPA 111 holds new combined cycle without CCS to UEPA_NWGSCF (0.4) of its capacity from UEPA_NWGSYR (2029): udat.f
+# 6444-6446 sets W_CF = MIN(W_CF, UEPA_NWGSCF) for every unit of ECP type AC or CC with WVIN > 1, which is the
+# combined cycle ECP builds (the plant file's are EC and FC). The capacity LP holds gas_cc_new to it already. Here
+# gas_cc is one group at one heat rate, and a cap on the group's mean let the old units' idle share carry the new
+# ones' output at the group's blended heat rate, so combined cycle undercut gas with CCS everywhere. On, from
+# UEPA_NWGSYR: gas_cc is two heat-rate tiers (HEAT_RATE_TIERS' machinery), the plant file's units at their mean heat
+# rate and CCG's maximum capacity factor, and the capacity beyond them at the new AC heat rate and
+# min(CCG's, UEPA_NWGSCF) (DispatchCase.tier_max_cf). Gas with CCS (7,239 Btu/kWh) then sits between new CC (6,226)
+# and the old fleet (about 7,490), as it does in EFD. Off: one gas_cc tier with no cap.
+EPA111_NEW_CC_CF = True
+# With EPA111_NEW_CC_CF: the plant file's combined cycle in N_TIERS heat-rate tiers (heat_rate_tiers) instead of one.
+GAS_CC_OLD_TIERS = True
 
 # Storage: (duration in hours, round-trip efficiency)
 STORAGE = {"battery": (4.0, 0.85), "pumped": (12.0, 0.78)}
@@ -288,6 +309,8 @@ class DispatchCase:
     capture_net: np.ndarray = None      # (25,) coal_ccs capacity that generates per GW of reported capacity (None: 1)
     coal_classes: object = None         # coal_supply.CoalClasses (COAL_BY_CONFIGURATION; None: one coal group per region)
     tiers: dict = None                  # group -> (share (25, T), heat rate (25, T)) (HEAT_RATE_TIERS; None: one tier)
+    tier_max_cf: dict = None            # tiered group -> (25, T) maximum capacity factor of each tier (None: the group's)
+    tier_vom: dict = None               # tiered group -> (25, T) variable O&M of each tier (None: the group's)
 
 
 @dataclass
@@ -567,7 +590,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     codes = technology.ecp_codes()
     hr_new_all = technology.new_heat_rate(year)        # UPHTRT (ucape.f 625-641): UPPHRT0 for every gas type
 
-    heat, vom, oil, avail = {}, {}, {}, {}
+    heat, vom, oil, avail, new_cap, hr_old, vom_old = {}, {}, {}, {}, {}, {}, {}
     part_load = part_load_factor() if COAL_PART_LOAD_HEAT_RATE else np.ones(len(u.heat_rate))
     for g in THERMAL:
         types = types_of[g]
@@ -580,6 +603,9 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         total = np.maximum(cap[g], 1e-9)
         ex_used = np.minimum(existing, total)
         new = np.maximum(total - ex_used, 0.0)
+        new_cap[g] = np.where(cap[g] > 0, new, 0.0)
+        hr_old[g] = np.asarray(hr_ex, dtype=float) * np.ones(NUM_R)
+        vom_old[g] = np.asarray(vom_ex, dtype=float) * np.ones(NUM_R)
         heat[g] = (ex_used * hr_ex + new * hr_new) / total
         if g == "coal":    # the plain coal heat rate, which conversions to cofiring start from
             coal_plain = (ex_used * _weighted(u.heat_rate, u.summer_mw, types, u.region, year, 10000.0) + new * hr_new) / total
@@ -669,10 +695,32 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     if COAL_BY_CONFIGURATION:
         from nems_open.emm import coal_supply
         classes = coal_supply.coal_classes(snapshot, year, heat["coal"], vom["coal"])
-    return DispatchCase(year, cap, heat, vom, price, oil, avail, {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}, credit, mcf,
+    max_cf = {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}
+    tier_max_cf = tier_vom = None
+    if EPA111_NEW_CC_CF:
+        from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
+        epa = ecp.epa111()
+        if epa["switch"] and year >= epa["new_cc_year"]:
+            mcf_cc = avail["gas_cc"][1]
+            total = np.maximum(cap["gas_cc"], 1e-9)
+            new_share = np.clip(new_cap["gas_cc"] / total, 0.0, 1.0)
+            hr_new_cc = float(hr_new_all[codes.index(NEW_TYPE["gas_cc"])])
+            tiers = dict(tiers or {})
+            if GAS_CC_OLD_TIERS:
+                tiers["gas_cc"] = heat_rate_tiers(year, types_of["gas_cc"], cap["gas_cc"], hr_new_cc, heat["gas_cc"])
+            else:
+                tiers["gas_cc"] = (np.stack([1.0 - new_share, new_share], axis=1),
+                                   np.stack([hr_old["gas_cc"], np.full(NUM_R, hr_new_cc)], axis=1))
+            n_old = tiers["gas_cc"][0].shape[1] - 1
+            vom_new_cc = float(params["vom"][codes.index(NEW_TYPE["gas_cc"])])
+            tier_max_cf = {"gas_cc": np.column_stack([np.full((NUM_R, n_old), mcf_cc), np.full(NUM_R, min(mcf_cc, epa["new_cc_cf"]))])}
+            tier_vom = {"gas_cc": np.column_stack([np.repeat(vom_old["gas_cc"][:, None], n_old, axis=1), np.full(NUM_R, vom_new_cc)])}
+            max_cf["gas_cc"] = (1.0 - new_share) * mcf_cc + new_share * min(mcf_cc, epa["new_cc_cf"])
+    return DispatchCase(year, cap, heat, vom, price, oil, avail, max_cf, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
-                        coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers)
+                        coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers,
+                        tier_max_cf=tier_max_cf, tier_vom=tier_vom)
 
 
 def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr: np.ndarray) -> tuple:
@@ -865,6 +913,19 @@ def coal_share(case: DispatchCase, g: str) -> np.ndarray:
     return np.zeros(NUM_R) if cs is None else np.asarray(cs, dtype=float)
 
 
+@lru_cache(maxsize=None)
+def _uppcef(code: str) -> float:
+    r = named_ranges(technology.ECPDATY, "COSTPERF")["UPPCEF"]
+    return float(r[technology.ecp_codes().index(code)])
+
+
+def capture_rate(g: str) -> float:
+    """Share of a capture group's CO2 that is captured (CAPTURE_BY_TYPE)."""
+    if not CAPTURE_BY_TYPE:
+        return CAPTURE_RATE
+    return COAL_RETROFIT_CAPTURE if g == "coal_ccs" else _uppcef(NEW_TYPE[g])
+
+
 def emissions_per_mwh(case: DispatchCase, g: str, oil_share: dict = None) -> np.ndarray:
     """Metric tons of CO2 released per MWh by a thermal group, by region (after capture)."""
     heat = case.heat_rate[g] / 1000.0                       # MMBtu per MWh
@@ -875,7 +936,7 @@ def emissions_per_mwh(case: DispatchCase, g: str, oil_share: dict = None) -> np.
         o = (case.oil_share if oil_share is None else oil_share).get(g, np.zeros(NUM_R))
         c = coal_share(case, g)
         tons = heat * ((1 - o - c) * CO2_PER_TBTU["gas"] + o * oil + c * CO2_PER_TBTU["coal"])
-    return tons * (1.0 - CAPTURE_RATE) if g in CAPTURE_GROUPS else tons
+    return tons * (1.0 - capture_rate(g)) if g in CAPTURE_GROUPS else tons
 
 
 def generating_capacity(case: DispatchCase) -> dict:
@@ -946,7 +1007,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         cost[:, k] = case.heat_rate[g] / 1000.0 * fuel + case.vom[g] + case.carbon_price * emissions_per_mwh(case, g, oil_share)
         if g in CAPTURE_GROUPS:
             # 45Q pays per ton captured; tons per MWh = MMBtu per MWh x tons of CO2 per MMBtu.
-            tons = case.heat_rate[g] / 1000.0 * CO2_PER_TBTU[CAPTURE_GROUPS[g]] * CAPTURE_RATE
+            tons = case.heat_rate[g] / 1000.0 * CO2_PER_TBTU[CAPTURE_GROUPS[g]] * capture_rate(g)
             share = case.credit_share[g] if case.credit_share is not None else 1.0
             cost[:, k] -= case.credit_45q * share * tons
     cost_da = xr.DataArray(cost, coords=[R, TH])
@@ -1062,10 +1123,14 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             TI = pd.Index(np.arange(share.shape[1]), name="tier")
             hr_g = np.asarray(case.heat_rate[g], dtype=float)
             per_mmbtu = np.divide(cost[:, k] - case.vom[g], hr_g / 1000.0, out=np.zeros(NUM_R), where=hr_g > 0)  # fuel + carbon
-            ct = case.vom[g][:, None] + hr_t / 1000.0 * per_mmbtu[:, None]                                       # (25, T)
+            vom_t = case.tier_vom[g] if case.tier_vom is not None and g in case.tier_vom else case.vom[g][:, None]
+            ct = vom_t + hr_t / 1000.0 * per_mmbtu[:, None]                                                      # (25, T)
             up = upper.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
             gt = m.add_variables(lower=0, upper=up.transpose("region", "tier", "day", "hour"), name=f"tier_gen_{g}")
             m.add_constraints(g_th.sel(group=g, drop=True) - gt.sum("tier") == 0, name=f"tiers_{g}")
+            if case.tier_max_cf is not None and g in case.tier_max_cf:
+                lim = capg[g][:, None] * share * case.tier_max_cf[g] * HOURS_PER_YEAR      # GWh
+                m.add_constraints((gt * w).sum(["day", "hour"]) <= xr.DataArray(lim, coords=[R, TI]), name=f"tier_energy_{g}")
             objective = objective - (g_th.sel(group=g, drop=True) * cost_da.sel(group=g, drop=True) * w).sum()                 + (gt * xr.DataArray(ct, coords=[R, TI]) * w).sum()
             tier_vars[g] = (gt, TI, share, hr_t)
     spin = spin_row = None
@@ -1252,7 +1317,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     co2 = sum(fuel[k] * CO2_PER_TBTU[k] for k in CO2_PER_TBTU)
     # Capture groups release only (1 - rate) of their CO2.
     for g, fuel_key in CAPTURE_GROUPS.items():
-        co2 = co2 - CAPTURE_RATE * gen[g] * case.heat_rate[g] * 1e-3 * CO2_PER_TBTU[fuel_key]
+        co2 = co2 - capture_rate(g) * gen[g] * case.heat_rate[g] * 1e-3 * CO2_PER_TBTU[fuel_key]
     res.co2_mt = co2
     res.price = bal.dual.transpose("region", "day", "hour").values / np.maximum(wd, 1e-9)
     if spin_row is not None and modes_on:

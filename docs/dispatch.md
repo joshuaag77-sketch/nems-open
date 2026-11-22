@@ -325,7 +325,7 @@ Pinned by `tests/test_emm_demand.py` (`test_net_load_matches_fleet_generation`, 
 | Old reference (UTCO2) | 1,422 (-7.4%) | 1,094 (-5.3%) | 609 (-6.8%) | 817 (+0.8%) |
 | New reference (UTCO2 less CHP) | 1,348 (-2.4%) | 1,023 (+1.3%) | 548 (+3.7%) | 755 (+9.1%) |
 
-The old reference made 2050 look right. On the fleet's footing it is 9% high, under the 10% tolerance by a point. Gas fuel is +0.6% in 2050 and coal is nearly gone, so the excess is likely capture: the LP takes a flat 90% at CCS plants (not checked).
+The old reference made 2050 look right. On the fleet's footing it is 9% high, under the 10% tolerance by a point. Gas fuel is +0.6% in 2050 and coal is nearly gone, so the excess is likely capture: the LP takes a flat 90% at CCS plants (checked and fixed below, "Power CO2 after 2040").
 
 National energy CO2, Mt, ours / EIA. Single-year `run_model` with `elec="lp"` and the stand-in elsewhere, so the other four sectors sit on EIA's:
 
@@ -340,6 +340,41 @@ The coupled 2050 power CO2 is now 7% high, where it was 11% low; `test_run_model
 **Still open.** Alaska and Hawaii (about 13-15 Mt) are in EMELC and not in the loop's power CO2 or fuel. The CHP oil (distillate and residual) is priced at residual's factor (under 0.1 Mt).
 
 Pinned by `tests/test_emm_demand.py::test_power_co2_reference_counts_chp_once`.
+
+## Power CO2 after 2040: capture rates and EPA 111's new-CC cap (branch ccs-co2)
+**The question.** Fleet CO2 ran -2.4% / +1.3% / +3.7% / +9.1% against EIA in 2025 / 2030 / 2040 / 2050. Gas fuel was within 1% in 2050, so the excess came from how much CO2 was captured.
+
+**What EIA does.** EFD releases (1 - ECSEQS) of a capturing unit's CO2 (uefd.f 3122-3232) and reports the rest to CCATS (SUP_EMM_45Q / SUP_EMM_NTC). ECSEQS is 0.90 for a coal retrofit (udat.f 9262) and UPPCEF of the ECP type for a new plant: 0.95 for gas with CCS (ecpdaty.xlsx COSTPERF). After its 45Q years a unit may run at UPPCEF_MIN, but EPA 111 is on in cb2026 and sets UPPCEF_MIN = UPPCEF for existing coal and new gas (udat.f 5175-5183). So capture never switches off. EIA captures 26 / 204 / 101 Mt in 2030 / 2040 / 2050; all of 2050's is gas with CCS and none of it earns 45Q.
+
+EPA 111 also holds new combined cycle without CCS to a 0.4 capacity factor from 2029 (udat.f 6444, W_CF for ECP types AC and CC with WVIN > 1). EIA's new CC runs at 0.38 in 2050 (UGENAC / UCAPAC). With 45Q over, gas with CCS (7,239 Btu/kWh) sits between new CC (6,226) and the old fleet (7,050 to 8,100 by tier), so EFD runs it at 0.6 (UGENCS 277 TWh on 52 GW).
+
+**What we did.** A flat 90% capture, and one gas_cc group at its blended heat rate (6,957 in 2050) with no cap. That group undercut gas with CCS everywhere once 45Q ended: 92 TWh in 2050 against EIA's 277.
+
+**Fix** (`dispatch.py`, three switches, all on):
+- `CAPTURE_BY_TYPE`: `capture_rate(g)` is 0.90 for coal_ccs and UPPCEF(CS) = 0.95 for gas_ccs. The capacity LP's 45Q value uses it too.
+- `EPA111_NEW_CC_CF`: from UEPA_NWGSYR gas_cc is tiered (HEAT_RATE_TIERS' machinery). Capacity beyond the plant file is a tier at the AC heat rate and variable O&M, held to min(CCG's, 0.4) by a tier energy row (`DispatchCase.tier_max_cf`, `tier_vom`).
+- `GAS_CC_OLD_TIERS`: the plant file's combined cycle is cut into N_TIERS heat-rate tiers (`heat_rate_tiers`). With one old tier at its mean, gas with CCS still lost on a near tie region by region (0.04 or 0.8, never EIA's 0.4-0.6) and 2050 stayed +5%.
+
+| 24-hour days | 2040 before | 2040 after | 2040 EIA | 2050 before | 2050 after | 2050 EIA |
+|---|---|---|---|---|---|---|
+| Fleet CO2, Mt | 568 (+3.7%) | 552 (+0.8%) | 548 | 824 (+9.1%) | 750 (-0.7%) | 755 |
+| Coal with CCS, TWh | 65.6 | 65.6 | 63.1 | 0 | 0 | 0 |
+| Gas CC, TWh | 1,379 | 1,373 | | 2,184 | 1,960 | |
+| Gas CC with CCS, TWh | 393 | 394 | 365 | 92 | 299 | 277 |
+| Turbines, TWh | 45 | 52 | | 33 | 46 | |
+| Steam, TWh | 2.5 | 2.3 | | 7.8 | 11.6 | |
+| Coal fuel, TBtu | 932 | 932 | 861 | 2 | 2 | 19 |
+| Gas fuel, TBtu | 13,061 | 12,905 | 12,737 | 16,087 | 16,149 | 16,211 |
+
+All four years, fleet CO2 vs EIA: -2.4% / +1.7% / +0.8% / -0.7% (was -2.4% / +1.3% / +3.7% / +9.1%). 2025 has no CCS and no cap, so it does not move.
+
+Emission factors are not the driver: gas is 53.07 kg/MMBtu on both sides, and coal is nearly gone by 2050.
+
+**Cost.** gas_cc's tiers make the LP larger: a 2050 solve went from about 45 to about 350 seconds on a loaded machine. The coupled loop solves 3-hour blocks, so it pays less.
+
+**Still open.** The tier split comes from the restart's capacity and the plant file. When the capacity LP supplies the fleet (couple.py), the new-CC share is still the reference run's. 2040 coal fuel is still 8% over (coal_ccs runs a little above EIA's sq). `tests/test_run_model_lp.py` was not rerun on this branch.
+
+Pinned by `tests/test_emm_dispatch.py::test_capture_rates_and_epa111_new_cc`.
 
 ## Coal by configuration: EFD's coal LP (branch coal-supply-efd)
 **What holds the West's coal.** EFD buys every coal configuration's coal (ECP type B1..HC) in every coal demand region in its own coal LP, solved with the dispatch (uefd.f ED$COL 16433-17460, ED$BTU 7700-7790): supply rows per curve (11 steps of XCL_QECP x the XCL_STEPS widths at XCL_PECP, then a 12th at max(3 x p11, 9.999) 1987$/MMBtu, after the curve's fixed other demand XCL_OTHER), transport columns per route at the first-tier rate plus MATS activated carbon, a demand row CL<crg><type> per configuration, and two caps per configuration: sub-bituminous <= EFD_SB_DVLIM and lignite <= EFD_LG_DVLIM (escape at 9.9). The CMM writes the caps from EFD's own burn by unit, EMM_CL_BTUS (uefd.f 2993; coal.ams 10536-10580: burn x the plant's sub-bituminous or lignite share + 0.05). So in a converged run each western configuration burns cheap Powder River or lignite coal up to what it burned, and pays for anything more at the next source: bituminous from far away (0.3-0.5 1987$/MMBtu more in WS, C2, CU, ZN), the 9.9 escape where no bituminous route exists (coal regions C1 and MT), or 9.999 for Utah and Colorado bituminous, whose 2030 base production (11.8 and 33 TBtu) all goes to other users. Evidence (scratchpad `coalsup/`: cost.py, samp.py):

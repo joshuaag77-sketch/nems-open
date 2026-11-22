@@ -411,3 +411,28 @@ def test_efd_mode_shapes_follow_opbsld():
     assert o[0, 2] == pytest.approx(max(0.9 * dispatch.FOS_CF_EFD[0][2], 0.2))
     modes, (o, j, u) = s["gas_ct"]
     assert modes == (1, 2, 3) and o[0, 2] == pytest.approx(0.9 * 50 / 70)
+
+
+def test_capture_rates_and_epa111_new_cc(snapshot):
+    """EFD captures ECSEQS of a CCS unit's CO2: 0.90 for a coal retrofit (udat.f 9262) and UPPCEF of the ECP type for
+    a new plant, 0.95 for gas with CCS (ecpdaty.xlsx COSTPERF). EPA 111 (on in cb2026) keeps UPPCEF_MIN = UPPCEF and
+    holds new combined cycle to 0.4 from 2029 (udat.f 6444): gas_cc is then the plant file's heat-rate tiers and a new
+    tier at the AC heat rate, capped. EIA's own new CC (UGENAC / UCAPAC) runs at 0.38 in 2050, so the cap binds."""
+    assert dispatch.capture_rate("coal_ccs") == pytest.approx(0.90)
+    assert dispatch.capture_rate("gas_ccs") == pytest.approx(0.95)
+    y = 2050 - 1990
+    cf_ac = float(snapshot["UDATOUT/ugenac"][:dispatch.NUM_R, y].sum()) / float(dispatch._ucap(snapshot, ("ac",), y).sum()) / 8.76
+    assert 0.35 < cf_ac <= 0.40
+    if not dispatch.EPA111_NEW_CC_CF:
+        return
+    assert dispatch.build_case(snapshot, 2028).tier_max_cf is None
+    c = dispatch.build_case(snapshot, 2050)
+    share, hr = c.tiers["gas_cc"]
+    assert np.allclose(share.sum(axis=1), 1.0)
+    assert np.allclose((share * hr).sum(axis=1), c.heat_rate["gas_cc"])
+    assert np.allclose(c.tier_max_cf["gas_cc"][:, -1], 0.4)                # the last tier is ECP's new CC
+    assert (c.tier_max_cf["gas_cc"][:, :-1] > 0.8).all()
+    w = c.capacity["gas_cc"]
+    tiers = np.average(hr, axis=0, weights=w)
+    old = np.average(tiers[:-1], weights=np.average(share, axis=0, weights=w)[:-1])
+    assert tiers[-1] < np.average(c.heat_rate["gas_ccs"], weights=w) < old    # CCS sits between new and old CC, as in EFD
