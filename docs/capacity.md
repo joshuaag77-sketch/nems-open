@@ -652,3 +652,5 @@ An independent Codex review (docs/reviews/codex-emm-2026-11-22.txt) listed 17 po
 
 **Finding 12, false.** The review said the 1.05 conversion penalty should sit on the plain coal heat rate, as dispatch uses. That is right for EFD, not for ECP. ECP's conversion column burns gas at ULHTRT_ECP x (1 + UCL_CL_NG_HR_PEN) (ecp.ams EP$COAL,27), and ULHTRT_ECP is WHRATEA x Target_EFF / Max_EFF (udat.f 7280-7285): the part-load heat rate the planner's coal already carries. uecp.f 28113 is the post-solve record update for EFD, which is why dispatch uses `coal_plain`. No code change; a comment at the line now says this.
 
+**Finding 16, true** (`GAS_CURVE_LAST_BOUNDED`, on). EP$FLCRV,7 (uecp.f 6185-6200; ecp.ams ccalc_cSUNGX_UBOUND) bounds every step after the first at QSIZE, the last one included. The port had left the last step open. Now the sector can burn at most QBASE + 20 x QSIZE, as in ECP; no other column supplies row FUELNGX, so a burn past that would make ECP infeasible too.
+

@@ -273,6 +273,10 @@ ECP_STORAGE_SR = True
 # EIA's (2040: 362 -> 414 GW against 404), other types within 1% (docs/capacity.md).
 ECP_GAS_CURVE = True
 GAS_CURVE_STEPS, GAS_CURVE_SIZE = 20, 0.02          # composite_2030 UPCRVSTP, UPCRVSIZ
+# ECP bounds every step after the first at QSIZE, the last one too (uecp.f 6185-6200 EP$FLCRV,7; ecp.ams
+# ccalc_cSUNGX_UBOUND), so the sector can burn at most QBASE + UPCRVSTP x QSIZE (40% over QBASE). On: so here. Off: the
+# last step is unbounded.
+GAS_CURVE_LAST_BOUNDED = True
 
 
 def ngmm_gas_price(snapshot, year: int, extra_tbtu) -> np.ndarray:
@@ -295,7 +299,7 @@ def ngmm_gas_price(snapshot, year: int, extra_tbtu) -> np.ndarray:
 
 def gas_curve_steps(snapshot, year: int) -> tuple:
     """ECP's power-sector gas steps for `year`: (upper bound TBtu of each of the 2 x GAS_CURVE_STEPS + 1 steps, the
-    last unbounded; the price ratio PDEL of each). Step 1 holds everything up to 20 steps below QBASE; step k > 1 is
+    last bounded like the others with GAS_CURVE_LAST_BOUNDED; the price ratio PDEL of each). Step 1 holds everything up to 20 steps below QBASE; step k > 1 is
     the k - 21st 2% step away from it (step 21 ends at QBASE)."""
     from . import dispatch_report
     qbase = dispatch_report.reference(snapshot, year)["fuel_gas"]
@@ -306,7 +310,8 @@ def gas_curve_steps(snapshot, year: int) -> tuple:
     ratio = ngmm_gas_price(snapshot, year, dev) / ngmm_gas_price(snapshot, year, 0.0)
     bound = np.full(n, w)
     bound[0] = qbase - GAS_CURVE_STEPS * w
-    bound[-1] = np.inf
+    if not GAS_CURVE_LAST_BOUNDED:
+        bound[-1] = np.inf
     return bound, ratio
 
 

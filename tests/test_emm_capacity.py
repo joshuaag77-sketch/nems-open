@@ -690,7 +690,7 @@ def test_gas_curve_steps_match_ecp_2031():
     (22) and 1.1243 (26), and each 2% step is 243.6 TBtu (UPCRVSIZ x QNGEL). On by default."""
     s = Snapshot()
     bound, ratio = capacity.gas_curve_steps(s, 2031)
-    assert len(bound) == 41 and np.isinf(bound[-1])
+    assert len(bound) == 41 and bound[-1] == pytest.approx(bound[1])       # EP$FLCRV,7: every step after the first is QSIZE
     assert np.isclose(bound[1], 243.6, atol=0.5)
     assert np.allclose(ratio[[0, 19, 20, 21, 25]], [0.754, 0.9774, 1.0, 1.0249, 1.1243], atol=1.5e-3)
     assert np.all(np.diff(ratio) > 0)
