@@ -1183,7 +1183,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         objective = objective + (steps * xr.DataArray(cl.step_price * 1000.0, coords=[C, S])).sum() \
             + (tr * xr.DataArray(cl.route_cost * 1000.0, coords=[RT])).sum()
         for rank, cap, name in ((2, cl.sub_cap, "sub"), (3, cl.lig_cap, "lig")):
-            idx = np.flatnonzero(cl.route_rank == rank)
+            idx = np.flatnonzero((cl.route_rank == rank) & np.isfinite(cap[cl.route_class]))     # inf: no row in EFD
             if not len(idx):
                 continue
             ks = np.unique(cl.route_class[idx])

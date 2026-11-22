@@ -50,6 +50,11 @@ CAP_FLOOR = 0.05           # the CMM adds 0.05 TBtu to every cap
 ROUTE_MAX = 800.0          # TOT_RATE1 at or above this is no route
 BASE_STEP = 5              # XCL_STEPS index of 0.0: the curve's base quantity, for the reference price
 MATS_MEF_LIMIT = 0.101     # as coal.electric.mats_adder: no-ACI burning allowed only at or under this factor
+# EFD puts EFD_SB_DVLIM and EFD_LG_DVLIM on the rows as they are (uefd.f 16738-16740, 16765-16767), the CMM's 0.05 TBtu
+# allowance included (coal.ams 10540-10547), and writes no row where the value is negative. The coal group gets its
+# part of the burn under the cap. On: that part of the cap less the allowance, plus the whole allowance; no row where
+# EIA has none. Off: the part of the cap less the allowance, a negative value read as 0 (Codex finding 13).
+KEEP_CAP_ALLOWANCE = True
 CL_CODES = "NE YP S1 S2 GF OH EN KT AM C1 C2 WS MT CU ZN PC".split()
 
 
@@ -63,7 +68,7 @@ class CoalClasses:
     heat_rate: np.ndarray      # (P,) Btu/kWh
     vom: np.ndarray            # (P,) 1987$/MWh
     classes: list              # K (coal region code, ECP type)
-    sub_cap: np.ndarray        # (K,) TBtu, the coal group's part of EFD_SB_DVLIM (less the CMM's 0.05)
+    sub_cap: np.ndarray        # (K,) TBtu, the coal group's part of EFD_SB_DVLIM (KEEP_CAP_ALLOWANCE; inf: no row)
     lig_cap: np.ndarray        # (K,) TBtu, of EFD_LG_DVLIM
     curves: np.ndarray         # (C,) curve numbers 1..14
     step_qty: np.ndarray       # (C, 12) TBtu, inf for the 12th step
@@ -157,8 +162,10 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
     y = year - 1990
     curves, crank, qty, sprice, other = supply_curves(snapshot, year)
     rc = route_costs(snapshot, year)
-    sb = np.maximum(_arr(snapshot, "USO2GRP/efd_sb_dvlim")[:, :NUTSEC, y] - CAP_FLOOR, 0.0)
-    lg = np.maximum(_arr(snapshot, "USO2GRP/efd_lg_dvlim")[:, :NUTSEC, y] - CAP_FLOOR, 0.0)
+    sb_raw = _arr(snapshot, "USO2GRP/efd_sb_dvlim")[:, :NUTSEC, y]
+    lg_raw = _arr(snapshot, "USO2GRP/efd_lg_dvlim")[:, :NUTSEC, y]
+    sb = np.maximum(sb_raw - CAP_FLOOR, 0.0)
+    lg = np.maximum(lg_raw - CAP_FLOOR, 0.0)
     codes = technology.ecp_codes()
     names = unit_names(snapshot)
     n = int(np.asarray(snapshot["COALEMM/num_cmm_units"]))
@@ -198,6 +205,9 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
     group_burn = burn.sum(axis=0)[cls_c, cls_t]
     part = np.where(burn_all[cls_c, cls_t] > 0, group_burn / np.maximum(burn_all[cls_c, cls_t], 1e-12), 1.0)
     sub_cap, lig_cap = sb[cls_c, cls_t] * part, lg[cls_c, cls_t] * part
+    if KEEP_CAP_ALLOWANCE:
+        sub_cap = np.where(sb_raw[cls_c, cls_t] < 0, np.inf, sub_cap + np.clip(sb_raw[cls_c, cls_t], 0.0, CAP_FLOOR))
+        lig_cap = np.where(lg_raw[cls_c, cls_t] < 0, np.inf, lig_cap + np.clip(lg_raw[cls_c, cls_t], 0.0, CAP_FLOOR))
 
     rr, cc, tt = np.nonzero((mw > 0) & (kid >= 0)[None])
     total = np.bincount(rr, weights=mw[rr, cc, tt], minlength=NUM_R)
