@@ -96,6 +96,16 @@ COAL_RETROFIT_CAPTURE = 0.90
 EPA111_NEW_CC_CF = True
 # With EPA111_NEW_CC_CF: the plant file's combined cycle in N_TIERS heat-rate tiers (heat_rate_tiers) instead of one.
 GAS_CC_OLD_TIERS = True
+# EFD holds the capped units to UEPA_NWGSCF through their availability, not an energy row. udat.f 6446 lowers the
+# unit's W_CF; W_CFA (7023) and so AVGCF (8852) follow; for a new unit MAXCF = AVGCF (10189-10193); and 10194-10224
+# then moves its FOR and PMR by one factor so that (1 - FOR)(1 - PMR) = MAXCF (MXLFR 0, udat.f 5240). For the new
+# combined cycle at 0.4 that is FOR 0.37 and PMR 0.36, against CCG's 0.074 and 0.060 (pltdata's 0.055 and 0.041
+# moved to its 0.87 maximum). Those rates are the unit's hourly ceiling and, through ED$PM, its maintenance, and the
+# forced outage share is not reserve. On (with EPA111_NEW_CC_CF): the new-CC tier's hourly ceiling and committable capacity
+# use those rates; its energy row stays (it no longer binds). Off: the tier has the group's rates and only the energy
+# row caps it (Codex finding 11).
+EPA111_DERATE = True
+
 # The dispatched fleet is ownership classes 1 to 3. util.f's UCAP tally (7465-7510 for combined cycle, the same for
 # every type) puts IOWN 1-2 in UCAP*U, 3 in UCAP*N and 4, the electric power sector's CHP, in UCAP*C and CGNTCAP. The
 # dispatch takes its capacity from *U and *N and the CHP units' output off the load (demand.nontraditional_cogen_twh),
@@ -331,6 +341,7 @@ class DispatchCase:
     tier_max_cf: dict = None            # tiered group -> (25, T) maximum capacity factor of each tier (None: the group's)
     tier_vom: dict = None               # tiered group -> (25, T) variable O&M of each tier (None: the group's)
     gross_ratio: np.ndarray = None      # (25,) LDSM's load before outside supply over net_load_twh (None: 1)
+    tier_outage: dict = None            # tiered group -> (forced outage, planned maintenance), each (25, T) (None: the group's)
 
 
 @dataclass
@@ -733,7 +744,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         from nems_open.emm import coal_supply
         classes = coal_supply.coal_classes(snapshot, year, heat["coal"], vom["coal"])
     max_cf = {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}
-    tier_max_cf = tier_vom = None
+    tier_max_cf = tier_vom = tier_outage = None
     if EPA111_NEW_CC_CF:
         from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
         epa = ecp.epa111()
@@ -753,11 +764,16 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
             tier_max_cf = {"gas_cc": np.column_stack([np.full((NUM_R, n_old), mcf_cc), np.full(NUM_R, min(mcf_cc, epa["new_cc_cf"]))])}
             tier_vom = {"gas_cc": np.column_stack([np.repeat(vom_old["gas_cc"][:, None], n_old, axis=1), np.full(NUM_R, vom_new_cc)])}
             max_cf["gas_cc"] = (1.0 - new_share) * mcf_cc + new_share * min(mcf_cc, epa["new_cc_cf"])
+            if EPA111_DERATE:
+                f, p = efd_outage_rates()["gas_cc"]
+                f_new, p_new = capped_outage_rates(f, p, min(mcf_cc, epa["new_cc_cf"]))
+                tier_outage = {"gas_cc": (np.column_stack([np.full((NUM_R, n_old), f), np.full(NUM_R, f_new)]),
+                                          np.column_stack([np.full((NUM_R, n_old), p), np.full(NUM_R, p_new)]))}
     return DispatchCase(year, cap, heat, vom, price, oil, avail, max_cf, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
                         coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers,
-                        tier_max_cf=tier_max_cf, tier_vom=tier_vom, gross_ratio=gross)
+                        tier_max_cf=tier_max_cf, tier_vom=tier_vom, gross_ratio=gross, tier_outage=tier_outage)
 
 
 def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr: np.ndarray) -> tuple:
@@ -925,6 +941,16 @@ def efd_outage_rates() -> dict:
         k = np.sqrt(mcf / ((1.0 - f) * (1.0 - p)))
         out[g] = (1.0 - k * (1.0 - f), 1.0 - k * (1.0 - p)) if k < 1.0 else (f, p)
     return out
+
+
+def capped_outage_rates(f: float, p: float, max_cf: float) -> tuple:
+    """Forced outage and planned maintenance of a unit whose maximum capacity factor is held to `max_cf` (EPA111_DERATE):
+    udat.f 10194-10224 with MXLFR 0. The unit's FOR and PMR (f, p, already consistent with the type's WMXCP) move by
+    one factor so that (1 - FOR)(1 - PMR) = max_cf; the load-following reduction stays 0."""
+    k = np.sqrt(max_cf / ((1.0 - f) * (1.0 - p)))
+    if k >= 1.0:
+        return f, p
+    return 1.0 - k * (1.0 - f), 1.0 - k * (1.0 - p)
 
 
 def maintenance_season_share(load_gw: np.ndarray, weights: np.ndarray) -> np.ndarray:
@@ -1158,7 +1184,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             grp = xr.DataArray(cl.route_class[idx], coords=[pd.Index(idx, name="coal_route")], name="coal_class")
             m.add_constraints(tr.sel(coal_route=idx).groupby(grp).sum() - dx <= xr.DataArray(cap[ks], coords=[K]), name=f"coal_{name}_cap")
             objective = objective + (dx * (coal_supply.ESCAPE * 1000.0)).sum()
-    tier_vars = {}
+    tier_vars, tier_com = {}, {}
     if case.tiers is not None:
         for g, (share, hr_t) in case.tiers.items():
             k = THERMAL.index(g)
@@ -1168,6 +1194,22 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             vom_t = case.tier_vom[g] if case.tier_vom is not None and g in case.tier_vom else case.vom[g][:, None]
             ct = vom_t + hr_t / 1000.0 * per_mmbtu[:, None]                                                      # (25, T)
             up = upper.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
+            com_fac = None
+            if case.tier_outage is not None and g in case.tier_outage:
+                # a tier with its own FOR and PMR (EPA111_DERATE): ceiling and committable capacity relative to the group's
+                f_t, p_t = case.tier_outage[g]
+                f_g = rates[g][0] if EFD_DERATE else case.avail[g][0]
+                if EFD_DERATE:
+                    p_g = rates[g][1]
+                    s_ = season[:, None, :, None]                                                     # (25, 1, 36, 1)
+                    keep_g = np.clip(1.0 - p_g * s_, 1e-9, 1.0)
+                    keep_t = np.clip(1.0 - p_t[:, :, None, None] * s_, 0.0, 1.0)
+                    com_fac = keep_t / keep_g * np.ones(nh)
+                else:
+                    com_fac = np.ones((NUM_R, share.shape[1], 36, nh))
+                fac = com_fac * ((1.0 - f_t) / (1.0 - f_g))[:, :, None, None]
+                up = up * xr.DataArray(fac, coords=[R, TI, D, H])
+                com_fac = xr.DataArray(com_fac, coords=[R, TI, D, H])
             gt = m.add_variables(lower=0, upper=up.transpose("region", "tier", "day", "hour"), name=f"tier_gen_{g}")
             m.add_constraints(g_th.sel(group=g, drop=True) - gt.sum("tier") == 0, name=f"tiers_{g}")
             if case.tier_max_cf is not None and g in case.tier_max_cf:
@@ -1175,6 +1217,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
                 m.add_constraints((gt * w).sum(["day", "hour"]) <= xr.DataArray(lim, coords=[R, TI]), name=f"tier_energy_{g}")
             objective = objective - (g_th.sel(group=g, drop=True) * cost_da.sel(group=g, drop=True) * w).sum()                 + (gt * xr.DataArray(ct, coords=[R, TI]) * w).sum()
             tier_vars[g] = (gt, TI, share, hr_t)
+            tier_com[g] = com_fac
     spin = spin_row = None
     modes_on = EFD_SPIN_RESERVE and EFD_DISPATCH_MODES and EFD_DERATE
     if modes_on:
@@ -1268,6 +1311,8 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             # each tier carries reserve only on its own running capacity
             st = m.add_variables(lower=0, coords=[R, TI, D, H], name=f"tier_spin_{g}")
             com_g = committable.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
+            if tier_com.get(g) is not None:
+                com_g = com_g * tier_com[g]
             m.add_constraints(st + gt - com_g <= 0, name=f"tier_spin_headroom_{g}")
             m.add_constraints(st - gt * float(inv.sel(group=g)) <= 0, name=f"tier_spin_committed_{g}")
             m.add_constraints(spin.sel(group=g, drop=True) - st.sum("tier") <= 0, name=f"tier_spin_{g}")
