@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nems_open.emm import dispatch, history
+from nems_open.emm import demand, dispatch, history
 from nems_open.snapshot import Snapshot
 
 YEARS = (2025, 2030, 2040, 2050)
@@ -39,8 +39,19 @@ def reference(snapshot, year: int) -> dict:
         # Oil in the 25 regions EFD dispatches. QBLK/QDSEL + QRSEL also holds Alaska and Hawaii (about 45% of it
         # in 2025), which EFD does not dispatch.
         "fuel_oil": ugn("ufldsnr", "uflrlnr"),
-        "co2": float(snapshot["UEFDOUT/utco2"][27, y]),
+        "co2": fleet_co2(snapshot, year),
     }
+
+
+def fleet_co2(snapshot, year: int, chp: bool = False) -> float:
+    """EIA's power CO2 for the 25 regions (UEFDOUT/UTCO2, Mt), on the dispatched fleet's footing by default.
+
+    UTCO2 sums ownership classes 1 to 4, so it holds the electric power sector's CHP units (class 4, about 60-75 Mt),
+    which the fleet does not hold. They come off, as their fuel does above. chp=True keeps them, for comparing
+    with a total that adds them back (the coupled loop, couple.py). Alaska and Hawaii are in EMELC, not UTCO2."""
+    y = year - history.FIRST_YEAR
+    total = float(snapshot["UEFDOUT/utco2"][27, y])
+    return total if chp else total - demand.nontraditional_cogen_co2_mt(snapshot, year)
 
 
 def model(result: dispatch.DispatchResult) -> dict:

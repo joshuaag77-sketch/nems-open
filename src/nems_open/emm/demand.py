@@ -88,6 +88,18 @@ def nontraditional_cogen_fuel_tbtu(snapshot, year: int) -> dict:
     return {"coal": float(q[0]), "oil": float(q[1]), "gas": float(q[2])}
 
 
+def nontraditional_cogen_co2_mt(snapshot, year: int) -> float:
+    """CO2 from the nontraditional cogeneration units' fuel (COGEN/CGNTQ), million metric tons, 25 regions.
+
+    EIA counts it in the power sector: EFD sums UTCARC and UTCO2N over ownership classes 1 to 4 (uefd.f 3122-3232),
+    so EMISSION/EMELC and UEFDOUT/UTCO2 hold it. The dispatched fleet does not burn this fuel. Oil is priced at
+    residual's factor, as the loop books it in QRSEL."""
+    from nems_open.emm import dispatch
+    nt = nontraditional_cogen_fuel_tbtu(snapshot, year)
+    return (nt["coal"] * dispatch.CO2_PER_TBTU["coal"] + nt["gas"] * dispatch.CO2_PER_TBTU["gas"]
+            + nt["oil"] * dispatch.CO2_PER_TBTU["residual"])
+
+
 def international_net_imports_twh(snapshot, year: int) -> np.ndarray:
     """Net imports from Canada and Mexico by EMM region, TWh (firm plus economy, minus exports)."""
     y = year - history.FIRST_YEAR

@@ -91,3 +91,18 @@ def test_nontraditional_cogen_fuel_is_part_of_power_sector_fuel(snapshot):
     qngel = float(snapshot["QBLK/qngel"][10, 2030 - 1990])
     assert 0.08 < nt["gas"] / qngel < 0.11
     assert nt["oil"] < 30.0
+
+
+@pytest.mark.parametrize("year", YEARS)
+def test_power_co2_reference_counts_chp_once(snapshot, year):
+    """EIA's power CO2 holds the CHP units (UTCARC and UTCO2N sum ownership classes 1 to 4). EMELC is UTCO2 plus
+    Alaska and Hawaii, so both carry them. The fleet check takes them off UTCO2; the loop adds the same CO2 back."""
+    from nems_open.emm import dispatch_report as rep
+    j = year - 1990
+    chp = demand.nontraditional_cogen_co2_mt(snapshot, year)
+    utco2 = float(snapshot["UEFDOUT/utco2"][27, j])
+    emelc = float(snapshot["EMISSION/emelc"][10, 0, j]) * 44.0 / 12.0
+    assert 55.0 < chp < 80.0
+    assert 0.0 < emelc - utco2 < 25.0          # Alaska and Hawaii only: no CHP-sized hole between the two
+    assert rep.fleet_co2(snapshot, year, chp=True) == pytest.approx(utco2)
+    assert rep.fleet_co2(snapshot, year) == pytest.approx(utco2 - chp)

@@ -301,13 +301,45 @@ The new load is within 0.2% of the fleet generation EIA reports in 2025-2040 (`t
 | Coal fuel, trillion Btu | 8,336 / 8,168 / 7,513 | 5,260 / 5,192 / 4,962 | 5,028 / 4,974 / 4,531 | 1,702 / 1,669 / 1,491 | 933 / 932 / 861 |
 | Seconds a year | 8.3 / 7.9 | 7.8 / 7.3 | 7.9 / 7.4 | 7.6 / 7.2 | 7.4 / 7.0 |
 
-The load cut comes off gas: it was the marginal fuel. Coal moves 1-2% (coal units run at their ceiling), so coal's overrun (+8% in 2030, +13% in 2031) is the configuration costs above, not load. 2025 gas goes from +0.4% to -6.1%: 2025 renewables run 3% over EIA (the benchmark years, section "What is still wrong") and had been hidden by the extra load. Turbines fall further from EIA's 65-90 TWh (about 10 of which are CHP turbines). With 24-hour days (the tests) gas is -6.1% / -1.0% / +2.3% / +0.6% in 2025 / 2030 / 2040 / 2050, and the 2025 coal fuel known miss is gone; CO2 is -3% / -3% / -7% / +1% (utco2 likely holds the CHP units' emissions, about 60 Mt, which the fleet no longer has; not checked).
+The load cut comes off gas: it was the marginal fuel. Coal moves 1-2% (coal units run at their ceiling), so coal's overrun (+8% in 2030, +13% in 2031) is the configuration costs above, not load. 2025 gas goes from +0.4% to -6.1%: 2025 renewables run 3% over EIA (the benchmark years, section "What is still wrong") and had been hidden by the extra load. Turbines fall further from EIA's 65-90 TWh (about 10 of which are CHP turbines). With 24-hour days (the tests) gas is -6.1% / -1.0% / +2.3% / +0.6% in 2025 / 2030 / 2040 / 2050, and the 2025 coal fuel known miss is gone; CO2 is -2.4% / +1.3% / +3.7% / +9.1% (section "Power CO2 and the CHP units" below).
 
 The capacity LP takes its load from `build_case`, so it moves too. Planner chain 2027-2040 from EIA's 2026 fleet, 2040 GW before / after / EIA: CC 435 / 428 / 431, CT 238 / 246 / 267, batteries 108 / 108 / 103, solar 347 / 344 / 323, wind 370 / 362 / 404, coal 14 / 15 / 16, steam (with gas_conv) 56 / 56 / 52. Conversions 2028-2029 and the 2032 coal retirements barely move (32.1 + 1.5 GW; 67.0 / 68.4). With the new load the 2032 horizon solve stalled in HiGHS's dual simplex for over an hour at `user_objective_scale` -2; at -3 (`capacity.HORIZON_SOLVER_OPTIONS`) it takes 139 s. 889 s for the chain against 551, with the reference run on the machine.
 
-**Still open.** Coal (+8% in 2030, the configuration costs); turbines; 2025 renewables; the CO2 reference's CHP emissions; the residential and commercial own-use gross-up (LDSM's load holds that own use times the loss factor, about 7 TWh in 2030), not ported.
+**Still open.** Coal (+8% in 2030, the configuration costs); turbines; 2025 renewables; the residential and commercial own-use gross-up (LDSM's load holds that own use times the loss factor, about 7 TWh in 2030), not ported.
 
 Pinned by `tests/test_emm_demand.py` (`test_net_load_matches_fleet_generation`, `test_total_generation_holds_distributed_pv`, `test_sales_follow_ldsm_mapping`, `test_load_takes_off_nontraditional_cogen_and_ldsm_losses`, `test_nontraditional_cogen_fuel_is_part_of_power_sector_fuel`). The 2025 coal fuel known miss is gone; the turbine floors in `test_turbines_carry_spinning_reserve` are 10 and 25 TWh.
+
+## Power CO2 and the CHP units
+
+**The question.** The load now leaves out the electric power sector's CHP units (class 4). Does the CO2 we compare with EIA still count their emissions once on each side?
+
+**What EIA counts.** EFD adds a unit's carbon to UTCARC (by census division) and UTCO2N (by EMM region) for ownership classes 1 to 4 (uefd.f 3122-3232). So both totals hold the CHP units. EMELC is UTCARC summed over fuels (util.f 3515), which is UTCO2 plus Alaska and Hawaii (EDSPOAK, EDSPOHI): 1,436 against 1,422 Mt in 2025, 830 against 817 in 2050. The CHP units' CO2, CGNTQ times our factors, is 73 / 71 / 62 / 62 Mt in 2025 / 2030 / 2040 / 2050.
+
+**What we report.** The coupled loop (`couple.py`) adds that CO2 to the fleet's, so its power CO2 and EMELC both count CHP once. No change there. The single-year fleet check (`dispatch_report.reference`) compared the fleet alone with all of UTCO2. That reference held about 60-73 Mt the fleet cannot emit. Its fuel rows already took CGNTQ off; CO2 did not.
+
+**Fix.** `dispatch_report.fleet_co2` takes the CHP CO2 off UTCO2 (`chp=True` keeps it). The loop and the check share `demand.nontraditional_cogen_co2_mt`. Reporting only: no model output moves, so no switch.
+
+| Fleet CO2, Mt (24-hour days) | 2025 | 2030 | 2040 | 2050 |
+|---|---|---|---|---|
+| Fleet | 1,316 | 1,036 | 568 | 824 |
+| Old reference (UTCO2) | 1,422 (-7.4%) | 1,094 (-5.3%) | 609 (-6.8%) | 817 (+0.8%) |
+| New reference (UTCO2 less CHP) | 1,348 (-2.4%) | 1,023 (+1.3%) | 548 (+3.7%) | 755 (+9.1%) |
+
+The old reference made 2050 look right. On the fleet's footing it is 9% high, under the 10% tolerance by a point. Gas fuel is +0.6% in 2050 and coal is nearly gone, so the excess is likely capture: the LP takes a flat 90% at CCS plants (not checked).
+
+National energy CO2, Mt, ours / EIA. Single-year `run_model` with `elec="lp"` and the stand-in elsewhere, so the other four sectors sit on EIA's:
+
+| | 2030 | 2035 | 2040 | 2050 |
+|---|---|---|---|---|
+| Saved real set, Nov 3 (before 3e718b5) | 4,387 / 4,402 | 3,727 / 3,813 | 3,565 / 3,609 | 3,646 / 3,737 |
+| Now (3e718b5 and this fix) | 4,401 / 4,402 | 3,827 / 3,813 | 3,614 / 3,609 | 3,793 / 3,737 |
+| Power CO2 now | 1,108 / 1,109 | 721 / 706 | 630 / 624 | 886 / 830 |
+
+The coupled 2050 power CO2 is now 7% high, where it was 11% low; `test_run_model_lp`'s 2050 CO2 known miss is gone.
+
+**Still open.** Alaska and Hawaii (about 13-15 Mt) are in EMELC and not in the loop's power CO2 or fuel. The CHP oil (distillate and residual) is priced at residual's factor (under 0.1 Mt).
+
+Pinned by `tests/test_emm_demand.py::test_power_co2_reference_counts_chp_once`.
 
 ## Coal by configuration: EFD's coal LP (branch coal-supply-efd)
 **What holds the West's coal.** EFD buys every coal configuration's coal (ECP type B1..HC) in every coal demand region in its own coal LP, solved with the dispatch (uefd.f ED$COL 16433-17460, ED$BTU 7700-7790): supply rows per curve (11 steps of XCL_QECP x the XCL_STEPS widths at XCL_PECP, then a 12th at max(3 x p11, 9.999) 1987$/MMBtu, after the curve's fixed other demand XCL_OTHER), transport columns per route at the first-tier rate plus MATS activated carbon, a demand row CL<crg><type> per configuration, and two caps per configuration: sub-bituminous <= EFD_SB_DVLIM and lignite <= EFD_LG_DVLIM (escape at 9.9). The CMM writes the caps from EFD's own burn by unit, EMM_CL_BTUS (uefd.f 2993; coal.ams 10536-10580: burn x the plant's sub-bituminous or lignite share + 0.05). So in a converged run each western configuration burns cheap Powder River or lignite coal up to what it burned, and pays for anything more at the next source: bituminous from far away (0.3-0.5 1987$/MMBtu more in WS, C2, CU, ZN), the 9.9 escape where no bituminous route exists (coal regions C1 and MT), or 9.999 for Utah and Colorado bituminous, whose 2030 base production (11.8 and 33 TBtu) all goes to other users. Evidence (scratchpad `coalsup/`: cost.py, samp.py):

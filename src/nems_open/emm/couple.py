@@ -120,8 +120,7 @@ class ElectricityLP:
         nt = demand.nontraditional_cogen_fuel_tbtu(self.snapshot, year)
         total = {"QBLK/qclel": fuel["coal"] + nt["coal"], "QBLK/qngel": fuel["gas"] + nt["gas"],
                  "QBLK/qdsel": fuel["distillate"], "QBLK/qrsel": fuel["residual"] + nt["oil"]}
-        nt_co2 = (nt["coal"] * dispatch.CO2_PER_TBTU["coal"] + nt["gas"] * dispatch.CO2_PER_TBTU["gas"]
-                  + nt["oil"] * dispatch.CO2_PER_TBTU["residual"])
+        nt_co2 = demand.nontraditional_cogen_co2_mt(self.snapshot, year)
         power = {}
         for name, value in total.items():
             power[name] = self._spread(q[name], self.base[name], j, value)
