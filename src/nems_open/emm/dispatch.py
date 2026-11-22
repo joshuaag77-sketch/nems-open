@@ -96,6 +96,16 @@ COAL_RETROFIT_CAPTURE = 0.90
 EPA111_NEW_CC_CF = True
 # With EPA111_NEW_CC_CF: the plant file's combined cycle in N_TIERS heat-rate tiers (heat_rate_tiers) instead of one.
 GAS_CC_OLD_TIERS = True
+# The dispatched fleet is ownership classes 1 to 3. util.f's UCAP tally (7465-7510 for combined cycle, the same for
+# every type) puts IOWN 1-2 in UCAP*U, 3 in UCAP*N and 4, the electric power sector's CHP, in UCAP*C and CGNTCAP. The
+# dispatch takes its capacity from *U and *N and the CHP units' output off the load (demand.nontraditional_cogen_twh),
+# so plant-file units of class 4 are not in it. On: the plant-file reads that size and describe the existing fleet
+# (existing capacity against the restart's, heat rates, VOM, heat-rate tiers, in-service dates, cofired units, the
+# old fleet's capacity factor) keep classes 1 to 3. In 2030 that takes about 20 GW of CHP combined cycle out of
+# gas_cc's existing tiers, which had counted it as old capacity and pushed the new-build share (and its EPA 111 cap)
+# down. Off: every class, as before (Codex finding 4).
+FLEET_OWNERS_ONLY = True
+FLEET_OWNERS = (1, 2, 3)
 
 # Storage: (duration in hours, round-trip efficiency)
 STORAGE = {"battery": (4.0, 0.85), "pumped": (12.0, 0.78)}
@@ -350,6 +360,22 @@ def existing_types(group: str) -> tuple:
     return EXISTING_TYPES[group]
 
 
+def _fleet_owner() -> np.ndarray:
+    """Plant-file units that belong to the dispatched fleet (FLEET_OWNERS_ONLY): ownership classes 1 to 3."""
+    u = plants.load_units()
+    return np.isin(u.owner, FLEET_OWNERS) if FLEET_OWNERS_ONLY else np.ones(len(u.owner), dtype=bool)
+
+
+def _online(year: int) -> np.ndarray:
+    """Plant-file units in service in `year` that are in the dispatched fleet."""
+    return plants.online(year) & _fleet_owner()
+
+
+def _capacity_gw(year: int, efd_types) -> np.ndarray:
+    """plants.capacity_gw over the dispatched fleet's ownership classes."""
+    return plants.capacity_gw(year, efd_types, owners=FLEET_OWNERS if FLEET_OWNERS_ONLY else None)
+
+
 def _ucap_mid(snapshot, prefixes, y) -> np.ndarray:
     """Capacity in service on average through the year: the mean of last year's and this year's year-end
     capacity, which assumes builds and retirements are spread evenly through the year."""
@@ -373,7 +399,7 @@ def _in_service(snapshot, prefixes, types, year) -> np.ndarray:
         return 0.5 * (start + end)
     u = plants.load_units()
     tb = db.table("V_EMM_PLTF860")
-    in_group = np.isin(u.efd_type, list(types))
+    in_group = np.isin(u.efd_type, list(types)) & _fleet_owner()
     adds = in_group & (u.online_year == year)
     rets = in_group & (u.retire_year == year)
     add_gw, ret_gw, add_avg, ret_avg = (np.zeros(NUM_R) for _ in range(4))
@@ -403,7 +429,7 @@ def _ucap(snapshot, prefixes, y) -> np.ndarray:
 def _weighted(values, weights, types, region_arr, year, fallback):
     """Capacity-weighted mean of a plant-file column by region for the given EFD types, national mean where a region has none."""
     u = plants.load_units()
-    on = plants.online(year) & np.isin(u.efd_type, list(types))
+    on = _online(year) & np.isin(u.efd_type, list(types))
     out = np.full(NUM_R, np.nan)
     for r in range(1, NUM_R + 1):
         m = on & (region_arr == r)
@@ -594,7 +620,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     part_load = part_load_factor() if COAL_PART_LOAD_HEAT_RATE else np.ones(len(u.heat_rate))
     for g in THERMAL:
         types = types_of[g]
-        existing = plants.capacity_gw(year, types)[:NUM_R]
+        existing = _capacity_gw(year, types)[:NUM_R]
         hr_unit = u.heat_rate * part_load if g == "coal" else u.heat_rate
         hr_ex = _weighted(hr_unit, u.summer_mw, types, u.region, year, 10000.0)
         vom_ex = _weighted(u.vom, u.summer_mw, types, u.region, year, 2.0)
@@ -611,7 +637,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
             coal_plain = (ex_used * _weighted(u.heat_rate, u.summer_mw, types, u.region, year, 10000.0) + new * hr_new) / total
         vom[g] = (ex_used * vom_ex + new * vom_new) / total
         if g in OIL_TYPES:
-            oil_cap = plants.capacity_gw(year, OIL_TYPES[g])[:NUM_R]
+            oil_cap = _capacity_gw(year, OIL_TYPES[g])[:NUM_R]
             oil[g] = np.divide(oil_cap, existing, out=np.zeros(NUM_R), where=existing > 0)
         else:
             oil[g] = np.zeros(NUM_R)
@@ -620,7 +646,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     # Coal that captures CO2 burns more fuel per kWh and costs more to run: use the plant file's own
     # with-capture heat rate and variable O&M (T_CCSHR, T_CCSV) for the captured share.
     tb = db.table("V_EMM_PLTF860")
-    coal_u = np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
+    coal_u = _fleet_owner() & np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
     ccs_hr = _weighted_mask(tb["T_CCSHR"] * part_load, u.summer_mw, coal_u, u.region, 14000.0)
     ccs_vom = _weighted_mask(tb["T_CCSV"], u.summer_mw, coal_u, u.region, 1.5)
     heat["coal_ccs"] = ccs_hr
@@ -659,7 +685,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         # online by BASE_YEAR) keeps its plant-file capacity factor, with WRENEW's hourly shape, for BENCHMARK_LAST
         # years, fading out by BENCHMARK_FADE. Later years, and all new capacity, use WRENEW's level.
         types = EXISTING_TYPES[group]
-        old_fleet = plants.online(year) & np.isin(u.efd_type, list(types)) & (u.online_year <= BASE_YEAR)
+        old_fleet = _online(year) & np.isin(u.efd_type, list(types)) & (u.online_year <= BASE_YEAR)
         file_cap = np.zeros(NUM_R)
         np.add.at(file_cap, u.region[old_fleet] - 1, u.summer_mw[old_fleet] / 1000.0)
         file_cf = _weighted_mask(u.capacity_factor, u.summer_mw, old_fleet, u.region, 0.3)
@@ -679,7 +705,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     # Oil steam units flagged must-run (plant file T_MRUN at or after the year) burn residual oil at their
     # historical capacity factor whatever it costs, as EFD's minimum-run rows force them to. They leave the
     # dispatchable steam capacity. Coal units list distillate as their second fuel (1% of Btu): ignition fuel.
-    on = plants.online(year)
+    on = _online(year)
     sto = on & (u.efd_type == "STO") & (tb["T_MRUN"] >= year) & (tb["T_MRUN"] > 0)
     mr_cap, mr_gw = np.zeros(NUM_R), np.zeros(NUM_R)
     np.add.at(mr_cap, u.region[sto] - 1, u.summer_mw[sto] / 1000.0)
@@ -730,8 +756,8 @@ def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr:
     Shares of `total` (25,) and heat rates, both (25, N_TIERS + 1); scaled so the capacity-weighted heat rate is
     `mean_hr`, the group's single heat rate."""
     u = plants.load_units()
-    on = plants.online(year) & np.isin(u.efd_type, list(types))
-    existing = plants.capacity_gw(year, types)[:NUM_R]
+    on = _online(year) & np.isin(u.efd_type, list(types))
+    existing = _capacity_gw(year, types)[:NUM_R]
     T = N_TIERS + 1
     share, hr = np.zeros((NUM_R, T)), np.tile(np.asarray(mean_hr, dtype=float)[:, None], (1, T))
     hr[:, -1] = hr_new
@@ -769,7 +795,7 @@ def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict, coal_h
     rule = ecp.epa111()
     u = plants.load_units()
     tb = db.table("V_EMM_PLTF860")
-    on = plants.online(year) & np.isin(u.efd_type, EXISTING_TYPES["cofire"])
+    on = _online(year) & np.isin(u.efd_type, EXISTING_TYPES["cofire"])
     second = np.array([str(x).strip() for x in tb["CFL_2"]], dtype=object)
     coal2 = np.array([len(f) == 2 and f[0] in COAL_FUELS for f in second])
     share_u = np.where(coal2, np.asarray(tb["T_FSHR_2"], dtype=float), 0.0)
