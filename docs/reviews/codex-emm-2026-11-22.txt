@@ -1,0 +1,18 @@
+Codex review of EMM ports, 2026-11-22 (chat 01a2050d). Findings to verify; numbers are Codex's claims.
+1 High RETIRE_HORIZON: capacity.py 672-675,1414-1424 vs uecp.f 36566-36584,36676-36690. Unconditional replacement subsidy, not ECP option-3; 29-year value ignoring scheduled retirements.
+2 High conversion_credit credits after UEPA_CLCFYR: capacity.py 589-591,1432-1434,568 vs ecp.ams 11604-11609,12187-12201; udat.f 6451-6453 (EPA_YRSHR tail).
+3 High coupled: dispatch keeps reference fleet composition (tier shares, heat rates, coal classes, cofire shares) after capacity replaced: couple.py 107-113; dispatch.py 710-718,1128-1133 vs udat.f 6446-6447,7249-7263.
+4 High gas tiers include class-4 CHP (~20.45 GW gas_cc 2030): dispatch.py 597,604-606,733-754 vs udat.f 6446-6447; util.f 4555-4560.
+5 High coal: UPCOALAVG minus class reference price added to objective, cancels delivered-cost differences: dispatch.py 1084-1087; coal_supply.py 213-230 vs uefd.f 16826-16828,17134-17170,7771-7773.
+6 High customer PV grid exports dropped from balance (18.1 TWh 2030, 51.6 TWh 2050): demand.py 67-70; dispatch.py 648-654 vs unugs.f 445-456; uefd.f 11949-11965; resd.f 11752.
+7 CHP add-back drops Alaska/Hawaii, _spread does not preserve noncontiguous; oil 105.40 vs 49.19 TBtu 2030: couple.py 117-126,133-137; demand.py 87-88 vs util.f 6018-6038,6391-6402.
+8 Spin reserve and max-load shapes built on net load, EFD uses UTHGHT: dispatch.py 969,985-988,1245-1246 vs uefd.f 9179-9202,9222-9227,9769.
+9 Construction interest uses after-tax discount rate; EPINCST uses UTROR/EWGROR: capacity.py 874-876,852 vs uecp.f 16131-16147,16180; uread.f 1343-1345.
+10 STEP_FLOOR_OF pools histories; EIA AC=max(AC,CC), AT=max(AT,CT) from separate histories: capacity.py 65-68,136-145,1572-1573 vs ucape.f 54-64,72-73.
+11 EPA111 0.4 cap not in MAXCF/FOR/maintenance: dispatch.py 716,887-889,981-983,1128-1133 vs udat.f 6446-6447,8852,10194-10224.
+12 Conversion 1.05 heat-rate penalty applied to part-load-corrected coal heat rate (dispatch uses coal_plain): capacity.py 964 vs uecp.f 28113-28117.
+13 coal_supply removes 0.05 TBtu diversity allowance: coal_supply.py 160-161 vs coal.ams 10540-10547; uefd.f 16738-16740,16765-16767.
+14 reference price reuses diversity cap per route: coal_supply.py 219-222 vs uefd.f 17199-17209.
+15 CHP oil all put in QRSEL; EIA splits QDSEL/QRSEL: couple.py 121-122; demand.py 103-106 vs util.f 4555-4557,3133-3138.
+16 ECP_GAS_CURVE last step unlimited; EIA bounds at QSIZE: capacity.py 284 vs uecp.f 6185-6200; ecp.ams 25458-25468.
+17 Gas curve adder uses NGSCRV_P not XOGWPRNG/CFNGU (1.44156 vs 1.42480 in 2030): capacity.py 1254-1259 vs uecp.f 6258,6266-6269.
