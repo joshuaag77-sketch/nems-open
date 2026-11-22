@@ -108,6 +108,25 @@ def nontraditional_cogen_co2_mt(snapshot, year: int) -> float:
             + nt["oil"] * dispatch.CO2_PER_TBTU["residual"])
 
 
+def noncontiguous_fuel_tbtu(snapshot, year: int) -> dict:
+    """Alaska's and Hawaii's power-sector fuel, trillion Btu: coal, distillate, residual, gas.
+
+    The dispatch covers the 25 EMM regions. util.f (6011-6038 Alaska, 6385-6402 Hawaii) adds the two states' fuel to
+    the Pacific division's QCLEL, QDSEL, QRSEL and QNGEL from their own history scaled by demand (and Hawaii's RPS),
+    outside EFD; Alaska's oil all goes to distillate. Here they are the reference run's (UEFDOUT/UFL*NR, NERC rows 26
+    and 27): the same arrays EIA fills from those lines."""
+    y = year - history.FIRST_YEAR
+    f = lambda k, rows: float(snapshot[f"UEFDOUT/{k}"][:, rows, y].sum())
+    ak, hi = slice(25, 26), slice(26, 27)
+    both = slice(25, 27)
+    gas = sum(f(k, both) for k in ("uflgfnr", "uflginr", "uflgcnr") if snapshot.names(f"UEFDOUT/{k}"))
+    oil = ("ufldsnr", "uflddnr", "uflrlnr", "uflrhnr")
+    return {"coal": f("uflclnr", both),
+            "distillate": sum(f(k, ak) for k in oil) + f("ufldsnr", hi) + f("uflddnr", hi),
+            "residual": f("uflrlnr", hi) + f("uflrhnr", hi),
+            "gas": gas}
+
+
 def international_net_imports_twh(snapshot, year: int) -> np.ndarray:
     """Net imports from Canada and Mexico by EMM region, TWh (firm plus economy, minus exports)."""
     y = year - history.FIRST_YEAR

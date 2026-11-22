@@ -25,6 +25,13 @@ NUM_R = dispatch.NUM_R
 CO2_PER_C = 44.0 / 12.0
 PRICE_KEYS = {"coal": "MPBLK/pclel", "gas": "MPBLK/pngel", "distillate": "MPBLK/pdsel", "residual": "MPBLK/prsel"}
 RATIO_CLIP = (0.2, 5.0)    # a fuel price can move by up to this factor from the reference run
+PACIFIC = 8                # census division of Alaska and Hawaii (0-based)
+# Alaska and Hawaii. util.f adds their power-sector fuel to the Pacific division's QCLEL, QDSEL, QRSEL and QNGEL
+# (6011-6038, 6385-6402) and EFD's carbon totals hold them (EMELC is UTCO2 plus EDSPOAK and EDSPOHI). The dispatch
+# covers the 25 EMM regions only. On: their fuel (demand.noncontiguous_fuel_tbtu, the reference run's) and its CO2 are
+# added to the loop's totals and held in the Pacific division; the rest of each total is spread as in the baseline.
+# Off: the US totals leave them out and the Pacific division takes its baseline share of that (Codex finding 7).
+NONCONTIGUOUS = True
 
 
 @dataclass
@@ -121,9 +128,15 @@ class ElectricityLP:
         total = {"QBLK/qclel": fuel["coal"] + nt["coal"], "QBLK/qngel": fuel["gas"] + nt["gas"],
                  "QBLK/qdsel": fuel["distillate"], "QBLK/qrsel": fuel["residual"] + nt["oil"]}
         nt_co2 = demand.nontraditional_cogen_co2_mt(self.snapshot, year)
+        fixed = {name: 0.0 for name in total}
+        if NONCONTIGUOUS:
+            ah = demand.noncontiguous_fuel_tbtu(self.snapshot, year)
+            fixed = {"QBLK/qclel": ah["coal"], "QBLK/qngel": ah["gas"], "QBLK/qdsel": ah["distillate"], "QBLK/qrsel": ah["residual"]}
+            total = {name: value + fixed[name] for name, value in total.items()}
+            nt_co2 += sum(ah[k] * dispatch.CO2_PER_TBTU[k] for k in ("coal", "distillate", "residual", "gas"))
         power = {}
         for name, value in total.items():
-            power[name] = self._spread(q[name], self.base[name], j, value)
+            power[name] = self._spread(q[name], self.base[name], j, value, fixed[name])
         # Core and non-core gas are parts of the gas total: move them with it.
         gas_factor = total["QBLK/qngel"] / self.base["QBLK/qngel"][US, j] if self.base["QBLK/qngel"][US, j] > 0 else 1.0
         for name in ("QBLK/qgfel", "QBLK/qgiel"):
@@ -153,9 +166,13 @@ class ElectricityLP:
         return cap.dispatch_capacity(self.capacity_path.results[year].capacity)
 
     @staticmethod
-    def _spread(current: np.ndarray, base: np.ndarray, j: int, us_total: float) -> np.ndarray:
-        """`current` with year j set to the US total, split over regions as in the baseline."""
+    def _spread(current: np.ndarray, base: np.ndarray, j: int, us_total: float, pacific_fixed: float = 0.0) -> np.ndarray:
+        """`current` with year j set to the US total, split over regions as in the baseline. `pacific_fixed` (Alaska
+        and Hawaii) is held in the Pacific division and only the rest is split."""
         out = current.copy()
-        b = base[:, j]
-        out[:, j] = b * (us_total / b[US]) if b[US] > 0 else b
+        f = np.zeros(len(base))
+        f[PACIFIC] = f[US] = pacific_fixed
+        b = base[:, j] - f
+        rest = us_total - pacific_fixed
+        out[:, j] = (b * (rest / b[US]) if b[US] > 0 else b) + f
         return out
