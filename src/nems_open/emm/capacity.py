@@ -575,7 +575,8 @@ def _crf(rate: float, years: float) -> float:
     return rate / (1.0 - (1.0 + rate) ** -years)
 
 
-def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon: int = HORIZON_YEARS) -> np.ndarray:
+def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon: int = HORIZON_YEARS,
+                      last: int | None = None) -> np.ndarray:
     """What a coal-to-gas conversion made in `year` is worth each year, beyond this year, as ECP's planning horizon
     sees it (k$ per GW-year, levelized over the horizon).
 
@@ -585,9 +586,9 @@ def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon:
     converted GW is firm capacity the plan does not have to build. A one-year LP sees none of that and never
     converts (EIA's run converts 36 GW in 2028-2030). The credit is that avoided build, `firm_annual` (the annual
     cost of a new turbine, the cheapest firm type) less `keep_annual` (the converted unit's own fixed O&M), for each
-    horizon year from RULE_YEAR, discounted at `rate` and levelized over the horizon."""
+    horizon year from RULE_YEAR (to `last` if given), discounted at `rate` and levelized over the horizon."""
     gain = np.maximum(np.asarray(firm_annual, dtype=float) - np.asarray(keep_annual, dtype=float), 0.0)
-    pv = sum((1.0 + rate) ** -(k + 1) for k in range(horizon) if year + k >= RULE_YEAR)
+    pv = sum((1.0 + rate) ** -(k + 1) for k in range(horizon) if year + k >= RULE_YEAR and (last is None or year + k <= last))
     return gain * pv * _crf(rate, horizon)
 
 
@@ -612,6 +613,17 @@ ECP_CONVERT_TIMING = False
 # with its units' capacity-weighted capital and keep cost.
 CONVERT_BY_UNIT = False
 CONVERT_STEPS = 5
+# How ECP dispatches a cofired conversion (EP$COAL,20a/28b-d, 35a/81a/87a): the conversion column cNNG puts the unit in
+# the gas steam capacity rows (it burns gas), and the cofiring column GCL keeps a coal part in the coal capacity and fuel
+# rows, with row GCF (0.6 cNNG - 0.4 GCL >= 0) holding the coal part to at most 60% of the capacity. So the coal part
+# runs on coal at coal cost and only output above it burns gas: a split of capacity, not a fuel blend in every MWh.
+# This LP blended 60% coal and 40% gas into every MWh, so a cofired unit at a coal unit's 50-60% capacity factor burned
+# 40% gas where ECP's burns almost none. On: gas_conv runs at coal cost up to UEPA_CGSH of its available capacity in
+# each block, and pays the gas premium above that.
+CONVERT_SPLIT_FUEL = False
+# The conversion's horizon credit runs to the end of ECP's horizon, as its columns do (they stay in every later reserve
+# row). Under EPA 111 a cofiring plant retires at the end of UEPA_CLCFYR (udat.f 6451). On: the credit stops there.
+CONVERT_CREDIT_TO_CLCFYR = False
 
 
 def conversion_steps(capital, keep, mw, region, crf: float, steps: int = CONVERT_STEPS, num_r: int = NUM_R):
@@ -1149,12 +1161,16 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             oil_price = cs.price["residual"] if g == "steam" else cs.price["distillate"]
             is_coal = g.startswith("coal")
             fuel = (1 - oil_share[g]) * cs.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
-            if g == "gas_conv" and rule["switch"]:
+            if g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
+                fuel = cs.price["coal"]           # the coal part's cost; output above it pays the gas premium below
+            elif g == "gas_conv" and rule["switch"]:
                 # EPA 111 cofiring: at most UEPA_CGSH of the fuel is coal (udat.f 6457), the rest gas
                 fuel = rule["cofire_coal_share"] * cs.price["coal"] + (1.0 - rule["cofire_coal_share"]) * cs.price["gas"]
             cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
             if not is_coal:
                 gas_frac[:, k] = (1.0 - rule["cofire_coal_share"]) if (g == "gas_conv" and rule["switch"]) else 1 - oil_share[g]
+                if g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
+                    gas_frac[:, k] = 0.0          # its gas burn is conv_gas below
             if g in dispatch.CAPTURE_GROUPS:
                 share = cs.credit_share[g] if cs.credit_share is not None else 1.0
                 cost[:, k] -= cs.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.capture_rate(g)
@@ -1246,6 +1262,16 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
             + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum() \
             + (shortfall * RESERVE_SHORTFALL_COST).sum()
+        conv_gas = None
+        if CONVERT_SPLIT_FUEL and rule["switch"]:
+            # the gas part of gas_conv output: whatever runs above the coal part (UEPA_CGSH of available capacity)
+            conv_gas = m.add_variables(lower=0, coords=[R, D, Bk], name=f"conv_gas{tag}")
+            gc = g_th.sel(group="gas_conv")
+            coal_part = capv_p.sel(group="gas_conv") * float(one_minus_for.sel(group="gas_conv")) * rule["cofire_coal_share"]
+            m.add_constraints(gc - conv_gas - coal_part <= 0, name=f"conv_coal_part{tag}")
+            m.add_constraints(conv_gas - gc <= 0, name=f"conv_gas_part{tag}")
+            premium = heat["gas_conv"] / 1000.0 * (cs.price["gas"] - cs.price["coal"])
+            operating = operating + (conv_gas * xr.DataArray(premium, coords=[R]) * hours_w).sum()
         gas_steps = None
         if ECP_GAS_CURVE and tag == "":
             # ECP's gas supply steps (cSUNGX on rFUELNGXle): the burn fills them cheapest first; each step adds
@@ -1255,6 +1281,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             S = pd.Index(np.arange(len(bound)), name="gas_step")
             gas_steps = m.add_variables(lower=0, upper=xr.DataArray(bound, coords=[S]), name="gas_step")
             burn = (g_th * xr.DataArray(heat_arr * gas_frac / 1.0e6, coords=[R, T]) * hours_w).sum()
+            if conv_gas is not None:
+                burn = burn + (conv_gas * xr.DataArray(heat["gas_conv"] / 1.0e6, coords=[R]) * hours_w).sum()
             m.add_constraints(gas_steps.sum() - burn == 0, name="gas_curve")
             operating = operating + (gas_steps * xr.DataArray(wh * (ratio - 1.0) * 1000.0, coords=[S])).sum()
         spin = {}
@@ -1427,7 +1455,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         conv_cost = conv_step_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * keep_k
         if conversion_is_last_chance(year, rule):
             conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"][:, None], CONVERT_FOM_ADJ * keep_k,
-                                                      rate_now)
+                                                      rate_now, last=rule["cofire_last"] if (
+                                                          CONVERT_CREDIT_TO_CLCFYR and rule["switch"]) else None)
     else:
         conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
         if conversion_is_last_chance(year, rule):

@@ -521,6 +521,31 @@ What remains: the 2030 volume. Candidates: the converted unit's fuel and dispatc
 
 Pinned by `tests/test_emm_capacity.py::test_conversion_steps_split_each_region_by_unit_cost`. Scripts: scratchpad `cv/` (chain.py with FLAGS, eia.py, unit.py, d2030.py, sumc.py).
 
+## Cofired conversions burn coal on their coal part (branch conversions2, off)
+
+**Why 2030 stalled at 12 GW.** The LP blended 60% coal and 40% gas into every MWh a converted unit made. ECP does not. Its conversion column cNNG puts the unit in the gas steam capacity rows, and the cofiring column GCL keeps a coal part in the coal capacity and fuel rows (uecp.f EP$COAL,20a, 28b-d, 35a, 81a, 87a). Row GCF (0.6 cNNG - 0.4 GCL >= 0) caps the coal part at 60% of the capacity. That is a split of capacity, not a fuel blend: a cofired unit running at a coal unit's 50-60% capacity factor burns almost no gas in ECP. The blend cost about as much a year as the 11 to 22 $/kW-year credit, so regions 1, 3, 4, 14 and 15 kept their coal. udat.f 6457 points the same way for EFD: before UEPA_GSYR cofiring units burn the plant file's fuel shares.
+
+**Ported, off** (`capacity.CONVERT_SPLIT_FUEL`). gas_conv runs at coal cost up to UEPA_CGSH of its available capacity in each block and pays the gas premium above that (variable `conv_gas`, also counted in ECP's gas supply curve). With the credit to the end of the horizon, 2030 then converts 63.9 GW (steam 146 against EIA's 110).
+
+**Credit to 2038** (`capacity.CONVERT_CREDIT_TO_CLCFYR`, off). A cofiring plant retires at the end of UEPA_CLCFYR (udat.f 6451), so its credit counts 2032-2038 only. ECP's own columns stay in every later reserve row, so this is the retirement EIA carries out, not what ECP prices. It brings 2030 down to 17.8 GW.
+
+Chain 2027-2040 from EIA's 2026 fleet, GW. Base = 378d608 (all off), all on = CONVERT_BY_UNIT, ECP_CONVERT_TIMING, CONVERT_SPLIT_FUEL, CONVERT_CREDIT_TO_CLCFYR:
+
+| | conv base / all on / EIA | coal base / all on / EIA | steam base / all on / EIA |
+|---|---|---|---|
+| 2028 | 32.1 / 3.4 / 4.3 | 96 / 124 / 137 | 112 / 83 / 82 |
+| 2029 | 3.2 / 2.9 / 12.7 | 89 / 114 / 111 | 112 / 83 / 92 |
+| 2030 | 0 / 17.8 / 18.9 | 87 / 95 / 88 | 111 / 100 / 110 |
+| 2031 | 0 / 0 / 0 | 85 / 90 / 78 | 110 / 99 / 104 |
+| 2032 | | 18 / 18 / 16 | 110 / 99 / 104 |
+| 2035 | | 18 / 18 / 16 | 107 / 96 / 101 |
+
+2040, base / all on / EIA: CC 424 / 420 / 431, CT 244 / 249 / 267, batteries 108 / 109 / 103, solar 344 / 365 / 323, wind 423 / 385 / 404, coal 15 / 18 / 16, steam 57 / 57 / 52.
+
+Total conversions are 24 GW against EIA's 36. 2028 and 2030 land on EIA's. 2029 does not (2.9 against 12.7), and neither does the oracle's own ECP (2.6), so the 2029 gap is probably in the coupled run, not in ECP's columns. Steam is 5 to 10 GW under EIA's from 2030 (base: 1 to 6 over), solar 21 GW further over in 2040 and wind 19 under. Left off: the 2029 volume is the remaining question.
+
+Pinned by `tests/test_emm_capacity.py::test_conversion_credit_stops_when_cofiring_ends`. Scripts: scratchpad `cv/` (chain.py with FLAGS, d2030.py).
+
 ## ECP's spinning reserve rows and its wind build capacity factor (branch ecp-spin-reserve, off)
 
 **What ECP does.** uecp.f EP$MRM,8-13 writes one row per region, ECP load slice and planning year (rRSRge: 25 regions x 9 slices x 3 years, 675 rows in the 2030 solve). Each row is spinning reserve >= cSR, and cSR is bounded below by SR_RQMT_HGHT x (slice height + ADJ_HGHT) + SR_RQMT_DIFF x (the season's peak slice - that height), 0.1 and 0.3 in every region (composite_2030). The slices are LDSM's (DSMLCP): three seasons (winter Dec-Mar, summer Jun-Sep, shoulder), each cut at 1% / 49% / 50% of its hours sorted by net load (NL_SLICE_SW), each slice at the average load of its hours. Supply (SR_CREDIT 1 for every dispatchable type): a dispatched unit's headroom, with ECP's dispatch modes letting a committed unit run down to SR_MIN_CF of its capacity (ecpdaty.xlsx SPNRSV: coal and steam 0.3, combined cycle 0.2, turbines and pumped storage 0.1); nuclear and other renewables their capacity less output; batteries ReStore's StoSR. Conventional hydro carries none (ecp.ams leaves WIHY out of EP$ORNW,113-116). Wind and solar carry -SR_INT x their output (0.25, EP$INT,8/23/52). SR_TRAN_CREDIT is 0, so no reserve over the links. EFD has its own spinning reserve rows too (uefd.f 11473, SR_INT_REQ), which the dispatch model lacks; not needed for this change, since the capacity LP carries its own dispatch.

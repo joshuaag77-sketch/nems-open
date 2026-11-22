@@ -537,6 +537,18 @@ def test_conversion_steps_split_each_region_by_unit_cost():
     assert gw[2].sum() == pytest.approx(0.8) and cap_k[2][gw[2] > 0] == pytest.approx([200.0])
 
 
+def test_conversion_credit_stops_when_cofiring_ends():
+    """Under EPA 111 a cofiring plant retires at the end of UEPA_CLCFYR (udat.f 6451), so with
+    CONVERT_CREDIT_TO_CLCFYR the credit counts only RULE_YEAR..UEPA_CLCFYR, a seven-year slice of the horizon."""
+    rule = capacity.epa111()
+    assert rule["cofire_last"] == 2038
+    full = capacity.conversion_credit(2030, np.array([40.0]), np.array([15.0]), 0.07)
+    cut = capacity.conversion_credit(2030, np.array([40.0]), np.array([15.0]), 0.07, last=rule["cofire_last"])
+    pv = sum(1.07 ** -(k + 1) for k in range(2, 9))                      # 2032..2038 seen from 2030
+    assert cut[0] == pytest.approx(25.0 * pv * capacity._crf(0.07, capacity.HORIZON_YEARS))
+    assert 0 < cut[0] < 0.5 * full[0]
+
+
 def test_spin_reserve_inputs_follow_ecpdaty():
     """SR_MIN_CF (ecpdaty.xlsx SPNRSV) as the 2030 composite carries it: coal and steam 0.3, combined cycle 0.2,
     turbines and pumped storage 0.1; ECP's seasons are LDSM's (winter Dec-Mar, summer Jun-Sep, shoulder)."""
