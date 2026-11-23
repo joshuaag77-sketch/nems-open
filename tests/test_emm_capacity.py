@@ -351,6 +351,20 @@ def test_construction_interest_follows_epincst(snapshot):
     assert 1.06 < ac < 1.12 and 1.01 < at < 1.05
 
 
+def test_construction_rate_is_pre_tax_ewgror(snapshot, monkeypatch):
+    """EPINCST carries work in progress at EWGROR (uecp.f 16269, 16301; all regions UPBLDTYP 2): the pre-tax cost of
+    capital, EXTRARISK on debt and equity for UPRSKSW types (CC), so above the after-tax EPDSCRT by UPNFDT x debt x
+    UPTXRT (plus the risk premium's tax share for CC)."""
+    debt, equity, share, tax = capacity._financing(snapshot, 2030)
+    at = capacity.construction_rate(snapshot, 2030, "AT")
+    assert at == pytest.approx(share * debt + (1 - share) * equity)
+    assert at - capacity.discount_rate(snapshot, 2030) == pytest.approx(share * debt * tax)
+    extra = float(snapshot["EMISSION/extrarisk"][2030 - 1990])
+    assert capacity.construction_rate(snapshot, 2030, "AC") == pytest.approx(at + extra)
+    monkeypatch.setattr(capacity, "CONSTRUCTION_PRE_TAX", False)
+    assert capacity.construction_rate(snapshot, 2030, "AT") == pytest.approx(capacity.discount_rate(snapshot, 2030))
+
+
 def test_combined_cycle_over_turbine_cost_matches_ecp(snapshot):
     """ECP's own build columns (oracle OutToNEMS_2035, cB_DSP step 1, planning year 1) cost AC 1.23 to 1.30 times AT
     by region, median 1.28. Overnight cost and fixed O&M alone give 1.20 to 1.24; with interest during construction the
@@ -375,6 +389,17 @@ def test_advanced_gas_steps_keep_the_conventional_floor():
         steps = capacity.build_steps(code, [0.0] * 5)
         assert [round(b, 2) for b, _ in steps] == [5.0, 3.0, 4.0]
     assert round(capacity.build_steps("DS", [0.0] * 5)[0][0], 3) == 3.0        # other types keep their own floor
+
+
+def test_advanced_gas_steps_take_the_larger_of_two_histories():
+    """ucape.f 54-73: ESTCPADD(AC) is AC's own weighted history, then max with CC's (CC + EC units). Two separate
+    maxima, not one pooled sum: 3 GW of AC builds and 6 GW of EC units in the same year give a 6 GW base, not 9."""
+    pooled = capacity.build_steps("AC", [0, 0, 0, 0, 9.0])
+    split = capacity.build_steps("AC", [0, 0, 0, 0, 3.0], floor_recent=[0, 0, 0, 0, 6.0])
+    assert split[0][0] == pytest.approx(6.0 * 1.25) and pooled[0][0] == pytest.approx(9.0 * 1.25)
+    assert capacity.build_steps("AC", [0, 0, 0, 0, 8.0], floor_recent=[0, 0, 0, 0, 6.0])[0][0] == pytest.approx(10.0)
+    # the plant file's planned gas units are EC and ET, never AC or AT (they count only toward CC and CT)
+    assert capacity.plant_file_adds(2026, ("AC",)) == 0.0 < capacity.plant_file_adds(2026, ("CC", "EC"))
 
 
 def test_retirement_cap_follows_ecp_lead_time():
@@ -486,22 +511,22 @@ def test_new_gas_heat_rates_are_ecp_uphtrt():
     assert np.allclose(hr, np.asarray(o["UPPHRT0"], dtype=float))
 
 
-def test_retirement_tail_value_is_the_avoided_replacement_over_ecp_horizon():
-    """ECP keeps an existing gas or oil plant for its whole horizon (EP$NGBS option 3, EP$BDSP's EPGFOM over UNFPH), so
-    retiring it now also gives up its firm capacity in every later year it could run. Each such year is worth a new
-    turbine less the plant's own fixed cost, never below zero, discounted from next year."""
+def test_retirement_tail_proxy_is_a_turbine_over_ecp_horizon():
+    """ECP can keep an existing plant for its whole horizon (EP$NGBS option 3, EP$BDSP's EPGFOM over UNFPH), valued at
+    its tail reserve row's dual. The proxy prices each later year the plant could run at a new turbine less the plant's
+    own fixed cost, never below zero, discounted from next year, as if that row always bound."""
     from nems_open.emm import capacity as cap
     r = 0.07
     firm, keep = np.array([40.0e3, 10.0e3]), np.array([15.0e3, 20.0e3])
-    got = cap.retirement_tail_value(2027, firm, keep, r)
+    got = cap.retirement_tail_proxy(2027, firm, keep, r)
     pv = sum((1 + r) ** -k for k in range(1, cap.HORIZON_YEARS))
     assert got[0] == pytest.approx(25.0e3 * pv)                      # about 12 years of the gap: keeping wins
     assert got[1] == 0.0                                             # dearer to keep than to replace: no value
     # cofired coal stops at UEPA_CLCFYR, coal at the 2032 rule: only the years it can still run count
-    assert cap.retirement_tail_value(2027, firm, keep, r, last_year=2031)[0] == pytest.approx(
+    assert cap.retirement_tail_proxy(2027, firm, keep, r, last_year=2031)[0] == pytest.approx(
         25.0e3 * sum((1 + r) ** -k for k in range(1, 5)))
-    assert cap.retirement_tail_value(2031, firm, keep, r, last_year=2031)[0] == 0.0
-    assert {"steam", "gas_cc", "gas_ct", "coal"} <= set(cap.RETIRE_HORIZON_GROUPS)
+    assert cap.retirement_tail_proxy(2031, firm, keep, r, last_year=2031)[0] == 0.0
+    assert {"steam", "gas_cc", "gas_ct", "coal"} <= set(cap.RETIRE_TAIL_PROXY_GROUPS)
 
 
 def test_conversion_credit_only_when_no_later_conversion_column(monkeypatch):
@@ -535,6 +560,32 @@ def test_conversion_steps_split_each_region_by_unit_cost():
     net = cap_k * crf - (1.0 - capacity.CONVERT_FOM_ADJ) * keep_k
     assert net[0, 0] < 0 < net[0, 1]                      # the cheap unit pays in one year, the other does not
     assert gw[2].sum() == pytest.approx(0.8) and cap_k[2][gw[2] > 0] == pytest.approx([200.0])
+
+
+def test_conversion_credit_stops_when_cofiring_ends():
+    """Under EPA 111 a cofiring plant retires at the end of UEPA_CLCFYR (udat.f 6451), so with
+    CONVERT_CREDIT_TO_CLCFYR the credit counts only RULE_YEAR..UEPA_CLCFYR, a seven-year slice of the horizon."""
+    rule = capacity.epa111()
+    assert rule["cofire_last"] == 2038
+    full = capacity.conversion_credit(2030, np.array([40.0]), np.array([15.0]), 0.07)
+    cut = capacity.conversion_credit(2030, np.array([40.0]), np.array([15.0]), 0.07, last=rule["cofire_last"])
+    pv = sum(1.07 ** -(k + 1) for k in range(2, 9))                      # 2032..2038 seen from 2030
+    assert cut[0] == pytest.approx(25.0 * pv * capacity._crf(0.07, capacity.HORIZON_YEARS))
+    assert 0 < cut[0] < 0.5 * full[0]
+
+
+def test_cofired_conversion_credit_cuts_only_the_coal_part(monkeypatch):
+    """ECP keeps the gas part (cNNG) in every reserve row and the coal part (cNNGCL, UEPA_CGSH of the unit) in the
+    tail only to UEPA_CLCFYR (EPA_YRSHR, ecp.ams 11604-11609 and 12187-12201)."""
+    rule = capacity.epa111()
+    args = (2030, np.array([40.0]), np.array([15.0]), 0.07)
+    full = capacity.conversion_credit(*args)
+    cut = capacity.conversion_credit(*args, last=rule["cofire_last"])
+    monkeypatch.setattr(capacity, "CONVERT_CREDIT_TO_CLCFYR", True)
+    got = capacity.cofired_conversion_credit(*args, rule)
+    assert got[0] == pytest.approx(0.4 * full[0] + 0.6 * cut[0])
+    monkeypatch.setattr(capacity, "CONVERT_CREDIT_TO_CLCFYR", False)
+    assert capacity.cofired_conversion_credit(*args, rule)[0] == pytest.approx(full[0])
 
 
 def test_spin_reserve_inputs_follow_ecpdaty():
@@ -639,8 +690,16 @@ def test_gas_curve_steps_match_ecp_2031():
     (22) and 1.1243 (26), and each 2% step is 243.6 TBtu (UPCRVSIZ x QNGEL). On by default."""
     s = Snapshot()
     bound, ratio = capacity.gas_curve_steps(s, 2031)
-    assert len(bound) == 41 and np.isinf(bound[-1])
+    assert len(bound) == 41 and bound[-1] == pytest.approx(bound[1])       # EP$FLCRV,7: every step after the first is QSIZE
     assert np.isclose(bound[1], 243.6, atol=0.5)
     assert np.allclose(ratio[[0, 19, 20, 21, 25]], [0.754, 0.9774, 1.0, 1.0249, 1.1243], atol=1.5e-3)
     assert np.all(np.diff(ratio) > 0)
     assert capacity.ECP_GAS_CURVE is True
+
+
+def test_gas_curve_scales_ecp_wellhead_price():
+    """uecp.f 6258, 6266-6269: the step price is WHDEX x PDEL / PBASE, WHDEX = XOGWPRNG(MNUMOR) / CFNGU, 1.4248 1987$
+    per MMBtu in 2030 (NGSCRV_P, which the port used before, is 1.4416)."""
+    s = Snapshot()
+    assert capacity.gas_curve_wellhead(s, 2030) == pytest.approx(1.4248, abs=1e-4)
+    assert float(s["NGTDMREP/ngscrv_p"][2030 - 1990]) == pytest.approx(1.4416, abs=1e-4)

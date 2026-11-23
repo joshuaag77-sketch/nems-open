@@ -83,6 +83,25 @@ def planned_in_step(year: int, group: str) -> float:
 
 
 STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional type whose ESTCPADD it may not fall below
+# ucape.f ELSTCAP keeps a history per ECP type (ESTYRADD, udat.f 8276, from each unit's own ECPcd): AC counts only AC,
+# CC counts CC plus EC (ucape.f 62), and then ESTCPADD(AC) = max(ESTCPADD(AC), ESTCPADD(CC)) (ucape.f 72-73; AT and CT
+# alike, CT counting ET). The LP pooled them: the gas_cc_new history was the plan's EC units plus its own AC builds in
+# one sum per year, and the CC floor was ESTMNADD alone. On: the advanced type's history is its own (LP builds plus
+# plant-file units of that ECP type), the conventional type's is the plant file's CC + EC (CT + ET) units by online
+# year, and the steps use the larger ESTCPADD. Off: pooled.
+STEP_SEPARATE_HISTORY = True
+STEP_CONVENTIONAL_TYPES = {"gas_cc_new": ("CC", "EC"), "gas_ct_new": ("CT", "ET")}
+STEP_OWN_TYPES = {"gas_cc_new": ("AC",), "gas_ct_new": ("AT",)}
+
+
+def plant_file_adds(year: int, ecp_types) -> float:
+    """National GW of plant-file units of these ECP types online in `year`, with ESTYRADD's vintage filter
+    (WVIN 1, 2, 3 or above 9, not 15; udat.f 8273)."""
+    u = plants.load_units()
+    vin = np.asarray(u.vintage)
+    ok = ((vin == 1) | (vin == 2) | (vin == 3) | (vin > 9)) & (vin != 15)
+    m = ok & (u.online_year == year) & np.isin(u.ecp_type, ecp_types)
+    return float(u.summer_mw[m].sum()) / 1000.0
 
 # ECP's battery build columns (uecp.f CALC_STORAGE_VAL,11-12): one column per region in the first elasticity step only
 # (IS = 1, row LUDSST1), so batteries never reach the 1.4 x and 2.25 x steps, and each region's column is bounded by
@@ -121,12 +140,14 @@ def battery_build_limit(snapshot, year: int, case) -> np.ndarray:
     return battery_increment_share(e) * np.maximum(top, 0.0)
 
 
-def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
+def build_steps(code: str, recent: list, planned: float = 0.0, floor_recent: list | None = None) -> list:
     """[(GW bound, capital cost multiplier)] for this year's national builds of ECP type `code`, from the last five
     years' national additions (GW, oldest first), as ucape.f ELSTCAP and ELSTELA. `planned`: the plant file's
     additions of the type online this year (GW); ECP puts them in the first step (uecp.f EP$ELAST,2-3: a fixed
     column of min(ESTCPLIM step 1, ESTYRPLN) in the step-1 row), so the model's own builds get only what is left
-    of it. Without that, 2027's 26 GW of planned solar left the LP a full 44 GW first step on top."""
+    of it. Without that, 2027's 26 GW of planned solar left the LP a full 44 GW first step on top. `floor_recent`:
+    the conventional type's own five years (STEP_SEPARATE_HISTORY), whose ESTCPADD the advanced type may not fall
+    below; without it, only the conventional type's ESTMNADD floor."""
     b = named_ranges(technology.ECPDATY, "BLDINFO")
     i = technology.ecp_codes().index(code)
     stp = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[i]
@@ -137,12 +158,16 @@ def build_steps(code: str, recent: list, planned: float = 0.0) -> list:
         add = max(add, float(a) * (0.5 + 0.5 * (k + 1) / n))
     if code in STEP_FLOOR_OF:
         # ucape.f ELSTCAP: ESTCPADD(AC) = max(ESTCPADD(AC), ESTCPADD(CC)), likewise AT and CT. The conventional type's
-        # ESTCPADD is at least its ESTMNADD / (1 + ESTCPSTP step 1), 5,000 MW / 1.25 = 4 GW, and its own history is
-        # the same additions this group counts, so the advanced type's steps never fall below 4 GW. Without it, five
-        # years with no turbine builds shrank the turbine steps to 1.2 GW and the 2039 cofiring retirements went to CC.
+        # ESTCPADD is at least its ESTMNADD / (1 + ESTCPSTP step 1), 5,000 MW / 1.25 = 4 GW, or its own weighted history
+        # (CC + EC units, `floor_recent`), so the advanced type's steps never fall below 4 GW. Without it, five years
+        # with no turbine builds shrank the turbine steps to 1.2 GW and the 2039 cofiring retirements went to CC.
         j = technology.ecp_codes().index(STEP_FLOOR_OF[code])
         stp_j = np.array(b["ESTCPSTP"], dtype=float).reshape(len(b["ESTSWTCH"]), -1)[j]
-        add = max(add, float(b["ESTMNADD"][j]) / 1000.0 / (1.0 + stp_j[0]))
+        add_j = float(b["ESTMNADD"][j]) / 1000.0 / (1.0 + stp_j[0])
+        if floor_recent is not None:
+            for k, a in enumerate(floor_recent):
+                add_j = max(add_j, float(a) * (0.5 + 0.5 * (k + 1) / len(floor_recent)))
+        add = max(add, add_j)
     out, cum, done = [], 1.0, 0.0
     for s, frac in enumerate(stp):
         cum += frac
@@ -248,6 +273,10 @@ ECP_STORAGE_SR = True
 # EIA's (2040: 362 -> 414 GW against 404), other types within 1% (docs/capacity.md).
 ECP_GAS_CURVE = True
 GAS_CURVE_STEPS, GAS_CURVE_SIZE = 20, 0.02          # composite_2030 UPCRVSTP, UPCRVSIZ
+# ECP bounds every step after the first at QSIZE, the last one too (uecp.f 6185-6200 EP$FLCRV,7; ecp.ams
+# ccalc_cSUNGX_UBOUND), so the sector can burn at most QBASE + UPCRVSTP x QSIZE (40% over QBASE). On: so here. Off: the
+# last step is unbounded.
+GAS_CURVE_LAST_BOUNDED = True
 
 
 def ngmm_gas_price(snapshot, year: int, extra_tbtu) -> np.ndarray:
@@ -270,7 +299,7 @@ def ngmm_gas_price(snapshot, year: int, extra_tbtu) -> np.ndarray:
 
 def gas_curve_steps(snapshot, year: int) -> tuple:
     """ECP's power-sector gas steps for `year`: (upper bound TBtu of each of the 2 x GAS_CURVE_STEPS + 1 steps, the
-    last unbounded; the price ratio PDEL of each). Step 1 holds everything up to 20 steps below QBASE; step k > 1 is
+    last bounded like the others with GAS_CURVE_LAST_BOUNDED; the price ratio PDEL of each). Step 1 holds everything up to 20 steps below QBASE; step k > 1 is
     the k - 21st 2% step away from it (step 21 ends at QBASE)."""
     from . import dispatch_report
     qbase = dispatch_report.reference(snapshot, year)["fuel_gas"]
@@ -281,8 +310,23 @@ def gas_curve_steps(snapshot, year: int) -> tuple:
     ratio = ngmm_gas_price(snapshot, year, dev) / ngmm_gas_price(snapshot, year, 0.0)
     bound = np.full(n, w)
     bound[0] = qbase - GAS_CURVE_STEPS * w
-    bound[-1] = np.inf
+    if not GAS_CURVE_LAST_BOUNDED:
+        bound[-1] = np.inf
     return bound, ratio
+
+
+# The price ECP scales by PDEL / PBASE: WHDEX = XOGWPRNG(MNUMOR) / CFNGU (uecp.f 6258, 6266-6269), the wellhead price
+# NGMM hands EMM, in 1987$ per MMBtu (UPGNPD and PWF only move it to ECP's nominal present value). The port used
+# NGSCRV_P, the supply curve's own price (2030: 1.4416 against WHDEX's 1.4248). On: WHDEX. Off: NGSCRV_P.
+GAS_CURVE_WHDEX = True
+
+
+def gas_curve_wellhead(snapshot, year: int) -> float:
+    """1987$/MMBtu the gas curve's step premiums scale: WHDEX (GAS_CURVE_WHDEX) or NGSCRV_P."""
+    if not GAS_CURVE_WHDEX:
+        return float(snapshot["NGTDMREP/ngscrv_p"][year - 1990])
+    k = min(year, LAST_MODEL_YEAR) - 1990
+    return float(snapshot["MXPBLK/xogwprng"][-1, year - 1990]) / float(snapshot["CONVFACT/cfngu"][k])
 
 
 ECP_BATTERY_SR_EX = (0.241, 0.285, 0.416, 0.220, 0.227, 0.460, 0.283, 0.213, 0.455)
@@ -468,12 +512,37 @@ def discount_rate(snapshot, year: int) -> float:
     equity the 10-year Treasury plus a 5.75% market premium times UPBETA (EWGTCE), both from the restart's macro
     block. About 7% in the reference case. It is a nominal rate; a level annuity at it is what ECP charges in
     the first year, which is what a one-year decision compares."""
+    debt, equity, share, tax = _financing(snapshot, year)
+    return share * debt * (1.0 - tax) + (1.0 - share) * equity
+
+
+def _financing(snapshot, year: int) -> tuple:
+    """(debt rate, equity rate, debt share UPNFDT, tax rate UPTXRT) of a new plant's financing in `year`."""
     fin = named_ranges(technology.ECPDATY, "FINANCIAL")
     i = year - 1990
     debt = float(snapshot["MACOUT/mc_rmcorppuaa"][i]) / 100.0
     equity = float(snapshot["MACOUT/mc_rmtcm10y"][i]) / 100.0 + 0.0575 * float(fin["UPBETA"][0])
-    share = float(fin["UPNFDT"][0])
-    return share * debt * (1.0 - float(fin["UPTXRT"][0])) + (1.0 - share) * equity
+    return debt, equity, float(fin["UPNFDT"][0]), float(fin["UPTXRT"][0])
+
+
+# The rate ECP carries work in progress at (uread.f EPINCST's ROR). Every EMM region builds as a non-utility
+# (UPBLDTYP = 2 in NEMS_INPUT.db V_EMM_ECPDAT_REG), so EP$BDSP,62 passes EWGROR = EWGROE x (1 - DEBT_F) + EWGINT x DEBT_F
+# (uecp.f 16269, 16301): the pre-tax cost of capital, with UPNIRTEA and UPNRRTEA, which carry EXTRARISK for the UPRSKSW
+# types (util.f 895-900), on both parts. The annuity that follows (EPCNBLD, CRF) is at the after-tax EPDSCRT, as in
+# capital_costs. On: construction interest at that pre-tax rate. Off: at the after-tax discount rate, which understated
+# the interest by about UPNFDT x debt x UPTXRT (0.8 points in 2030).
+CONSTRUCTION_PRE_TAX = True
+
+
+def construction_rate(snapshot, year: int, code: str) -> float:
+    """EPINCST's rate for building ECP type `code` in `year`: EWGROR, the pre-tax cost of capital (with
+    CONSTRUCTION_PRE_TAX), else the after-tax discount rate plus the risk premium."""
+    if not CONSTRUCTION_PRE_TAX:
+        return discount_rate(snapshot, year) + risk_premium(snapshot, year, code)
+    debt, equity, share, _ = _financing(snapshot, year)
+    fin = named_ranges(technology.ECPDATY, "FINANCIAL")
+    extra = float(snapshot["EMISSION/extrarisk"][year - 1990]) if fin["UPRSKSW"][technology.ecp_codes().index(code)] > 0 else 0.0
+    return share * (debt + extra) + (1.0 - share) * (equity + extra)
 
 
 def risk_premium(snapshot, year: int, code: str) -> float:
@@ -575,7 +644,8 @@ def _crf(rate: float, years: float) -> float:
     return rate / (1.0 - (1.0 + rate) ** -years)
 
 
-def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon: int = HORIZON_YEARS) -> np.ndarray:
+def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon: int = HORIZON_YEARS,
+                      last: int | None = None) -> np.ndarray:
     """What a coal-to-gas conversion made in `year` is worth each year, beyond this year, as ECP's planning horizon
     sees it (k$ per GW-year, levelized over the horizon).
 
@@ -585,9 +655,9 @@ def conversion_credit(year: int, firm_annual, keep_annual, rate: float, horizon:
     converted GW is firm capacity the plan does not have to build. A one-year LP sees none of that and never
     converts (EIA's run converts 36 GW in 2028-2030). The credit is that avoided build, `firm_annual` (the annual
     cost of a new turbine, the cheapest firm type) less `keep_annual` (the converted unit's own fixed O&M), for each
-    horizon year from RULE_YEAR, discounted at `rate` and levelized over the horizon."""
+    horizon year from RULE_YEAR (to `last` if given), discounted at `rate` and levelized over the horizon."""
     gain = np.maximum(np.asarray(firm_annual, dtype=float) - np.asarray(keep_annual, dtype=float), 0.0)
-    pv = sum((1.0 + rate) ** -(k + 1) for k in range(horizon) if year + k >= RULE_YEAR)
+    pv = sum((1.0 + rate) ** -(k + 1) for k in range(horizon) if year + k >= RULE_YEAR and (last is None or year + k <= last))
     return gain * pv * _crf(rate, horizon)
 
 
@@ -612,6 +682,33 @@ ECP_CONVERT_TIMING = False
 # with its units' capacity-weighted capital and keep cost.
 CONVERT_BY_UNIT = False
 CONVERT_STEPS = 5
+# How ECP dispatches a cofired conversion (EP$COAL,20a/28b-d, 35a/81a/87a): the conversion column cNNG puts the unit in
+# the gas steam capacity rows (it burns gas), and the cofiring column GCL keeps a coal part in the coal capacity and fuel
+# rows, with row GCF (0.6 cNNG - 0.4 GCL >= 0) holding the coal part to at most 60% of the capacity. So the coal part
+# runs on coal at coal cost and only output above it burns gas: a split of capacity, not a fuel blend in every MWh.
+# This LP blended 60% coal and 40% gas into every MWh, so a cofired unit at a coal unit's 50-60% capacity factor burned
+# 40% gas where ECP's burns almost none. On: gas_conv runs at coal cost up to UEPA_CGSH of its available capacity in
+# each block, and pays the gas premium above that.
+CONVERT_SPLIT_FUEL = False
+# How far the conversion's horizon credit runs. ECP's gas part (cNNG) sits in every later reserve row at full capacity
+# (EP$COAL,23: no year limit). Its coal part (cNNGCL, at most UEPA_CGSH of the unit through row NGCLCF, EP$COAL,28c)
+# sits in the explicit years' reserve rows in full but in the tail row only at EPA_YRSHR, the discounted share of the
+# tail years up to UEPA_CLCFYR (ecp.ams EP_COAL_Calculations 11604-11609, ccalc_cNNGCL_rRXXXXXge 12187-12201). So in
+# ECP the coal part's credit stops at UEPA_CLCFYR and the gas part's does not. (EIA then retires the whole cofiring
+# plant at UEPA_CLCFYR, udat.f 6451 and uecp.f 28161, but ECP's LP does not price that.) On: the credit is
+# (1 - UEPA_CGSH) x the full-horizon credit + UEPA_CGSH x the credit to UEPA_CLCFYR. Off: full horizon for all of it.
+CONVERT_CREDIT_TO_CLCFYR = True
+
+
+def cofired_conversion_credit(year: int, firm_annual, keep_annual, rate: float, rule: dict) -> np.ndarray:
+    """conversion_credit for a cofired conversion as ECP's columns see it (CONVERT_CREDIT_TO_CLCFYR): the gas part
+    (1 - UEPA_CGSH) to the end of the horizon, the coal part (UEPA_CGSH) only to UEPA_CLCFYR."""
+    full = conversion_credit(year, firm_annual, keep_annual, rate)
+    if not (CONVERT_CREDIT_TO_CLCFYR and rule["switch"]):
+        return full
+    share = float(rule["cofire_coal_share"])
+    cut = conversion_credit(year, firm_annual, keep_annual, rate, last=rule["cofire_last"])
+    return (1.0 - share) * full + share * cut
 
 
 def conversion_steps(capital, keep, mw, region, crf: float, steps: int = CONVERT_STEPS, num_r: int = NUM_R):
@@ -647,28 +744,40 @@ def conversion_is_last_chance(year: int, rule: dict) -> bool:
     return bool(rule["switch"]) and year + 1 > rule["gas_switch_last"]
 
 
-# ECP keeps or retires an existing gas or oil plant for its whole planning horizon, not for one year. Combined cycle and
-# steam are EP$NGBS gas plant groups (uecp.f 36045-36680): each group's options run it for period 1 only (the one that
-# retires it), periods 1-2, or all of the UNFPH horizon at ENG_FOM a year (FOM + G&A + capital additions + age adder,
-# no hurdle), and the kept options count on the reserve rows of years 2 and 3. Turbines are retirement-group columns
-# (EP$BDSP,5-8) priced at the present value of EPGFOM over the horizon and counted on every year's reserve row. The
-# tail year's reserve row binds in almost every region (OutToNEMS_2026: 21 of 25), so a kept GW is firm capacity the
-# tail would otherwise have to build. ECP's 2026-2049 solves retire 2.5 GW of EC, ST and ET in all; a one-year LP with a
-# zero reserve price this year retired 28 GW of them in 2027-2033 (EIA: about 7 GW of steam). Off: retirements see
-# only this year.
-RETIRE_HORIZON = True
+# ECP keeps or retires an existing plant with option columns that span its horizon. For gas CC and steam (EP$NGBS,
+# uecp.f 36373-36690) each plant group has three columns sharing its capacity: run period 1 only (it retires), periods
+# 1-2, or the whole horizon. The last pays fixed O&M (GRP_FOM) for all UNFPH years and sits in the reserve row of the
+# tail year, which stands for years 3 to 30 (EP$NGBS,9). Turbines (EP$BDSP,5-8) and coal (EP$COAL) have the same
+# shape. So keeping a plant is worth the tail reserve row's dual, the present value of whatever firm capacity the tail
+# would otherwise build, less the horizon's fixed O&M. The dual is ECP's own: zero where the tail row is slack.
+#
+# This LP has no tail period, so it does not have that dual. RETIRE_TAIL_PROXY is an approximation of it, not ECP's
+# method: it prices the tail's firm capacity at a new turbine's annual cost (capital plus fixed O&M, no energy margin)
+# in every region and every year, as if the tail row always bound. In ECP's 2030 solve the tail row binds in 21 of 25
+# regions and steam's value of keeping is about a turbine's annual cost, which is why the proxy fits on average. It
+# overstates where the tail is slack and wherever a turbine earns energy margin. Its effect: without it the 2027-2033
+# chain retires 25 GW of CC, CT and steam (plus 3.5 of converted coal) where EIA retires about 3; with it, 3.1
+# (2026-11-22, docs/capacity.md). The faithful port is a
+# tail period in this LP: a reserve row for ECP's year 3 (load and capacity credits of E + 2, every existing and kept
+# group, year-2 build columns paying the horizon's present value) and, per retirement group, the three option columns
+# with their horizon fixed O&M. That is the HORIZON code path plus option columns, a few hundred lines and a tail
+# solve per year (HORIZON's own years took 20 to 140 s; it is off because it did not close the build gap). On: proxy.
+# Off: retirements see only this year.
+RETIRE_TAIL_PROXY = True
 # Coal (EP$COAL's commit vectors also run to the end of the horizon) counts only the years before the 2032 rule, and
-# coal cofired with gas (gas_conv) only to UEPA_CLCFYR.
-RETIRE_HORIZON_GROUPS = ("gas_cc", "gas_ct", "steam", "gas_conv", "coal")
+# coal cofired with gas (gas_conv) only to UEPA_CLCFYR. (ECP's option 3 exists while the group's retirement year is at
+# least E + 2 and then counts the whole tail, so cutting gas_conv at UEPA_CLCFYR is a further approximation.)
+RETIRE_TAIL_PROXY_GROUPS = ("gas_cc", "gas_ct", "steam", "gas_conv", "coal")
 
 
-def retirement_tail_value(year: int, firm_annual, keep_annual, rate: float, last_year: int | None = None,
+def retirement_tail_proxy(year: int, firm_annual, keep_annual, rate: float, last_year: int | None = None,
                           horizon: int = HORIZON_YEARS) -> np.ndarray:
     """What retiring a GW of existing gas or oil capacity in `year` gives up in the rest of ECP's horizon, in this year's
     money (k$ per GW): each later year to `last_year` in which the plant could still run, the firm capacity the plan
     would then have to build, `firm_annual` (a new turbine's annual cost, the cheapest firm type), less the plant's own
     `keep_annual`, never below zero, discounted at `rate`. Charged on the retirement column, it makes the one-year LP
-    keep a plant whenever keeping it is cheaper than replacing it later, which is ECP's option-3 test."""
+    keep a plant whenever keeping it is cheaper than a new turbine later. An approximation of ECP's option-3 test
+    (RETIRE_TAIL_PROXY): ECP values the tail's firm capacity at its own tail reserve dual, not a turbine's cost."""
     gain = np.maximum(np.asarray(firm_annual, dtype=float) - np.asarray(keep_annual, dtype=float), 0.0)
     last = year + horizon - 1 if last_year is None else last_year
     pv = sum((1.0 + rate) ** -k for k in range(1, horizon) if year + k <= last)
@@ -829,8 +938,8 @@ def ptc_annual(ptc: float, dollar_year: int, years: int, rate: float, life: floa
 
 # Interest during construction (uread.f EPINCST, called for every build column in uecp.f EP$BDSP,62): ECP spends the
 # overnight cost over the construction years by the type's COSTPERF profile UPCPRO, each year's spending in that year's
-# dollars, and carries the work in progress at the plant's rate of return (half a year on that year's spending) to the
-# online year. The book value it then annualizes is overnight x this factor. A combined cycle (3 years, 25/50/25%)
+# dollars, and carries the work in progress at the plant's rate of return, EWGROR (construction_rate; half a year on
+# that year's spending) to the online year. The book value it then annualizes is overnight x this factor. A combined cycle (3 years, 25/50/25%)
 # carries about 7% more than a turbine (2 years, 35/65%) or a battery (1 year). Off: overnight cost only.
 CONSTRUCTION_INTEREST = True
 
@@ -873,7 +982,7 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
         itc = max(itc_tab[i, col], 0.0)
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         if CONSTRUCTION_INTEREST:
-            ovn = ovn * construction_factor(snapshot, code, cost_year, rate)
+            ovn = ovn * construction_factor(snapshot, code, cost_year, construction_rate(snapshot, cost_year, code))
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
         if parts is not None:      # the capital charge alone, k$ per GW-year (what ECP's build steps scale)
             parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3
@@ -961,6 +1070,11 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         vom[g] = np.full(NUM_R, float(params["vom"][i]))
         oil_share[g] = np.zeros(NUM_R)
         avail[g] = avail[base]
+    # ECP's conversion column burns gas at the coal group's ECP heat rate times 1 + UCL_CL_NG_HR_PEN (ecp.ams EP$COAL,27:
+    # ULHTRT_ECP x (1 + pen) less the gas steam average). ULHTRT_ECP is WHRATEA x Target_EFF / Max_EFF (udat.f
+    # 7280-7285), the part-load heat rate, which is what heat["coal"] carries here (dispatch.COAL_PART_LOAD_HEAT_RATE).
+    # EFD differs on purpose: uecp.f 28113 writes WHRATE x (1 + pen) into the converted unit's record, and the
+    # converted type has no part-load curve, so dispatch uses the plain coal heat rate (coal_plain).
     heat["gas_conv"] = heat["coal"] * (1.0 + CONVERT_HR_PENALTY)
     vom["gas_conv"] = vom["coal"] * CONVERT_VOM_ADJ
     oil_share["gas_conv"] = np.zeros(NUM_R)
@@ -1080,7 +1194,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         renewable = {"wind": bw, "solar": bs, "battery": bb}
         for g, code in STEP_CODES.items():
             total = renewable[g].sum() if g in renewable else build.sel(group=g).sum()
-            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5), planned_in_step(year, g))
+            steps = build_steps(code, (recent_adds or {}).get(g, [0.0] * 5), planned_in_step(year, g),
+                                (recent_adds or {}).get(f"{g}/floor"))
             if g == "battery" and ECP_STORAGE_BUILDS:
                 steps = steps[:1]          # ECP builds batteries in the first step only (CALC_STORAGE_VAL,12)
             S = pd.Index(range(len(steps)), name="step")
@@ -1149,12 +1264,16 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             oil_price = cs.price["residual"] if g == "steam" else cs.price["distillate"]
             is_coal = g.startswith("coal")
             fuel = (1 - oil_share[g]) * cs.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
-            if g == "gas_conv" and rule["switch"]:
+            if g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
+                fuel = cs.price["coal"]           # the coal part's cost; output above it pays the gas premium below
+            elif g == "gas_conv" and rule["switch"]:
                 # EPA 111 cofiring: at most UEPA_CGSH of the fuel is coal (udat.f 6457), the rest gas
                 fuel = rule["cofire_coal_share"] * cs.price["coal"] + (1.0 - rule["cofire_coal_share"]) * cs.price["gas"]
             cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
             if not is_coal:
                 gas_frac[:, k] = (1.0 - rule["cofire_coal_share"]) if (g == "gas_conv" and rule["switch"]) else 1 - oil_share[g]
+                if g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
+                    gas_frac[:, k] = 0.0          # its gas burn is conv_gas below
             if g in dispatch.CAPTURE_GROUPS:
                 share = cs.credit_share[g] if cs.credit_share is not None else 1.0
                 cost[:, k] -= cs.credit_45q * share * heat[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.capture_rate(g)
@@ -1246,15 +1365,27 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         operating = (g_th * cost_da * hours_w).sum() + (unserved * (dispatch.UNSERVED_COST * hours_w)).sum() \
             + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum() \
             + (shortfall * RESERVE_SHORTFALL_COST).sum()
+        conv_gas = None
+        if CONVERT_SPLIT_FUEL and rule["switch"]:
+            # the gas part of gas_conv output: whatever runs above the coal part (UEPA_CGSH of available capacity)
+            conv_gas = m.add_variables(lower=0, coords=[R, D, Bk], name=f"conv_gas{tag}")
+            gc = g_th.sel(group="gas_conv")
+            coal_part = capv_p.sel(group="gas_conv") * float(one_minus_for.sel(group="gas_conv")) * rule["cofire_coal_share"]
+            m.add_constraints(gc - conv_gas - coal_part <= 0, name=f"conv_coal_part{tag}")
+            m.add_constraints(conv_gas - gc <= 0, name=f"conv_gas_part{tag}")
+            premium = heat["gas_conv"] / 1000.0 * (cs.price["gas"] - cs.price["coal"])
+            operating = operating + (conv_gas * xr.DataArray(premium, coords=[R]) * hours_w).sum()
         gas_steps = None
         if ECP_GAS_CURVE and tag == "":
             # ECP's gas supply steps (cSUNGX on rFUELNGXle): the burn fills them cheapest first; each step adds
             # WHDEX x (PDEL - 1) to the delivered price already in `cost` (k$ = TBtu x $/MMBtu x 1000).
             bound, ratio = gas_curve_steps(snapshot, year)
-            wh = float(snapshot["NGTDMREP/ngscrv_p"][year - 1990])
+            wh = gas_curve_wellhead(snapshot, year)
             S = pd.Index(np.arange(len(bound)), name="gas_step")
             gas_steps = m.add_variables(lower=0, upper=xr.DataArray(bound, coords=[S]), name="gas_step")
             burn = (g_th * xr.DataArray(heat_arr * gas_frac / 1.0e6, coords=[R, T]) * hours_w).sum()
+            if conv_gas is not None:
+                burn = burn + (conv_gas * xr.DataArray(heat["gas_conv"] / 1.0e6, coords=[R]) * hours_w).sum()
             m.add_constraints(gas_steps.sum() - burn == 0, name="gas_curve")
             operating = operating + (gas_steps * xr.DataArray(wh * (ratio - 1.0) * 1000.0, coords=[S])).sum()
         spin = {}
@@ -1408,30 +1539,31 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     retro = (retrofit * xr.DataArray(retro_annual, coords=[R])).sum()
     rate_now = discount_rate(snapshot, year)
     tail = 0
-    if RETIRE_HORIZON and decide and not horizon:
-        # ECP's keep-or-retire test spans its horizon (RETIRE_HORIZON): retiring now also gives up the plant's firm
-        # capacity later, worth a new turbine's annual cost less the plant's own fixed cost in each later year.
+    if RETIRE_TAIL_PROXY and decide and not horizon:
+        # Proxy for ECP's option-3 columns (RETIRE_TAIL_PROXY): retiring now also gives up the plant's firm capacity
+        # later, priced at a new turbine's annual cost less the plant's own fixed cost in each later year.
         firm = capital["gas_ct_new"][:, None]
-        for g in RETIRE_HORIZON_GROUPS:
+        for g in RETIRE_TAIL_PROXY_GROUPS:
             last = rule["cofire_last"] if (g == "gas_conv" and rule["switch"]) else (RULE_YEAR - 1 if g == "coal" else None)
             if use_groups and g in RETIRABLE:
                 j = RETIRABLE.index(g)
-                tv = retirement_tail_value(year, firm, gcost[:, j, :], rate_now, last)
+                tv = retirement_tail_proxy(year, firm, gcost[:, j, :], rate_now, last)
                 tail = tail + (rg.sel(group=g) * xr.DataArray(tv, coords=[R, K])).sum()
             else:
                 keep = fom_exist[g] if g in fom_exist else fom_made[g]
-                tv = retirement_tail_value(year, firm[:, 0], keep, rate_now, last)
+                tv = retirement_tail_proxy(year, firm[:, 0], keep, rate_now, last)
                 tail = tail + (retire.sel(group=g) * xr.DataArray(tv, coords=[R])).sum()
     if CONVERT_BY_UNIT:
         keep_k = conv_step_keep * 1.0e3                           # k$ per GW-year, hurdle already in
         conv_cost = conv_step_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * keep_k
         if conversion_is_last_chance(year, rule):
-            conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"][:, None], CONVERT_FOM_ADJ * keep_k,
-                                                      rate_now)
+            conv_cost = conv_cost - cofired_conversion_credit(year, capital["gas_ct_new"][:, None],
+                                                              CONVERT_FOM_ADJ * keep_k, rate_now, rule)
     else:
         conv_cost = conv_capital * _crf(rate_now, HORIZON_YEARS) * 1.0e3 - (1.0 - CONVERT_FOM_ADJ) * fom_exist["coal"]
         if conversion_is_last_chance(year, rule):
-            conv_cost = conv_cost - conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now)
+            conv_cost = conv_cost - cofired_conversion_credit(year, capital["gas_ct_new"], fom_made["gas_conv"], rate_now,
+                                                              rule)
         conv_cost = conv_cost[:, None]
     retro = retro + (convert_k * xr.DataArray(conv_cost, coords=[R, CS])).sum()
     m.add_objective(operating + weight_now * (capex - saved + retro) + future_capex + (weight_now - coal_weight) * saved_coal
@@ -1575,6 +1707,14 @@ class CapacityPath:
                     vals.append(max(capacity_report.eia_additions(self.snapshot, yr, prefixes)
                                     - capacity_report.eia_additions(self.snapshot, yr - 1, prefixes), 0.0))
             out[g] = vals
+            if STEP_SEPARATE_HISTORY and g in STEP_OWN_TYPES:
+                own = []
+                for yr in range(year - n, year):
+                    r = self.results.get(yr)
+                    built = float(r.builds.get(g, np.zeros(NUM_R)).sum()) if r is not None else 0.0
+                    own.append(built + plant_file_adds(yr, STEP_OWN_TYPES[g]))
+                out[g] = own
+                out[f"{g}/floor"] = [plant_file_adds(yr, STEP_CONVENTIONAL_TYPES[g]) for yr in range(year - n, year)]
         return out
 
     def credit_share(self, year: int) -> dict:
