@@ -350,6 +350,93 @@ def test_coal_classes_split_the_coal_group(snapshot):
     assert (cl.route_cost >= 0).all() and len(cl.route_cost) > 100
 
 
+def test_coal_contracts_follow_efd_cont(snapshot):
+    """ED$COL's contract rows (K_, G type): one per curve, coal region and scrubber status where EFD_CONT is not
+    negative, over every route from that curve to that region's configurations of that status (ECP_SCRUB). 2030 has
+    eight, 350 TBtu in all (C1 lignite 207, WS 64, AM 30, YP 24, MT 17, S2 8); the coal group's part is at most the
+    contract."""
+    from nems_open.emm import coal_supply
+    if not coal_supply.CONTRACTS:
+        pytest.skip("CONTRACTS off")
+    y = 2030 - 1990
+    cont = np.asarray(snapshot["USO2GRP/efd_cont"], float)[:, :, :, y]
+    assert cont[cont > 0].sum() == pytest.approx(349.9, abs=0.2) and (cont > 0).sum() == 8
+    cl = dispatch.build_case(snapshot, 2030).coal_classes
+    scrub = np.asarray(snapshot["USO2GRP/ecp_scrub"], float)[:38, y].astype(int)
+    from nems_open.emm import technology
+    codes = technology.ecp_codes()
+    assert len(cl.contract_rhs) == 8
+    for n, (curve, crg, f) in enumerate(cl.contract_key):
+        c = coal_supply.CL_CODES.index(crg)
+        assert 0 < cl.contract_rhs[n] <= cont[curve - 1, c, "SU".index(f)] + 1e-9
+        for j in np.flatnonzero(cl.route_contract == n):
+            k_crg, k_cfg = cl.classes[cl.route_class[j]]
+            assert cl.curves[cl.route_curve[j]] == curve and k_crg == crg and "SU"[scrub[codes.index(k_cfg)] - 1] == f
+    # every route that should be in a row is
+    for j in np.flatnonzero(cl.route_contract < 0):
+        k_crg, k_cfg = cl.classes[cl.route_class[j]]
+        f = scrub[codes.index(k_cfg)] - 1
+        assert cont[cl.curves[cl.route_curve[j]] - 1, coal_supply.CL_CODES.index(k_crg), f] < 0
+
+
+def test_coal_imports_follow_combine_coal_rates(snapshot):
+    """ED$COL's international curves: up to 10 steps of XCL_QIMP at XCL_PIMP, rank 1, no 12th step; each coal region
+    takes the cheapest port (COMBINE_COAL_RATES). 2030: Colombian coal (curve 17) reaches AM at 0.287 and NE at 0.542
+    1987$/MMBtu; no import route reaches the interior."""
+    from nems_open.emm import coal_supply
+    curves, qty, price, other = coal_supply.import_curves(snapshot, 2030)
+    assert list(curves) == list(range(15, 27))
+    assert (qty[:, 10:] == 0).all()
+    q = np.asarray(snapshot["USO2GRP/xcl_qimp"], float)[:, :10, 2030 - 1990]
+    assert qty[:, :10] == pytest.approx(np.maximum(q, 0.0))
+    rate = coal_supply.import_rates(snapshot, 2030)
+    cl = coal_supply.CL_CODES
+    assert rate[2, cl.index("AM")] == pytest.approx(0.287, abs=1e-3)
+    assert rate[2, cl.index("NE")] == pytest.approx(0.542, abs=1e-3)
+    reach = {cl[r] for r in range(16) if (rate[:, r] < coal_supply.ROUTE_MAX).any()}
+    assert reach == {"NE", "GF", "AM", "WS", "PC"}
+
+
+@pytest.mark.parametrize("year", (2025, 2030, 2035, 2040, 2050))
+def test_coal_lp_rows_left_out_cannot_bind(snapshot, year):
+    """The rows of ED$COL not ported cannot bind in cb2026 (each from EIA's data, not assumed):
+    - tier-1 limits: a T_ row exists only where XCL_TR_T2 > XCL_TR_T1, and the second-tier rate equals the first on
+      every route, raw and escalated, so no row exists and the tier choice changes no cost;
+    - national SO2 (SULFUR1, SULFUR2): free rows (type N) from UYR_NOCAIR = 2015 on (emmcntl.txt), so the SULF plant rows
+      only feed a free row;
+    - CSAPR coal-region SO2 (SULFUR<region> <= TSO2_LIM_BY_CLRG): from 2030 EIA's whole coal burn in each region at the
+      dirtiest curve it has a route from, after the configuration's removal (RCLCLNR), stays under every limit (2030 at
+      most 0.79, S1); 2025 is checked on the LP's own flows in test_csapr_rows_slack_on_the_lp_flows;
+    - mercury: the national row is free (EMEL_QHG >= 100), and the MATS rows HGO_ need MACT_SW, which GET_EMF_AND_ACI
+      sets only where HG_OUTPUT, HG_INPUT or HG_MEF is positive; all are zero, so MATS works through the ACI columns
+      (route_costs) alone."""
+    from nems_open.emm import coal_supply
+    s = snapshot
+    y = year - 1990
+    a = lambda k: np.asarray(s[k], float)
+    t1, t2 = coal_supply.tier_rates(s, year)
+    route = t1 < coal_supply.ROUTE_MAX
+    assert (t2[route] == t1[route]).all() and (a("USO2GRP/xcl_tr_t2")[:, :, y][route] <= a("USO2GRP/xcl_tr_t1")[:, :, y][route]).all()
+    assert coal_supply.nocair_year() == 2015 and year >= coal_supply.nocair_year()
+    assert (a("EMISSION/emel_qhg")[:int(np.asarray(s["EMISSION/num_hg_grp"])), y] >= 100.0).all()
+    for k in ("hg_output", "hg_input", "hg_mef"):
+        assert (a(f"EMISSION/{k}")[:, :, y] == 0).all()
+    if year >= 2030:
+        assert np.nanmax(coal_supply.csapr_ratio(s, year)) < 0.9
+
+
+@pytest.mark.parametrize("year", (2025, 2030))
+def test_csapr_rows_slack_on_the_lp_flows(results, snapshot, year):
+    """The CSAPR coal-region SO2 rows on the coal LP's own deliveries, scaled to EIA's whole burn in each region: every
+    row slack. In 2025 the dirtiest-coal bound crosses C2's limit (1.22), so this is the check that matters there."""
+    from nems_open.emm import coal_supply
+    _, _, res = results[year]
+    cl = res.case.coal_classes
+    if cl is None or res.coal_route_tbtu is None:
+        pytest.skip("COAL_BY_CONFIGURATION off")
+    assert np.nanmax(coal_supply.csapr_ratio(snapshot, year, cl, res.coal_route_tbtu)) < 0.9
+
+
 @pytest.mark.parametrize("year", (2030,))
 def test_western_coal_held_by_its_caps(results, snapshot, year):
     """EFD's coal LP holds the western configurations at their caps: TRE, BASN and SRSG coal units land within 10% of
