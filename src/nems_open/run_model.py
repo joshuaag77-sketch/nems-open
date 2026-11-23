@@ -240,6 +240,8 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
             unserved, curtailed = st["unserved"], st["curtailed"]
             if lp is not None:
                 lp.last = st["lp_last"]
+                if st.get("carbon_in") is not None:
+                    lp.carbon_in = st["carbon_in"]
                 if lp.capacity_path is not None and st["capacity_path"] is not None:
                     lp.capacity_path.__dict__.update(st["capacity_path"])
             if verbose:
@@ -349,6 +351,10 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                         new = within.relaxed(old, new)
                         if lp is None:   # the LP's fuel use was relaxed before supply priced it
                             fuel = within.relaxed(fuel_old, fuel)
+                    if lp is not None:   # the part of each power fuel price that is carbon, moved as the price moves
+                        for k, held in lp.carbon_in.items():
+                            add = {k: s.carbon_adders[k][:, j] if k in s.carbon_adders else np.zeros(11)}
+                            held[:, j] = within.relaxed({k: held[:, j]}, add)[k] if tested and relax else add[k]
                     for k in prices:
                         prices[k][:, j] = new[k]
                     for k, v in fuel.items():
@@ -419,6 +425,7 @@ def run(policy: Policy | None = None, start_year: int = 2027, end_year: int = LA
                 "passes": passes,
                 "stable": stable, "wholesale": wholesale, "wholesale_us": wholesale_us, "generation": generation,
                 "unserved": unserved, "curtailed": curtailed, "lp_last": getattr(lp, "last", None),
+                "carbon_in": getattr(lp, "carbon_in", None),
                 "capacity_path": None if cp is None else {k: v for k, v in cp.__dict__.items() if k != "snapshot"}})
     hsm = gas = None
     if aimms_gas is not None:

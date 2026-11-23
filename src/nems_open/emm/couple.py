@@ -76,6 +76,8 @@ class ElectricityLP:
         self.hours_per_block = hours_per_block
         self.added_load = added_load          # datacenter.AddedLoad: already in the loop's commercial sales
         self.capacity_scale = capacity_scale   # year -> {group: multiplier}, from a lever (nems_open.levers)
+        # The carbon adder inside each power fuel price (11, 61), kept by the loop with the price's own relaxation.
+        self.carbon_in = {key: np.zeros((11, 61)) for key in PRICE_KEYS.values()}
         self._cases = {}
         self._fleet_cases = {}
         self._census = _census_of_region()
@@ -102,11 +104,15 @@ class ElectricityLP:
         return self._fleet_cases[year]
 
     def _scaled_prices(self, case, prices: dict, j: int) -> dict:
+        """The case's fuel prices moved by the loop's, net of the carbon adders the loop's prices hold (carbon_in):
+        dispatch and the capacity LP charge carbon on each plant's own emissions (case.carbon_price)."""
         out = dict(case.price)
         for fuel, key in PRICE_KEYS.items():
             if key not in prices:
                 continue
             now = prices[key][:, j][self._census]
+            if key in self.carbon_in:
+                now = np.maximum(now - self.carbon_in[key][:, j][self._census], 0.0)
             then = self.base[key][:, j][self._census]
             ratio = np.divide(now, then, out=np.ones(NUM_R), where=then > 0)
             out[fuel] = case.price[fuel] * np.clip(ratio, *RATIO_CLIP)

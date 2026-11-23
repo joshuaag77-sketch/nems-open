@@ -10,7 +10,7 @@ import pytest
 
 from nems_open import run_model
 from nems_open.demand_adapter import Policy
-from nems_open.emm import capacity
+from nems_open.emm import capacity, dispatch
 from nems_open.paths import INPUT, REFERENCE_RUN
 
 pytestmark = pytest.mark.skipif(
@@ -28,7 +28,10 @@ def test_dispatch_capacity_folds_the_new_groups():
     cap = {g: np.ones(capacity.NUM_R) for g in capacity.STATE_GROUPS}
     out = capacity.dispatch_capacity(cap)
     assert out["gas_cc"].sum() == pytest.approx(2 * capacity.NUM_R)       # gas_cc + gas_cc_new
-    assert out["steam"].sum() == pytest.approx(2 * capacity.NUM_R)        # steam + gas_conv
+    # gas_conv goes to its own dispatch group, or in with steam
+    expect = {"cofire": 1, "steam": 1} if dispatch.COFIRE_GROUP else {"cofire": 0, "steam": 2}
+    for g, n in expect.items():
+        assert out[g].sum() == pytest.approx(n * capacity.NUM_R)
     total = sum(v.sum() for v in cap.values())
     assert sum(v.sum() for v in out.values()) == pytest.approx(total)
 

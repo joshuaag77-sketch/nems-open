@@ -74,6 +74,22 @@ def test_carbon_price_moves_coal_to_gas_and_cuts_co2(no_policy, with_carbon):
     assert b.prices["MPBLK/pelas"][US, j] > a.prices["MPBLK/pelas"][US, j]       # the stand-in adds the carbon cost to retail
 
 
+def test_dispatch_fuel_prices_leave_the_carbon_adder_out():
+    """Dispatch charges carbon on each plant's emissions, so the price it scales by must not hold the adder too."""
+    from nems_open.emm.couple import PRICE_KEYS, ElectricityLP
+    s = SupplyStandin("cb2026")
+    lp, j = ElectricityLP(s), 2030 - FIRST_YEAR
+    out = s.solve(carbon_price=np.full(61, 50.0))
+    for k, held in lp.carbon_in.items():
+        assert out.carbon_adders[k][:9, j].max() > 0
+        held[:, j] = out.carbon_adders[k][:, j]
+    case = lp.case(2030)
+    net = {k: s.base[k] + out.carbon_adders[k] for k in PRICE_KEYS.values()}
+    scaled = lp._scaled_prices(case, net, j)
+    for fuel in PRICE_KEYS:
+        assert np.allclose(scaled[fuel], case.price[fuel])
+
+
 def test_standin_can_take_power_fuel_from_outside():
     s = SupplyStandin("cb2026")
     j = 2030 - FIRST_YEAR
