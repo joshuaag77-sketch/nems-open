@@ -374,6 +374,8 @@ class DispatchResult:
     trade_twh: np.ndarray = None                            # (links,) energy sent on each link
     coal_class_twh: np.ndarray = None                       # (pairs,) coal group TWh by region and class (COAL_BY_CONFIGURATION)
     coal_class_price: np.ndarray = None                     # (classes,) delivered coal price in EFD's coal LP, 1987$/MMBtu
+    coal_route_tbtu: np.ndarray = None                      # (routes,) deliveries on each coal LP route
+    coal_contract_short: np.ndarray = None                  # (contracts,) TBtu short of each contract row (KX)
 
     def total_generation_twh(self) -> float:
         return float(sum(v.sum() for v in self.generation_twh.values()))
@@ -1205,6 +1207,25 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             grp = xr.DataArray(cl.route_class[idx], coords=[pd.Index(idx, name="coal_route")], name="coal_class")
             m.add_constraints(tr.sel(coal_route=idx).groupby(grp).sum() - dx <= xr.DataArray(cap[ks], coords=[K]), name=f"coal_{name}_cap")
             objective = objective + (dx * (coal_supply.ESCAPE * 1000.0)).sum()
+        # Contracts (K_ rows, G type): deliveries from a curve to a coal region's configurations of one scrubber status
+        # at least the contract, short at CONTRACT_ESCAPE (KX). Tier-1 limits (T_ rows): first-tier coal at most the
+        # limit, the rest at the rate difference (C_).
+        for name, member, rhs, sense, extra in (
+                ("contract", cl.route_contract, cl.contract_rhs, ">=", None),
+                ("tier1", cl.route_tier, cl.tier_rhs, "<=", cl.tier_cost)):
+            if member is None or rhs is None or not len(rhs):
+                continue
+            idx = np.flatnonzero(member >= 0)
+            NI = pd.Index(np.arange(len(rhs)), name=f"coal_{name}")
+            grp = xr.DataArray(member[idx], coords=[pd.Index(idx, name="coal_route")], name=f"coal_{name}")
+            slack = m.add_variables(lower=0, coords=[NI], name=f"coal_{name}_slack")
+            flow = tr.sel(coal_route=idx).groupby(grp).sum()
+            if sense == ">=":
+                m.add_constraints(flow + slack >= xr.DataArray(rhs, coords=[NI]), name=f"coal_{name}")
+                objective = objective + (slack * (coal_supply.CONTRACT_ESCAPE * 1000.0)).sum()
+            else:
+                m.add_constraints(flow - slack <= xr.DataArray(rhs, coords=[NI]), name=f"coal_{name}")
+                objective = objective + (slack * xr.DataArray(extra * 1000.0, coords=[NI])).sum()
     tier_vars, tier_com = {}, {}
     if case.tiers is not None:
         for g, (share, hr_t) in case.tiers.items():
@@ -1399,6 +1420,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         dual = demand_row.dual
         res.coal_class_price = np.full(len(cl.classes), np.nan)
         res.coal_class_price[dual["coal_class"].values] = dual.values / 1000.0
+        res.coal_route_tbtu = m.variables["coal_routes"].solution.values
+        if "coal_contract_slack" in m.variables:
+            res.coal_contract_short = m.variables["coal_contract_slack"].solution.values
         fuel_r = np.bincount(cl.region - 1, weights=e * cl.heat_rate, minlength=NUM_R)
         coal_hr = np.divide(fuel_r, gen["coal"], out=np.asarray(case.heat_rate["coal"], dtype=float).copy(), where=gen["coal"] > 1e-9)
     tier_hr = {}

@@ -29,9 +29,14 @@ own units burned in EIA's run (EIA's coal-unit generation, UGENPC + UGENIG - UGE
 the cofired and CCS groups buy at the regional price, outside the LP). As in EFD a class pays only the LP's delivered
 price (dispatch.COAL_PRICE_ANCHOR off). With the anchor on, the LP's prices are shifted onto the regional price
 (UPCOALAVG) through `pay`, what EIA's own burn pays in each class at base-step delivered prices within its caps, or
-`ref`, the same by region (dispatch.COAL_PRICE_BY_CLASS). Left out: imports, contracts (minimum takes, 350
-TBtu nationally in 2030), the tier-1 limits (tier 2 rates equal tier 1 on every power route in cb2026), SO2 and
-mercury rows (not binding in cb2026); the coal_ccs and cofire groups are not split.
+`ref`, the same by region (dispatch.COAL_PRICE_BY_CLASS).
+
+Also ported: contracts (K_ rows, CONTRACTS), the twelve import curves (IMPORTS) and the transport-tier choice with its
+T_ rows (TIER_RATES). Not ported, and shown not to bind in cb2026 (tests/test_emm_dispatch.py
+test_coal_lp_rows_left_out_cannot_bind): the national SO2 rows (free from UYR_NOCAIR = 2015), the CSAPR coal-region
+SO2 rows (EIA's burn at the dirtiest routed coal stays under half of every limit), the mercury rows (national row free,
+no MATS HGO_ rows since HG_OUTPUT, HG_INPUT and HG_MEF are zero). The activated carbon supply curve is ported as a
+cost on ACI coal (ACI_SORBENT). The coal_ccs and cofire groups are not split.
 """
 
 from dataclasses import dataclass
@@ -60,6 +65,36 @@ SHARED_DIVERSITY_CAP = True
 # part of the burn under the cap. On: that part of the cap less the allowance, plus the whole allowance; no row where
 # EIA has none. Off: the part of the cap less the allowance, a negative value read as 0 (Codex finding 13).
 KEEP_CAP_ALLOWANCE = True
+# Contracts (uefd.f 16694-16720, 17185-17195). The CMM writes EFD_CONT(curve, coal region, scrubbed or not) from its
+# contract quantities (coal.ams USO2GRP_EFD_CONT_A..E: Copy8c_CdyrsScrubbed, Copy9c_CdyrsUnScrubbed; -1 for none).
+# EFD makes a row K_ >= EFD_CONT per entry that is not negative; every transport column from that curve to that coal
+# region for a configuration with that scrubber status (ECP_SCRUB) enters it, and an escape KX costs 15 1987$/MMBtu.
+# So up to the contract the coal is all but forced: each MMBtu short costs 15. On: those rows, the right-hand side
+# scaled to the coal group's part of the region's and status's burn in EIA's run (the same basis as the caps; cofired
+# units and CCS retrofits are outside this LP). Off: no contracts. 2030: 350 TBtu in 8 rows, 2025: 4,154 in 40.
+CONTRACTS = True
+CONTRACT_ESCAPE = 15.0     # KX column cost in ED$COL, 1987$/MMBtu
+# Imports (uefd.f 16868-16914; uecp.f COMBINE_COAL_RATES 3049-3108). Twelve international curves (supply curves 15-26),
+# each up to 10 steps of XCL_QIMP at XCL_PIMP (no 9.999 cap and no 12th step), after XCL_OTHER (held at most at the
+# steps' total less 0.1). All are bituminous (rank 1). A route to a coal region takes the cheapest port: XCL_TR_IN x
+# XCL_TESCI + XCL_TRATI2 over the four ports where XCL_TRATI2 > 0 and 0 < XCL_TR_IN < 900. On: the import curves and
+# routes. Off: domestic curves only.
+IMPORTS = True
+NUM_IMPORT = 12            # MX_ISCV
+IMPORT_STEPS = 10
+# Transport tiers (uefd.f 17134-17142, 17179-17183, 17311-17332). A domestic route costs the first-tier rate where the
+# CMM writes a tier-1 limit (EFD_TIER1_LIM > 0, existing configurations, PLT < WIPC) and the second-tier rate
+# otherwise; with XCL_TR_T2 > XCL_TR_T1 a row T_ caps the first-tier coal at the limit and a column C_ takes the rest at
+# the rate difference. On: that choice and those rows. Off: every route at the first-tier rate, no rows. In cb2026 the
+# two rates are equal on every route (escalated and raw) in 2025-2050, so no T_ row exists and the choice moves nothing.
+TIER_RATES = True
+# The activated carbon supply curve (uefd.f 16651-16691, 17294-17302; USW_HG = 1 in cb2026). Each ACI column puts
+# max(ACI_QAC x 1e-6, 1e-4) per TBtu into the row ACICSTXX <= 0, which one supply step fills at UCL_PAC = 0.33 (udat.f
+# 2776; NUM_ACSS = 1, bound UCL_QAC 9,999.99, far above use). So ACI coal pays the sorbent too: 0.006-0.03
+# 1987$/MMBtu on most configurations, 0.07 on C4 and 0.31 on C1 and CX bituminous. On: added to the route cost with the
+# ACI O&M. Off: O&M only.
+ACI_SORBENT = True
+ACI_SORBENT_PRICE = 0.33   # UCL_PAC(1), from the oracle composite (aimms-showreel efd_2030_01)
 CL_CODES = "NE YP S1 S2 GF OH EN KT AM C1 C2 WS MT CU ZN PC".split()
 
 
@@ -85,6 +120,12 @@ class CoalClasses:
     route_cost: np.ndarray     # (Rt,) 1987$/MMBtu, transport + activated carbon
     ref: np.ndarray            # (25,) 1987$/MMBtu: what EIA's burn by class pays in the region at delivered prices
     pay: np.ndarray            # (K,) 1987$/MMBtu: what EIA's burn pays in each class
+    route_contract: np.ndarray = None   # (Rt,) contract row of the route, -1 for none (CONTRACTS)
+    contract_rhs: np.ndarray = None     # (N,) TBtu, the coal group's part of EFD_CONT
+    contract_key: list = None           # N (curve 1..26, coal region code, "S" or "U")
+    route_tier: np.ndarray = None       # (Rt,) tier-1 row of the route, -1 for none (TIER_RATES)
+    tier_rhs: np.ndarray = None         # (T,) TBtu, the coal group's part of EFD_TIER1_LIM
+    tier_cost: np.ndarray = None        # (T,) 1987$/MMBtu, second-tier less first-tier rate (C_ column)
 
 
 def _arr(s, k):
@@ -138,24 +179,92 @@ def supply_curves(snapshot, year: int) -> tuple:
     return act + 1, rank[act], qty, price, other[act]
 
 
+def import_curves(snapshot, year: int) -> tuple:
+    """ED$COL's international supply curves (16868-16914): (curve numbers 15..26, step quantity (12, 12) TBtu with
+    XCL_QIMP in the first 10 steps and nothing after, step price (12, 12) XCL_PIMP 1987$/MMBtu, other demand (12,)
+    TBtu, XCL_OTHER held at most at the steps' total less 0.1 as COMBINE_COAL_RATES does)."""
+    y = year - 1990
+    q = _arr(snapshot, "USO2GRP/xcl_qimp")[:NUM_IMPORT, :IMPORT_STEPS, y]
+    p = _arr(snapshot, "USO2GRP/xcl_pimp")[:NUM_IMPORT, :IMPORT_STEPS, y]
+    other = _arr(snapshot, "USO2GRP/xcl_other")[NCURVE:NCURVE + NUM_IMPORT, y]
+    total = q.sum(axis=1)
+    other = np.where(other > total - 0.1, np.maximum(total - 0.1, 0.0), other)
+    qty = np.zeros((NUM_IMPORT, 12))
+    price = np.zeros((NUM_IMPORT, 12))
+    qty[:, :IMPORT_STEPS] = np.where(q > 0, q, 0.0)
+    price[:, :IMPORT_STEPS] = p
+    return np.arange(NCURVE + 1, NCURVE + NUM_IMPORT + 1), qty, price, other
+
+
+def import_rates(snapshot, year: int) -> np.ndarray:
+    """(12, 16) 1987$/MMBtu, TOT_RATE1 of each import curve to each coal region (COMBINE_COAL_RATES): the cheapest
+    port of the four, XCL_TR_IN x XCL_TESCI + XCL_TRATI2, where XCL_TRATI2 > 0 and 0 < XCL_TR_IN < 900; 999.9 where no
+    port qualifies."""
+    y = year - 1990
+    tr_in = _arr(snapshot, "USO2GRP/xcl_tr_in")[:, :NUM_IMPORT, :, y]             # (4, 12, 16)
+    tesci = _arr(snapshot, "USO2GRP/xcl_tesci")[:, y, :]                          # (4, 16)
+    trati2 = _arr(snapshot, "USO2GRP/xcl_trati2")[:NUM_IMPORT, :4]                # (12, 4)
+    rate = tr_in * tesci[:, None, :] + trati2.T[:, :, None]
+    ok = (trati2.T[:, :, None] > 0.0) & (tr_in > 0.0) & (tr_in < 900.0)
+    best = np.where(ok, rate, np.inf).min(axis=0)
+    return np.where(np.isfinite(best), best, 999.9)
+
+
+def _scrub(snapshot, year: int) -> np.ndarray:
+    """(38,) ECP_SCRUB: 1 scrubbed, 2 unscrubbed, by ECP type."""
+    return _arr(snapshot, "USO2GRP/ecp_scrub")[:NUTSEC, year - 1990].astype(int)
+
+
+def tier_rates(snapshot, year: int) -> tuple:
+    """(TOT_RATE1, TOT_RATE2) (14, 16) 1987$/MMBtu: XCL_TR_T1 x XCL_1TESC and XCL_TR_T2 x XCL_2TESC (COMBINE_COAL_RATES)."""
+    y = year - 1990
+    t1 = _arr(snapshot, "USO2GRP/xcl_tr_t1")[:, :, y] * _arr(snapshot, "USO2GRP/xcl_1tesc")[:, 0, y, :]
+    t2 = _arr(snapshot, "USO2GRP/xcl_tr_t2")[:, :, y] * _arr(snapshot, "USO2GRP/xcl_2tesc")[:, 0, y, :]
+    return t1, t2
+
+
 def route_costs(snapshot, year: int) -> np.ndarray:
-    """(14, 16, 38) 1987$/MMBtu to bring a curve's coal to a coal region and configuration: the first-tier rate
-    (XCL_TR_T1 x XCL_1TESC, COMBINE_COAL_RATES) + the activated carbon the configuration needs for that rank under
-    MATS (ACI_CST(2) / heat rate where EMM_MEF(1) is above the limit); nan where there is no route."""
+    """(26, 16, 38) 1987$/MMBtu to bring a curve's coal to a coal region and configuration; nan where there is no route
+    (TOT_RATE1 >= 800). Domestic curves (1-14): the first-tier rate where the CMM writes a tier-1 limit for the
+    configuration's scrubber status and the configuration is existing (PLT < WIPC), the second-tier rate otherwise
+    (TIER_RATES; off: the first-tier rate). Import curves (15-26, IMPORTS): the port rate, rank 1. Each adds the
+    activated carbon the configuration needs for that rank under MATS (ACI_CST(2) / heat rate where EMM_MEF(1) is above
+    the limit)."""
+    from nems_open.emm import technology
     y = year - 1990
     rank = _arr(snapshot, "USO2GRP/efd_rank").astype(int)[:NCURVE]
-    rate = _arr(snapshot, "USO2GRP/xcl_tr_t1")[:, :, y] * _arr(snapshot, "USO2GRP/xcl_1tesc")[:, 0, y, :]
+    t1, t2 = tier_rates(snapshot, year)
     hr = _arr(snapshot, "COALEMM/hrtclnr")[:, y, :] / 1000.0                     # (16, 38) MMBtu/MWh
     mef = _arr(snapshot, "COALEMM/emm_mef")
     aci = _arr(snapshot, "COALEMM/aci_cst")
-    out = np.full((NCURVE, NDREG, NUTSEC), np.nan)
+    out = np.full((NCURVE + NUM_IMPORT, NDREG, NUTSEC), np.nan)
+    if TIER_RATES:
+        lim = _arr(snapshot, "USO2GRP/efd_tier1_lim")[:NCURVE, :, :, y]             # (14, 16, 2)
+        f = _scrub(snapshot, year) - 1
+        existing = np.arange(NUTSEC) < technology.ecp_codes().index("PC")           # PLT < WIPC
+        first = (lim[:, :, f] > 0.0) & existing[None, None, :]                      # (14, 16, 38)
+        rate = np.where(first, t1[:, :, None], t2[:, :, None])
+    else:
+        rate = np.repeat(t1[:, :, None], NUTSEC, axis=2)
+
+    qac = _arr(snapshot, "COALEMM/aci_qac")
+
+    def aci_add(rk):
+        blocked = mef[0, rk, :NUTSEC] > MATS_MEF_LIMIT
+        add = np.minimum(aci[1, rk, :NUTSEC], 99.0)[None, :] / np.maximum(hr, 1.0)
+        if ACI_SORBENT:
+            add = add + ACI_SORBENT_PRICE * np.maximum(qac[1, rk, :NUTSEC] * 1e-6, 1e-4)[None, :]
+        return np.where(blocked[None, :], add, 0.0)
+
     for c in range(NCURVE):
         if not 1 <= rank[c] <= 3:
             continue
-        rk = rank[c] - 1
-        blocked = mef[0, rk, :NUTSEC] > MATS_MEF_LIMIT
-        add = np.where(blocked[None, :], np.minimum(aci[1, rk, :NUTSEC], 99.0)[None, :] / np.maximum(hr, 1.0), 0.0)
-        out[c] = np.where(rate[c][:, None] < ROUTE_MAX, rate[c][:, None] + add, np.nan)
+        out[c] = np.where(t1[c][:, None] < ROUTE_MAX, rate[c] + aci_add(rank[c] - 1), np.nan)
+    if IMPORTS:
+        imp = import_rates(snapshot, year)
+        add = aci_add(0)
+        for i in range(NUM_IMPORT):
+            out[NCURVE + i] = np.where(imp[i][:, None] < ROUTE_MAX, imp[i][:, None] + add, np.nan)
     return out
 
 
@@ -166,6 +275,10 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
     from nems_open.coal.electric import unit_names
     y = year - 1990
     curves, crank, qty, sprice, other = supply_curves(snapshot, year)
+    if IMPORTS:
+        ic, iq, ip, io = import_curves(snapshot, year)
+        curves, crank = np.concatenate([curves, ic]), np.concatenate([crank, np.ones(len(ic), dtype=int)])
+        qty, sprice, other = np.vstack([qty, iq]), np.vstack([sprice, ip]), np.concatenate([other, io])
     rc = route_costs(snapshot, year)
     sb_raw = _arr(snapshot, "USO2GRP/efd_sb_dvlim")[:, :NUTSEC, y]
     lg_raw = _arr(snapshot, "USO2GRP/efd_lg_dvlim")[:, :NUTSEC, y]
@@ -230,6 +343,8 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
     pay = np.zeros(len(cls_c))
     for k in range(len(cls_c)):
         rows = np.flatnonzero(route_class == k)
+        dom = rows[curves[route_curve[rows]] <= NCURVE]        # the reference price is the domestic curves' base step
+        rows = dom if len(dom) else rows
         left, paid = group_burn[k], 0.0
         room = {2: sub_cap[k], 3: lig_cap[k]}       # one diversity row per class and rank, over all its routes
         for j in rows[np.argsort(deliv[rows])]:
@@ -246,6 +361,42 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
         if left > 1e-9:
             paid += left * (deliv[rows].min() + ESCAPE)
         pay[k] = paid / group_burn[k] if group_burn[k] > 0 else deliv[rows].min()
+    # Contracts and tier-1 limits are per curve, coal region and scrubber status, over every configuration with that
+    # status; the coal group gets its part of the region's and status's burn in EIA's run (1 where EIA burned none).
+    scrub = _scrub(snapshot, year)
+    f_k = scrub[cls_t] - 1
+    all_rf = np.zeros((NDREG, 2))
+    np.add.at(all_rf, (np.repeat(np.arange(NDREG), NUTSEC), np.tile(scrub - 1, NDREG)), burn_all.ravel())
+    grp_rf = np.zeros((NDREG, 2))
+    np.add.at(grp_rf, (cls_c, f_k), group_burn)
+    part_rf = np.where(all_rf > 0, np.minimum(grp_rf / np.maximum(all_rf, 1e-12), 1.0), 1.0)
+    route_key = (curves[route_curve] - 1, cls_c[route_class], f_k[route_class])     # curve 0..25, region, status
+    route_contract, contract_rhs, contract_key = -np.ones(len(route_curve), dtype=int), [], []
+    if CONTRACTS:
+        cont = _arr(snapshot, "USO2GRP/efd_cont")[:, :, :, y]                       # (26, 16, 2)
+        rows = {}
+        for j, key in enumerate(zip(*route_key)):
+            if cont[key] >= 0.0:
+                if key not in rows:
+                    rows[key] = len(rows)
+                    contract_rhs.append(cont[key] * part_rf[key[1], key[2]])
+                    contract_key.append((int(key[0]) + 1, CL_CODES[key[1]], "SU"[key[2]]))
+                route_contract[j] = rows[key]
+    route_tier, tier_rhs, tier_cost = -np.ones(len(route_curve), dtype=int), [], []
+    if TIER_RATES:
+        lim = _arr(snapshot, "USO2GRP/efd_tier1_lim")[:, :, :, y]
+        t1, t2 = tier_rates(snapshot, year)
+        raw1, raw2 = _arr(snapshot, "USO2GRP/xcl_tr_t1")[:, :, y], _arr(snapshot, "USO2GRP/xcl_tr_t2")[:, :, y]
+        rows = {}
+        for j, (c, r, f) in enumerate(zip(*route_key)):
+            # cls_t < WIPC always: the classes are existing configurations
+            if c < NCURVE and lim[c, r, f] > 0.0 and raw2[c, r] > raw1[c, r] and t2[c, r] > t1[c, r]:
+                if (c, r, f) not in rows:
+                    rows[(c, r, f)] = len(rows)
+                    tier_rhs.append(lim[c, r, f] * part_rf[r, f])
+                    tier_cost.append(max(1e-4, t2[c, r] - t1[c, r]))
+                route_tier[j] = rows[(c, r, f)]
+
     b = burn[rr, cc, tt]
     tot = np.bincount(rr, weights=b, minlength=NUM_R)
     ref = np.divide(np.bincount(rr, weights=b * pay[kid[cc, tt]], minlength=NUM_R), tot, out=np.zeros(NUM_R), where=tot > 0)
@@ -261,4 +412,52 @@ def coal_classes(snapshot, year: int, heat_rate: np.ndarray, vom: np.ndarray) ->
         vom=np.concatenate([vom_k, np.asarray(vom, dtype=float)]),
         classes=[(CL_CODES[c], codes[t]) for c, t in zip(cls_c, cls_t)],
         sub_cap=sub_cap, lig_cap=lig_cap, curves=curves, step_qty=qty, step_price=sprice, other=other,
-        route_curve=route_curve, route_class=route_class, route_rank=route_rank, route_cost=route_cost, ref=ref, pay=pay)
+        route_curve=route_curve, route_class=route_class, route_rank=route_rank, route_cost=route_cost, ref=ref, pay=pay,
+        route_contract=route_contract, contract_rhs=np.asarray(contract_rhs, dtype=float), contract_key=contract_key,
+        route_tier=route_tier, tier_rhs=np.asarray(tier_rhs, dtype=float), tier_cost=np.asarray(tier_cost, dtype=float))
+
+
+def nocair_year() -> int:
+    """UYR_NOCAIR from emmcntl.txt: from this year on ED$COL makes the national SO2 rows free (type N, uefd.f 16545)."""
+    from nems_open.paths import INPUT
+    for line in (INPUT / "emm" / "emmcntl.txt").read_text(errors="replace").splitlines():
+        if line.startswith("'NOCAIR YR'"):
+            return int(line.split()[2])
+    raise ValueError("NOCAIR YR not in emmcntl.txt")
+
+
+def csapr_ratio(snapshot, year: int, classes=None, flows=None) -> np.ndarray:
+    """(16,) for the CSAPR coal-region SO2 rows (EPA$TRANRG_EFD, uefd.f 19749-19777; NaN where TSO2_LIM_BY_CLRG is 0):
+    SO2 over the row's limit (TSO2_LIM_BY_CLRG from TRANRULE2 on, TSO2_LM1_BY_CLRG before), thousand tons, each TBtu
+    at XCL_SO2_YR x (1 - RCLCLNR) x 0.5 x TSO2_SHR_BY_CLRG. Without flows: EIA's coal burn by unit (EMM_CL_BTUS) in each
+    region at the dirtiest curve with a route to its configuration, a bound whatever coal is bought. With the coal
+    LP's route flows (TBtu, for CoalClasses `classes`): their SO2, scaled to EIA's whole burn in the region (cofired
+    units and CCS retrofits at the coal group's mix). Under 1: the row is slack."""
+    y = year - 1990
+    lim = _arr(snapshot, "CSAPR/tso2_lim_by_clrg") if year >= int(np.asarray(snapshot["CSAPR/tranrule2"]))         else _arr(snapshot, "CSAPR/tso2_lm1_by_clrg")
+    shr = _arr(snapshot, "CSAPR/tso2_shr_by_clrg")[:, 0]
+    so2 = _arr(snapshot, "USO2GRP/xcl_so2_yr")[:NCURVE + NUM_IMPORT, y]
+    removal = _arr(snapshot, "COALEMM/rclclnr")[:, y, :NUTSEC]                     # (16, 38) SO2 removal rate
+    n = int(np.asarray(snapshot["COALEMM/num_cmm_units"]))
+    btus = _arr(snapshot, "COALEMM/emm_cl_btus")[:n, y]
+    ecpt = np.asarray(snapshot["COALEMM/emm_cl_ecpt"])[:n, y].astype(int)
+    clrg = np.asarray(snapshot["COALEMM/emm_cl_clrg"])[:n].astype(int)
+    burn = np.zeros((NDREG, NUTSEC))
+    ok = (ecpt >= 1) & (ecpt <= NUTSEC) & (clrg >= 1) & (clrg <= NDREG)
+    np.add.at(burn, (clrg[ok] - 1, ecpt[ok] - 1), np.maximum(btus[ok], 0.0))
+    if flows is None:
+        rc = route_costs(snapshot, year)
+        dirtiest = np.where(np.isnan(rc), -np.inf, so2[:, None, None]).max(axis=0)       # (16, 38)
+        dirtiest = np.where(np.isfinite(dirtiest), dirtiest, so2[:NCURVE].max())
+        em = (burn * dirtiest * (1.0 - removal) * 0.5).sum(axis=1)
+    else:
+        from nems_open.emm import technology
+        codes = technology.ecp_codes()
+        crg = np.array([CL_CODES.index(classes.classes[k][0]) for k in classes.route_class])
+        typ = np.array([codes.index(classes.classes[k][1]) for k in classes.route_class])
+        e = flows * so2[classes.curves[classes.route_curve] - 1] * (1.0 - removal[crg, typ]) * 0.5
+        em = np.bincount(crg, weights=e, minlength=NDREG)
+        got = np.bincount(crg, weights=flows, minlength=NDREG)
+        em = em * np.divide(burn.sum(axis=1), got, out=np.ones(NDREG), where=got > 1e-9)
+    em = em * shr
+    return np.where(lim > 0, em / np.where(lim > 0, lim, 1.0), np.nan)
