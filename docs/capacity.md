@@ -660,7 +660,24 @@ An independent Codex review (docs/reviews/codex-emm-2026-11-22.txt) listed 17 po
 
 The proxy replaces that dual with a new turbine's gross annual cost in every region and year, as if the tail row always bound. That is the "unconditional replacement subsidy" Codex named. It fits on average: the tail row binds in 21 of 25 regions in ECP's 2030 solve, and steam's value of keeping there is about a turbine's annual cost (table above). It overstates in the slack regions and wherever a turbine earns energy margin. Codex's second point, that it counts 29 years and ignores scheduled retirements, mostly matches ECP: option 3 exists while the group's retirement year is at least E + 2 and then counts the whole tail row, with FOM for all UNFPH years. The proxy cuts gas_conv at UEPA_CLCFYR, which ECP does not do for an already converted unit; that is left as is and noted at the switch.
 
-Its effect: off, the 2027-2033 chain retired about 28 GW of CC, CT and steam where EIA retires about 3; on, about 3 (table above).
+Its effect, on this branch with this lane's other fixes on (2027-2033 chain, scratchpad `codexcap/noproxy.json`): off, economic retirements are 35.6 GW of CC, 5.8 of CT, 19.7 of steam and 6.6 of converted coal (68 GW); on, 3.4 GW. EIA retires about 3 GW of these beyond the plant file's dates. Off, CC in 2030 is 248 GW against EIA's 291 and steam 81 against 110. When it was added (main fc685d8), off retired about 28 GW.
 
 The faithful method is a tail period in this LP: a reserve row for ECP's year 3 (E + 2 load and capacity credits, every kept group, year-2 build columns paying the horizon's present value) and, per retirement group, the three option columns with their horizon FOM. That is the HORIZON code path plus option columns: a few hundred lines and a tail solve each year (HORIZON's own years took 20 to 140 s, and it is off because it did not close the build gap). Too large for this lane. A lighter step that would keep most of the fidelity: a reserve-only tail row (no tail dispatch) whose dual replaces the turbine price, so slack regions get zero. Not done here.
+
+**Chain 2027-2040 from EIA's 2026 fleet** (scratchpad `codexcap/`: run.py off / on, compare.py). Off = this lane's five switches off (CONVERT_CREDIT_TO_CLCFYR, CONSTRUCTION_PRE_TAX, STEP_SEPARATE_HISTORY, GAS_CURVE_LAST_BOUNDED, GAS_CURVE_WHDEX), so the same as main plus conversions2 with its defaults. GW, off / on / EIA:
+
+| | CC | CT | battery | solar | wind | coal | steam | conversions |
+|---|---|---|---|---|---|---|---|---|
+| 2028 | 274 / 274 / 274 | 155 / 155 / 163 | 75 / 75 / 82 | 293 / 293 / 257 | 187 / 187 / 178 | 93 / 94 / 137 | 111 / 109 / 82 | 32.1 / 30.5 / 4.3 |
+| 2029 | 274 / 274 / 285 | 159 / 159 / 166 | 75 / 75 / 85 | 293 / 293 / 257 | 202 / 202 / 193 | 86 / 90 / 111 | 111 / 107 / 92 | 3.2 / 0.6 / 12.7 |
+| 2030 | 277 / 276 / 291 | 161 / 162 / 171 | 75 / 75 / 88 | 293 / 293 / 258 | 204 / 204 / 212 | 84 / 88 / 88 | 111 / 106 / 110 | 0 / 0 / 18.9 |
+| 2032 | 287 / 289 / 323 | 180 / 180 / 194 | 83 / 83 / 99 | 343 / 343 / 288 | 219 / 219 / 262 | 18 / 18 / 16 | 109 / 105 / 104 | |
+| 2035 | 313 / 317 / 356 | 196 / 194 / 208 | 84 / 86 / 100 | 343 / 343 / 305 | 279 / 273 / 344 | 18 / 18 / 16 | 107 / 102 / 101 | |
+| 2040 | 392 / 393 / 431 | 217 / 216 / 267 | 87 / 89 / 103 | 345 / 345 / 323 | 436 / 421 / 404 | 14 / 14 / 16 | 56 / 56 / 52 | |
+
+Economic retirements of CC, CT and steam stay small either way (2027: 2.5 off, 3.0 on; under 0.5 GW a year after). Coal's 2032 exit is 64.6 GW on against 60.8 off, because 3 to 4 GW more coal survives 2029-2031 when fewer units convert.
+
+What moved. Wind in 2040 comes down 15 GW, toward EIA's (421 against 404), and batteries up 2. Steam is 2 to 5 GW lower from 2028, closer to EIA in 2028-2029 and 2032-2040, further in 2030. The one that gets worse is 2029's conversions, 0.6 GW against EIA's 12.7. The coal part's credit now stops at 2038, which takes about a third off the credit (32.5% in 2028 at a 7.1% rate), and the one-year LP had only been reaching 2029 conversions through that surplus credit. This exposes the known timing error: without ECP_CONVERT_TIMING and CONVERT_BY_UNIT, the LP converts 30 GW in 2028 on a credit ECP does not give until 2030, and nothing is left for 2029-2030. CC and CT stay 38 and 51 GW under EIA in 2040. None of these findings explains that; it is the wind/gas build-timing gap documented above.
+
+**Found on the way, not changed.** `discount_rate`'s debt rate is the AA utility bond rate. EPDSCRT uses EPUIRT + UPNIPRM, where UPNIPRM is BAA less AA (uefp.f 3476, 3726; 0.4 points in 2030), and efp/capcost.py has it. ESTYRADD is indexed by decision year (start year less UPPLYR), and the build-step history here is by online year. The gas curve's QBASE here is EIA's burn less cogeneration, where ECP uses QNGEL. The retirement proxy cuts gas_conv at UEPA_CLCFYR, which ECP's option 3 does not.
 
