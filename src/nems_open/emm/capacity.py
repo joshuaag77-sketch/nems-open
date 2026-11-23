@@ -756,8 +756,8 @@ def conversion_is_last_chance(year: int, rule: dict) -> bool:
 # in every region and every year, as if the tail row always bound. In ECP's 2030 solve the tail row binds in 21 of 25
 # regions and steam's value of keeping is about a turbine's annual cost, which is why the proxy fits on average. It
 # overstates where the tail is slack and wherever a turbine earns energy margin. Its effect: without it the 2027-2033
-# chain retires 61 GW of CC, CT and steam (plus 7 of converted coal) where EIA retires about 3; with it, 3.4 (2026-11-22,
-# docs/capacity.md). The faithful port is a
+# chain retires 25 GW of CC, CT and steam (plus 3.5 of converted coal) where EIA retires about 3; with it, 3.1
+# (2026-11-22, docs/capacity.md). The faithful port is a
 # tail period in this LP: a reserve row for ECP's year 3 (load and capacity credits of E + 2, every existing and kept
 # group, year-2 build columns paying the horizon's present value) and, per retirement group, the three option columns
 # with their horizon fixed O&M. That is the HORIZON code path plus option columns, a few hundred lines and a tail
