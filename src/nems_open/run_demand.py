@@ -32,6 +32,7 @@ import sys
 
 import numpy as np
 
+from nems_open.converge import EIA_CALLS, EiaCalls
 from nems_open.fortran_array import FArray
 from nems_open.snapshot import Snapshot
 
@@ -131,14 +132,19 @@ class ResidentialSector:
 
     def iteration(self, s, year: int, itr: int, inputs: Inputs) -> None:
         from nems_open.residential import resd
-        from nems_open.residential.reports import nhtshr, resdrp2
         s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, itr
         inputs.apply(s)
         if self.levers and year >= self.levers.year and not s.get("_levers_applied"):
             from nems_open.residential import levers
             s["_levers_applied"] = levers.apply(self.levers, s)
         resd.projection_year(s)
-        if year == resd.LASTYEAR and itr == 2:
+
+    def end_year(self, s, year: int) -> None:
+        """NHTSHR and RESDRP2, which EIA runs on the last year's FCRL pass (resd.f 594, 16696): once, after the
+        year's last call. They ran on iteration 2, before the loop's later iterations."""
+        from nems_open.residential import resd
+        from nems_open.residential.reports import nhtshr, resdrp2
+        if year == resd.LASTYEAR:
             nhtshr(s)
             resdrp2(s)
 
@@ -181,6 +187,10 @@ class CommercialSector:
     def iteration(self, c, year: int, itr: int, inputs: Inputs) -> None:
         inputs.apply(c.s)
         c.iteration(year - BASEYR + 1, itr, inputs.array("MACOUT/mc_commflsp"))
+
+    def end_year(self, c, year: int) -> None:
+        """COMReport, which EIA runs on the last year's FCRL pass (comm.f 820): once, after the year's last call."""
+        c.end_year(year - BASEYR + 1)
 
     def quantities(self, c) -> dict:
         return c.qblk()
@@ -251,23 +261,34 @@ class IndustrialSector:
         s, bufs = start_state(oracle_state.load("ys_in", first - BASEYR + 1, "ind"))
         standin = make_standin(Reference.load())
         state = IndustrialState(s, bufs, standin)
-        for y in range(first, year):  # years between the dump and the start year, with EIA's inputs
+        for y in range(first, year):  # years between the dump and the start year, with EIA's inputs and call count
             _set_year(s, y)
             inputs.apply(s) if inputs is not None else None
-            run_year(s, bufs, 2, standin)
+            run_year(s, bufs, EIA_CALLS, standin)
         state.needs_first_iteration = True
         return state
 
     def iteration(self, state, year: int, itr: int, inputs: Inputs) -> None:
         if self.ind != "ported":
             return  # fixed at the oracle's values
-        from nems_open.industrial.year import calibrate, run_iteration
+        from nems_open.industrial.year import run_iteration
+        # The 'ys_in' dump is the top of the year's FIRST iteration, but the coupled loop's first year starts at
+        # iteration 2 (the other sectors' dumps are the top of the final iteration). Count from IND's own first call
+        # so ISEAM's first-iteration block (the lag roll) runs and the year's benchmarking follows EIA's order.
+        itr = itr - state.first_itr.setdefault(year, itr) + 1
         _set_year(state.s, year)
         inputs.apply(state.s)
-        run_iteration(state.s, state.bufs, itr, itr == 2, state.standin)
-        if itr == 2:
-            state.s["ncrl"] = np.int32(1)
-            calibrate(state.s, state.bufs)  # the reporting call that leaves next year's starting state
+        run_iteration(state.s, state.bufs, itr, itr >= EIA_CALLS, state.standin)   # EIA's FCRL pass is call 3
+
+    def end_year(self, state, year: int) -> None:
+        """IND's NCRL call, once after the year's last iteration as in EIA (nems_flow.py step d): CALIBRATE, which
+        leaves the buffers next year starts from. It used to run after iteration 2, and later iterations rebuilt
+        the buffers uncalibrated (docs/per_call_state_audit.md)."""
+        if self.ind != "ported" or year not in state.first_itr:
+            return
+        from nems_open.industrial.year import ncrl_call
+        _set_year(state.s, year)
+        ncrl_call(state.s, state.bufs)
 
     def quantities(self, rows) -> dict:
         if self.ind != "ported":
@@ -282,6 +303,14 @@ class IndustrialState:
     def __init__(self, s: dict, bufs: dict, standin):
         self.s, self.bufs, self.standin = s, bufs, standin
         self.needs_first_iteration = False
+        self.first_itr = {}   # year -> the loop's iteration number on IND's first call that year
+
+
+def end_year(sector, state, year: int) -> None:
+    """A sector's once-a-year call after the year's last iteration (EIA's NCRL call, or reports EIA writes on the
+    final FCRL pass), for sectors that have one."""
+    if hasattr(sector, "end_year"):
+        sector.end_year(state, year)
 
 
 def _set_year(s: dict, year: int) -> None:
@@ -320,6 +349,9 @@ class InProcess:
 
     def iteration(self, handle, year: int, itr: int, inputs: Inputs) -> None:
         self.conn.send(("iteration", year, itr, inputs.overrides))
+
+    def end_year(self, handle, year: int) -> None:
+        self.conn.send(("end_year", year))
 
     def quantities(self, handle) -> dict:
         self.conn.send(("quantities",))
@@ -361,6 +393,8 @@ def _sector_worker(conn, name: str, year: int, snapshot_path: str, options: dict
                 _, y, itr, overrides = msg
                 inputs.overrides = overrides
                 sector.iteration(state, y, itr, inputs)
+            elif msg[0] == "end_year":
+                end_year(sector, state, msg[1])
             else:
                 conn.send((True, sector.quantities(state)))
         except Exception:
@@ -429,6 +463,7 @@ class TransportationSector:
         s = t["s"]
         # A fresh start is at iteration 1 even when the runner asks for iteration 2.
         for i in range(min(t["next_itr"], itr), itr + 1):
+            t.setdefault("eia_calls", EiaCalls()).before(year, i, tran_state(s, t["carry"]), s)
             s["curcalyr"], s["curiyr"], s["curitr"] = year, year - BASEYR + 1, i
             apply_transportation(inputs, s)
             tran.tran(s, t["carry"])
@@ -438,6 +473,34 @@ class TransportationSector:
 
     def quantities(self, t) -> dict:
         return {k: t["s"][k] for k in SECTOR_QUANTITIES["tr"] if k in t["s"]}
+
+
+def tran_state(s: dict, carry) -> dict:
+    """Every array TRAN keeps between calls (its state and its saved locals), by name.
+
+    EIA's TRAN changes some of its state on every call, so EIA's answer is the one after its three calls a year.
+    The audit found (docs/per_call_state_audit.md):
+    - the heavy-duty GHG credit bank (tranfrt.f 2572-2629, a SAVEd local): a short averaging set spends past years'
+      credits on every call, so each extra call spends them again;
+    - TRUCK_PBK's curve history (tranfrt.f 1325-1347): a curve that starts on any call stays started;
+    - FEM's OLD_PMAX (tran.f 4197): the most a technology has penetrated, carried from call to call;
+    - the air load-factor sums LFDOMAVG and LFINTAVG (tranair.f 612-613), added to on every call, never zeroed.
+    Holding only those left a slow drift (about 3e-5 of gasoline use over 21 calls), so the whole state is held:
+    from call 4 on, TRAN starts each call from where EIA's third call started, and call N is EIA's third call on
+    the loop's latest inputs (about 330 MB more memory)."""
+    out = {}
+
+    def walk(prefix, d):
+        for k, v in d.items():
+            a = getattr(v, "a", v)
+            if isinstance(a, np.ndarray):
+                out[prefix + str(k)] = a
+            elif isinstance(v, dict):
+                walk(prefix + str(k) + "/", v)
+
+    walk("s/", s)
+    walk("carry/", carry)
+    return out
 
 
 # Inputs TRAN writes itself: TRANREP is its own report block (an input only to the
@@ -600,6 +663,8 @@ class DemandRunner:
                 if itr < self.first_iteration and not getattr(state, "needs_first_iteration", False):
                     continue
                 sector.iteration(state, year, itr, self.inputs)
+        for sector, state in self.sectors:
+            end_year(sector, state, year)
         for _, state in self.sectors:
             if hasattr(state, "needs_first_iteration"):
                 state.needs_first_iteration = False

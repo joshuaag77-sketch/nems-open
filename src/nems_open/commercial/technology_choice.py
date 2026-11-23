@@ -109,15 +109,25 @@ def keq_cost(inp, carry: Carry, r, t, v, year, ctype="CAP"):
     return MAXCOST
 
 
-def technology_choice(inp: dict, carry: Carry, y: int) -> dict:
-    """One non-first call of COMTechnologyChoice for year index y. Returns the
-    arrays it writes, as Fortran-indexed copies.
+def pitc_shift(carry: Carry, pd3, itr: int) -> None:
+    """comm.f 5603-5612: each fuel's technology advance (years) from its 3-year price index. On a year's first call
+    ifwd restarts from last year's shift (fuel by fuel, as the loop runs); on later calls it is whatever the
+    previous call's availability tests left, so the shift can only move further on each call."""
+    for f in range(3):
+        if itr == 1:
+            carry.ifwd = carry.iforward[f]
+        carry.iforward[f] = max(carry.ifmax, min(carry.ifwd, -int((pd3[f] - f32(1.0)) / f32(0.10))))
+
+
+def technology_choice(inp: dict, carry: Carry, y: int, itr: int = 2) -> dict:
+    """One call of COMTechnologyChoice for year index y (itr: CURITR; the oracle dumps are a non-first call).
+    Returns the arrays it writes, as Fortran-indexed copies.
 
     Runs the fast version whenever price-induced technical change is idle (iforward,
     ifwd and IFMAX all 0, as in every AEO2026 year), and the line-by-line reference
     version otherwise. Both give identical arrays."""
     idle = (carry.ifwd == 0 and carry.keq_ifwd == 0 and carry.ifmax <= 0 and not any(carry.iforward))
-    return _technology_choice_fast(inp, carry, y) if idle else _technology_choice_reference(inp, carry, y)
+    return _technology_choice_fast(inp, carry, y, itr) if idle else _technology_choice_reference(inp, carry, y, itr)
 
 
 def _pad(a: np.ndarray) -> np.ndarray:
@@ -148,7 +158,7 @@ def _seq_total(terms: np.ndarray):
     return np.add.accumulate(terms)[-1] if terms.size else f32(0.0)
 
 
-def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
+def _technology_choice_fast(inp: dict, carry: Carry, y: int, itr: int = 2) -> dict:
     """technology_choice with the searches done by argmin and the per-building work on plain arrays.
 
     With iforward and ifwd at 0 the availability tests and KEqCost do not depend on loop order,
@@ -200,8 +210,7 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
         pd3[0] = f32((pelcm[11, y] + pelcm[11, y - 1] + pelcm[11, y - 2]) / f32(3.0)) / pelcm[11, ebase]
         pd3[1] = f32((pngcm[11, y] + pngcm[11, y - 1] + pngcm[11, y - 2]) / f32(3.0)) / pngcm[11, ebase]
         pd3[2] = f32((pdscm[11, y] + pdscm[11, y - 1] + pdscm[11, y - 2]) / f32(3.0)) / pdscm[11, ebase]
-        for f in range(3):
-            carry.iforward[f] = max(carry.ifmax, min(carry.ifwd, -int((pd3[f] - f32(1.0)) / f32(0.10))))
+        pitc_shift(carry, pd3, itr)
     carry.elasbaseyr = ebase = CBECS_YEAR - (BASEYR - 1)
     carry.ilaststeoyr = KSTEOYR + BASEYR - 1
 
@@ -653,7 +662,7 @@ def _technology_choice_fast(inp: dict, carry: Carry, y: int) -> dict:
     return out
 
 
-def _technology_choice_reference(inp: dict, carry: Carry, y: int) -> dict:
+def _technology_choice_reference(inp: dict, carry: Carry, y: int, itr: int = 2) -> dict:
     """COMTechnologyChoice line by line, every loop as the Fortran has it. Used when
     price-induced technical change moves ifwd; otherwise technology_choice runs the fast version."""
     year = BASEYR - 1 + y
@@ -698,9 +707,7 @@ def _technology_choice_reference(inp: dict, carry: Carry, y: int) -> dict:
         pd3[0] = f32((pelcm[11, y] + pelcm[11, y - 1] + pelcm[11, y - 2]) / f32(3.0)) / pelcm[11, ebase]
         pd3[1] = f32((pngcm[11, y] + pngcm[11, y - 1] + pngcm[11, y - 2]) / f32(3.0)) / pngcm[11, ebase]
         pd3[2] = f32((pdscm[11, y] + pdscm[11, y - 1] + pdscm[11, y - 2]) / f32(3.0)) / pdscm[11, ebase]
-        for f in range(3):
-            # ifwd is only reset from iforward on the first iteration.
-            carry.iforward[f] = max(carry.ifmax, min(carry.ifwd, -int((pd3[f] - f32(1.0)) / f32(0.10))))
+        pitc_shift(carry, pd3, itr)
     carry.elasbaseyr = ebase = CBECS_YEAR - (BASEYR - 1)
     last_steo = carry.ilaststeoyr = KSTEOYR + BASEYR - 1
 

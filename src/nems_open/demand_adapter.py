@@ -242,6 +242,9 @@ class PortedSectors:
         return out
 
     def end_year(self):
+        from nems_open.run_demand import end_year
+        for sector, state in self.runner.sectors:   # once after the year's last iteration (IND's NCRL call)
+            end_year(sector, state, self.runner.year)
         self.runner.year += 1
         self.runner.first_iteration = 1
 

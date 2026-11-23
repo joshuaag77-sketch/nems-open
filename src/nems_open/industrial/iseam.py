@@ -67,3 +67,5 @@ def roll_lags(buffers: dict) -> None:
         b["stemcurlag"] = b["stemcur"]
         b["prodlag"].a[...] = b["prodcur"].a
         b["idlcaplag"].a[...] = b["idlcap"].a
+        if "biosteamyr" in b:
+            b["biosteamyr"] = b["biosteamlag"]   # year.OPENING
