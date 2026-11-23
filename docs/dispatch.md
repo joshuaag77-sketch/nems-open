@@ -549,6 +549,65 @@ Columns: old (every switch at its old setting), then each finding's switch alone
 
 **All switches against old, against EIA.** 2030: coal -20 TWh (now -6%), CC +5, turbines +3, steam -6 (now +4%), CO2 -24 Mt (now -0.7%). 2050: turbines +29 (75.7 against 117), gas CCS -41 (256 against 277), all gas -47 (-1.6%), CO2 -1. Combined cycle stays 5-8% under EIA's CC in every year and TRE's CC at 53-64% of EIA's; neither finding addresses that.
 
-**Still open.** EFD's coal contracts and the other ED$COL rows (finding 5's compensating error); the class-4 oil split (finding 15) needs UQFCONN, which the restart does not carry; coal classes under capacity="lp" still split by the CMM units' capacity, not by which units the LP retired; LDSM's own-use gross-up (own use x the loss factor, about 7 TWh in 2030) is still not in the load.
+**Still open.** The other ED$COL rows are ported or shown slack in the next section; they were not finding 5's compensating error. The class-4 oil split (finding 15) needs UQFCONN, which the restart does not carry; coal classes under capacity="lp" still split by the CMM units' capacity, not by which units the LP retired; LDSM's own-use gross-up (own use x the loss factor, about 7 TWh in 2030) is still not in the load.
 
 Pinned by `tests/test_emm_dispatch.py` (`test_fleet_leaves_out_chp_units`, `test_epa111_cap_is_efd_availability`, `test_reserve_heights_are_ldsm_load`, `test_reference_price_shares_the_diversity_cap`) and `tests/test_emm_demand.py` (`test_noncontiguous_fuel_completes_power_fuel`, `test_spread_holds_alaska_and_hawaii_in_the_pacific`; `test_net_load_matches_fleet_generation` now puts the PV grid sales back before comparing with EIA's fleet generation). Scripts: scratchpad `codex/` (run.py single-year runs, batch.sh the memory-gated sweep, res1.txt the results, md.py these tables).
+
+
+## The rest of EFD's coal LP: contracts, imports, tiers, emission rows (branch coal-contracts)
+
+The Codex section above read finding 5's coal drop as the anchor standing in for the unported parts of ED$COL. This branch ports those parts and checks the rest. They are not what the anchor was covering: together they move 2030 coal units by -3 TWh and PJM by +0.4. Only 2025, a contract-heavy year, moves a lot.
+
+**What EIA does** (uefd.f ED$COL 16433-17426, uecp.f COMBINE_COAL_RATES 3030-3111, uread.f GET_EMF_AND_ACI 1218-1306, uefd.f EPA$TRANRG_EFD 19708-19792).
+- Contracts. The CMM writes EFD_CONT(curve, coal region, scrubbed or not) from its contract tables (coal.ams USO2GRP_EFD_CONT_A..E, -1 for none). EFD makes a row K_ >= EFD_CONT for each entry that is not negative. Every transport column from that curve to that region, for a configuration with that scrubber status (ECP_SCRUB), enters it. An escape KX costs 15 1987$/MMBtu, so contract coal is all but forced. 2030: 350 TBtu in 8 rows (curve 10 lignite to C1 207, to WS 28 and AM 30; Powder River to WS 37 and MT 17; curve 3 to YP 24; S2 8). 2025: 4,154 TBtu in 40 rows. 2035: 67 in one.
+- Imports. Twelve international curves (15-26), up to 10 steps of XCL_QIMP at XCL_PIMP, all bituminous, no 9.999 cap and no 12th step. A coal region takes the cheapest of four ports, XCL_TR_IN x XCL_TESCI + XCL_TRATI2. Only NE, GF, AM, WS and PC have a port route (curve 17 reaches AM at 0.29 1987$/MMBtu of transport).
+- Transport tiers. A domestic route costs the first-tier rate where the CMM writes a tier-1 limit and the configuration is existing, the second-tier rate otherwise. A T_ row caps first-tier coal only where XCL_TR_T2 > XCL_TR_T1.
+- Activated carbon. With USW_HG = 1 each ACI column also fills ACICSTXX at max(ACI_QAC x 1e-6, 1e-4) per TBtu, bought on one supply step at UCL_PAC = 0.33 (bound 9,999.99). That is 0.006-0.03 1987$/MMBtu on most configurations, 0.07 on C4 and 0.31 on C1 and CX bituminous, on top of the ACI O&M the port already had.
+- SO2 and mercury: national SULFUR rows, the Hg row, the CSAPR coal-region SULFUR rows and the MATS HGO_ rows.
+
+**Ported** (`coal_supply.py`, `dispatch.py`; all on, each with a switch).
+- `CONTRACTS`: the K_ rows and KX. The right-hand side is scaled to the coal group's part of the region's and status's burn in EIA's run, the same basis as the caps, since cofired units and CCS retrofits buy outside this LP (2030: 251 of the 350 TBtu).
+- `IMPORTS`: the import curves and port routes (71 routes in 2030).
+- `TIER_RATES`: the tier-1 or tier-2 rate choice and the T_ rows with their C_ relief column.
+- `ACI_SORBENT`: the sorbent step as a cost on ACI coal.
+- `DispatchResult.coal_route_tbtu` and `coal_contract_short` report the LP's deliveries and any contract shortfall.
+
+**Shown not to bind in cb2026** (`test_coal_lp_rows_left_out_cannot_bind`, `test_csapr_rows_slack_on_the_lp_flows`; 2025-2050).
+- Tiers: the second-tier rate equals the first on all 96 domestic routes, raw and escalated, so no T_ row exists and the rate choice changes no cost.
+- National SO2: UYR_NOCAIR = 2015 (emmcntl.txt), so SULFUR1 and SULFUR2 are free rows from 2015. The SULF plant rows only feed them (cost EFD_MIN 0.001).
+- CSAPR coal-region SO2: EIA's whole coal burn in each region at the dirtiest curve it has a route from, after scrubber removal, stays under every limit from 2030 (largest S1 at 0.79 of its limit in 2030, 0.37 in 2035). In 2025 that bound crosses C2's limit (1.22), so 2025 and 2030 are checked on the LP's own deliveries, scaled to EIA's whole burn.
+- Mercury: the national row is free (EMEL_QHG 999.9 >= 100). The MATS rows HGO_ exist only with MACT_SW = 1, which GET_EMF_AND_ACI sets only where HG_OUTPUT, HG_INPUT or HG_MEF is positive; all are zero. With USW_CAMR = 1 the standard is HG_MEFNC = 0.1 everywhere, which forces the no-ACI column of any configuration above it to zero. That is the ACI adder the port already had.
+
+**Result.** Single-year dispatch on EIA's fleet, sales-based load with trade, 3-hour blocks. Before / after / EIA. Coal units are pc + ig; all coal generation and coal fuel include the cofired units and CCS retrofits.
+
+| | 2025 | 2030 | 2031 | 2035 |
+|---|---|---|---|---|
+| Coal units, TWh | 657.5 / 691.0 / 723.2 | 379.3 / 376.4 / 403.5 | 352.5 / 345.3 / 352.8 | 65.6 / 65.6 / 62.5 |
+| All coal generation, TWh | 676.9 / 710.1 / 727.9 | 454.9 / 453.1 / 465.3 | 451.8 / 445.7 / 418.9 | 152.9 / 152.9 / 121.8 |
+| Coal fuel, TBtu | 6,897 / 7,213 / 7,446 | 4,709 / 4,691 / 4,891 | 4,772 / 4,707 / 4,460 | 1,882 / 1,882 / 1,491 |
+| PJM coal units, TWh | 108.5 / 122.2 / 143.7 | 99.2 / 99.6 / 114.7 | 97.9 / 97.2 / 105.1 | 25.4 / 25.4 / 24.2 |
+| Imports, TBtu | 0 / 224 | 0 / 60 | 0 / 40 | 0 / 0 |
+
+Western regions, coal units, TWh, before / after / EIA:
+
+| | 2025 | 2030 | 2031 |
+|---|---|---|---|
+| TRE | 56.5 / 56.5 / 57.9 | 43.0 / 43.5 / 47.6 | 37.4 / 34.1 / 35.5 |
+| BASN | 22.7 / 25.3 / 31.1 | 13.7 / 13.7 / 14.8 | 14.8 / 14.8 / 15.7 |
+| SRSG | 16.2 / 14.9 / 16.0 | 16.5 / 16.5 / 16.6 | 4.5 / 4.5 / 0.0 |
+| SPPC | 27.2 / 27.1 / 29.0 | 16.6 / 15.9 / 13.3 | 14.5 / 14.6 / 10.1 |
+| SPPS | 14.0 / 14.0 / 12.7 | 12.8 / 12.0 / 10.1 | 15.7 / 14.5 / 11.2 |
+| RMRG | 25.6 / 26.1 / 28.8 | 5.4 / 5.4 / 7.6 | 5.2 / 5.2 / 7.7 |
+
+In 2035 the six have no coal units except TRE (4.9 / 4.9 / 4.5).
+
+**One switch at a time** (coal units, TWh, 2025 / 2030 / 2031): contracts alone +30.0 / +0.2 / +0.3; imports alone +16.6 / +2.5 / 0.0; the sorbent -8.2 / -5.7 / -7.5. Every contract row is met in every year (2035 C1 short 0.1 TBtu). In 2030 only the S2 and C1 rows bind; the others sit below what the classes buy anyway. The imports go to the Gulf and Texas (AM, GF, WS) in place of Illinois and Appalachian coal. The CMM's own power imports are zero in cb2026 (COALOUT EIMP_BTU), so these are EFD's LP choices, not the coal market's. EFD's column levels are not in its PassBack, so they cannot be checked against the oracle.
+
+**What this says about finding 5.** The anchor was not covering the ED$COL rows. 2030 coal units stay 7% under EIA and PJM 13% under. The PJM gap is the eastern marginal cost (PJMW 15.5 1987$/MWh against the oracle EFD's 18.0, "Still open" in the coal-supply section), which a coal-side port does not touch. 2025 closes from -9.1% to -4.5% (PJM from -24% to -15%): its 4,154 TBtu of contracts force Appalachian and Illinois coal the dispatch had idled.
+
+**Still open.**
+- The cofired units' and CCS retrofits' coal is still bought outside this LP, so contracts and caps are scaled to the coal group's part. In EFD any configuration in the region can fill a contract.
+- The ACI test (MATS_MEF_LIMIT 0.101) is one number; EFD compares each configuration with HG_MEFNC by coal region (0.1 everywhere in cb2026).
+- UCL_PAC comes from the oracle composite, not EIA's input file.
+
+Pinned by `tests/test_emm_dispatch.py` (`test_coal_contracts_follow_efd_cont`, `test_coal_imports_follow_combine_coal_rates`, `test_coal_lp_rows_left_out_cannot_bind`, `test_csapr_rows_slack_on_the_lp_flows`). Scripts: scratchpad `coalcon/` (run.py single-year runs, batch.sh the memory-gated sweep, base.txt, res1.txt and res2.txt the results, probe*.py the data checks).
