@@ -40,11 +40,14 @@ def fleet_generation(snapshot, year, axis=None):
 
 @pytest.mark.parametrize("year", YEARS)
 def test_net_load_matches_fleet_generation(snapshot, year):
-    """Net load is within 0.5% of what EIA's fleet generates (its storage losses included, which the LP adds itself).
-    The old load (sales / (1 - loss), less end-use own use, nontraditional cogeneration not taken off, Alaska and
-    Hawaii in) was 2-3% above it, 110-125 TWh, and the LP ran gas and coal for it."""
+    """Net load is within 0.5% of what EIA's fleet generates (its storage losses included, which the LP adds itself),
+    once end-use PV's grid sales are put back. The load takes them off (EFD dispatches distributed PV itself, Codex
+    finding 6), but EIA's PV category keeps EFD's distributed PV output above DPVTOTGENNR, which EMMBODPV does not back
+    out: about the grid sales. The old load (sales / (1 - loss), less end-use own use, nontraditional cogeneration not
+    taken off, Alaska and Hawaii in) was 2-3% above it, 110-125 TWh, and the LP ran gas and coal for it."""
     nl = demand.net_load_twh(snapshot, year).sum()
-    assert abs(nl / fleet_generation(snapshot, year) - 1) < 0.005
+    pv_grid = snapshot["COGEN/cgtotgennr"][:25, year - 1990, demand.PV_COLUMN, 0].sum() / 1000.0 if demand.PV_GRID_SALES else 0.0
+    assert abs((nl + pv_grid) / fleet_generation(snapshot, year) - 1) < 0.005
 
 
 def test_total_generation_holds_distributed_pv(snapshot):
@@ -106,3 +109,26 @@ def test_power_co2_reference_counts_chp_once(snapshot, year):
     assert 0.0 < emelc - utco2 < 25.0          # Alaska and Hawaii only: no CHP-sized hole between the two
     assert rep.fleet_co2(snapshot, year, chp=True) == pytest.approx(utco2)
     assert rep.fleet_co2(snapshot, year) == pytest.approx(utco2 - chp)
+
+
+@pytest.mark.parametrize("year", (2030, 2040))
+def test_noncontiguous_fuel_completes_power_fuel(snapshot, year):
+    """util.f adds Alaska's and Hawaii's fuel to the Pacific division's power fuel (Alaska's oil all to distillate). The
+    25-region UFL*NR arrays (ownership classes 1 to 4) plus demand.noncontiguous_fuel_tbtu rebuild QCLEL, QDSEL and
+    QRSEL (Codex finding 7)."""
+    y = year - 1990
+    f = lambda *ks: sum(float(snapshot[f"UEFDOUT/{k}"][:, :25, y].sum()) for k in ks)
+    ah = demand.noncontiguous_fuel_tbtu(snapshot, year)
+    assert f("uflclnr") + ah["coal"] == pytest.approx(float(snapshot["QBLK/qclel"][10, y]), rel=0.002)
+    assert f("ufldsnr", "uflddnr") + ah["distillate"] == pytest.approx(float(snapshot["QBLK/qdsel"][10, y]), rel=0.03)
+    assert f("uflrlnr", "uflrhnr") + ah["residual"] == pytest.approx(float(snapshot["QBLK/qrsel"][10, y]), rel=0.01)
+
+
+def test_spread_holds_alaska_and_hawaii_in_the_pacific():
+    from nems_open.emm.couple import ElectricityLP, PACIFIC, US
+    base = np.zeros((11, 2))
+    base[:9, 1] = 10.0
+    base[US, 1] = 90.0
+    out = ElectricityLP._spread(base.copy(), base, 1, 50.0, pacific_fixed=6.0)
+    assert out[US, 1] == pytest.approx(50.0) and out[:9, 1].sum() == pytest.approx(50.0)
+    assert out[PACIFIC, 1] == pytest.approx(6.0 + 4.0 * 44.0 / 84.0)

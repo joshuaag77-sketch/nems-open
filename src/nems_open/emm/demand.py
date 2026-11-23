@@ -15,6 +15,7 @@ TBTU_PER_TWH = 3.412
 SECTORS = ("rs", "cm", "in", "tr")          # residential, commercial, industrial, transportation
 SALES_KEYS = ("QBLK/qelrs", "QBLK/qelcm", "QBLK/qelin", "QBLK/qeltr")
 PV_COLUMN = 9                                # solar column in COGEN/cgtotgennr
+PV_GRID_SALES = True                         # take end-use PV's grid sales off the load (end_user_grid_sales_twh)
 # ULOSSADJ (prepett.f 853-886), by year: EMM scales every region's T&D loss factor by it.
 LOSS_ADJUSTMENT = {**{y: 1.0 for y in range(1990, 1999)}, 1999: 0.974, 2000: 0.965, 2001: 0.956, 2002: 0.946,
                    2003: 0.937, 2004: 0.928, 2005: 0.918, 2006: 0.909, **{y: 1.0 for y in range(2007, 2011)},
@@ -62,11 +63,18 @@ def end_user_grid_sales_twh(snapshot, year: int) -> np.ndarray:
     COGEN/cgtotgennr's last axis is sales to the grid (1) and own use (2). Own use never reaches the sales the
     demand modules report (they are purchases), so only the grid part supplies EFD's load, as BTCOGEN does in
     EFD (unugs.f 436-458; residential and commercial own use is in both LDSM's load and BTCOGEN, which nets out).
-    The solar column is left out: EFD's supply and load balance without it.
+
+    Solar (PV_GRID_SALES). With DPVDISPATCH (util.f 168) BTCOGEN leaves out end-use PV, own use and grid sales alike
+    (unugs.f 445-456), because EFD dispatches the distributed PV capacity itself (ED$GRD, uefd.f 1621-1660; its
+    output on the load rows, 11949-11965) and EMMBODPV backs DPVTOTGENNR out of the reported PV afterwards (util.f
+    5865-5895). LDSM's load holds the PV's own use (the demand modules' purchases net it out and LDSM adds it back,
+    uldsm.f 1253-1263; resd.f 11752), not its grid sales. So EFD's fleet serves neither: the dispatch, which has no
+    distributed PV (restart UCAPPV is net of it), takes the PV grid sales off too. On: they are taken off (18 TWh in
+    2030). Off: the solar column is left out, as before (Codex finding 6).
     """
     a = snapshot["COGEN/cgtotgennr"][:25, year - history.FIRST_YEAR, :, 0]   # (25, 13) GWh
     keep = np.ones(a.shape[1], dtype=bool)
-    keep[PV_COLUMN] = False
+    keep[PV_COLUMN] = PV_GRID_SALES
     return a[:, keep].sum(axis=1) / 1000.0
 
 
@@ -100,12 +108,38 @@ def nontraditional_cogen_co2_mt(snapshot, year: int) -> float:
             + nt["oil"] * dispatch.CO2_PER_TBTU["residual"])
 
 
+def noncontiguous_fuel_tbtu(snapshot, year: int) -> dict:
+    """Alaska's and Hawaii's power-sector fuel, trillion Btu: coal, distillate, residual, gas.
+
+    The dispatch covers the 25 EMM regions. util.f (6011-6038 Alaska, 6385-6402 Hawaii) adds the two states' fuel to
+    the Pacific division's QCLEL, QDSEL, QRSEL and QNGEL from their own history scaled by demand (and Hawaii's RPS),
+    outside EFD; Alaska's oil all goes to distillate. Here they are the reference run's (UEFDOUT/UFL*NR, NERC rows 26
+    and 27): the same arrays EIA fills from those lines."""
+    y = year - history.FIRST_YEAR
+    f = lambda k, rows: float(snapshot[f"UEFDOUT/{k}"][:, rows, y].sum())
+    ak, hi = slice(25, 26), slice(26, 27)
+    both = slice(25, 27)
+    gas = sum(f(k, both) for k in ("uflgfnr", "uflginr", "uflgcnr") if snapshot.names(f"UEFDOUT/{k}"))
+    oil = ("ufldsnr", "uflddnr", "uflrlnr", "uflrhnr")
+    return {"coal": f("uflclnr", both),
+            "distillate": sum(f(k, ak) for k in oil) + f("ufldsnr", hi) + f("uflddnr", hi),
+            "residual": f("uflrlnr", hi) + f("uflrhnr", hi),
+            "gas": gas}
+
+
 def international_net_imports_twh(snapshot, year: int) -> np.ndarray:
     """Net imports from Canada and Mexico by EMM region, TWh (firm plus economy, minus exports)."""
     y = year - history.FIRST_YEAR
     g = sum(snapshot[f"UETTOUT/{k}"][:25, y] for k in ("utimpe", "utimpf"))
     g = g - sum(snapshot[f"UETTOUT/{k}"][:25, y] for k in ("utexpe", "utexpf"))
     return g / 1000.0
+
+
+def gross_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
+    """LDSM's load on the EMM regions, sales x (1 + ULOSSADJ x UQTDLS) (uldsm.f 2011), shape (25,), TWh: what EFD's
+    load rows hold (UTHGHT) before the supply from outside the dispatched fleet. `sales` as in net_load_twh."""
+    loss = load.region_parameters()["td_loss"]
+    return regional_sales_twh(sales if sales is not None else snapshot, year).sum(axis=1) * (1.0 + loss_adjustment(year) * loss)
 
 
 def net_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
@@ -116,7 +150,6 @@ def net_load_twh(snapshot, year: int, sales=None) -> np.ndarray:
     mapping with the restart's QBLK/qel* arrays (the default is the snapshot); the rest comes from the snapshot.
     Trade between EMM regions, storage losses and the LP's own line losses are not in this number.
     """
-    loss = load.region_parameters()["td_loss"]
-    need = regional_sales_twh(sales if sales is not None else snapshot, year).sum(axis=1) * (1.0 + loss_adjustment(year) * loss)
+    need = gross_load_twh(snapshot, year, sales)
     return np.maximum(need - end_user_grid_sales_twh(snapshot, year) - nontraditional_cogen_twh(snapshot, year)
                       - international_net_imports_twh(snapshot, year), 0.0)

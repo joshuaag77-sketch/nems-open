@@ -25,6 +25,19 @@ NUM_R = dispatch.NUM_R
 CO2_PER_C = 44.0 / 12.0
 PRICE_KEYS = {"coal": "MPBLK/pclel", "gas": "MPBLK/pngel", "distillate": "MPBLK/pdsel", "residual": "MPBLK/prsel"}
 RATIO_CLIP = (0.2, 5.0)    # a fuel price can move by up to this factor from the reference run
+PACIFIC = 8                # census division of Alaska and Hawaii (0-based)
+# Alaska and Hawaii. util.f adds their power-sector fuel to the Pacific division's QCLEL, QDSEL, QRSEL and QNGEL
+# (6011-6038, 6385-6402) and EFD's carbon totals hold them (EMELC is UTCO2 plus EDSPOAK and EDSPOHI). The dispatch
+# covers the 25 EMM regions only. On: their fuel (demand.noncontiguous_fuel_tbtu, the reference run's) and its CO2 are
+# added to the loop's totals and held in the Pacific division; the rest of each total is spread as in the baseline.
+# Off: the US totals leave them out and the Pacific division takes its baseline share of that (Codex finding 7).
+NONCONTIGUOUS = True
+# The fleet's make-up follows its capacity. A case's heat rates, VOM, heat-rate tiers, coal and cofire shares and the
+# new-CC share under EPA 111 are built from the existing / new split of its capacity (dispatch.build_case). EFD builds
+# them from the units the run has (udat.f: each plant group's UG_HTRT and W_CF from its own units, 6446-6447,
+# 7249-7263). On: when the fleet is not the reference run's (capacity="lp" or a lever), the case is rebuilt on it.
+# Off: the reference case's make-up with the new capacity put in (Codex finding 3).
+COMPOSITION_FOLLOWS_CAPACITY = True
 
 
 @dataclass
@@ -64,6 +77,7 @@ class ElectricityLP:
         self.added_load = added_load          # datacenter.AddedLoad: already in the loop's commercial sales
         self.capacity_scale = capacity_scale   # year -> {group: multiplier}, from a lever (nems_open.levers)
         self._cases = {}
+        self._fleet_cases = {}
         self._census = _census_of_region()
         self.last: dict[int, LPResult] = {}
         if capacity not in ("eia", "lp"):
@@ -78,6 +92,14 @@ class ElectricityLP:
         if year not in self._cases:
             self._cases[year] = dispatch.reduce_hours(dispatch.build_case(self.snapshot, year, "none"), self.hours_per_block)
         return self._cases[year]
+
+    def fleet_case(self, year: int, capacity: dict) -> dispatch.DispatchCase:
+        """The year's case rebuilt on `capacity` (COMPOSITION_FOLLOWS_CAPACITY), built once per year: the capacity
+        path solves a year once and a lever's scale is fixed."""
+        if year not in self._fleet_cases:
+            full = dispatch.build_case(self.snapshot, year, "none", capacity=capacity)
+            self._fleet_cases[year] = dispatch.reduce_hours(full, self.hours_per_block)
+        return self._fleet_cases[year]
 
     def _scaled_prices(self, case, prices: dict, j: int) -> dict:
         out = dict(case.price)
@@ -109,6 +131,8 @@ class ElectricityLP:
             fleet = self.capacity_fleet(year, net, prices, j, cp87)
             extra["credit_share"] = self.capacity_path.credit_share(year)    # the path's own CCS cohorts
         capacity = {g: v * scale.get(g, 1.0) for g, v in fleet.items()}
+        if COMPOSITION_FOLLOWS_CAPACITY and (self.capacity_path is not None or scale):
+            case0 = self.fleet_case(year, capacity)
         case = replace(case0, capacity=capacity, net_load_twh=net, price=self._scaled_prices(case0, prices, j),
                        carbon_price=float(cp87), **extra)
         res = dispatch.solve(case)
@@ -121,9 +145,15 @@ class ElectricityLP:
         total = {"QBLK/qclel": fuel["coal"] + nt["coal"], "QBLK/qngel": fuel["gas"] + nt["gas"],
                  "QBLK/qdsel": fuel["distillate"], "QBLK/qrsel": fuel["residual"] + nt["oil"]}
         nt_co2 = demand.nontraditional_cogen_co2_mt(self.snapshot, year)
+        fixed = {name: 0.0 for name in total}
+        if NONCONTIGUOUS:
+            ah = demand.noncontiguous_fuel_tbtu(self.snapshot, year)
+            fixed = {"QBLK/qclel": ah["coal"], "QBLK/qngel": ah["gas"], "QBLK/qdsel": ah["distillate"], "QBLK/qrsel": ah["residual"]}
+            total = {name: value + fixed[name] for name, value in total.items()}
+            nt_co2 += sum(ah[k] * dispatch.CO2_PER_TBTU[k] for k in ("coal", "distillate", "residual", "gas"))
         power = {}
         for name, value in total.items():
-            power[name] = self._spread(q[name], self.base[name], j, value)
+            power[name] = self._spread(q[name], self.base[name], j, value, fixed[name])
         # Core and non-core gas are parts of the gas total: move them with it.
         gas_factor = total["QBLK/qngel"] / self.base["QBLK/qngel"][US, j] if self.base["QBLK/qngel"][US, j] > 0 else 1.0
         for name in ("QBLK/qgfel", "QBLK/qgiel"):
@@ -153,9 +183,13 @@ class ElectricityLP:
         return cap.dispatch_capacity(self.capacity_path.results[year].capacity)
 
     @staticmethod
-    def _spread(current: np.ndarray, base: np.ndarray, j: int, us_total: float) -> np.ndarray:
-        """`current` with year j set to the US total, split over regions as in the baseline."""
+    def _spread(current: np.ndarray, base: np.ndarray, j: int, us_total: float, pacific_fixed: float = 0.0) -> np.ndarray:
+        """`current` with year j set to the US total, split over regions as in the baseline. `pacific_fixed` (Alaska
+        and Hawaii) is held in the Pacific division and only the rest is split."""
         out = current.copy()
-        b = base[:, j]
-        out[:, j] = b * (us_total / b[US]) if b[US] > 0 else b
+        f = np.zeros(len(base))
+        f[PACIFIC] = f[US] = pacific_fixed
+        b = base[:, j] - f
+        rest = us_total - pacific_fixed
+        out[:, j] = (b * (rest / b[US]) if b[US] > 0 else b) + f
         return out

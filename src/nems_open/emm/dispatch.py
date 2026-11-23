@@ -5,7 +5,10 @@ Capacity by plant group, fuel prices and net load are inputs. Thermal plants (co
 combined cycle, gas combustion turbines, steam) are dispatched against their fuel and variable
 O&M cost, hydro is dispatched inside a monthly energy budget, batteries and pumped storage
 shift energy inside each day, and nuclear, wind, solar and other renewables run at their
-capacity factor unless spilled. Regions do not trade with each other yet.
+capacity factor unless spilled. Regions trade over the ETT links (build_links) at their markups and line loss.
+It is shaped like EFD, not EFD: one LP group per type and region (tiers and coal classes split some), hours instead
+of EFD's slices, and no commitment modes unless EFD_DISPATCH_MODES is on. The module switches below say which EFD
+rule each part follows and where it departs.
 
 Money is 1987 dollars, the unit NEMS keeps its prices in. Power is GW, energy TWh, fuel
 trillion Btu, CO2 million metric tons.
@@ -96,6 +99,26 @@ COAL_RETROFIT_CAPTURE = 0.90
 EPA111_NEW_CC_CF = True
 # With EPA111_NEW_CC_CF: the plant file's combined cycle in N_TIERS heat-rate tiers (heat_rate_tiers) instead of one.
 GAS_CC_OLD_TIERS = True
+# EFD holds the capped units to UEPA_NWGSCF through their availability, not an energy row. udat.f 6446 lowers the
+# unit's W_CF; W_CFA (7023) and so AVGCF (8852) follow; for a new unit MAXCF = AVGCF (10189-10193); and 10194-10224
+# then moves its FOR and PMR by one factor so that (1 - FOR)(1 - PMR) = MAXCF (MXLFR 0, udat.f 5240). For the new
+# combined cycle at 0.4 that is FOR 0.37 and PMR 0.36, against CCG's 0.074 and 0.060 (pltdata's 0.055 and 0.041
+# moved to its 0.87 maximum). Those rates are the unit's hourly ceiling and, through ED$PM, its maintenance, and the
+# forced outage share is not reserve. On (with EPA111_NEW_CC_CF): the new-CC tier's hourly ceiling and committable capacity
+# use those rates; its energy row stays (it no longer binds). Off: the tier has the group's rates and only the energy
+# row caps it (Codex finding 11).
+EPA111_DERATE = True
+
+# The dispatched fleet is ownership classes 1 to 3. util.f's UCAP tally (7465-7510 for combined cycle, the same for
+# every type) puts IOWN 1-2 in UCAP*U, 3 in UCAP*N and 4, the electric power sector's CHP, in UCAP*C and CGNTCAP. The
+# dispatch takes its capacity from *U and *N and the CHP units' output off the load (demand.nontraditional_cogen_twh),
+# so plant-file units of class 4 are not in it. On: the plant-file reads that size and describe the existing fleet
+# (existing capacity against the restart's, heat rates, VOM, heat-rate tiers, in-service dates, cofired units, the
+# old fleet's capacity factor) keep classes 1 to 3. In 2030 that takes about 20 GW of CHP combined cycle out of
+# gas_cc's existing tiers, which had counted it as old capacity and pushed the new-build share (and its EPA 111 cap)
+# down. Off: every class, as before (Codex finding 4).
+FLEET_OWNERS_ONLY = True
+FLEET_OWNERS = (1, 2, 3)
 
 # Storage: (duration in hours, round-trip efficiency)
 STORAGE = {"battery": (4.0, 0.85), "pumped": (12.0, 0.78)}
@@ -212,6 +235,14 @@ COAL_BY_CONFIGURATION = True
 # costs (PJMW 15.5 1987$/MWh load-weighted against the oracle EFD's 18.0) idles WV units EIA runs. 2030 coal against
 # EIA: -1.7% (False) and -2.9% (True); 2025 -4.8% and -8.6%.
 COAL_PRICE_BY_CLASS = False
+# Whether the classes pay the regional price at all. EFD's coal columns carry a token fuel cost (ED$BTU: FLCST =
+# 0.001, uefd.f 7763) and the coal itself is costed only in ED$COL: supply steps at XCL_PECP (16826-16828) and routes at
+# the transport rate plus activated carbon (17134-17170). Shifting every class by UPCOALAVG less its own price at EIA's
+# burn makes all classes in a region cost the regional price at that burn, which cancels the differences in delivered
+# cost between them. Off (EIA): a class pays what the coal LP charges and nothing else; COAL_PRICE_BY_CLASS is then
+# unused. On: the shift, as before (Codex finding 5). Each region's rest (coal capacity outside the CMM's units) pays
+# the regional price either way.
+COAL_PRICE_ANCHOR = False
 COAL_CONFIG_LAST = "HC"         # the coal configurations are the ECP types up to HC
 COAL_FUELS = ("B", "C", "H")   # plant-file fuel codes of the coal supply curves (B1..B8, C1..CX, H1..HC)
 # EFD's dispatch modes (uefd.f OPBSLD 9715-9870). EFD commits a thermal group per season, not per hour: one column
@@ -275,6 +306,15 @@ TIER_GROUPS = ("gas_ct",)     # with gas_cc too, 2030 combined cycle falls anoth
 N_TIERS = 3
 EFD_BATTERY_SR = (0.252, 0.206, 0.460, 0.200, 0.232, 0.447, 0.222, 0.289, 0.438)
 EFD_NUCLEAR_SR = 0.04
+# The load behind EFD's spinning reserve requirement and the maximum-load shapes. ED$LOAD (uefd.f 9179-9227) sets
+# SP_RES_RQMT_IN = SR_RQMT_HGHT x LOAD + SR_RQMT_DIFF x (MAX_HGHT - LOAD) with LOAD = UTHGHT, and OPBSLD's DRAT_MAX
+# (uefd.f 9769) uses UTHGHT / MAX_SP_LOAD. UTHGHT is LDSM's load: sales grossed up for losses. End-use generators'
+# grid sales (BTCOGEN, a fixed column on the load rows), the electric power sector's CHP and imports supply part of
+# that load as columns of the LP; they do not lower it. On: the requirement and the shapes are built on that gross
+# load, the hourly net load x the case's gross_ratio (demand.gross_load_twh over net_load_twh, so it follows the
+# loop's and the capacity LP's load); the balance keeps the net load.
+# Off: both on the net load (Codex finding 8).
+GROSS_LOAD_HEIGHTS = True
 SPIN_SHORTFALL_COST = 100.0   # 1987$/MWh of missing reserve, below UNSERVED_COST so no load is shed to make reserve
 
 
@@ -311,6 +351,8 @@ class DispatchCase:
     tiers: dict = None                  # group -> (share (25, T), heat rate (25, T)) (HEAT_RATE_TIERS; None: one tier)
     tier_max_cf: dict = None            # tiered group -> (25, T) maximum capacity factor of each tier (None: the group's)
     tier_vom: dict = None               # tiered group -> (25, T) variable O&M of each tier (None: the group's)
+    gross_ratio: np.ndarray = None      # (25,) LDSM's load before outside supply over net_load_twh (None: 1)
+    tier_outage: dict = None            # tiered group -> (forced outage, planned maintenance), each (25, T) (None: the group's)
 
 
 @dataclass
@@ -332,6 +374,8 @@ class DispatchResult:
     trade_twh: np.ndarray = None                            # (links,) energy sent on each link
     coal_class_twh: np.ndarray = None                       # (pairs,) coal group TWh by region and class (COAL_BY_CONFIGURATION)
     coal_class_price: np.ndarray = None                     # (classes,) delivered coal price in EFD's coal LP, 1987$/MMBtu
+    coal_route_tbtu: np.ndarray = None                      # (routes,) deliveries on each coal LP route
+    coal_contract_short: np.ndarray = None                  # (contracts,) TBtu short of each contract row (KX)
 
     def total_generation_twh(self) -> float:
         return float(sum(v.sum() for v in self.generation_twh.values()))
@@ -348,6 +392,22 @@ def existing_types(group: str) -> tuple:
     if group == "steam" and COFIRE_GROUP:
         return tuple(t for t in EXISTING_TYPES["steam"] if t not in EXISTING_TYPES["cofire"])
     return EXISTING_TYPES[group]
+
+
+def _fleet_owner() -> np.ndarray:
+    """Plant-file units that belong to the dispatched fleet (FLEET_OWNERS_ONLY): ownership classes 1 to 3."""
+    u = plants.load_units()
+    return np.isin(u.owner, FLEET_OWNERS) if FLEET_OWNERS_ONLY else np.ones(len(u.owner), dtype=bool)
+
+
+def _online(year: int) -> np.ndarray:
+    """Plant-file units in service in `year` that are in the dispatched fleet."""
+    return plants.online(year) & _fleet_owner()
+
+
+def _capacity_gw(year: int, efd_types) -> np.ndarray:
+    """plants.capacity_gw over the dispatched fleet's ownership classes."""
+    return plants.capacity_gw(year, efd_types, owners=FLEET_OWNERS if FLEET_OWNERS_ONLY else None)
 
 
 def _ucap_mid(snapshot, prefixes, y) -> np.ndarray:
@@ -373,7 +433,7 @@ def _in_service(snapshot, prefixes, types, year) -> np.ndarray:
         return 0.5 * (start + end)
     u = plants.load_units()
     tb = db.table("V_EMM_PLTF860")
-    in_group = np.isin(u.efd_type, list(types))
+    in_group = np.isin(u.efd_type, list(types)) & _fleet_owner()
     adds = in_group & (u.online_year == year)
     rets = in_group & (u.retire_year == year)
     add_gw, ret_gw, add_avg, ret_avg = (np.zeros(NUM_R) for _ in range(4))
@@ -403,7 +463,7 @@ def _ucap(snapshot, prefixes, y) -> np.ndarray:
 def _weighted(values, weights, types, region_arr, year, fallback):
     """Capacity-weighted mean of a plant-file column by region for the given EFD types, national mean where a region has none."""
     u = plants.load_units()
-    on = plants.online(year) & np.isin(u.efd_type, list(types))
+    on = _online(year) & np.isin(u.efd_type, list(types))
     out = np.full(NUM_R, np.nan)
     for r in range(1, NUM_R + 1):
         m = on & (region_arr == r)
@@ -568,12 +628,16 @@ def restart_capture_capacity(snapshot, year: int) -> dict:
     return {g: _ucap(snapshot, CAPACITY_PREFIXES[g], y) for g in CAPTURE_GROUPS}
 
 
-def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
+def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) -> DispatchCase:
     """Assemble a year's inputs from the reference run's capacity and fuel prices.
 
     trade="none": regions meet their own net load from sales (demand.net_load_twh).
     trade="reference": each region's net load is the reference run's generation in that
     region, which fixes the interregional exchange at EIA's result.
+    capacity: {group: (25,) GW} in place of the reference run's (the capacity LP's fleet, a lever). Everything that
+    depends on the fleet's make-up is built on it: the existing / new split behind each group's heat rate and VOM,
+    the heat-rate tiers, the new-CC share EPA 111 caps, the cofired units' coal share. The case's capacity is
+    `capacity` itself.
     """
     y = year - history.FIRST_YEAR
     cap = {g: _in_service(snapshot, p, EXISTING_TYPES.get(g), year) for g, p in CAPACITY_PREFIXES.items()}
@@ -584,6 +648,8 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         cap["steam"] = cap["steam"] - cap["cofire"]
     else:
         cap["cofire"] = np.zeros(NUM_R)
+    if capacity is not None:
+        cap.update({g: np.asarray(v, dtype=float) for g, v in capacity.items()})
     u = plants.load_units()
     ptype = {t.code: t for t in technology.efd_plant_types()}
     params = technology.type_parameters()
@@ -594,7 +660,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     part_load = part_load_factor() if COAL_PART_LOAD_HEAT_RATE else np.ones(len(u.heat_rate))
     for g in THERMAL:
         types = types_of[g]
-        existing = plants.capacity_gw(year, types)[:NUM_R]
+        existing = _capacity_gw(year, types)[:NUM_R]
         hr_unit = u.heat_rate * part_load if g == "coal" else u.heat_rate
         hr_ex = _weighted(hr_unit, u.summer_mw, types, u.region, year, 10000.0)
         vom_ex = _weighted(u.vom, u.summer_mw, types, u.region, year, 2.0)
@@ -611,7 +677,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
             coal_plain = (ex_used * _weighted(u.heat_rate, u.summer_mw, types, u.region, year, 10000.0) + new * hr_new) / total
         vom[g] = (ex_used * vom_ex + new * vom_new) / total
         if g in OIL_TYPES:
-            oil_cap = plants.capacity_gw(year, OIL_TYPES[g])[:NUM_R]
+            oil_cap = _capacity_gw(year, OIL_TYPES[g])[:NUM_R]
             oil[g] = np.divide(oil_cap, existing, out=np.zeros(NUM_R), where=existing > 0)
         else:
             oil[g] = np.zeros(NUM_R)
@@ -620,7 +686,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     # Coal that captures CO2 burns more fuel per kWh and costs more to run: use the plant file's own
     # with-capture heat rate and variable O&M (T_CCSHR, T_CCSV) for the captured share.
     tb = db.table("V_EMM_PLTF860")
-    coal_u = np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
+    coal_u = _fleet_owner() & np.isin(u.efd_type, EXISTING_TYPES["coal"]) & (tb["T_CCSHR"] > 0) & (tb["T_CCSHR"] < CCS_HEAT_RATE_MAX)
     ccs_hr = _weighted_mask(tb["T_CCSHR"] * part_load, u.summer_mw, coal_u, u.region, 14000.0)
     ccs_vom = _weighted_mask(tb["T_CCSV"], u.summer_mw, coal_u, u.region, 1.5)
     heat["coal_ccs"] = ccs_hr
@@ -659,7 +725,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         # online by BASE_YEAR) keeps its plant-file capacity factor, with WRENEW's hourly shape, for BENCHMARK_LAST
         # years, fading out by BENCHMARK_FADE. Later years, and all new capacity, use WRENEW's level.
         types = EXISTING_TYPES[group]
-        old_fleet = plants.online(year) & np.isin(u.efd_type, list(types)) & (u.online_year <= BASE_YEAR)
+        old_fleet = _online(year) & np.isin(u.efd_type, list(types)) & (u.online_year <= BASE_YEAR)
         file_cap = np.zeros(NUM_R)
         np.add.at(file_cap, u.region[old_fleet] - 1, u.summer_mw[old_fleet] / 1000.0)
         file_cf = _weighted_mask(u.capacity_factor, u.summer_mw, old_fleet, u.region, 0.3)
@@ -675,11 +741,12 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
     if trade == "reference":
         nl = snapshot["UEFDOUT/ugntlnr"][:, :NUM_R, y].sum(axis=0).astype(float)
     links = build_links(snapshot, year) if trade != "reference" else None
+    gross = np.divide(demand.gross_load_twh(snapshot, year), nl, out=np.ones(NUM_R), where=nl > 0)
     credit = float(snapshot["TCS45Q/ccs_saline_45q"][y])
     # Oil steam units flagged must-run (plant file T_MRUN at or after the year) burn residual oil at their
     # historical capacity factor whatever it costs, as EFD's minimum-run rows force them to. They leave the
     # dispatchable steam capacity. Coal units list distillate as their second fuel (1% of Btu): ignition fuel.
-    on = plants.online(year)
+    on = _online(year)
     sto = on & (u.efd_type == "STO") & (tb["T_MRUN"] >= year) & (tb["T_MRUN"] > 0)
     mr_cap, mr_gw = np.zeros(NUM_R), np.zeros(NUM_R)
     np.add.at(mr_cap, u.region[sto] - 1, u.summer_mw[sto] / 1000.0)
@@ -696,7 +763,7 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
         from nems_open.emm import coal_supply
         classes = coal_supply.coal_classes(snapshot, year, heat["coal"], vom["coal"])
     max_cf = {g: np.full(NUM_R, avail[g][1]) for g in THERMAL}
-    tier_max_cf = tier_vom = None
+    tier_max_cf = tier_vom = tier_outage = None
     if EPA111_NEW_CC_CF:
         from nems_open.emm import capacity as ecp     # imported here: capacity imports this module
         epa = ecp.epa111()
@@ -716,11 +783,18 @@ def build_case(snapshot, year: int, trade: str = "none") -> DispatchCase:
             tier_max_cf = {"gas_cc": np.column_stack([np.full((NUM_R, n_old), mcf_cc), np.full(NUM_R, min(mcf_cc, epa["new_cc_cf"]))])}
             tier_vom = {"gas_cc": np.column_stack([np.repeat(vom_old["gas_cc"][:, None], n_old, axis=1), np.full(NUM_R, vom_new_cc)])}
             max_cf["gas_cc"] = (1.0 - new_share) * mcf_cc + new_share * min(mcf_cc, epa["new_cc_cf"])
+            if EPA111_DERATE:
+                f, p = efd_outage_rates()["gas_cc"]
+                f_new, p_new = capped_outage_rates(f, p, min(mcf_cc, epa["new_cc_cf"]))
+                tier_outage = {"gas_cc": (np.column_stack([np.full((NUM_R, n_old), f), np.full(NUM_R, f_new)]),
+                                          np.column_stack([np.full((NUM_R, n_old), p), np.full(NUM_R, p_new)]))}
+    if capacity is not None:
+        cap.update({g: np.asarray(v, dtype=float) for g, v in capacity.items()})
     return DispatchCase(year, cap, heat, vom, price, oil, avail, max_cf, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
                         coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers,
-                        tier_max_cf=tier_max_cf, tier_vom=tier_vom)
+                        tier_max_cf=tier_max_cf, tier_vom=tier_vom, gross_ratio=gross, tier_outage=tier_outage)
 
 
 def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr: np.ndarray) -> tuple:
@@ -730,8 +804,8 @@ def heat_rate_tiers(year: int, types, total: np.ndarray, hr_new: float, mean_hr:
     Shares of `total` (25,) and heat rates, both (25, N_TIERS + 1); scaled so the capacity-weighted heat rate is
     `mean_hr`, the group's single heat rate."""
     u = plants.load_units()
-    on = plants.online(year) & np.isin(u.efd_type, list(types))
-    existing = plants.capacity_gw(year, types)[:NUM_R]
+    on = _online(year) & np.isin(u.efd_type, list(types))
+    existing = _capacity_gw(year, types)[:NUM_R]
     T = N_TIERS + 1
     share, hr = np.zeros((NUM_R, T)), np.tile(np.asarray(mean_hr, dtype=float)[:, None], (1, T))
     hr[:, -1] = hr_new
@@ -769,7 +843,7 @@ def cofire_case(year: int, cap_cofire: np.ndarray, heat: dict, vom: dict, coal_h
     rule = ecp.epa111()
     u = plants.load_units()
     tb = db.table("V_EMM_PLTF860")
-    on = plants.online(year) & np.isin(u.efd_type, EXISTING_TYPES["cofire"])
+    on = _online(year) & np.isin(u.efd_type, EXISTING_TYPES["cofire"])
     second = np.array([str(x).strip() for x in tb["CFL_2"]], dtype=object)
     coal2 = np.array([len(f) == 2 and f[0] in COAL_FUELS for f in second])
     share_u = np.where(coal2, np.asarray(tb["T_FSHR_2"], dtype=float), 0.0)
@@ -890,6 +964,16 @@ def efd_outage_rates() -> dict:
     return out
 
 
+def capped_outage_rates(f: float, p: float, max_cf: float) -> tuple:
+    """Forced outage and planned maintenance of a unit whose maximum capacity factor is held to `max_cf` (EPA111_DERATE):
+    udat.f 10194-10224 with MXLFR 0. The unit's FOR and PMR (f, p, already consistent with the type's WMXCP) move by
+    one factor so that (1 - FOR)(1 - PMR) = max_cf; the load-following reduction stays 0."""
+    k = np.sqrt(max_cf / ((1.0 - f) * (1.0 - p)))
+    if k >= 1.0:
+        return f, p
+    return 1.0 - k * (1.0 - f), 1.0 - k * (1.0 - p)
+
+
 def maintenance_season_share(load_gw: np.ndarray, weights: np.ndarray) -> np.ndarray:
     """Planned maintenance per unit of PMR in every typical day, (25, 36): ED$PM's schedule taken as a rule. The year's
     PMR x 8760 hours of maintenance go into the two EFD seasons (capacity.ECP_SEASON_MONTHS) other than the one with
@@ -967,6 +1051,11 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
     flat = case.flat_twh if case.flat_twh is not None else np.zeros(NUM_R)
     flat_gw = flat * 1000.0 / HOURS_PER_YEAR
     load_gw = xr.DataArray((case.net_load_twh - flat)[:, None, None] * 1000.0 * case.shapes + flat_gw[:, None, None], coords=[R, D, H])
+    # The load EFD's reserve requirement and maximum-load shapes read: UTHGHT, LDSM's load before the supply that
+    # comes from outside the dispatched fleet (GROSS_LOAD_HEIGHTS).
+    height_np = load_gw.transpose("region", "day", "hour").values
+    if GROSS_LOAD_HEIGHTS and case.gross_ratio is not None:
+        height_np = height_np * np.asarray(case.gross_ratio, dtype=float)[:, None, None]
     m = linopy.Model()
 
     # Thermal plants
@@ -982,7 +1071,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         committable = xr.DataArray(cap_g[:, :, None, None] * (1.0 - out)[..., None] * np.ones(nh), coords=[R, TH, D, H])
         upper = committable * xr.DataArray(avail, coords=[TH])
         if EFD_MAX_LOAD_SHAPE:
-            load_np = load_gw.transpose("region", "day", "hour").values
+            load_np = height_np
             wind_solar = sum(case.capacity[k][:, None, None] * case.profile[k] for k in ("wind", "solar"))
             from nems_open.emm import capacity as ecp
             sl, ht = ecp.ecp_slice_heights(load_np, case.weights, month_of_day, load_np - wind_solar)
@@ -1083,7 +1172,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         PL = pd.Index(lp, name="coal_pair")
         base = cl.ref[cl.region - 1] if COAL_PRICE_BY_CLASS else cl.pay[np.maximum(cl.klass, 0)]
         mmbtu = cl.heat_rate / 1000.0
-        pc = mmbtu * (case.price["coal"][cl.region - 1] - np.where(cl.klass >= 0, base, 0.0)) + cl.vom \
+        regional = case.price["coal"][cl.region - 1]
+        anchor = np.where(cl.klass >= 0, regional - base if COAL_PRICE_ANCHOR else 0.0, regional)
+        pc = mmbtu * anchor + cl.vom \
             + case.carbon_price * mmbtu * CO2_PER_TBTU["coal"]
         up = upper.sel(group="coal", drop=True).sel(region=reg_of) * xr.DataArray(cl.share, coords=[P])
         gc = m.add_variables(lower=0, upper=up.transpose("coal_pair", "day", "hour"), name="coal_class_gen")
@@ -1107,7 +1198,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         objective = objective + (steps * xr.DataArray(cl.step_price * 1000.0, coords=[C, S])).sum() \
             + (tr * xr.DataArray(cl.route_cost * 1000.0, coords=[RT])).sum()
         for rank, cap, name in ((2, cl.sub_cap, "sub"), (3, cl.lig_cap, "lig")):
-            idx = np.flatnonzero(cl.route_rank == rank)
+            idx = np.flatnonzero((cl.route_rank == rank) & np.isfinite(cap[cl.route_class]))     # inf: no row in EFD
             if not len(idx):
                 continue
             ks = np.unique(cl.route_class[idx])
@@ -1116,7 +1207,26 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             grp = xr.DataArray(cl.route_class[idx], coords=[pd.Index(idx, name="coal_route")], name="coal_class")
             m.add_constraints(tr.sel(coal_route=idx).groupby(grp).sum() - dx <= xr.DataArray(cap[ks], coords=[K]), name=f"coal_{name}_cap")
             objective = objective + (dx * (coal_supply.ESCAPE * 1000.0)).sum()
-    tier_vars = {}
+        # Contracts (K_ rows, G type): deliveries from a curve to a coal region's configurations of one scrubber status
+        # at least the contract, short at CONTRACT_ESCAPE (KX). Tier-1 limits (T_ rows): first-tier coal at most the
+        # limit, the rest at the rate difference (C_).
+        for name, member, rhs, sense, extra in (
+                ("contract", cl.route_contract, cl.contract_rhs, ">=", None),
+                ("tier1", cl.route_tier, cl.tier_rhs, "<=", cl.tier_cost)):
+            if member is None or rhs is None or not len(rhs):
+                continue
+            idx = np.flatnonzero(member >= 0)
+            NI = pd.Index(np.arange(len(rhs)), name=f"coal_{name}")
+            grp = xr.DataArray(member[idx], coords=[pd.Index(idx, name="coal_route")], name=f"coal_{name}")
+            slack = m.add_variables(lower=0, coords=[NI], name=f"coal_{name}_slack")
+            flow = tr.sel(coal_route=idx).groupby(grp).sum()
+            if sense == ">=":
+                m.add_constraints(flow + slack >= xr.DataArray(rhs, coords=[NI]), name=f"coal_{name}")
+                objective = objective + (slack * (coal_supply.CONTRACT_ESCAPE * 1000.0)).sum()
+            else:
+                m.add_constraints(flow - slack <= xr.DataArray(rhs, coords=[NI]), name=f"coal_{name}")
+                objective = objective + (slack * xr.DataArray(extra * 1000.0, coords=[NI])).sum()
+    tier_vars, tier_com = {}, {}
     if case.tiers is not None:
         for g, (share, hr_t) in case.tiers.items():
             k = THERMAL.index(g)
@@ -1126,6 +1236,22 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             vom_t = case.tier_vom[g] if case.tier_vom is not None and g in case.tier_vom else case.vom[g][:, None]
             ct = vom_t + hr_t / 1000.0 * per_mmbtu[:, None]                                                      # (25, T)
             up = upper.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
+            com_fac = None
+            if case.tier_outage is not None and g in case.tier_outage:
+                # a tier with its own FOR and PMR (EPA111_DERATE): ceiling and committable capacity relative to the group's
+                f_t, p_t = case.tier_outage[g]
+                f_g = rates[g][0] if EFD_DERATE else case.avail[g][0]
+                if EFD_DERATE:
+                    p_g = rates[g][1]
+                    s_ = season[:, None, :, None]                                                     # (25, 1, 36, 1)
+                    keep_g = np.clip(1.0 - p_g * s_, 1e-9, 1.0)
+                    keep_t = np.clip(1.0 - p_t[:, :, None, None] * s_, 0.0, 1.0)
+                    com_fac = keep_t / keep_g * np.ones(nh)
+                else:
+                    com_fac = np.ones((NUM_R, share.shape[1], 36, nh))
+                fac = com_fac * ((1.0 - f_t) / (1.0 - f_g))[:, :, None, None]
+                up = up * xr.DataArray(fac, coords=[R, TI, D, H])
+                com_fac = xr.DataArray(com_fac, coords=[R, TI, D, H])
             gt = m.add_variables(lower=0, upper=up.transpose("region", "tier", "day", "hour"), name=f"tier_gen_{g}")
             m.add_constraints(g_th.sel(group=g, drop=True) - gt.sum("tier") == 0, name=f"tiers_{g}")
             if case.tier_max_cf is not None and g in case.tier_max_cf:
@@ -1133,13 +1259,14 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
                 m.add_constraints((gt * w).sum(["day", "hour"]) <= xr.DataArray(lim, coords=[R, TI]), name=f"tier_energy_{g}")
             objective = objective - (g_th.sel(group=g, drop=True) * cost_da.sel(group=g, drop=True) * w).sum()                 + (gt * xr.DataArray(ct, coords=[R, TI]) * w).sum()
             tier_vars[g] = (gt, TI, share, hr_t)
+            tier_com[g] = com_fac
     spin = spin_row = None
     modes_on = EFD_SPIN_RESERVE and EFD_DISPATCH_MODES and EFD_DERATE
     if modes_on:
         from nems_open.emm import capacity as ecp
         mins = ecp.spin_min_cf()
         intermittent = (ren_gw["wind"] + ren_gw["solar"]).transpose("region", "day", "hour")
-        load_np = load_gw.transpose("region", "day", "hour").values
+        load_np = height_np
         slice_of, height = ecp.ecp_slice_heights(load_np, case.weights, month_of_day, load_np - intermittent.values)
         peak = height[:, (np.arange(9) // 3) * 3]
         req = ecp.SR_RQMT_HGHT * height + ecp.SR_RQMT_DIFF * (peak - height)                  # (25, 9) GW
@@ -1226,6 +1353,8 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
             # each tier carries reserve only on its own running capacity
             st = m.add_variables(lower=0, coords=[R, TI, D, H], name=f"tier_spin_{g}")
             com_g = committable.sel(group=g, drop=True) * xr.DataArray(share, coords=[R, TI])
+            if tier_com.get(g) is not None:
+                com_g = com_g * tier_com[g]
             m.add_constraints(st + gt - com_g <= 0, name=f"tier_spin_headroom_{g}")
             m.add_constraints(st - gt * float(inv.sel(group=g)) <= 0, name=f"tier_spin_committed_{g}")
             m.add_constraints(spin.sel(group=g, drop=True) - st.sum("tier") <= 0, name=f"tier_spin_{g}")
@@ -1242,7 +1371,7 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         m.add_constraints(ss - di * (1.0 / mins["pumped"] - 1.0) <= 0, name="spin_pumped_committed")
         supply = supply + ss
         intermittent = (ren_gw["wind"] + ren_gw["solar"]).transpose("region", "day", "hour")
-        load_np = load_gw.transpose("region", "day", "hour").values
+        load_np = height_np
         slice_of, req = spin_requirement(load_np, case.weights, load_np - intermittent.values)
         battery_sr = xr.DataArray(np.asarray(EFD_BATTERY_SR)[slice_of] * case.capacity["battery"][:, None, None], coords=[R, D, H])
         idle = (by_region(case.capacity["nuclear"]) * EFD_NUCLEAR_SR + by_region(case.capacity["other"]) - ren_gw["other"]
@@ -1291,6 +1420,9 @@ def solve(case: DispatchCase, solver: str = "highs", progress: bool = False) -> 
         dual = demand_row.dual
         res.coal_class_price = np.full(len(cl.classes), np.nan)
         res.coal_class_price[dual["coal_class"].values] = dual.values / 1000.0
+        res.coal_route_tbtu = m.variables["coal_routes"].solution.values
+        if "coal_contract_slack" in m.variables:
+            res.coal_contract_short = m.variables["coal_contract_slack"].solution.values
         fuel_r = np.bincount(cl.region - 1, weights=e * cl.heat_rate, minlength=NUM_R)
         coal_hr = np.divide(fuel_r, gen["coal"], out=np.asarray(case.heat_rate["coal"], dtype=float).copy(), where=gen["coal"] > 1e-9)
     tier_hr = {}
