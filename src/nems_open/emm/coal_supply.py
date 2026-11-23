@@ -26,9 +26,10 @@ on the same caps) MT C4 burns 4.45 TBtu on a 4.43 cap at a capacity factor of 0.
 `coal_classes` gives the dispatch the coal units by EMM region and class (coal region, configuration) and the LP's
 data. The caps count all of a class's burn, cofired units and CCS retrofits included; the coal group gets the part its
 own units burned in EIA's run (EIA's coal-unit generation, UGENPC + UGENIG - UGENSQ, at the coal group's heat rate;
-the cofired and CCS groups buy at the regional price, outside the LP). LP prices meet the regional price the dispatch
-charges (UPCOALAVG) through `pay`, what EIA's own burn pays in each class at base-step delivered prices within its
-caps, or `ref`, the same by region (dispatch.COAL_PRICE_BY_CLASS). Left out: imports, contracts (minimum takes, 350
+the cofired and CCS groups buy at the regional price, outside the LP). As in EFD a class pays only the LP's delivered
+price (dispatch.COAL_PRICE_ANCHOR off). With the anchor on, the LP's prices are shifted onto the regional price
+(UPCOALAVG) through `pay`, what EIA's own burn pays in each class at base-step delivered prices within its caps, or
+`ref`, the same by region (dispatch.COAL_PRICE_BY_CLASS). Left out: imports, contracts (minimum takes, 350
 TBtu nationally in 2030), the tier-1 limits (tier 2 rates equal tier 1 on every power route in cb2026), SO2 and
 mercury rows (not binding in cb2026); the coal_ccs and cofire groups are not split.
 """

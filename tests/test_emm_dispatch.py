@@ -71,17 +71,22 @@ def test_no_scarcity_prices(results, year):
     p = res.average_price()
     assert np.isfinite(p).all() and 5 < p.mean() < 30      # 1987$/MWh
     assert p.max() < 60
-    assert res.unserved_twh.sum() < 0.001
+    # 2050: with EPA 111's new-CC cap as EFD's FOR and PMR (EPA111_DERATE, Codex finding 11) Florida's peak hour is
+    # 1.8 GWh short; EFD's escape column (ED$LOAD, 999.99) covers such hours the same way.
+    assert res.unserved_twh.sum() < 0.01
 
 
 @pytest.mark.parametrize("year", YEARS)
 def test_residual_oil_comes_from_must_run_steam(results, snapshot, year):
-    """EFD's minimum-run rows keep oil steam units at their historical capacity factor: about 20 trillion Btu
-    of residual oil a year, steady, as in the reference run."""
+    """EFD's minimum-run rows keep oil steam units at their historical capacity factor. UFLRLNR counts ownership
+    classes 1 to 4, and about 20 of its 20-24 trillion Btu is the CHP units' oil (COGEN/CGNTQ), which the loop adds
+    back itself; the must-run oil steam of class 4 is CHP too (Codex finding 4). The fleet's part is what is left."""
     _, _, res = results[year]
     y = year - 1990
-    ref = float(snapshot["UEFDOUT/uflrlnr"][:, :25, y].sum())
-    assert abs(res.fuel_tbtu["residual"].sum() / ref - 1) < 0.25
+    ref = float(snapshot["UEFDOUT/uflrlnr"][:, :25, y].sum()) + float(snapshot["UEFDOUT/uflrhnr"][:, :25, y].sum())
+    if dispatch.FLEET_OWNERS_ONLY:
+        ref -= float(snapshot["COGEN/cgntq"][:25, y, 1].sum())
+    assert abs(res.fuel_tbtu["residual"].sum() - ref) < max(0.25 * ref, 3.0), (res.fuel_tbtu["residual"].sum(), ref)
 
 
 def test_trade_none_uses_sales_based_load(snapshot):
@@ -267,7 +272,7 @@ def test_part_load_factor_reproduces_efd_group_heat_rates():
 def test_coal_heat_rate_follows_eia_burn(snapshot):
     """EIA's 2030 coal burn (UFLCLNR / UGNCLNR) where coal units make nearly all the coal power: the plain THRATE
     average is 3-4% above it, at the part-load level within 3%. PJME's group heat rate drops from 10,960 to about
-    10,140 (EIA burns 10,720 there)."""
+    10,140 (EIA burns 10,720 there), and to 9,885 without PJME's class-4 (CHP) coal units (FLEET_OWNERS_ONLY)."""
     if not dispatch.COAL_PART_LOAD_HEAT_RATE:
         pytest.skip("COAL_PART_LOAD_HEAT_RATE off")
     y = 2030 - 1990
@@ -278,7 +283,7 @@ def test_coal_heat_rate_follows_eia_burn(snapshot):
     gen = snapshot["UDATOUT/ugenpc"][:25, y][clean]
     err = np.average(c.heat_rate["coal"][clean] / burn[clean] - 1, weights=gen)
     assert -0.03 < err < 0.0, err
-    assert 10000 < c.heat_rate["coal"][9] < 10300
+    assert 9800 < c.heat_rate["coal"][9] < 10300
     # Conversions to cofiring start from the plain coal heat rate.
     on = c.capacity["cofire"] > 0
     assert (c.heat_rate["cofire"][on] > 10300).all()
@@ -436,3 +441,58 @@ def test_capture_rates_and_epa111_new_cc(snapshot):
     tiers = np.average(hr, axis=0, weights=w)
     old = np.average(tiers[:-1], weights=np.average(share, axis=0, weights=w)[:-1])
     assert tiers[-1] < np.average(c.heat_rate["gas_ccs"], weights=w) < old    # CCS sits between new and old CC, as in EFD
+
+
+def test_fleet_leaves_out_chp_units(snapshot):
+    """The dispatched fleet is UCAP*U and *N, ownership classes 1 to 3 (util.f 7465-7510); class 4, the electric power
+    sector's CHP, is UCAP*C. In 2030 the plant file holds about 20 GW of class-4 combined cycle (Codex finding 4)."""
+    from nems_open.emm import plants
+    types = dispatch.EXISTING_TYPES["gas_cc"]
+    every = plants.capacity_gw(2030, types)[:dispatch.NUM_R].sum()
+    fleet = dispatch._capacity_gw(2030, types)[:dispatch.NUM_R].sum()
+    if not dispatch.FLEET_OWNERS_ONLY:
+        pytest.skip("FLEET_OWNERS_ONLY off")
+    assert 18.0 < every - fleet < 23.0
+    assert fleet == pytest.approx(plants.capacity_gw(2030, types, owners=(1, 2, 3))[:dispatch.NUM_R].sum())
+
+
+def test_epa111_cap_is_efd_availability(snapshot):
+    """udat.f 10194-10224 (MXLFR 0) moves a capped unit's FOR and PMR by one factor so that (1 - FOR)(1 - PMR) is its
+    MAXCF: 0.4 for new combined cycle under EPA 111 (Codex finding 11)."""
+    f, p = dispatch.efd_outage_rates()["gas_cc"]
+    f4, p4 = dispatch.capped_outage_rates(f, p, 0.4)
+    assert (1 - f4) * (1 - p4) == pytest.approx(0.4)
+    assert (1 - f4) / (1 - f) == pytest.approx((1 - p4) / (1 - p))
+    assert dispatch.capped_outage_rates(f, p, 0.99) == (f, p)
+    if not (dispatch.EPA111_NEW_CC_CF and dispatch.EPA111_DERATE):
+        return
+    fo, pm = dispatch.build_case(snapshot, 2050).tier_outage["gas_cc"]
+    assert np.allclose(fo[:, -1], f4) and np.allclose(pm[:, -1], p4)
+    assert np.allclose(fo[:, :-1], f) and np.allclose(pm[:, :-1], p)
+
+
+def test_reserve_heights_are_ldsm_load(snapshot):
+    """EFD's reserve requirement and maximum-load shapes read UTHGHT, LDSM's load, which end-use grid sales, CHP and
+    imports supply but do not lower (uefd.f 9179-9227, 9769; Codex finding 8). The case carries gross / net load."""
+    from nems_open.emm import demand
+    c = dispatch.build_case(snapshot, 2030)
+    gross = demand.gross_load_twh(snapshot, 2030)
+    assert np.allclose(c.gross_ratio * c.net_load_twh, gross)
+    assert (c.gross_ratio >= 1.0).all() and 1.04 < gross.sum() / c.net_load_twh.sum() < 1.10
+
+
+def test_reference_price_shares_the_diversity_cap(snapshot):
+    """A class's sub-bituminous (lignite) cap is one row over all its routes of that rank (uefd.f 17199-17209), so the
+    reference price cannot fill more than the cap from cheap routes (Codex finding 14): sharing it can only raise a
+    class's price."""
+    from nems_open.emm import coal_supply
+    c = dispatch.build_case(snapshot, 2030)
+    old = coal_supply.SHARED_DIVERSITY_CAP
+    try:
+        coal_supply.SHARED_DIVERSITY_CAP = True
+        shared = coal_supply.coal_classes(snapshot, 2030, c.heat_rate["coal"], c.vom["coal"]).pay
+        coal_supply.SHARED_DIVERSITY_CAP = False
+        each = coal_supply.coal_classes(snapshot, 2030, c.heat_rate["coal"], c.vom["coal"]).pay
+    finally:
+        coal_supply.SHARED_DIVERSITY_CAP = old
+    assert (shared >= each - 1e-9).all()

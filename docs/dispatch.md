@@ -454,3 +454,101 @@ Nuclear and renewables do not move. The load-weighted PJMW price goes from 15.4 
 - The capacity LP. Its reserve price is about a third of ECP's in 1987$ (above), and its turbines are one existing group plus AT. The chain's CT shortfall (246 against 267) is that LP's, untouched here.
 
 Pinned by `tests/test_emm_dispatch.py` (`test_heat_rate_tiers_keep_the_group_mean`, `test_efd_mode_shapes_follow_opbsld`). Scripts: scratchpad `ctres/` (run.py the single-year runs with national, PJM and reserve output; before.txt, tct.log and tct2.log the tables; mt.log and modes2030.txt the mode runs).
+
+
+## Codex review of the EMM ports, 2026-11-22 (branch codex-dispatch)
+
+Codex listed 17 possible fidelity defects (`docs/reviews/codex-emm-2026-11-22.txt`). This branch checked findings 3-8, 11 and 13-15 against EIA's source; the capacity LP findings (1, 2, 9, 10, 12, 16, 17) are another branch's. Every verified fix is on by default and has a module switch that restores the old behavior.
+
+| # | Verdict | EIA source | Fix (switch) |
+|---|---|---|---|
+| 4 | Real | util.f 7465-7510: IOWN 1-2 in UCAP*U, 3 in *N, 4 (CHP) in *C and CGNTCAP | Plant-file reads keep classes 1-3 (`dispatch.FLEET_OWNERS_ONLY`). 2030 gas_cc existing 289.4 -> 269.0 GW (Codex: 20.45 GW of CHP, confirmed) |
+| 6 | Real | unugs.f 445-456 (DPVDISPATCH: PV out of BTCOGEN), uefd.f 1621-1660 (DPV dispatched), util.f 5865-5895 (EMMBODPV backs it out), uldsm.f 1253-1263 (LDSM adds own use only) | Load takes PV grid sales off (`demand.PV_GRID_SALES`): 18.1 TWh in 2030, 51.6 in 2050 |
+| 7 | Real | util.f 6011-6038 (Alaska, oil to distillate), 6385-6402 (Hawaii) | Loop adds UFL*NR rows 26-27 and their CO2, held in the Pacific (`couple.NONCONTIGUOUS`) |
+| 8 | Real | uefd.f 9179-9227 (SP_RES_RQMT_IN on UTHGHT), 9769 (DRAT_MAX on UTHGHT) | Requirement and max-load shapes on LDSM's load, net x gross / net (`dispatch.GROSS_LOAD_HEIGHTS`) |
+| 11 | Real | udat.f 6446 (W_CF), 7023, 8852, 10189-10224 (FOR and PMR moved to MAXCF, MXLFR 0) | New-CC tier gets FOR 0.37, PMR 0.36 for its ceiling and committable capacity (`dispatch.EPA111_DERATE`) |
+| 15 | Partly | util.f 4555-4557 (CGNTQ oil = DS + RL + RH), 3133-3138 (QDSEL, QRSEL by fuel) | No change. EIA splits by fuel, but the restart has no class-4 split (no UQFCONN). In 2050 all 25-region distillate (classes 1-4) is 1.2 TBtu against 20.1 of CHP oil, so at least 94% of CHP oil is residual and booking it all as residual is off by at most about 1 TBtu |
+| 3 | Real | udat.f 6446-6447, 7249-7263 (group heat rates and CF from the run's units) | `build_case(capacity=)`; the loop rebuilds the case on the LP's or a lever's fleet (`couple.COMPOSITION_FOLLOWS_CAPACITY`). Coal classes still use the CMM units' capacity shares, not the units the capacity LP retired |
+| 13 | Real, negligible | uefd.f 16738-16740, 16765-16767 (DV rows take the restart value), coal.ams 10540-10547 (+0.05 per cell) | Keep the 0.05 allowance; no row where a value is negative (none are in cb2026) (`coal_supply.KEEP_CAP_ALLOWANCE`) |
+| 14 | Real, no effect in cb2026 | uefd.f 17199-17209 (one DV row per class over every curve of that rank) | Routes share one remaining cap in the reference price (`coal_supply.SHARED_DIVERSITY_CAP`). Dispatch identical to 0.1 TWh in all four test years |
+| 5 | Real | uefd.f 7763 (ED$BTU FLCST 0.001), 16826-16828 (steps at XCL_PECP), 17134-17170 (transport + ACI) | Classes pay the coal LP's price only (`dispatch.COAL_PRICE_ANCHOR` off) |
+
+None of the ten is false. Two notes on Codex's numbers: the 20.45 GW (finding 4) and 18.1 TWh (finding 6) match the restart; for finding 6 the balance test written on branch disp-load-balance had concluded the PV column could stay out because the load then matched EIA's fleet generation. It matches because EIA's PV category keeps the part of EFD's distributed PV output above DPVTOTGENNR that EMMBODPV does not back out; that is EIA's reporting, not load the fleet serves.
+
+**Effect, one switch at a time from the old behavior.** Single-year dispatch on EIA's fleet, 3-hour blocks, sales-based load with trade. TWh, CO2 in Mt; EIA's plant types (UDATOUT/UGEN*) and the fleet's fuel and CO2 (dispatch_report.reference). Codes: CC combined cycle without CCS, CT turbines, steam includes the cofired units.
+
+Columns: old (every switch at its old setting), then each finding's switch alone, then all of them (the new default). Findings 13 and 14 move nothing to 0.1 TWh and are left out.
+
+| 2030 | old | 4 | 6 | 8 | 11 | 5 | all | EIA |
+|---|---|---|---|---|---|---|---|---|
+| Coal | 398.9 | 397.5 | 398.7 | 398.7 | 396.1 | 383.8 | 379.3 | 403.5 |
+| CC | 1,373 | 1,383 | 1,357 | 1,372 | 1,374 | 1,388 | 1,378 | 1,449 |
+| Gas CCS | 13.0 | 13.0 | 13.0 | 13.0 | 13.0 | 13.0 | 13.0 | 12.1 |
+| CT | 22.9 | 22.4 | 21.9 | 24.2 | 25.1 | 23.0 | 25.6 | 66.8 |
+| Steam | 147.3 | 138.2 | 146.7 | 147.8 | 147.9 | 147.7 | 141.5 | 135.8 |
+| Gas, all | 1,476 | 1,482 | 1,458 | 1,476 | 1,479 | 1,491 | 1,482 | 1,469 |
+| Coal fuel, TBtu | 4,940 | 4,868 | 4,936 | 4,937 | 4,913 | 4,799 | 4,709 | 4,890 |
+| Gas fuel, TBtu | 10,961 | 10,935 | 10,821 | 10,972 | 11,000 | 11,073 | 10,953 | 10,988 |
+| CO2 | 1,039 | 1,029 | 1,031 | 1,039 | 1,038 | 1,031 | 1,015 | 1,022 |
+| PJM coal | 111.9 | 110.5 | 111.8 | 111.8 | 110.0 | 103.3 | 99.2 | 114.7 |
+| PJM CC | 385.7 | 385.3 | 385.2 | 385.0 | 386.8 | 393.0 | 391.7 | 385.3 |
+| TRE CC | 79.9 | 79.5 | 79.7 | 79.9 | 79.9 | 81.6 | 81.2 | 133.9 |
+
+| 2035 | old | 4 | 6 | 8 | 11 | 5 | all | EIA |
+|---|---|---|---|---|---|---|---|---|
+| Coal | 65.6 | 65.6 | 65.6 | 65.6 | 65.6 | 65.6 | 65.6 | 62.5 |
+| CC | 1,333 | 1,341 | 1,312 | 1,332 | 1,323 | 1,333 | 1,305 | 1,414 |
+| Gas CCS | 150.1 | 150.1 | 150.1 | 150.1 | 150.1 | 150.1 | 150.1 | 143.7 |
+| CT | 35.0 | 32.9 | 32.0 | 36.6 | 42.9 | 35.0 | 40.6 | 81.1 |
+| Steam | 158.8 | 151.6 | 157.9 | 158.9 | 162.0 | 158.8 | 157.4 | 117.3 |
+| Gas, all | 1,588 | 1,590 | 1,563 | 1,588 | 1,588 | 1,588 | 1,566 | 1,577 |
+| Coal fuel, TBtu | 1,894 | 1,860 | 1,889 | 1,893 | 1,910 | 1,894 | 1,882 | 1,491 |
+| Gas fuel, TBtu | 11,626 | 11,570 | 11,432 | 11,638 | 11,684 | 11,626 | 11,448 | 11,598 |
+| CO2 | 665.6 | 657.9 | 654.8 | 666.1 | 670.2 | 665.6 | 653.5 | 629.3 |
+| PJM coal | 25.4 | 25.4 | 25.4 | 25.4 | 25.4 | 25.4 | 25.4 | 24.2 |
+| PJM CC | 405.6 | 409.6 | 404.7 | 404.8 | 406.5 | 405.6 | 404.1 | 407.4 |
+| TRE CC | 63.7 | 65.2 | 63.6 | 63.6 | 63.8 | 63.7 | 65.3 | 124.0 |
+
+| 2040 | old | 4 | 6 | 8 | 11 | 5 | all | EIA |
+|---|---|---|---|---|---|---|---|---|
+| Coal | 65.8 | 65.8 | 65.8 | 65.8 | 65.8 | 65.8 | 65.8 | 63.4 |
+| CC | 1,369 | 1,381 | 1,339 | 1,368 | 1,352 | 1,369 | 1,332 | 1,437 |
+| Gas CCS | 393.6 | 393.0 | 393.3 | 393.6 | 394.0 | 393.6 | 392.8 | 365.0 |
+| CT | 53.9 | 42.9 | 51.4 | 55.8 | 71.6 | 53.9 | 60.3 | 90.3 |
+| Steam | 2.2 | 2.1 | 2.0 | 2.5 | 2.8 | 2.2 | 3.1 | 5.5 |
+| Gas, all | 1,819 | 1,818 | 1,786 | 1,819 | 1,820 | 1,819 | 1,788 | 1,779 |
+| Coal fuel, TBtu | 932.1 | 931.6 | 932.1 | 932.2 | 932.2 | 932.2 | 931.9 | 861.2 |
+| Gas fuel, TBtu | 12,897 | 12,822 | 12,644 | 12,908 | 13,006 | 12,897 | 12,694 | 12,738 |
+| CO2 | 551.3 | 546.1 | 538.0 | 551.9 | 556.9 | 551.3 | 539.3 | 547.6 |
+| PJM coal | 25.2 | 25.2 | 25.2 | 25.2 | 25.2 | 25.2 | 25.2 | 24.8 |
+| PJM CC | 397.9 | 398.1 | 396.7 | 397.3 | 386.8 | 397.9 | 381.8 | 425.2 |
+| TRE CC | 73.2 | 81.6 | 73.0 | 72.8 | 73.1 | 73.2 | 81.1 | 136.8 |
+
+| 2050 | old | 4 | 6 | 8 | 11 | 5 | all | EIA |
+|---|---|---|---|---|---|---|---|---|
+| Coal | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.3 |
+| CC | 1,959 | 1,964 | 1,921 | 1,958 | 1,945 | 1,959 | 1,924 | 2,024 |
+| Gas CCS | 297.2 | 297.3 | 290.4 | 296.7 | 267.2 | 297.2 | 256.4 | 277.3 |
+| CT | 47.1 | 41.4 | 41.8 | 48.8 | 93.6 | 47.1 | 75.7 | 117.4 |
+| Steam | 11.5 | 11.5 | 10.8 | 11.6 | 11.9 | 11.5 | 11.2 | 4.8 |
+| Gas, all | 2,314 | 2,314 | 2,263 | 2,315 | 2,317 | 2,314 | 2,267 | 2,304 |
+| Coal fuel, TBtu | 2.4 | 2.4 | 2.4 | 2.4 | 2.3 | 2.4 | 2.5 | 19.1 |
+| Gas fuel, TBtu | 16,141 | 16,050 | 15,738 | 16,149 | 16,346 | 16,141 | 15,865 | 16,211 |
+| CO2 | 749.9 | 743.6 | 731.0 | 750.5 | 771.8 | 749.9 | 748.7 | 755.1 |
+| PJM coal | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| PJM CC | 521.8 | 521.6 | 520.2 | 521.6 | 533.2 | 521.8 | 531.0 | 544.8 |
+| TRE CC | 111.2 | 116.5 | 111.1 | 111.0 | 105.1 | 111.2 | 116.6 | 182.7 |
+
+**What moved, finding by finding.**
+- 4 (CHP out of the plant-file reads). 2030 gas_cc existing capacity drops 20.4 GW, so more of the restart's combined cycle is new-build at the AC heat rate: CC +10 TWh, steam -9 (the cofired and steam heat rates no longer average in CHP units), coal fuel -72 TBtu, CO2 -10 Mt. Turbines lose 2-11 TWh in 2040-2050. CC, steam, coal fuel and CO2 move toward EIA; turbines move away. It also ends a double count in the loop: class-4 must-run oil steam was in the fleet's residual oil while couple.py adds the CHP units' oil (CGNTQ, 20 TBtu a year, nearly all of UFLRLNR's 20-24) on top. PJME's coal group heat rate falls from 10,139 to 9,885 Btu/kWh without its class-4 coal units (EIA burns 10,720 there), so PJM coal stays where it was only because the group runs at its ceiling.
+- 6 (PV grid sales off the load). Load -18 / -25 / -34 / -52 TWh, taken off gas almost one for one. All-gas generation moves onto EIA's in 2035-2050 (2040: 1,786 against 1,779) and slightly under it in 2030; CC moves further under EIA's CC, because EIA's PV category still holds the distributed PV output above DPVTOTGENNR that the dispatch does not have.
+- 8 (heights on LDSM's load). The requirement grows by gross / net load, about 6% nationally. Turbines +1-2 TWh. Small, as the ct-reserve section expected (it found the requirement 10-15 GW short of EFD's, 4-8% in the load part).
+- 11 (EPA 111 as availability). The largest single move toward EIA in the later years: turbines +2 / +8 / +18 / +46 TWh (2050: 94 against EIA's 117; all switches 76), gas CCS -30 TWh in 2050 (267 against 277). New CC can no longer run flat out in the peak hours and carry its outage share as reserve, so turbines run at the peak. CO2 rises 22 Mt in 2050 (772 against 755) and PJM CC falls 11 TWh in 2040, both away from EIA.
+- 5 (no regional coal anchor). 2030 coal -15 TWh (384 against 403.5), PJM coal -9 (103 against 115): worse. Without the anchor the classes pay XCL_PECP steps and transport only, and eastern bituminous from northern Appalachia is dear against Ohio and Kentucky, so WV units idle (the effect the COAL_PRICE_BY_CLASS note describes). The anchor had been standing in for what the coal LP here leaves out: contracts (minimum takes, 350 TBtu nationally in 2030), imports, the tier-1 limits and the SO2 and mercury rows. That is the compensating error the fix exposes; it is the next thing to port, not a reason to keep the anchor.
+- 7 (Alaska and Hawaii) and 3 (make-up follows the fleet) live in the coupled loop and do not show in single-year dispatch on EIA's fleet. Finding 7 adds, in 2030, 11.7 TBtu of coal, 20.2 of distillate, 35.9 of residual and 28.1 of gas to the loop's power fuel (about 6.8 Mt of CO2), the amounts EIA books in the Pacific division; this closes most of the "Still open" Alaska and Hawaii note in "Power CO2 and the CHP units" above. Finding 3 matters only with capacity="lp" or a lever; the coupled loop with the capacity LP was not rerun on this branch, so its effect is not measured.
+
+**All switches against old, against EIA.** 2030: coal -20 TWh (now -6%), CC +5, turbines +3, steam -6 (now +4%), CO2 -24 Mt (now -0.7%). 2050: turbines +29 (75.7 against 117), gas CCS -41 (256 against 277), all gas -47 (-1.6%), CO2 -1. Combined cycle stays 5-8% under EIA's CC in every year and TRE's CC at 53-64% of EIA's; neither finding addresses that.
+
+**Still open.** EFD's coal contracts and the other ED$COL rows (finding 5's compensating error); the class-4 oil split (finding 15) needs UQFCONN, which the restart does not carry; coal classes under capacity="lp" still split by the CMM units' capacity, not by which units the LP retired; LDSM's own-use gross-up (own use x the loss factor, about 7 TWh in 2030) is still not in the load.
+
+Pinned by `tests/test_emm_dispatch.py` (`test_fleet_leaves_out_chp_units`, `test_epa111_cap_is_efd_availability`, `test_reserve_heights_are_ldsm_load`, `test_reference_price_shares_the_diversity_cap`) and `tests/test_emm_demand.py` (`test_noncontiguous_fuel_completes_power_fuel`, `test_spread_holds_alaska_and_hawaii_in_the_pacific`; `test_net_load_matches_fleet_generation` now puts the PV grid sales back before comparing with EIA's fleet generation). Scripts: scratchpad `codex/` (run.py single-year runs, batch.sh the memory-gated sweep, res1.txt the results, md.py these tables).

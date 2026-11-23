@@ -5,7 +5,10 @@ Capacity by plant group, fuel prices and net load are inputs. Thermal plants (co
 combined cycle, gas combustion turbines, steam) are dispatched against their fuel and variable
 O&M cost, hydro is dispatched inside a monthly energy budget, batteries and pumped storage
 shift energy inside each day, and nuclear, wind, solar and other renewables run at their
-capacity factor unless spilled. Regions do not trade with each other yet.
+capacity factor unless spilled. Regions trade over the ETT links (build_links) at their markups and line loss.
+It is shaped like EFD, not EFD: one LP group per type and region (tiers and coal classes split some), hours instead
+of EFD's slices, and no commitment modes unless EFD_DISPATCH_MODES is on. The module switches below say which EFD
+rule each part follows and where it departs.
 
 Money is 1987 dollars, the unit NEMS keeps its prices in. Power is GW, energy TWh, fuel
 trillion Btu, CO2 million metric tons.
