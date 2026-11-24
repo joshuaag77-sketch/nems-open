@@ -701,6 +701,7 @@ class YearResult:
     converted: np.ndarray = field(default_factory=lambda: np.zeros(NUM_R))     # GW coal moved to gas
     price: np.ndarray = None        # (25, 36, BLOCKS) energy price, 1987$/MWh (duals of the regional balance)
     reserve_price: np.ndarray = None  # (25,) 1987$/kW-year, dual of each region's reserve margin (EIA: RMAVG)
+    reserve_payment: np.ndarray = None  # (25,) 1987$/kW-year, what EIA prices capacity at (RMAVG; ECP_TAIL only)
     group_retire: dict = field(default_factory=dict)  # group -> (25, 4) GW retired from each retirement group
     group_share: dict = field(default_factory=dict)   # group -> (25, 4) share of each retirement group retired
     rule_retire: np.ndarray = field(default_factory=lambda: np.zeros(NUM_R))  # GW coal the 2032 rule forced out
@@ -1066,6 +1067,18 @@ def monthly_days(cs):
     links = dict(cs.links, capacity_gw=mean(cs.links["capacity_gw"][:, :, None])[:, :, 0])
     return replace(cs, weights=tot, shapes=mean(cs.shapes), profile=prof(cs.profile),
                    build_profile=prof(cs.build_profile), links=links)
+
+
+def capacity_payment(dual: np.ndarray, tail_dual: np.ndarray, annuity: float, turbine: np.ndarray) -> np.ndarray:
+    """RMAVG (uecp.f EP$RELRM 1534 and 29966-30015): the reserve price EIA passes on, 1987$/kW-year. Half is NETCON (85%)
+    of a new turbine's levelized cost; a quarter is the duals of planning years 2 and 3 levelized over the horizon; a
+    quarter is planning year 2's dual, capped at that. Weights from ldsmstr.txt. `dual`, `tail_dual`: this year's and the
+    tail's reserve row duals, 1987$/kW (the tail's a present value)."""
+    lines = (INPUT / "emm" / "ldsmstr.txt").read_text(encoding="latin-1").splitlines()
+    k = next(i for i, l in enumerate(lines) if "NET CONE" in l)
+    netcon, w1, w2, w3, w4 = [float(v) for v in lines[k + 1].split()[:5]]
+    level = (dual + tail_dual) / annuity
+    return w1 * netcon * turbine + w2 * level + w3 * dual + w4 * np.minimum(dual, level)
 
 
 def unit_costs(case, group: str) -> np.ndarray:
@@ -2025,6 +2038,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     hours = (case.weights * BLOCK_HOURS)[None, :, None]
     out.price = np.asarray(m.constraints["balance"].dual.transpose("region", "day", "block").values) / hours
     out.reserve_price = np.asarray(m.constraints["reserve_margin"].dual.values) / 1000.0     # k$/GW -> $/kW
+    if tail_on and "reserve_margin_tail" in m.constraints:
+        ct_col = columns["gas_ct_new"]
+        out.reserve_payment = capacity_payment(out.reserve_price, np.asarray(m.constraints["reserve_margin_tail"].dual.values) / 1000.0,
+                                               ct_col["annuity"], ct_col["first"] / ct_col["annuity"])
     if "state_rps" in m.constraints:
         trs = [tr for tr in rps.tranches() if rps.requirement_share(tr, min(year, LAST_MODEL_YEAR)).sum() > 0]
         out.rps_price = {(tr.state, tr.id): float(v) / 1000.0 for tr, v in zip(trs, m.constraints["state_rps"].dual.values)}

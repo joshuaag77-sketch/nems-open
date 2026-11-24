@@ -105,3 +105,11 @@ def test_max_load_factor_is_ecp_cU():
     h = np.tile(np.array([90.056, 74.6163, 65.6433]), (25, 3))
     f = 0.927362 * capacity.max_load_factor(h, 0.7)
     assert f[0, 3:6] == pytest.approx([0.927362, 0.8799, 0.8518], abs=2e-3)
+
+
+def test_capacity_payment_levels_a_one_year_spike():
+    """RMAVG: a 1,200 $/kW reserve dual for one year reaches the price levelized over the horizon, not as it is."""
+    z = capacity.capacity_payment(np.array([1200.0]), np.array([500.0]), 15.7, np.array([38.0]))
+    assert z[0] == pytest.approx(0.5 * 0.85 * 38.0 + 0.5 * 1700.0 / 15.7)
+    z = capacity.capacity_payment(np.array([0.0]), np.array([0.0]), 15.7, np.array([38.0]))
+    assert z[0] == pytest.approx(0.5 * 0.85 * 38.0)
