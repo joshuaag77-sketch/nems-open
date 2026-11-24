@@ -287,8 +287,9 @@ SPIN_TYPE = {"coal": "PC", "coal_ccs": "PQ", "gas_cc": "EC", "gas_cc_new": "AC",
 SPIN_SHORTFALL_COST = 1000.0    # 1987$/MWh of missing spinning reserve; ECP has no slack (cSR is bounded below)
 # ECP values a new wind or solar plant at WRENEW's capacity factor of the year before its solve, with no outage
 # derate (uecp.f 38880-39035, UPICFC1). This LP's step for year y is ECP's year 2 of its y - 1 solve, so y - 2.
-# Off, with SPIN_RESERVE (see there).
-ECP_BUILD_CF = False
+# On since the regional resource, vintage and build-cost ports: 2040 wind no longer runs away (2027-2040 chain 350 GW with it
+# and the resource bounds alone, EIA 404).
+ECP_BUILD_CF = True
 # ECP's regional resource bound on new onshore wind and solar (rows L(region)WNINT(year) and L(region)PVINT(year),
 # rLINTle in ecp.ams): builds in a region and planning year <= EPBLDBND (uecp.f EP$INT,32, 19610-19640; ecp.ams
 # 26834), which RENOVR fills with WCAWIEL / WCAPVEL x 0.001 (udat.f 16711-16725, 16826-16843), the capacity renew.f
