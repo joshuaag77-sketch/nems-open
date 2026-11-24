@@ -68,3 +68,14 @@ def test_step_premium_is_the_whole_column(snap):
     wind = column(snap, "WN", 2029, ptc=(16.5, 0.0), cf=0.4)         # waiting loses the credit
     last = (ecp_cost.one_year_cost(wind, 1.375) - ecp_cost.one_year_cost(wind))[0]
     assert last < 0.1 * 0.375 * wind["capital"][0]
+
+
+def test_intermittent_cap_is_ten_points_over_the_largest_share(snap):
+    a, b = np.full(25, 0.02), np.full(25, 0.5)
+    b[0] = 0.8
+    lim = capacity.intermittent_limit([a, b])
+    assert lim[0] == pytest.approx(0.85) and lim[1] == pytest.approx(0.6)
+    assert capacity.intermittent_limit([a])[0] == pytest.approx(0.15)
+    # wind and solar over generation in 2026: the Plains high, Florida and the Southeast low
+    share = capacity.reference_intermittent_share(snap, 2026)
+    assert share[17] > 0.4 and share[0] > 0.3 and share[13] < 0.25

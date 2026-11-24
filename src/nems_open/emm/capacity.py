@@ -297,6 +297,14 @@ OWN_WIND_RESOURCE = True
 OWN_SOLAR_RESOURCE = True
 RENEW_BOUND_ARRAY = {"wind": "wcawiel", "solar": "wcapvel"}
 RENEW_BOUND_TAIL = 5.0     # EP$INT,32: 5 x EPBLDBND in the last planning year
+# ECP's cap on intermittent generation (rows L(region)XXINT(year), rLXXINTle; uecp.f EP$LINT 14407-14502, UPINTSW = 2):
+# wind and solar output before curtailment, end-use PV included, at most UPINTMAX + UPINTINC (10 points) of the region's
+# load in planning year 2, never above UPINTBND (85%) or below UPINTBD0 (15%). UPINTMAX is the largest share so far
+# (EPO$INT's IRNWACT of the solve before). It binds in SPPS, SPPC, BASN and CANO in EIA's 2030 solve. Off: no cap.
+INTERMITTENT_CAP = True
+INT_BND, INT_INC, INT_BD0 = 0.85, 0.10, 0.15        # composite_2030 UPINTBND, UPINTINC, UPINTBD0 (ecpdaty.xlsx)
+INT_ESCAPE_COST = 2000.0                             # 1987$/MWh, EP$LINT,4
+INT_UTILITY = ("wn", "wl", "wf", "pv", "pt", "so")
 # ECP's battery spinning reserve (ecp.ams ccalc_cEXXX_INT_rRSRge and ccalc_cIX_rRSRge, EP$INT,23/52, CALC_STORAGE_VAL,
 # 5/14): batteries do not choose their reserve in ECP. ReStore hands it a fixed reserve per GW by ECP slice, one for
 # existing storage (NET_STORAGE_SR_EX, on the existing column) and one for a new build (NET_STORAGE_SR_NW, on the
@@ -542,6 +550,25 @@ def ecp_build_profile(snapshot, year: int) -> dict:
     return out
 
 
+def end_use_pv(snapshot, year: int) -> np.ndarray:
+    """End-use solar generation, (25,) TWh: on the load rows and in the PV column of ECP (DPVDISPATCH)."""
+    return np.asarray(snapshot["COGEN/cgtotgennr"], dtype=float)[:NUM_R, year - 1990, 9, :].sum(axis=1) / 1000.0
+
+
+def reference_intermittent_share(snapshot, year: int) -> np.ndarray:
+    """(25,) wind and solar share of generation in `year` of the reference run, end-use PV included."""
+    y = year - 1990
+    gen = sum(np.asarray(snapshot[f"UEFDOUT/ugn{p}nr"], dtype=float)[:, :NUM_R, y].sum(axis=0) for p in INT_UTILITY)
+    tot = np.asarray(snapshot["UEFDOUT/ugntlnr"], dtype=float)[:, :NUM_R, y].sum(axis=0)
+    pv = end_use_pv(snapshot, year)
+    return np.divide(gen + pv, tot + pv, out=np.zeros(NUM_R), where=tot + pv > 0)
+
+
+def intermittent_limit(shares: list) -> np.ndarray:
+    """EP$LINT's cap for planning year 2 from the shares of the years so far."""
+    return np.maximum(np.minimum(np.max(np.stack(shares), axis=0) + INT_INC, INT_BND), INT_BD0)
+
+
 def renewable_build_bound(snapshot, group: str, year: int) -> np.ndarray:
     """EPBLDBND: new wind (WN) or solar (PV) capacity a region can add in `year`, (25,) GW. RENOVR reads
     RYR = CURIYR - 1 in the solve of CURIYR = year - 1 (udat.f 16168-16176), so the restart's year - 2, as in
@@ -646,6 +673,7 @@ class YearResult:
     spin_price: np.ndarray = None   # (25, 36, BLOCKS) 1987$/kW-year per slice, dual of the spinning reserve rows
     spin_requirement: np.ndarray = None   # (25, 36, BLOCKS) GW, before intermittents (SPIN_RESERVE)
     spin_slice_price: np.ndarray = None   # (25, 9) 1987$/kW-year by ECP slice (ECP_DISPATCH_MODES)
+    intermittent_share: np.ndarray = None   # (25,) wind and solar output before curtailment over load, end-use PV included
     spin_shortfall_gw: float = 0.0  # largest shortfall in any region and slice on the spinning reserve rows
 
 
@@ -1139,13 +1167,15 @@ def _reference_case(snapshot, year: int):
 
 def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progress: bool = False,
                groups: dict | None = None, decide: bool = True, case=None, horizon: bool | None = None,
-               recent_adds: dict | None = None, resource: dict | None = None) -> YearResult:
+               recent_adds: dict | None = None, resource: dict | None = None,
+               intermittent_cap: np.ndarray | None = None) -> YearResult:
     """One year of the loop. `groups` (dispatch group -> retire_groups.Groups) splits retirements into ECP's
     retirement groups; without it a whole region and type retires at one cost. decide=False solves dispatch
     only (no builds, retirements, retrofits or conversions), to get prices. horizon: plan over ECP's horizon
     (HORIZON, the default) or this year only. recent_adds: build group -> the last five years' national additions
     (GW, oldest first) for ECP's build steps (BUILD_STEPS); without it the steps start from ESTMNADD. resource:
-    {wind, solar: for_build_year} of this path (CapacityPath.resources); without it the reference run's resource."""
+    {wind, solar: for_build_year} of this path (CapacityPath.resources); without it the reference run's resource.
+    intermittent_cap: (25,) the most wind and solar output over load (intermittent_limit); without it no cap."""
     horizon = HORIZON if horizon is None else horizon
     y = year - history.FIRST_YEAR
     case = case if case is not None else dispatch.build_case(snapshot, year, "none")
@@ -1488,6 +1518,14 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             m.add_constraints(conv_gas - gc <= 0, name=f"conv_gas_part{tag}")
             premium = heat["gas_conv"] / 1000.0 * (cs.price["gas"] - cs.price["coal"])
             operating = operating + (conv_gas * xr.DataArray(premium, coords=[R]) * hours_w).sum()
+        pot = ((wind_out + solar_out) * hours_w).sum(["day", "block"])
+        if tag == "" and intermittent_cap is not None:
+            # EP$LINT: no dearer than the escape column, 2000 $/MWh (GWh x $/MWh = k$)
+            pv_gwh = end_use_pv(snapshot, cs.year) * 1000.0
+            over = m.add_variables(lower=0, coords=[R], name="intermittent_over")
+            m.add_constraints(pot - over <= xr.DataArray(intermittent_cap * (cs.net_load_twh * 1000.0 + pv_gwh) - pv_gwh, coords=[R]),
+                              name="intermittent_cap")
+            operating = operating + (over * INT_ESCAPE_COST).sum()
         gas_steps = None
         if ECP_GAS_CURVE and tag == "":
             # ECP's gas supply steps (cSUNGX on rFUELNGXle): the burn fills them cheapest first; each step adds
@@ -1555,7 +1593,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 operating = operating + (sp_short * (SPIN_SHORTFALL_COST * hours_w)).sum()
                 spin = {"requirement": np.asarray(sr_req.values), "shortfall": sp_short}
         return {"operating": operating, "g_th": g_th, "unserved": unserved, "shortfall": shortfall, "credits": credits,
-                "spin": spin}
+                "spin": spin, "potential": pot}
 
     def totals(c0, extra_w, extra_s, extra_b):
         return (xr.DataArray(c0["wind"], coords=[R]) + extra_w, xr.DataArray(c0["solar"], coords=[R]) + extra_s,
@@ -1719,6 +1757,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     out.unserved_twh = float((sol(unserved) * w).sum() / 1000.0)
     out.reserve_shortfall_gw = float(sol(shortfall).sum())
     out.credits = credits
+    pv = end_use_pv(snapshot, min(year, LAST_MODEL_YEAR))
+    out.intermittent_share = (np.asarray(p1["potential"].solution.values) / 1000.0 + pv) / (case.net_load_twh + pv)
     hours = (case.weights * BLOCK_HOURS)[None, :, None]
     out.price = np.asarray(m.constraints["balance"].dual.transpose("region", "day", "block").values) / hours
     out.reserve_price = np.asarray(m.constraints["reserve_margin"].dual.values) / 1000.0     # k$/GW -> $/kW
@@ -1796,7 +1836,8 @@ class CapacityPath:
             grp = {g: retire_groups.build(year, g, self.alive, unit_costs(case, g), flat, hours, 1.0 - case.avail[g][0])
                    for g in RETIRABLE}
         res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case, recent_adds=self.recent_adds(year),
-                         resource=self.resources(year) or None)
+                         resource=self.resources(year) or None,
+                         intermittent_cap=self.intermittent_cap(year) if INTERMITTENT_CAP else None)
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: {res.status}")
         if self.groups:
@@ -1833,6 +1874,12 @@ class CapacityPath:
                                                          {t: r.capacity["solar"] for t, r in self.results.items()},
                                                          {t: r.builds["solar"] for t, r in self.results.items()})
         return out
+
+    def intermittent_cap(self, year: int) -> np.ndarray:
+        """EP$LINT's cap for `year`: the largest share of the years since 2024, the reference run's before this path."""
+        first = min(self.results, default=self.next_year)
+        shares = [reference_intermittent_share(self.snapshot, t) for t in range(START_YEAR - 1, first)]
+        return intermittent_limit(shares + [r.intermittent_share for r in self.results.values()])
 
     def wind_resource(self, year: int) -> dict:
         """renew.f's wind resource for `year` with this path's builds: onshore capacity is the wind group less the
