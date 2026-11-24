@@ -721,3 +721,14 @@ def test_profile_where_the_reference_run_has_no_plants(snapshot):
     assert case.capacity["wind"][1] == 0.0
     assert np.allclose(case.profile["wind"][1], case.build_profile["wind"][1])
     assert case.profile["wind"][1].max() > 0.0
+
+
+def test_state_floors_are_wfloors(snapshot):
+    """V_EMM_WFLOORS gives EIA's offshore additions exactly, 2030-2050 (restart UCAPWF, not used by the port)."""
+    from nems_open.emm import plants
+    wf = snapshot["UDATOUT/ucapwfu"][:25].astype(float) + snapshot["UDATOUT/ucapwfn"][:25].astype(float)
+    for year in range(2028, 2051):
+        eia = wf[:, year - 1990] - wf[:, year - 1991]
+        assert np.allclose(plants.floor_adds_gw(year, ("WF",)), eia, atol=2e-3), year
+    adds, _ = capacity.dated_changes(2035)
+    assert adds["wind"].sum() == pytest.approx(2.9, abs=0.01)

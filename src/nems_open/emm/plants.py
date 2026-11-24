@@ -66,6 +66,29 @@ def load_units() -> Units:
     )
 
 
+@lru_cache(maxsize=1)
+def floors() -> dict:
+    """State-mandated additions (NEMS_INPUT.db V_EMM_WFLOORS): offshore wind (WF) and batteries (DS). EMM puts them in
+    the plant file whatever they cost (renew.f PUTFLOORS 13467-13490, called at 472, then INTOPLNT), as planned units
+    (vintage 2) online in SYR. Columns as arrays: region, ecp_type, online_year, retire_year, mw."""
+    t = db.table("V_EMM_WFLOORS")
+    keep = np.asarray(t["CAPACITY"], dtype=float) > 0
+    return {"region": np.asarray(t["EMM_REG"])[keep].astype(int),
+            "ecp_type": np.array([s.strip() for s in t["ECP_TYP"]], dtype=object)[keep],
+            "online_year": np.asarray(t["SYR"])[keep].astype(int),
+            "retire_year": np.asarray(t["RYR"])[keep].astype(int),
+            "mw": np.asarray(t["CAPACITY"], dtype=float)[keep]}
+
+
+def floor_adds_gw(year: int, ecp_types) -> np.ndarray:
+    """floors() of these ECP types coming online in `year`, GW by EMM region 1 to 25."""
+    f = floors()
+    m = (f["online_year"] == year) & np.isin(f["ecp_type"], list(ecp_types))
+    out = np.zeros(regions.NUM_EMM)
+    np.add.at(out, f["region"][m] - 1, f["mw"][m] / 1000.0)
+    return out
+
+
 def efd_types() -> list[str]:
     """EFD plant type codes present in the plant file, sorted."""
     return sorted(set(load_units().efd_type))

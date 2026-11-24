@@ -63,7 +63,7 @@ BUILD_STEPS = True
 STEP_CODES = {"gas_cc_new": "AC", "gas_ccs": "CS", "gas_ct_new": "AT", "wind": "WN", "solar": "PV", "battery": "DS"}
 STEP_HISTORY = {   # build group -> (state groups whose planned adds count, restart UADD prefixes before the path)
     "gas_cc_new": (("gas_cc", "gas_cc_new"), ("cc", "-as")), "gas_ccs": (("gas_ccs",), ("as",)),
-    "gas_ct_new": (("gas_ct", "gas_ct_new"), ("ct", "ic")), "wind": (("wind",), ("wn", "wf", "wl")),
+    "gas_ct_new": (("gas_ct", "gas_ct_new"), ("ct", "ic")), "wind": (("wind",), ("wn", "wl")),
     "solar": (("solar",), ("pv", "pt", "st")), "battery": (("battery",), ("ds",)),
 }
 
@@ -75,11 +75,29 @@ PLANNED_STEP_TYPES = {"gas_cc_new": ("AC",), "gas_ccs": ("CS",), "gas_ct_new": (
                       "solar": ("PV", "PT"), "battery": ("DS",)}
 
 
+# State mandates (plants.floors): offshore wind, 27 GW in 2030-2050, and batteries, 11 GW in 2026-2035. Off: plant file only.
+STATE_FLOORS = True
+FLOOR_GROUP = {"WF": "wind", "DS": "battery"}
+
+
 def planned_in_step(year: int, group: str) -> float:
-    """National GW of plant-file units online in `year` that sit in build group `group`'s first ECP step."""
+    """National GW of plant-file units and state floors online in `year` that sit in build group `group`'s first ECP step."""
     u = plants.load_units()
     m = (u.online_year == year) & np.isin(u.ecp_type, PLANNED_STEP_TYPES.get(group, ()))
-    return float(u.summer_mw[m].sum()) / 1000.0
+    gw = float(u.summer_mw[m].sum()) / 1000.0
+    if STATE_FLOORS:
+        gw += float(plants.floor_adds_gw(year, PLANNED_STEP_TYPES.get(group, ())).sum())
+    return gw
+
+
+def offshore_adds(group: str, year: int) -> float:
+    """National GW of offshore wind (plant file and floors) online in `year`: in the LP's wind group, but WF keeps its own
+    ESTYRADD (udat.f 8273-8278), so it is no part of WN's build-step history. 0 for other groups."""
+    if group != "wind":
+        return 0.0
+    u = plants.load_units()
+    gw = float(u.summer_mw[(u.online_year == year) & (u.ecp_type == "WF")].sum()) / 1000.0
+    return gw + (float(plants.floor_adds_gw(year, ("WF",)).sum()) if STATE_FLOORS else 0.0)
 
 
 STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional type whose ESTCPADD it may not fall below
@@ -850,7 +868,7 @@ def initial_capacity(snapshot, year_before: int) -> dict:
 
 
 def dated_changes(year: int):
-    """Plant-file additions and retirements dated to `year`, by group and region, GW."""
+    """Plant-file additions and retirements dated to `year`, with the state floors, by group and region, GW."""
     u = plants.load_units()
     adds = {g: np.zeros(NUM_R) for g in STATE_GROUPS}
     rets = {g: np.zeros(NUM_R) for g in STATE_GROUPS}
@@ -861,6 +879,9 @@ def dated_changes(year: int):
                 continue
             m = (sel_year == year) & (u.efd_type == code)
             np.add.at(out[g], u.region[m] - 1, u.summer_mw[m] / 1000.0)
+    if STATE_FLOORS:
+        for code, g in FLOOR_GROUP.items():
+            adds[g] += plants.floor_adds_gw(year, (code,))
     return adds, rets
 
 
@@ -1726,7 +1747,7 @@ class CapacityPath:
             for yr in range(year - n, year):
                 r = self.results.get(yr)
                 if r is not None:
-                    vals.append(sum(float(r.planned_adds.get(s, np.zeros(NUM_R)).sum()) for s in state)
+                    vals.append(sum(float(r.planned_adds.get(s, np.zeros(NUM_R)).sum()) for s in state) - offshore_adds(g, yr)
                                 + float(r.builds.get(g, np.zeros(NUM_R)).sum()))
                 else:
                     vals.append(max(capacity_report.eia_additions(self.snapshot, yr, prefixes)
