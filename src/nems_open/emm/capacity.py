@@ -290,8 +290,9 @@ ECP_BUILD_CF = False
 # Florida by 2040, where EIA has none. Off: 100 GW in every region.
 RENEW_BUILD_BOUND = True
 # Wind's bound, cost multiplier and capacity factor from this path's own builds (emm/wind_resource.py, renew.f's classes).
-# Off: the reference run's. Solar's bound is still the reference run's (SolarMisc is not ported).
+# Off: the reference run's. The same for PV (emm/solar_resource.py, renew.f's land classes).
 OWN_WIND_RESOURCE = True
+OWN_SOLAR_RESOURCE = True
 RENEW_BOUND_ARRAY = {"wind": "wcawiel", "solar": "wcapvel"}
 RENEW_BOUND_TAIL = 5.0     # EP$INT,32: 5 x EPBLDBND in the last planning year
 # ECP's battery spinning reserve (ecp.ams ccalc_cEXXX_INT_rRSRge and ccalc_cIX_rRSRge, EP$INT,23/52, CALC_STORAGE_VAL,
@@ -542,7 +543,7 @@ def ecp_build_profile(snapshot, year: int) -> dict:
 def renewable_build_bound(snapshot, group: str, year: int) -> np.ndarray:
     """EPBLDBND: new wind (WN) or solar (PV) capacity a region can add in `year`, (25,) GW. RENOVR reads
     RYR = CURIYR - 1 in the solve of CURIYR = year - 1 (udat.f 16168-16176), so the restart's year - 2, as in
-    ecp_build_profile. These are EIA's remaining resources along the reference run; OWN_WIND_RESOURCE replaces wind's."""
+    ecp_build_profile. These are EIA's remaining resources along the reference run; OWN_WIND_RESOURCE and OWN_SOLAR_RESOURCE replace them."""
     y = max(year - 2 - history.FIRST_YEAR, 0)
     return np.maximum(snapshot[f"WRENEW/{RENEW_BOUND_ARRAY[group]}"][:NUM_R, y].astype(float), 0.0) * 1.0e-3
 
@@ -1034,8 +1035,8 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         if CONSTRUCTION_INTEREST:
             ovn = ovn * construction_factor(snapshot, code, cost_year, construction_rate(snapshot, cost_year, code))
-        if g == "wind" and resource is not None:
-            ovn = ovn * resource["cost"]         # UPWNCCST holds renew.f's ConsLT of the reference path
+        if resource is not None and g in resource:
+            ovn = ovn * resource[g]["cost"]      # UPWNCCST and UPPVCCST hold renew.f's ConsLT of the reference path
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
         if parts is not None:      # the capital charge alone, k$ per GW-year (what ECP's build steps scale)
             parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3
@@ -1097,15 +1098,15 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     only (no builds, retirements, retrofits or conversions), to get prices. horizon: plan over ECP's horizon
     (HORIZON, the default) or this year only. recent_adds: build group -> the last five years' national additions
     (GW, oldest first) for ECP's build steps (BUILD_STEPS); without it the steps start from ESTMNADD. resource:
-    wind_resource.for_build_year of this path (OWN_WIND_RESOURCE); without it the reference run's resource."""
+    {wind, solar: for_build_year} of this path (CapacityPath.resources); without it the reference run's resource."""
     horizon = HORIZON if horizon is None else horizon
     y = year - history.FIRST_YEAR
     case = case if case is not None else dispatch.build_case(snapshot, year, "none")
     if ECP_BUILD_CF and case.build_profile is not None and case.build_profile["wind"].shape[-1] == 24:
         case = replace(case, build_profile=ecp_build_profile(snapshot, year))
     if resource is not None and case.build_profile is not None:
-        scaled = np.minimum(case.build_profile["wind"] * resource["cf"][:, None, None], 1.0)
-        case = replace(case, build_profile=dict(case.build_profile, wind=scaled))
+        scaled = {g: np.minimum(case.build_profile[g] * v["cf"][:, None, None], 1.0) for g, v in resource.items()}
+        case = replace(case, build_profile=dict(case.build_profile, **scaled))
     adds, rets = dated_changes(year)
     rule = epa111()
     rets = epa111_retirements(snapshot, year, cap_in, rets)
@@ -1235,7 +1236,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     def renewable_upper(g, limit, build_year, times=1.0):
         bound = np.inf
         if RENEW_BUILD_BOUND:
-            own = resource if g == "wind" else None
+            own = (resource or {}).get(g)
             bound = times * (own["bound"] if own is not None else renewable_build_bound(snapshot, g, build_year))
         return xr.DataArray(np.minimum(np.full(NUM_R, limit), bound), coords=[R])
 
@@ -1747,7 +1748,7 @@ class CapacityPath:
             grp = {g: retire_groups.build(year, g, self.alive, unit_costs(case, g), flat, hours, 1.0 - case.avail[g][0])
                    for g in RETIRABLE}
         res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case, recent_adds=self.recent_adds(year),
-                         resource=self.wind_resource(year) if OWN_WIND_RESOURCE else None)
+                         resource=self.resources(year) or None)
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: {res.status}")
         if self.groups:
@@ -1770,6 +1771,19 @@ class CapacityPath:
         for g in dispatch.WRENEW_PROFILES:
             out[g] = dispatch.reference_builds(self.snapshot, g, first - 1)
             out[g].update({t: r.builds[g] for t, r in self.results.items()})
+        return out
+
+    def resources(self, year: int) -> dict:
+        """{wind, solar: for_build_year of that resource} for the types that follow this path's builds."""
+        out = {}
+        if OWN_WIND_RESOURCE:
+            out["wind"] = self.wind_resource(year)
+        if OWN_SOLAR_RESOURCE:
+            from nems_open.emm import solar_resource
+            first = min(self.results, default=year)
+            out["solar"] = solar_resource.for_build_year(self.snapshot, year, first,
+                                                         {t: r.capacity["solar"] for t, r in self.results.items()},
+                                                         {t: r.builds["solar"] for t, r in self.results.items()})
         return out
 
     def wind_resource(self, year: int) -> dict:
