@@ -46,7 +46,9 @@ CONVERT_FOM_ADJ, CONVERT_VOM_ADJ, CONVERT_HR_PENALTY = 0.67, 0.75, 0.05
 CONVERT_COST_KW = 200.0
 RETIREMENT_HURDLE = 0.05         # emmcntl.txt %RET HURDLE RATES%, fossil (UPRETFHU)
 AGE_ADDER_1987 = 5.0 / 1.336922   # $/kW-year for units 30+ years old: UPXTRA (%XTRA OandM%, 1999$) in 1987$
-RESERVE_SHORTFALL_COST = 2.0e5  # k$ per GW-year, about 200 1987$/kW-year, for missing the reserve margin
+# k$ per GW for missing the reserve margin: EP$MRM,4's escape RDBLDX costs 1500 1987$/kW (undiscounted, so a little more
+# against planning year 2's rows). The LP had 200, below ECP's own step 2 turbine once steps cost their lifetime.
+RESERVE_SHORTFALL_COST = 1.5e6
 REAL_DISCOUNT_RATE = 0.065       # only for the 45Q credit-life share (_credit_lost_share); builds use discount_rate()
 # How fast the industry can build. An assumption, not EIA data: ecpdaty.xlsx sets no annual limit (999.9)
 # and relies on resource supply curves that are not in the restart, so without these the LP builds
@@ -596,7 +598,7 @@ ECP_BUILD_COST = True
 # year of it: 0.375 x 1,320 nominal $/kW for a 2031 combined cycle against a one-year cost of 116 (2030 solve, TRE: steps
 # 1,738 / 2,234 / 3,391). The LP charged one year of it, a twelfth. ecp_cost.one_year_cost per step, which gives the
 # one-year premium back where waiting loses a tax credit. With ECP_BUILD_COST. Off: one year everywhere.
-STEP_PREMIUM_LIFETIME = False
+STEP_PREMIUM_LIFETIME = True
 TAX_FCF_ADJ = 0.015      # TAXFCFTT + TAXFCFTD off the transmission charge rate (uecp.f 737; emmcntl.txt %TAXDEPR Y1%)
 
 
