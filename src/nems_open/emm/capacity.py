@@ -494,6 +494,21 @@ def allowed_modes() -> dict:
     return out
 
 
+# The most a committed GW generates in ECP (cU, maximum load: uecp.f EP$ODSP,46; ecp.ams VALUE_MAX_SR_ODSP) is not its
+# availability but (1 - FOR) x (SR_MAX_LF + (1 - SR_MAX_LF) x slice height / season peak), SR_MAX_LF 0.7 for existing
+# combined cycle, 0.9 for new and for coal, 0.5 for turbines and steam; and planned maintenance takes whole capacity out
+# of the seasons it is put in (EP$PM$LF: cPX, rows rMXXge, UPPMRT of the year's hours). In TRE's 2031 summer ECP's existing
+# combined cycle gives 0.85 to 0.88 of capacity in the 2,900 hours below the peak slice, not 0.945, is committed in full
+# and turbines set the price. Off: availability alone, with UPMCF over the year.
+ECP_MAX_LOAD = False
+
+
+def max_load_factor(height: np.ndarray, max_lf: float) -> np.ndarray:
+    """VALUE_MAX_SR_ODSP over 1 - FOR in each ECP slice, (25, 9) from the slice heights (25, 9)."""
+    peak = height[:, (np.arange(9) // 3) * 3]
+    return max_lf + (1.0 - max_lf) * np.divide(height, peak, out=np.ones_like(height), where=peak > 0)
+
+
 def block_slice(slice_of: np.ndarray, hours: int = BLOCK_HOURS) -> np.ndarray:
     """ECP slice of each block (the slice most of its hours fall in), (25, 36, 24 // hours) from (25, 36, 24)."""
     R, Dn, H = slice_of.shape
@@ -1462,7 +1477,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         prof = {k: xr.DataArray(_blocks(v, bh), coords=[R, D, Bk]) for k, v in lp.profile.items()}
 
         g_th = m.add_variables(lower=0, coords=[R, T, D, Bk], name=f"gen{tag}")
-        m.add_constraints(g_th - capv_p * one_minus_for <= 0, name=f"gen_limit{tag}")
+        max_load = ECP_MAX_LOAD and decide and tag in ("", "_tail")
+        if not max_load:
+            m.add_constraints(g_th - capv_p * one_minus_for <= 0, name=f"gen_limit{tag}")
         m.add_constraints((g_th * hours_w).sum(["day", "block"]) - capv_p * (mcf * 8760.0) <= 0, name=f"energy_limit{tag}")
 
         cost = np.zeros((NUM_R, len(TG)))
@@ -1541,6 +1558,32 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             if sy is not None:     # LDSM's load, moved to this run's demand (scaled shape plus flat added load)
                 ref = _reference_case(snapshot, cs.year).net_load_twh
                 load_rm = ecp_load.follow_run(sy, cs.net_load_twh, ref, cs.flat_twh)
+        if max_load:
+            sub = {g: np.maximum(c0[g], 0.0) for g in capacity_credit.INTERMITTENT}
+            prof36 = cs.credit_profile or cs.profile
+            net36 = load_rm - sum(sub[g][:, None, None] * prof36[g] for g in capacity_credit.INTERMITTENT)
+            if len(lp.weights) == 12:       # the tail's one day a month
+                w3 = cs.weights.reshape(12, 3)
+                mean3 = lambda a: (a.reshape(NUM_R, 12, 3, 24) * (w3 / w3.sum(axis=1)[:, None])[None, :, :, None]).sum(axis=2)
+                slice_of, height = ecp_slice_heights(mean3(load_rm), lp.weights, np.arange(12), mean3(net36))
+            else:
+                slice_of, height = ecp_slice_heights(load_rm, cs.weights, month_of_day, net36)
+            blk = block_slice(slice_of, bh)
+            lf_tab = named_ranges(technology.ECPDATY, "SPNRSV")["SR_MAX_LF"]
+            pmr_tab = named_ranges(technology.ECPDATY, "COSTPERF")["UPPMRT"]
+            SE = pd.Index(np.arange(3), name="season")
+            season_of = ecp_season_of_month()[month_of_day]
+            hours_se = xr.DataArray(np.array([(lp.weights[season_of == q] * 24.0).sum() for q in range(3)]), coords=[SE])
+            pm = m.add_variables(lower=0, coords=[R, T, SE], name=f"maintenance{tag}")
+            pmr = xr.DataArray(np.array([float(pmr_tab[codes.index(SPIN_TYPE[g])]) for g in TG]), coords=[T])
+            m.add_constraints((pm * hours_se).sum("season") - capv_p * (pmr * 8760.0) >= 0, name=f"maintenance_hours{tag}")
+            fac = np.stack([np.take_along_axis(max_load_factor(height, float(lf_tab[codes.index(SPIN_TYPE[g])])),
+                                               blk.reshape(NUM_R, -1), axis=1).reshape(blk.shape) for g in TG], axis=1)
+            fac = xr.DataArray(fac, coords=[R, T, D, Bk]) * one_minus_for
+            for q in range(3):
+                days = np.flatnonzero(season_of == q)
+                f_q = fac.isel(day=days)
+                m.add_constraints(g_th.isel(day=days) - capv_p * f_q + pm.sel(season=q) * f_q <= 0, name=f"max_load{tag}_{q}")
         net_cap = None
         if ECP_RESERVE:      # CAP_CREDIT's net load on ECP's adjusted capacities (the reference run's adjustment)
             off = capacity_credit.cap_adjustment(snapshot, cs.year)

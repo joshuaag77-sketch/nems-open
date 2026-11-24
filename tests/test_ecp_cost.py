@@ -98,3 +98,10 @@ def test_monthly_days_keep_the_year(snap):
     for a, b in ((case.shapes, lp.shapes), (case.profile["wind"], lp.profile["wind"])):
         full = (a * case.weights[None, :, None]).sum(axis=(1, 2))
         assert (b * lp.weights[None, :, None]).sum(axis=(1, 2)) == pytest.approx(full)
+
+
+def test_max_load_factor_is_ecp_cU():
+    """EIA's 2030 solve, TRE existing combined cycle, summer 2031: 0.927362 / 0.879999 / 0.852473 per committed GW."""
+    h = np.tile(np.array([90.056, 74.6163, 65.6433]), (25, 3))
+    f = 0.927362 * capacity.max_load_factor(h, 0.7)
+    assert f[0, 3:6] == pytest.approx([0.927362, 0.8799, 0.8518], abs=2e-3)
