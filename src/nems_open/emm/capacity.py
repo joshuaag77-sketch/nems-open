@@ -821,6 +821,11 @@ CONVERT_STEPS = 5
 # 40% gas where ECP's burns almost none. On: gas_conv runs at coal cost up to UEPA_CGSH of its available capacity in
 # each block, and pays the gas premium above that.
 CONVERT_SPLIT_FUEL = False
+# ECP plans a converted unit (type NG) as gas steam: its fuel rows take gas alone (rFXXle(*,NG,*) is supplied only by the
+# GS fuel column in the 2030 solve, 19 TWh from 21 GW), whatever coal EFD lets it burn (UEPA_CGSH, udat.f 6457). Blended
+# at 60% coal here it ran at 55% in front of combined cycle, 221 TWh in 2031, which took 1.4 quads of gas out of the
+# planning dispatch. On: gas_conv pays the gas price in the LP. (EIA's own dispatch, dispatch.py, keeps the blend.)
+ECP_CONVERTED_BURNS_GAS = True
 # How far the conversion's horizon credit runs. ECP's gas part (cNNG) sits in every later reserve row at full capacity
 # (EP$COAL,23: no year limit). Its coal part (cNNGCL, at most UEPA_CGSH of the unit through row NGCLCF, EP$COAL,28c)
 # sits in the explicit years' reserve rows in full but in the tail row only at EPA_YRSHR, the discounted share of the
@@ -1488,7 +1493,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             oil_price = cs.price["residual"] if g == "steam" else cs.price["distillate"]
             is_coal = g.startswith("coal")
             fuel = (1 - oil_share[g]) * cs.price["coal" if is_coal else "gas"] + oil_share[g] * oil_price
-            if g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
+            if g == "gas_conv" and ECP_CONVERTED_BURNS_GAS and decide:
+                fuel = cs.price["gas"]
+            elif g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
                 fuel = cs.price["coal"]           # the coal part's cost; output above it pays the gas premium below
             elif g == "gas_conv" and rule["switch"]:
                 # EPA 111 cofiring: at most UEPA_CGSH of the fuel is coal (udat.f 6457), the rest gas
@@ -1496,7 +1503,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             cost[:, k] = heat[g] / 1000.0 * fuel + vom[g]
             if not is_coal:
                 gas_frac[:, k] = (1.0 - rule["cofire_coal_share"]) if (g == "gas_conv" and rule["switch"]) else 1 - oil_share[g]
-                if g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
+                if g == "gas_conv" and ECP_CONVERTED_BURNS_GAS and decide:
+                    gas_frac[:, k] = 1.0
+                elif g == "gas_conv" and rule["switch"] and CONVERT_SPLIT_FUEL:
                     gas_frac[:, k] = 0.0          # its gas burn is conv_gas below
             if g in dispatch.CAPTURE_GROUPS:
                 share = cs.credit_share[g] if cs.credit_share is not None else 1.0
@@ -1616,7 +1625,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             + (trade * (xr.DataArray(links["cost"], coords=[L]) * hours_w)).sum() + (g_hy * (0.01 * hours_w)).sum() \
             + (shortfall * short_cost).sum()
         conv_gas = None
-        if CONVERT_SPLIT_FUEL and rule["switch"]:
+        if CONVERT_SPLIT_FUEL and rule["switch"] and not (ECP_CONVERTED_BURNS_GAS and decide):
             # the gas part of gas_conv output: whatever runs above the coal part (UEPA_CGSH of available capacity)
             conv_gas = m.add_variables(lower=0, coords=[R, D, Bk], name=f"conv_gas{tag}")
             gc = g_th.sel(group="gas_conv")
