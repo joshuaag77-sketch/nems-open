@@ -79,3 +79,12 @@ def test_intermittent_cap_is_ten_points_over_the_largest_share(snap):
     # wind and solar over generation in 2026: the Plains high, Florida and the Southeast low
     share = capacity.reference_intermittent_share(snap, 2026)
     assert share[17] > 0.4 and share[0] > 0.3 and share[13] < 0.25
+
+
+def test_conventional_cc_is_dearer_than_ac_and_has_its_own_steps(snap):
+    from nems_open.emm import dispatch
+    case = dispatch.build_case(snap, 2032, "none")
+    ac = capacity.capital_costs(snap, 2032, case)["gas_cc_new"]
+    cc = capacity.capital_costs(snap, 2032, case, {}, None, {"gas_cc_new": "CC"})["gas_cc_new"]
+    assert 1.0 < np.median(cc / ac) < 1.15
+    assert [round(b, 2) for b, _ in capacity.build_steps("CC", [0.0] * 5)] == [5.0, 3.0, 4.0]

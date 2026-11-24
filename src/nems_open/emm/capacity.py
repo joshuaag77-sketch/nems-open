@@ -120,6 +120,11 @@ STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional typ
 # plant-file units of that ECP type), the conventional type's is the plant file's CC + EC (CT + ET) units by online
 # year, and the steps use the larger ESTCPADD. Off: pooled.
 STEP_SEPARATE_HISTORY = True
+# ECP builds a second combined cycle, CC, beside AC: the same heat rate, its own UPOVR and its own ESTCPLIM steps and
+# history (CC + EC). The oracle's ECP builds it online in 2028, 2029, 2032 and 2039, up to its 5 GW first step. It shares
+# the gas_cc_new group here. Tried and dropped when the steps cost a year's premium (docs/capacity.md, ecp-lookahead);
+# with the lifetime premium the 2032 reserve row is short without it. Off: AC only.
+CONVENTIONAL_CC = True
 STEP_CONVENTIONAL_TYPES = {"gas_cc_new": ("CC", "EC"), "gas_ct_new": ("CT", "ET")}
 STEP_OWN_TYPES = {"gas_cc_new": ("AC",), "gas_ct_new": ("AT",)}
 
@@ -674,6 +679,7 @@ class YearResult:
     spin_requirement: np.ndarray = None   # (25, 36, BLOCKS) GW, before intermittents (SPIN_RESERVE)
     spin_slice_price: np.ndarray = None   # (25, 9) 1987$/kW-year by ECP slice (ECP_DISPATCH_MODES)
     intermittent_share: np.ndarray = None   # (25,) wind and solar output before curtailment over load, end-use PV included
+    conventional_cc: float = 0.0    # national GW of gas_cc_new built as ECP's CC type (CONVENTIONAL_CC)
     spin_shortfall_gw: float = 0.0  # largest shortfall in any region and slice on the spinning reserve rows
 
 
@@ -1067,10 +1073,11 @@ def construction_factor(snapshot, code: str, year: int, rate: float) -> float:
     return book if book > 0 else 1.0
 
 
-def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource: dict | None = None) -> dict:
+def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource: dict | None = None,
+                  codes_of: dict | None = None) -> dict:
     """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
     and PTC, with ECP's learned overnight cost and the year's financing (ECP_BUILD_COST, else a level annuity).
-    `parts` gets what a build step of cost multiple mu adds: a function of mu (STEP_PREMIUM_LIFETIME), or the year's
+    codes_of: {group: ECP type} to cost in place of BUILDS. `parts` gets what a build step of cost multiple mu adds: a function of mu (STEP_PREMIUM_LIFETIME), or the year's
     capital charge the multiple scales."""
     params = technology.type_parameters()
     codes = technology.ecp_codes()
@@ -1081,7 +1088,7 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource
     col = min(year, 2050) - 2010
     cost_year = min(year, 2050)
     capital = {}
-    for g, code in BUILDS.items():
+    for g, code in (codes_of or BUILDS).items():
         i = codes.index(code)
         ovn = learned_overnight(snapshot, code, cost_year)
         if ovn is None:
@@ -1342,6 +1349,17 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
                 steps = steps[:1]          # ECP builds batteries in the first step only (CALC_STORAGE_VAL,12)
             S = pd.Index(range(len(steps)), name="step")
             sv = m.add_variables(lower=0, upper=xr.DataArray([b for b, _ in steps], coords=[S]), name=f"build_step_{g}")
+            if g == "gas_cc_new" and CONVENTIONAL_CC and ECP_BUILD_COST:
+                conv_cost: dict = {}
+                conv = capital_costs(snapshot, year, case, conv_cost, resource, {g: "CC"})[g]
+                cc_steps = build_steps("CC", (recent_adds or {}).get("gas_cc_new/floor", [0.0] * 5))
+                C = pd.Index(range(len(cc_steps)), name="step")
+                cc_sv = m.add_variables(lower=0, upper=xr.DataArray([b for b, _ in cc_steps], coords=[C]), name="build_step_cc")
+                over_cc = conv_cost[g] if callable(conv_cost[g]) else (lambda mu: (mu - 1.0) * conv_cost[g])
+                base_gap = float(np.mean(conv - capital[g]))
+                step_premium = step_premium + (cc_sv * xr.DataArray(
+                    [base_gap + float(np.mean(over_cc(mu))) for _, mu in cc_steps], coords=[C])).sum()
+                total = total - cc_sv.sum()
             m.add_constraints(total - sv.sum() == 0, name=f"build_steps_{g}")
             over = capital_only[g] if callable(capital_only[g]) else (lambda mu, base=capital_only[g]: (mu - 1.0) * base)
             premium = xr.DataArray([float(np.mean(over(mu))) for _, mu in steps], coords=[S])
@@ -1757,6 +1775,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     out.unserved_twh = float((sol(unserved) * w).sum() / 1000.0)
     out.reserve_shortfall_gw = float(sol(shortfall).sum())
     out.credits = credits
+    if "build_step_cc" in m.variables:
+        out.conventional_cc = float(m.variables["build_step_cc"].solution.sum())
     pv = end_use_pv(snapshot, min(year, LAST_MODEL_YEAR))
     out.intermittent_share = (np.asarray(p1["potential"].solution.values) / 1000.0 + pv) / (case.net_load_twh + pv)
     hours = (case.weights * BLOCK_HOURS)[None, :, None]
@@ -1910,9 +1930,12 @@ class CapacityPath:
                 for yr in range(year - n, year):
                     r = self.results.get(yr)
                     built = float(r.builds.get(g, np.zeros(NUM_R)).sum()) if r is not None else 0.0
+                    if r is not None and g == "gas_cc_new":
+                        built -= getattr(r, "conventional_cc", 0.0)
                     own.append(built + plant_file_adds(yr, STEP_OWN_TYPES[g]))
                 out[g] = own
-                out[f"{g}/floor"] = [plant_file_adds(yr, STEP_CONVENTIONAL_TYPES[g]) for yr in range(year - n, year)]
+                cc = (lambda yr: getattr(self.results.get(yr), "conventional_cc", 0.0)) if g == "gas_cc_new" else (lambda yr: 0.0)
+                out[f"{g}/floor"] = [plant_file_adds(yr, STEP_CONVENTIONAL_TYPES[g]) + cc(yr) for yr in range(year - n, year)]
         return out
 
     def credit_share(self, year: int) -> dict:
