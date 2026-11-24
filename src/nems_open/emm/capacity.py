@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from nems_open.emm import capacity_credit, db, dispatch, ecp_load, history, load, plants, regions, retire_groups, technology
+from nems_open.emm import capacity_credit, db, dispatch, ecp_cost, ecp_load, history, load, plants, regions, retire_groups, technology
 from nems_open.paths import INPUT
 from nems_open.xlsx_ranges import named_ranges
 
@@ -583,6 +583,23 @@ def _financing(snapshot, year: int) -> tuple:
 CONSTRUCTION_PRE_TAX = True
 
 
+# ECP's own cost of a build column (ecp_cost): EPCNBLD's capacity payment, transmission (EPCOVR, EPCFOM), the spread of
+# BAA over AA on debt, and the 3 points on debt and equity of new wind (online to 2029), solar (to 2028) and storage (to
+# 2036) that ecpdaty.xlsx FINANCIAL carries (UPNIRTEY, UPNRRTEY; uecp.f EP$SUBFIN), which the LP left out. The formula
+# gives every column of EIA's 2030 solve within 2% (wind and solar where the resource cost is the same). The charge for
+# the one year the LP decides is ecp_cost.one_year_cost. A storage build online in 2031 pays the 3 points for life where
+# one planned for the tail pays almost none: 119 $/kW-year, where the level annuity had 46. Off: a level annuity at the
+# after-tax cost of capital.
+ECP_BUILD_COST = True
+# ECP's second and third build steps raise the whole column's installed cost (EPCCSUP, ESTCPCST), paid for the 29 years
+# online, while waiting a year costs step 1 (year-2 columns are unbounded). So the premium is the lifetime cost, not a
+# year of it: 0.375 x 1,320 nominal $/kW for a 2031 combined cycle against a one-year cost of 116 (2030 solve, TRE: steps
+# 1,738 / 2,234 / 3,391). The LP charged one year of it, a twelfth. ecp_cost.one_year_cost per step, which gives the
+# one-year premium back where waiting loses a tax credit. With ECP_BUILD_COST. Off: one year everywhere.
+STEP_PREMIUM_LIFETIME = False
+TAX_FCF_ADJ = 0.015      # TAXFCFTT + TAXFCFTD off the transmission charge rate (uecp.f 737; emmcntl.txt %TAXDEPR Y1%)
+
+
 def construction_rate(snapshot, year: int, code: str) -> float:
     """EPINCST's rate for building ECP type `code` in `year`: EWGROR, the pre-tax cost of capital (with
     CONSTRUCTION_PRE_TAX), else the after-tax discount rate plus the risk premium."""
@@ -864,6 +881,12 @@ def _credit_overpaid(case, group: str, life: float, year: int, snapshot):
     return paid - earned
 
 
+def _capture_charge(case, group: str, life: float, year: int, snapshot):
+    """The 45Q credit dispatch overpays a new capture plant (_credit_overpaid), 1987$/kW-year."""
+    tons = case.heat_rate[group] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[group]] * dispatch.capture_rate(group)
+    return _credit_overpaid(case, group, life, year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
+
+
 def initial_capacity(snapshot, year_before: int) -> dict:
     """Year-end capacity by group in the year before the first solve, from the reference run."""
     y = year_before - history.FIRST_YEAR
@@ -1016,7 +1039,9 @@ def construction_factor(snapshot, code: str, year: int, rate: float) -> float:
 
 def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource: dict | None = None) -> dict:
     """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
-    and PTC, with ECP's learned overnight cost and the year's discount rate."""
+    and PTC, with ECP's learned overnight cost and the year's financing (ECP_BUILD_COST, else a level annuity).
+    `parts` gets what a build step of cost multiple mu adds: a function of mu (STEP_PREMIUM_LIFETIME), or the year's
+    capital charge the multiple scales."""
     params = technology.type_parameters()
     codes = technology.ecp_codes()
     reg = technology.regional_costs()
@@ -1032,6 +1057,27 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource
         if ovn is None:
             ovn = params["overnight_cost"][i] * reg["regional_multiplier"][:NUM_R, i] * reg["area_multiplier"][:NUM_R, i]
         itc = max(itc_tab[i, col], 0.0)
+        if ECP_BUILD_COST:
+            if resource is not None and g in resource:
+                ovn = ovn * resource[g]["cost"]
+            wires = reg["transmission_overnight_cost"][:NUM_R, i] * (
+                reg["transmission_charge_rate"][:NUM_R, i] - TAX_FCF_ADJ)
+            renewable = g in ("wind", "solar")
+            cf = (case.build_profile or case.profile)[g].mean(axis=(1, 2)) if renewable else 0.0
+            ptc = tuple(max(ptc_tab[i, min(col + k, ptc_tab.shape[1] - 1)], 0.0) if renewable else 0.0 for k in (0, 1))
+            column = ecp_cost.build_column(snapshot, code, cost_year, ovn * (1.0 - itc), params["fom"][i], wires,
+                                           0.0 if g == "battery" else reg["transmission_fom"][:NUM_R, i], ptc, cf,
+                                           int(sub["UPGSYD"][i]) or 1992, int(sub["UPGSYR"][i]))
+            annual = ecp_cost.one_year_cost(column)
+            if parts is not None:
+                if STEP_PREMIUM_LIFETIME:
+                    parts[g] = lambda mu, column=column, annual=annual: 1.0e3 * (ecp_cost.one_year_cost(column, mu) - annual)
+                else:
+                    parts[g] = column["capital"] * 1.0e3 / column["annuity"]
+            if g in dispatch.CAPTURE_GROUPS:
+                annual = annual + _capture_charge(case, g, params["economic_life"][i], year, snapshot)
+            capital[g] = annual * 1.0e3
+            continue
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         if CONSTRUCTION_INTEREST:
             ovn = ovn * construction_factor(snapshot, code, cost_year, construction_rate(snapshot, cost_year, code))
@@ -1047,8 +1093,7 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource
                                 cost_year, snapshot)
             annual = annual - credit * cf * 8.76      # $/MWh x GWh per MW-year -> $/kW-year
         if g in dispatch.CAPTURE_GROUPS:
-            tons = case.heat_rate[g] / 1000.0 * dispatch.CO2_PER_TBTU[dispatch.CAPTURE_GROUPS[g]] * dispatch.capture_rate(g)
-            annual = annual + _credit_overpaid(case, g, params["economic_life"][i], year, snapshot) * case.credit_45q * tons * CCS_CAPACITY_FACTOR * 8.76
+            annual = annual + _capture_charge(case, g, params["economic_life"][i], year, snapshot)
         capital[g] = annual * 1.0e3                   # $/kW-year -> k$ per GW-year
     return capital
 
@@ -1266,7 +1311,8 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             S = pd.Index(range(len(steps)), name="step")
             sv = m.add_variables(lower=0, upper=xr.DataArray([b for b, _ in steps], coords=[S]), name=f"build_step_{g}")
             m.add_constraints(total - sv.sum() == 0, name=f"build_steps_{g}")
-            premium = float(np.mean(capital_only[g])) * xr.DataArray([mu - 1.0 for _, mu in steps], coords=[S])
+            over = capital_only[g] if callable(capital_only[g]) else (lambda mu, base=capital_only[g]: (mu - 1.0) * base)
+            premium = xr.DataArray([float(np.mean(over(mu))) for _, mu in steps], coords=[S])
             step_premium = step_premium + (sv * premium).sum()
     elif not BUILD_STEPS:
         m.add_constraints(bw.sum() <= ANNUAL_BUILD_LIMIT_GW["wind"], name="limit_build_wind")

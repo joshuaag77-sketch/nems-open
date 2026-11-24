@@ -373,12 +373,12 @@ def test_combined_cycle_over_turbine_cost_matches_ecp(snapshot):
     cap = capacity.capital_costs(snapshot, 2035, case)
     ratio = cap["gas_cc_new"] / cap["gas_ct_new"]
     assert 1.25 < np.median(ratio) < 1.31
-    old = capacity.CONSTRUCTION_INTEREST
+    old = capacity.CONSTRUCTION_INTEREST, capacity.ECP_BUILD_COST
     try:
-        capacity.CONSTRUCTION_INTEREST = False
+        capacity.CONSTRUCTION_INTEREST, capacity.ECP_BUILD_COST = False, False
         bare = capacity.capital_costs(snapshot, 2035, case)
     finally:
-        capacity.CONSTRUCTION_INTEREST = old
+        capacity.CONSTRUCTION_INTEREST, capacity.ECP_BUILD_COST = old
     assert np.median(bare["gas_cc_new"] / bare["gas_ct_new"]) < 1.24
 
 
