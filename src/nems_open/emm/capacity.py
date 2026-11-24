@@ -254,6 +254,15 @@ SPIN_SHORTFALL_COST = 1000.0    # 1987$/MWh of missing spinning reserve; ECP has
 # derate (uecp.f 38880-39035, UPICFC1). This LP's step for year y is ECP's year 2 of its y - 1 solve, so y - 2.
 # Off, with SPIN_RESERVE (see there).
 ECP_BUILD_CF = False
+# ECP's regional resource bound on new onshore wind and solar (rows L(region)WNINT(year) and L(region)PVINT(year),
+# rLINTle in ecp.ams): builds in a region and planning year <= EPBLDBND (uecp.f EP$INT,32, 19610-19640; ecp.ams
+# 26834), which RENOVR fills with WCAWIEL / WCAPVEL x 0.001 (udat.f 16711-16725, 16826-16843), the capacity renew.f
+# has left in the resource classes on offer (2600, ConsCap). Florida (FRCC) and SRSE have none for wind: in the
+# oracle's 2030 ECP solve their bound is 0 with a dual of -548 and -276. Without it this LP put 79 GW of wind in
+# Florida by 2040, where EIA has none. Off: 100 GW in every region.
+RENEW_BUILD_BOUND = True
+RENEW_BOUND_ARRAY = {"wind": "wcawiel", "solar": "wcapvel"}
+RENEW_BOUND_TAIL = 5.0     # EP$INT,32: 5 x EPBLDBND in the last planning year
 # ECP's battery spinning reserve (ecp.ams ccalc_cEXXX_INT_rRSRge and ccalc_cIX_rRSRge, EP$INT,23/52, CALC_STORAGE_VAL,
 # 5/14): batteries do not choose their reserve in ECP. ReStore hands it a fixed reserve per GW by ECP slice, one for
 # existing storage (NET_STORAGE_SR_EX, on the existing column) and one for a new build (NET_STORAGE_SR_NW, on the
@@ -497,6 +506,14 @@ def ecp_build_profile(snapshot, year: int) -> dict:
     for group, parts in dispatch.WRENEW_PROFILES.items():
         out[group] = dispatch._wrenew_profile(snapshot, parts[0][1], y)
     return out
+
+
+def renewable_build_bound(snapshot, group: str, year: int) -> np.ndarray:
+    """EPBLDBND: new wind (WN) or solar (PV) capacity a region can add in `year`, (25,) GW. RENOVR reads
+    RYR = CURIYR - 1 in the solve of CURIYR = year - 1 (udat.f 16168-16176), so the restart's year - 2, as in
+    ecp_build_profile. These are EIA's remaining resources along the reference run, not depleted by this LP's builds."""
+    y = max(year - 2 - history.FIRST_YEAR, 0)
+    return np.maximum(snapshot[f"WRENEW/{RENEW_BOUND_ARRAY[group]}"][:NUM_R, y].astype(float), 0.0) * 1.0e-3
 
 
 # Debt share and tax rate of a new plant's financing (ecpdaty.xlsx FINANCIAL UPNFDT, UPTXRT). EIA adds its
@@ -1175,8 +1192,12 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         is_coal = xr.DataArray(np.array([1.0 if g == "coal" else 0.0 for g in RETIRABLE]), coords=[TR])
         m.add_constraints(retire.sel(group=list(RETIRABLE)) - rg.sum("rgrp") - forced * is_coal == 0, name="retire_groups")
     retrofit = m.add_variables(lower=0, upper=xr.DataArray(elig_gw * (room > 0), coords=[R]), name="retrofit")
-    bw = m.add_variables(lower=0, upper=room * can_build["wind"], coords=[R], name="build_wind")
-    bs = m.add_variables(lower=0, upper=room * can_build["solar"], coords=[R], name="build_solar")
+    def renewable_upper(g, limit, build_year, times=1.0):
+        bound = times * renewable_build_bound(snapshot, g, build_year) if RENEW_BUILD_BOUND else np.inf
+        return xr.DataArray(np.minimum(np.full(NUM_R, limit), bound), coords=[R])
+
+    bw = m.add_variables(lower=0, upper=renewable_upper("wind", room * can_build["wind"], year), name="build_wind")
+    bs = m.add_variables(lower=0, upper=renewable_upper("solar", room * can_build["solar"], year), name="build_solar")
     bb_upper = np.full(NUM_R, room * can_build["battery"])
     if ECP_STORAGE_BUILDS and room > 0:
         bb_upper = np.minimum(bb_upper, battery_build_limit(snapshot, year, case))
@@ -1488,8 +1509,12 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             fb = m.add_variables(lower=0, upper=xr.DataArray(np.stack([np.full(NUM_R, 100.0 * span if okb.get(g) else 0.0)
                                                                          for g in TG], axis=1), coords=[R, T]),
                                  name=f"build_p{offset}")
-            fw = m.add_variables(lower=0, upper=100.0 * span * okb["wind"], coords=[R], name=f"build_wind_p{offset}")
-            fs = m.add_variables(lower=0, upper=100.0 * span * okb["solar"], coords=[R], name=f"build_solar_p{offset}")
+            times = RENEW_BOUND_TAIL if offset == TAIL_OFFSET else 1.0
+            # wind's second and last explicit year reads BYR = RYR + 1 (oracle 2030: BASN 5 x 6.72, WCAWIEL of 2030)
+            fw = m.add_variables(lower=0, upper=renewable_upper("wind", 100.0 * span * okb["wind"], year + 1, times),
+                                 name=f"build_wind_p{offset}")
+            fs = m.add_variables(lower=0, upper=renewable_upper("solar", 100.0 * span * okb["solar"], year + 1, times),
+                                 name=f"build_solar_p{offset}")
             fbb = m.add_variables(lower=0, upper=100.0 * span * okb["battery"], coords=[R], name=f"build_battery_p{offset}")
             for g, limit in ANNUAL_BUILD_LIMIT_GW.items():
                 v = {"wind": fw, "solar": fs, "battery": fbb}.get(g)

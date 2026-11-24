@@ -157,7 +157,7 @@ def test_planned_units_count_in_their_own_ecp_type_step():
 
 def test_new_wind_and_solar_run_on_the_new_build_profile():
     """ECP values a plant built now on WRENEW's new-build profile (EP$INT UPICFC), not the fleet blend, which is
-    zero where no wind stands today and is held to the STEO benchmark in early years."""
+    held to the STEO benchmark in early years and mixes in offshore wind."""
     import numpy as np
     pytest.importorskip("nems_open.emm.couple")
     from nems_open.emm import dispatch
@@ -170,7 +170,7 @@ def test_new_wind_and_solar_run_on_the_new_build_profile():
     new, fleet = case.build_profile["wind"].mean(axis=(1, 2)), case.profile["wind"].mean(axis=(1, 2))
     assert new.shape == fleet.shape == (25,)
     assert (new > 0.3).all()                      # every region can build wind at its own resource
-    assert new.mean() > fleet.mean()              # new turbines beat the fleet average
+    assert fleet[1] == pytest.approx(new[1])      # Florida has no fleet: the region's own profile, not zero
 
 
 def test_battery_credit_is_ecp_top_eight_hour_ratio():
@@ -703,3 +703,21 @@ def test_gas_curve_scales_ecp_wellhead_price():
     s = Snapshot()
     assert capacity.gas_curve_wellhead(s, 2030) == pytest.approx(1.4248, abs=1e-4)
     assert float(s["NGTDMREP/ngscrv_p"][2030 - 1990]) == pytest.approx(1.4416, abs=1e-4)
+
+
+def test_regional_wind_bound_is_ecps_2030_rows(snapshot):
+    """rLINTle of the oracle's 2030 ECP solve, planning year 1 (plants online 2031), GW: L(region)WNINT1."""
+    bound = capacity.renewable_build_bound(snapshot, "wind", 2031)
+    ecp = {1: 308.016, 2: 0.0, 3: 170.319, 10: 6.043, 15: 0.0, 16: 4.784, 17: 70.127, 22: 0.0, 25: 21.228}
+    for r, gw in ecp.items():
+        assert bound[r - 1] == pytest.approx(gw, abs=1e-3)
+    solar = capacity.renewable_build_bound(snapshot, "solar", 2031)
+    assert solar[0] == pytest.approx(300.073, abs=1e-3) and solar[1] == pytest.approx(341.699, abs=1e-3)
+
+
+def test_profile_where_the_reference_run_has_no_plants(snapshot):
+    """Wind the LP puts where EIA has none runs on the region's new-build factor; it used to make nothing."""
+    case = dispatch.build_case(snapshot, 2040, "none")
+    assert case.capacity["wind"][1] == 0.0
+    assert np.allclose(case.profile["wind"][1], case.build_profile["wind"][1])
+    assert case.profile["wind"][1].max() > 0.0

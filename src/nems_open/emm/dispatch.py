@@ -717,6 +717,10 @@ def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) 
         build_profiles[group] = cfs[0]
         total = np.maximum(sum(caps), 1e-9)
         new_profile = sum(c[:, None, None] * f for c, f in zip(caps, cfs)) / total[:, None, None]
+        # A region where the reference run has none of a type but this fleet does (the capacity LP, a lever) runs it
+        # on the main type's profile. EFD's factors are by region (udat.f CFCOVR 17169-17212), not weighted by what
+        # stands there; the weighted mean is 0 / 0 here and gave new Florida wind no output.
+        new_profile = np.where((sum(caps) > 0.0)[:, None, None], new_profile, cfs[0])
         cap[group] = sum(caps)
         # WRENEW's profiles are for new builds. In EIA's run the wind, solar and hydro generation of the first years is
         # held to the Short-Term Energy Outlook (benchmark constraints within 2%, emmcntl.txt and
