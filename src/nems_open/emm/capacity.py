@@ -27,7 +27,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from nems_open.emm import capacity_credit, db, dispatch, ecp_cost, ecp_load, history, load, plants, regions, retire_groups, technology
+from nems_open.emm import (capacity_credit, db, dispatch, ecp_cost, ecp_load, history, load, plants, regions, retire_groups, rps,
+                           technology)
 from nems_open.paths import INPUT
 from nems_open.xlsx_ranges import named_ranges
 
@@ -317,6 +318,10 @@ RENEW_BOUND_TAIL = 5.0     # EP$INT,32: 5 x EPBLDBND in the last planning year
 INTERMITTENT_CAP = True
 INT_BND, INT_INC, INT_BD0 = 0.85, 0.10, 0.15        # composite_2030 UPINTBND, UPINTINC, UPINTBD0 (ecpdaty.xlsx)
 INT_ESCAPE_COST = 2000.0                             # 1987$/MWh, EP$LINT,4
+# ECP's state RPS rows (rps.py; uecp.f EP$ST_RPS, rGRPSge): 49 tranches, each a share of its state's sales to be met with
+# credits from its own older units, from its regions' other wind, solar and the rest, from linked regions as far as power
+# flows over the link, from end-use generation, or at the compliance payment.
+STATE_RPS = True
 INT_UTILITY = ("wn", "wl", "wf", "pv", "pt", "so")
 # ECP's battery spinning reserve (ecp.ams ccalc_cEXXX_INT_rRSRge and ccalc_cIX_rRSRge, EP$INT,23/52, CALC_STORAGE_VAL,
 # 5/14): batteries do not choose their reserve in ECP. ReStore hands it a fixed reserve per GW by ECP slice, one for
@@ -677,6 +682,7 @@ class YearResult:
     unserved_twh: float = 0.0
     reserve_shortfall_gw: float = 0.0
     credits: dict = field(default_factory=dict)
+    rps_price: dict = field(default_factory=dict)   # (state, tranche id) -> 1987$/MWh credit price
     converted: np.ndarray = field(default_factory=lambda: np.zeros(NUM_R))     # GW coal moved to gas
     price: np.ndarray = None        # (25, 36, BLOCKS) energy price, 1987$/MWh (duals of the regional balance)
     reserve_price: np.ndarray = None  # (25,) 1987$/kW-year, dual of each region's reserve margin (EIA: RMAVG)
@@ -1584,6 +1590,55 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             m.add_constraints(pot - over <= xr.DataArray(int_cap * (cs.net_load_twh * 1000.0 + pv_gwh) - pv_gwh, coords=[R]),
                               name=f"intermittent_cap{tag}")
             operating = operating + (over * INT_ESCAPE_COST).sum()
+        if STATE_RPS and decide and tag in ("", "_tail"):
+            ry = min(cs.year, LAST_MODEL_YEAR)
+            ref_net = _reference_case(snapshot, ry).net_load_twh
+            sales = np.asarray(snapshot["UDATOUT/qelasn"], dtype=float)[:NUM_R, ry - 1990] / 1000.0 \
+                * np.divide(cs.net_load_twh, ref_net, out=np.ones(NUM_R), where=ref_net > 0)
+            mean_cf = {g: (_blocks(lp.profile[g], bh) * (lp.weights * bh)[None, :, None]).sum(axis=(1, 2)) / 8760.0 for g in ("wind", "solar")}
+            new_cf = {g: (_blocks((lp.build_profile or lp.profile)[g], bh) * (lp.weights * bh)[None, :, None]).sum(axis=(1, 2)) / 8760.0
+                      for g in ("wind", "solar")}
+            hy = (cs.monthly_cf["hydro"] * days_in_month[None, :]).sum(axis=1) / days_in_month.sum()
+            data = rps.rows(snapshot, ry, ry if tag == "" else min(year + 1, LAST_MODEL_YEAR), sales, links,
+                            {"WN": mean_cf["wind"], "WF": mean_cf["wind"], "PV": mean_cf["solar"], "PT": mean_cf["solar"], "HY": hy},
+                            lambda y_: ecp_cost.deflator(snapshot, y_))
+            floors_wf = np.maximum(offshore_gw(ry) - plants.capacity_gw(ry, ("WFS",))[:NUM_R], 0.0) * mean_cf["wind"] * 8.76
+            data["left"]["WF"] = data["left"].get("WF", np.zeros(NUM_R)) + floors_wf
+            wf_all = offshore_gw(ry) * mean_cf["wind"] * 8.76
+            other_pv = sum(data["pool"].get(k, np.zeros(NUM_R)) for k in ("PT", "SO"))
+            none = np.zeros(NUM_R)
+            base = {"WN": np.maximum(c0["wind"] * mean_cf["wind"] * 8.76 - wf_all - data["used"].get("WN", none), 0.0),
+                    "PV": np.maximum(c0["solar"] * mean_cf["solar"] * 8.76 - other_pv - data["used"].get("PV", none), 0.0)}
+            fresh = {"WN": new_w * xr.DataArray(new_cf["wind"] * 8.76, coords=[R]), "PV": new_s * xr.DataArray(new_cf["solar"] * 8.76, coords=[R])}
+            J = pd.Index(np.arange(len(data["cols"])), name="rcol")
+            I_ = pd.Index(np.arange(len(data["tranches"])), name="tranche")
+            rq = m.add_variables(lower=0, coords=[J], name=f"rps_credit{tag}")
+            esc = m.add_variables(lower=0, coords=[I_], name=f"rps_escape{tag}")
+            m.add_constraints((rq * xr.DataArray(data["coef"], coords=[I_, J])).sum("rcol") + esc
+                              >= xr.DataArray(data["need"] - data["const"], coords=[I_]), name=f"state_rps{tag}")
+            for k in sorted({c[1] for c in data["cols"]}):
+                use = np.zeros((NUM_R, len(J)))
+                for j, (_, kind, a, _b) in enumerate(data["cols"]):
+                    if kind == k:
+                        use[a, j] = 1.0
+                lhs = (rq * xr.DataArray(use, coords=[R, J])).sum("rcol")
+                if k in fresh:
+                    m.add_constraints(lhs - fresh[k] <= xr.DataArray(base[k], coords=[R]), name=f"rps_pool_{k}{tag}")
+                else:
+                    m.add_constraints(lhs <= xr.DataArray(data["left"][k], coords=[R]), name=f"rps_pool_{k}{tag}")
+            pairs = sorted({(a, b) for _, _, a, b in data["cols"] if b >= 0})
+            if pairs:
+                Q = pd.Index(np.arange(len(pairs)), name="pair")
+                use = np.zeros((len(pairs), len(J)))
+                on_link = np.zeros((len(pairs), len(L)))
+                for q_, (a, b) in enumerate(pairs):
+                    for j, (_, _, x_, y_) in enumerate(data["cols"]):
+                        use[q_, j] = 1.0 if (x_, y_) == (a, b) else 0.0
+                    on_link[q_, data["link"][(a, b)]] = 1.0
+                flow = (trade * hours_w).sum(["day", "block"]) * 1.0e-3
+                m.add_constraints((rq * xr.DataArray(use, coords=[Q, J])).sum("rcol")
+                                  - (flow * xr.DataArray(on_link, coords=[Q, L])).sum("link") <= 0, name=f"rps_trade{tag}")
+            operating = operating + (esc * xr.DataArray(data["price"] * 1000.0, coords=[I_])).sum()
         gas_steps = None
         if ECP_GAS_CURVE and tag in ("", "_tail"):
             # ECP's gas supply steps (cSUNGX on rFUELNGXle): the burn fills them cheapest first; each step adds
@@ -1918,6 +1973,9 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     hours = (case.weights * BLOCK_HOURS)[None, :, None]
     out.price = np.asarray(m.constraints["balance"].dual.transpose("region", "day", "block").values) / hours
     out.reserve_price = np.asarray(m.constraints["reserve_margin"].dual.values) / 1000.0     # k$/GW -> $/kW
+    if "state_rps" in m.constraints:
+        trs = [tr for tr in rps.tranches() if rps.requirement_share(tr, min(year, LAST_MODEL_YEAR)).sum() > 0]
+        out.rps_price = {(tr.state, tr.id): float(v) / 1000.0 for tr, v in zip(trs, m.constraints["state_rps"].dual.values)}
     if p1["spin"] and "slices" in p1["spin"]:
         dual = np.zeros((NUM_R, 9))
         for k in range(9):
