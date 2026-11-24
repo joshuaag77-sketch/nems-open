@@ -920,7 +920,7 @@ def capacity_credits(case, cap0: dict, load_hr: np.ndarray, month_of_day: np.nda
         cap = cap0[group]
         if cap.sum() <= 0:
             cap = np.ones(NUM_R)
-        return (cap[:, None, None] * case.profile[group]).sum(axis=0) / cap.sum()       # national CF by day and hour
+        return (cap[:, None, None] * (case.credit_profile or case.profile)[group]).sum(axis=0) / cap.sum()       # national CF by day and hour
 
     cf = {g: mix(g) for g in ("wind", "solar")}
     net = load_nat - cap0["wind"].sum() * cf["wind"] - cap0["solar"].sum() * cf["solar"]
@@ -941,7 +941,7 @@ def capacity_credits(case, cap0: dict, load_hr: np.ndarray, month_of_day: np.nda
     if ECP_RESERVE:      # ECP's own reserve coefficients (capacity_credit: RNWFAC, UPCCR(PS), CAP_CREDIT_LDC)
         credits["hydro"] = capacity_credit.HYDRO_CREDIT
         credits["pumped"] = capacity_credit.PUMPED_CREDIT
-        credits["battery"] = capacity_credit.storage_credits(load_hr, cap0, case.profile)
+        credits["battery"] = capacity_credit.storage_credits(load_hr, cap0, case.credit_profile or case.profile)
     return credits
 
 
@@ -1402,7 +1402,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         if ECP_RESERVE:      # CAP_CREDIT's net load on ECP's adjusted capacities (the reference run's adjustment)
             off = capacity_credit.cap_adjustment(snapshot, cs.year)
             net_cap = {g: np.maximum(c0[g] + off[g], 0.0) for g in capacity_credit.INTERMITTENT}
-        icc = capacity_credit.credits(load_rm, c0, cs.profile, cs.weights, net_cap)
+        icc = capacity_credit.credits(load_rm, c0, cs.credit_profile or cs.profile, cs.weights, net_cap)
         credits.update({"wind_by_region": icc["wind"], "solar_by_region": icc["solar"]})
         req = margin * icc["peak"] + icc["net_peak"]
         if ECP_RESERVE:
@@ -1468,7 +1468,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
             adj = ecp_load.firm_contracts(cs.year) if load_rm is not load_hr else None
             # LDSM slices on net load, ECP's restart intermittent capacity (net_cap) on this year's profiles
             sub = net_cap if net_cap is not None else c0
-            net_hr = load_rm - sum(sub[g][:, None, None] * cs.profile[g] for g in capacity_credit.INTERMITTENT)
+            net_hr = load_rm - sum(sub[g][:, None, None] * (cs.credit_profile or cs.profile)[g] for g in capacity_credit.INTERMITTENT)
             storage_sr = {}
             for name in STORAGE_HOURS:
                 if name == "battery" and ECP_STORAGE_SR:
@@ -1735,6 +1735,9 @@ class CapacityPath:
         snap, u = self.snapshot, plants.load_units()
         case = case if case is not None else dispatch.build_case(snap, year, "none")
         case = replace(case, credit_share=self.credit_share(year))
+        if dispatch.FLEET_VINTAGE_CF and case.profile["wind"].shape[-1] == 24:
+            # the plants standing when the year is planned, at their own vintages
+            case = replace(case, profile=dispatch.fleet_profiles(snap, year, self.cap, self.renewable_builds()))
         grp = None
         if self.groups:
             if self.price is None:
@@ -1759,6 +1762,15 @@ class CapacityPath:
         self.results[year] = res
         self.next_year = year + 1
         return res
+
+    def renewable_builds(self) -> dict:
+        """{wind, solar: {online year: (25,) GW}}: the reference run's builds before this path, then its own."""
+        out = {}
+        first = min(self.results, default=self.next_year)
+        for g in dispatch.WRENEW_PROFILES:
+            out[g] = dispatch.reference_builds(self.snapshot, g, first - 1)
+            out[g].update({t: r.builds[g] for t, r in self.results.items()})
+        return out
 
     def wind_resource(self, year: int) -> dict:
         """renew.f's wind resource for `year` with this path's builds: onshore capacity is the wind group less the

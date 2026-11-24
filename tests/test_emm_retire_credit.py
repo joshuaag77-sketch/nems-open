@@ -92,9 +92,9 @@ def test_credit_saturates_with_capacity(snapshot, case):
     load = case.net_load_twh[:, None, None] * 1000.0 * case.shapes
     small = dict(cap, wind=cap["wind"] * 0.01, solar=cap["solar"] * 0.01)
     big = dict(cap, solar=cap["solar"] * 4.0)
-    c_small = capacity_credit.credits(load, small, case.profile, case.weights)
-    c_now = capacity_credit.credits(load, cap, case.profile, case.weights)
-    c_big = capacity_credit.credits(load, big, case.profile, case.weights)
+    c_small = capacity_credit.credits(load, small, case.credit_profile, case.weights)
+    c_now = capacity_credit.credits(load, cap, case.credit_profile, case.weights)
+    c_big = capacity_credit.credits(load, big, case.credit_profile, case.weights)
     w = cap["solar"]
     avg = lambda c: (c["solar"] * w).sum() / w.sum()
     assert avg(c_big) < avg(c_now) < avg(c_small)             # solar's credit falls as it is built
