@@ -88,3 +88,13 @@ def test_conventional_cc_is_dearer_than_ac_and_has_its_own_steps(snap):
     cc = capacity.capital_costs(snap, 2032, case, {}, None, {"gas_cc_new": "CC"})["gas_cc_new"]
     assert 1.0 < np.median(cc / ac) < 1.15
     assert [round(b, 2) for b, _ in capacity.build_steps("CC", [0.0] * 5)] == [5.0, 3.0, 4.0]
+
+
+def test_monthly_days_keep_the_year(snap):
+    from nems_open.emm import dispatch
+    case = dispatch.build_case(snap, 2031, "none")
+    lp = capacity.monthly_days(case)
+    assert lp.weights.sum() == pytest.approx(365.0) and lp.shapes.shape == (25, 12, 24)
+    for a, b in ((case.shapes, lp.shapes), (case.profile["wind"], lp.profile["wind"])):
+        full = (a * case.weights[None, :, None]).sum(axis=(1, 2))
+        assert (b * lp.weights[None, :, None]).sum(axis=(1, 2)) == pytest.approx(full)
