@@ -100,6 +100,16 @@ def offshore_adds(group: str, year: int) -> float:
     return gw + (float(plants.floor_adds_gw(year, ("WF",)).sum()) if STATE_FLOORS else 0.0)
 
 
+def offshore_gw(year: int) -> np.ndarray:
+    """Offshore wind in service at the end of `year` from the plant file and the floors, (25,) GW."""
+    out = plants.capacity_gw(year, ("WFS",))[:NUM_R].copy()
+    if STATE_FLOORS:
+        f = plants.floors()
+        m = (f["ecp_type"] == "WF") & (f["online_year"] <= year) & (f["retire_year"] > year)
+        np.add.at(out, f["region"][m] - 1, f["mw"][m] / 1000.0)
+    return out
+
+
 STEP_FLOOR_OF = {"AC": "CC", "AT": "CT"}     # advanced type -> conventional type whose ESTCPADD it may not fall below
 # ucape.f ELSTCAP keeps a history per ECP type (ESTYRADD, udat.f 8276, from each unit's own ECPcd): AC counts only AC,
 # CC counts CC plus EC (ucape.f 62), and then ESTCPADD(AC) = max(ESTCPADD(AC), ESTCPADD(CC)) (ucape.f 72-73; AT and CT
@@ -279,6 +289,9 @@ ECP_BUILD_CF = False
 # oracle's 2030 ECP solve their bound is 0 with a dual of -548 and -276. Without it this LP put 79 GW of wind in
 # Florida by 2040, where EIA has none. Off: 100 GW in every region.
 RENEW_BUILD_BOUND = True
+# Wind's bound, cost multiplier and capacity factor from this path's own builds (emm/wind_resource.py, renew.f's classes).
+# Off: the reference run's. Solar's bound is still the reference run's (SolarMisc is not ported).
+OWN_WIND_RESOURCE = True
 RENEW_BOUND_ARRAY = {"wind": "wcawiel", "solar": "wcapvel"}
 RENEW_BOUND_TAIL = 5.0     # EP$INT,32: 5 x EPBLDBND in the last planning year
 # ECP's battery spinning reserve (ecp.ams ccalc_cEXXX_INT_rRSRge and ccalc_cIX_rRSRge, EP$INT,23/52, CALC_STORAGE_VAL,
@@ -529,7 +542,7 @@ def ecp_build_profile(snapshot, year: int) -> dict:
 def renewable_build_bound(snapshot, group: str, year: int) -> np.ndarray:
     """EPBLDBND: new wind (WN) or solar (PV) capacity a region can add in `year`, (25,) GW. RENOVR reads
     RYR = CURIYR - 1 in the solve of CURIYR = year - 1 (udat.f 16168-16176), so the restart's year - 2, as in
-    ecp_build_profile. These are EIA's remaining resources along the reference run, not depleted by this LP's builds."""
+    ecp_build_profile. These are EIA's remaining resources along the reference run; OWN_WIND_RESOURCE replaces wind's."""
     y = max(year - 2 - history.FIRST_YEAR, 0)
     return np.maximum(snapshot[f"WRENEW/{RENEW_BOUND_ARRAY[group]}"][:NUM_R, y].astype(float), 0.0) * 1.0e-3
 
@@ -1000,7 +1013,7 @@ def construction_factor(snapshot, code: str, year: int, rate: float) -> float:
     return book if book > 0 else 1.0
 
 
-def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
+def capital_costs(snapshot, year: int, case, parts: dict | None = None, resource: dict | None = None) -> dict:
     """Annual cost of a new plant built in `year`, by build group: {group: (25,) k$ per GW-year}, net of the ITC
     and PTC, with ECP's learned overnight cost and the year's discount rate."""
     params = technology.type_parameters()
@@ -1021,6 +1034,8 @@ def capital_costs(snapshot, year: int, case, parts: dict | None = None) -> dict:
         rate = discount_rate(snapshot, cost_year) + risk_premium(snapshot, cost_year, code)
         if CONSTRUCTION_INTEREST:
             ovn = ovn * construction_factor(snapshot, code, cost_year, construction_rate(snapshot, cost_year, code))
+        if g == "wind" and resource is not None:
+            ovn = ovn * resource["cost"]         # UPWNCCST holds renew.f's ConsLT of the reference path
         annual = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) + params["fom"][i]
         if parts is not None:      # the capital charge alone, k$ per GW-year (what ECP's build steps scale)
             parts[g] = ovn * (1.0 - itc) * _crf(rate, params["economic_life"][i]) * 1.0e3
@@ -1076,17 +1091,21 @@ def _reference_case(snapshot, year: int):
 
 def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progress: bool = False,
                groups: dict | None = None, decide: bool = True, case=None, horizon: bool | None = None,
-               recent_adds: dict | None = None) -> YearResult:
+               recent_adds: dict | None = None, resource: dict | None = None) -> YearResult:
     """One year of the loop. `groups` (dispatch group -> retire_groups.Groups) splits retirements into ECP's
     retirement groups; without it a whole region and type retires at one cost. decide=False solves dispatch
     only (no builds, retirements, retrofits or conversions), to get prices. horizon: plan over ECP's horizon
     (HORIZON, the default) or this year only. recent_adds: build group -> the last five years' national additions
-    (GW, oldest first) for ECP's build steps (BUILD_STEPS); without it the steps start from ESTMNADD."""
+    (GW, oldest first) for ECP's build steps (BUILD_STEPS); without it the steps start from ESTMNADD. resource:
+    wind_resource.for_build_year of this path (OWN_WIND_RESOURCE); without it the reference run's resource."""
     horizon = HORIZON if horizon is None else horizon
     y = year - history.FIRST_YEAR
     case = case if case is not None else dispatch.build_case(snapshot, year, "none")
     if ECP_BUILD_CF and case.build_profile is not None and case.build_profile["wind"].shape[-1] == 24:
         case = replace(case, build_profile=ecp_build_profile(snapshot, year))
+    if resource is not None and case.build_profile is not None:
+        scaled = np.minimum(case.build_profile["wind"] * resource["cf"][:, None, None], 1.0)
+        case = replace(case, build_profile=dict(case.build_profile, wind=scaled))
     adds, rets = dated_changes(year)
     rule = epa111()
     rets = epa111_retirements(snapshot, year, cap_in, rets)
@@ -1097,7 +1116,7 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
     codes = technology.ecp_codes()
     hr_new_all = technology.new_heat_rate(year)        # UPHTRT (ucape.f 625-641): UPPHRT0 for every gas type
     capital_only = {}
-    capital = capital_costs(snapshot, year, case, capital_only)
+    capital = capital_costs(snapshot, year, case, capital_only, resource)
 
     # --- characteristics of the groups ---
     heat, vom, oil_share = dict(case.heat_rate), dict(case.vom), dict(case.oil_share)
@@ -1214,7 +1233,10 @@ def solve_year(snapshot, year: int, cap_in: dict, solver: str = "highs", progres
         m.add_constraints(retire.sel(group=list(RETIRABLE)) - rg.sum("rgrp") - forced * is_coal == 0, name="retire_groups")
     retrofit = m.add_variables(lower=0, upper=xr.DataArray(elig_gw * (room > 0), coords=[R]), name="retrofit")
     def renewable_upper(g, limit, build_year, times=1.0):
-        bound = times * renewable_build_bound(snapshot, g, build_year) if RENEW_BUILD_BOUND else np.inf
+        bound = np.inf
+        if RENEW_BUILD_BOUND:
+            own = resource if g == "wind" else None
+            bound = times * (own["bound"] if own is not None else renewable_build_bound(snapshot, g, build_year))
         return xr.DataArray(np.minimum(np.full(NUM_R, limit), bound), coords=[R])
 
     bw = m.add_variables(lower=0, upper=renewable_upper("wind", room * can_build["wind"], year), name="build_wind")
@@ -1721,7 +1743,8 @@ class CapacityPath:
             flat = self.price.reshape(NUM_R, -1)
             grp = {g: retire_groups.build(year, g, self.alive, unit_costs(case, g), flat, hours, 1.0 - case.avail[g][0])
                    for g in RETIRABLE}
-        res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case, recent_adds=self.recent_adds(year))
+        res = solve_year(snap, year, self.cap, self.solver, groups=grp, case=case, recent_adds=self.recent_adds(year),
+                         resource=self.wind_resource(year) if OWN_WIND_RESOURCE else None)
         if not res.status.startswith("ok"):
             raise RuntimeError(f"{year}: {res.status}")
         if self.groups:
@@ -1736,6 +1759,14 @@ class CapacityPath:
         self.results[year] = res
         self.next_year = year + 1
         return res
+
+    def wind_resource(self, year: int) -> dict:
+        """renew.f's wind resource for `year` with this path's builds: onshore capacity is the wind group less the
+        offshore plant-file units and floors."""
+        from nems_open.emm import wind_resource
+        first = min(self.results, default=year)
+        gw = {t: r.capacity["wind"] - offshore_gw(t) for t, r in self.results.items()}
+        return wind_resource.for_build_year(self.snapshot, year, first, gw, {t: r.builds["wind"] for t, r in self.results.items()})
 
     def recent_adds(self, year: int, n: int = 5) -> dict:
         """Build group -> national GW added in each of the n years before `year` (oldest first), for ECP's build
