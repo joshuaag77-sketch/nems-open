@@ -157,7 +157,7 @@ def test_planned_units_count_in_their_own_ecp_type_step():
 
 def test_new_wind_and_solar_run_on_the_new_build_profile():
     """ECP values a plant built now on WRENEW's new-build profile (EP$INT UPICFC), not the fleet blend, which is
-    zero where no wind stands today and is held to the STEO benchmark in early years."""
+    held to the STEO benchmark in early years and mixes in offshore wind."""
     import numpy as np
     pytest.importorskip("nems_open.emm.couple")
     from nems_open.emm import dispatch
@@ -170,7 +170,7 @@ def test_new_wind_and_solar_run_on_the_new_build_profile():
     new, fleet = case.build_profile["wind"].mean(axis=(1, 2)), case.profile["wind"].mean(axis=(1, 2))
     assert new.shape == fleet.shape == (25,)
     assert (new > 0.3).all()                      # every region can build wind at its own resource
-    assert new.mean() > fleet.mean()              # new turbines beat the fleet average
+    assert fleet[1] > 0.3                         # Florida has no fleet: the region's own profile, not zero
 
 
 def test_battery_credit_is_ecp_top_eight_hour_ratio():
@@ -256,7 +256,7 @@ def test_intermittent_credit_matches_ecp_2030(snapshot):
     cap = capacity.initial_capacity(snapshot, 2030)
     off = cc.cap_adjustment(snapshot, 2030)
     net_cap = {g: np.maximum(cap[g] + off[g], 0.0) for g in cc.INTERMITTENT}
-    c = cc.credits(sy, cap, case.profile, case.weights, net_cap)
+    c = cc.credits(sy, cap, case.credit_profile, case.weights, net_cap)
     ew, es = np.array(ECP_WIND_2030), np.array(ECP_SOLAR_2030)
     mw, ms = cap["wind"] > 0.5, cap["solar"] > 0.5
     assert np.abs(c["wind"] - ew)[mw].mean() < 0.04
@@ -300,7 +300,7 @@ def test_requirement_on_ldsm_load_matches_ecp(snapshot):
     assert sy.max(axis=(1, 2))[6] == pytest.approx(29.3, abs=0.1)
     case = dispatch.build_case(snapshot, 2033, "none")
     cap = capacity.initial_capacity(snapshot, 2032)
-    icc = cc.credits(sy, cap, case.profile, case.weights)
+    icc = cc.credits(sy, cap, case.credit_profile, case.weights)
     tab = db.table("V_EMM_ECPDAT_REG")
     o = np.argsort(tab["EMM_REG"])
     margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[o[tab["EMM_REG"][o] <= 25]])
@@ -327,7 +327,7 @@ def test_ldsm_load_follows_the_run_and_flat_load_lifts_the_requirement(snapshot)
     margin = np.nan_to_num(np.asarray(tab["EPMRM"], dtype=float)[o[tab["EMM_REG"][o] <= 25]])
 
     def req(load):
-        icc = cc.credits(load, cap, case.profile, case.weights)
+        icc = cc.credits(load, cap, case.credit_profile, case.weights)
         return margin * icc["peak"] + icc["net_peak"]
 
     lift = req(ecp_load.follow_run(sy, ref + flat, ref, flat)) - req(sy)
@@ -373,12 +373,12 @@ def test_combined_cycle_over_turbine_cost_matches_ecp(snapshot):
     cap = capacity.capital_costs(snapshot, 2035, case)
     ratio = cap["gas_cc_new"] / cap["gas_ct_new"]
     assert 1.25 < np.median(ratio) < 1.31
-    old = capacity.CONSTRUCTION_INTEREST
+    old = capacity.CONSTRUCTION_INTEREST, capacity.ECP_BUILD_COST
     try:
-        capacity.CONSTRUCTION_INTEREST = False
+        capacity.CONSTRUCTION_INTEREST, capacity.ECP_BUILD_COST = False, False
         bare = capacity.capital_costs(snapshot, 2035, case)
     finally:
-        capacity.CONSTRUCTION_INTEREST = old
+        capacity.CONSTRUCTION_INTEREST, capacity.ECP_BUILD_COST = old
     assert np.median(bare["gas_cc_new"] / bare["gas_ct_new"]) < 1.24
 
 
@@ -678,7 +678,7 @@ def test_spin_requirement_matches_ecp_2031(snapshot):
     case = dispatch.build_case(snapshot, 2031, "none")
     load = ecp_load.follow_run(sy, case.net_load_twh, capacity._reference_case(snapshot, 2031).net_load_twh, case.flat_twh)
     c0, off = capacity.initial_capacity(snapshot, 2030), cc.cap_adjustment(snapshot, 2031)
-    net = load - sum(np.maximum(c0[g] + off[g], 0.0)[:, None, None] * case.profile[g] for g in cc.INTERMITTENT)
+    net = load - sum(np.maximum(c0[g] + off[g], 0.0)[:, None, None] * case.credit_profile[g] for g in cc.INTERMITTENT)
     req = capacity.spin_requirement(load, case.weights, np.repeat(np.arange(12), 3), 1, ecp_load.firm_contracts(2031), net)
     total = (req * case.weights[None, :, None]).sum() / (24.0 * case.weights.sum())
     assert total == pytest.approx(100.5, rel=0.02)
@@ -703,3 +703,46 @@ def test_gas_curve_scales_ecp_wellhead_price():
     s = Snapshot()
     assert capacity.gas_curve_wellhead(s, 2030) == pytest.approx(1.4248, abs=1e-4)
     assert float(s["NGTDMREP/ngscrv_p"][2030 - 1990]) == pytest.approx(1.4416, abs=1e-4)
+
+
+def test_regional_wind_bound_is_ecps_2030_rows(snapshot):
+    """rLINTle of the oracle's 2030 ECP solve, planning year 1 (plants online 2031), GW: L(region)WNINT1."""
+    bound = capacity.renewable_build_bound(snapshot, "wind", 2031)
+    ecp = {1: 308.016, 2: 0.0, 3: 170.319, 10: 6.043, 15: 0.0, 16: 4.784, 17: 70.127, 22: 0.0, 25: 21.228}
+    for r, gw in ecp.items():
+        assert bound[r - 1] == pytest.approx(gw, abs=1e-3)
+    solar = capacity.renewable_build_bound(snapshot, "solar", 2031)
+    assert solar[0] == pytest.approx(300.073, abs=1e-3) and solar[1] == pytest.approx(341.699, abs=1e-3)
+
+
+def test_profile_where_the_reference_run_has_no_plants(snapshot):
+    """Wind the LP puts where EIA has none runs on the region's new-build factor; it used to make nothing."""
+    case = dispatch.build_case(snapshot, 2040, "none")
+    assert case.capacity["wind"][1] == 0.0
+    assert np.allclose(case.credit_profile["wind"][1], case.build_profile["wind"][1])
+    assert case.profile["wind"][1].mean() > 0.3
+
+
+@pytest.mark.parametrize("year", [2030, 2035, 2040, 2050])
+def test_fleet_factor_by_vintage_is_eias_generation(snapshot, year):
+    """Every unit at its own factor (FLEET_VINTAGE_CF): EIA's wind generation by region on EIA's capacity. UCRWN, EIA's
+    wind curtailment, is about 1 TWh. The half-year start of model builds is the rest of the difference."""
+    case = dispatch.build_case(snapshot, year, "none")
+    y = year - 1990
+    for group, types, tol in (("wind", ("wn", "wf"), 0.025), ("solar", ("pv", "pt", "so"), 0.015)):
+        ours = (case.capacity[group][:, None, None] * case.profile[group] * case.weights[None, :, None]).sum(axis=(1, 2)) / 1000.0
+        eia = sum(snapshot[f"UEFDOUT/ugn{t}nr"][:, :25, y].astype(float).sum(axis=0) for t in types)
+        assert ours.sum() == pytest.approx(eia.sum(), rel=tol)
+        if year >= 2035:
+            assert np.abs(ours - eia).sum() < 0.03 * eia.sum()
+
+
+def test_state_floors_are_wfloors(snapshot):
+    """V_EMM_WFLOORS gives EIA's offshore additions exactly, 2030-2050 (restart UCAPWF, not used by the port)."""
+    from nems_open.emm import plants
+    wf = snapshot["UDATOUT/ucapwfu"][:25].astype(float) + snapshot["UDATOUT/ucapwfn"][:25].astype(float)
+    for year in range(2028, 2051):
+        eia = wf[:, year - 1990] - wf[:, year - 1991]
+        assert np.allclose(plants.floor_adds_gw(year, ("WF",)), eia, atol=2e-3), year
+    adds, _ = capacity.dated_changes(2035)
+    assert adds["wind"].sum() == pytest.approx(2.9, abs=0.01)

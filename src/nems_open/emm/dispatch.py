@@ -130,6 +130,13 @@ CCS_HEAT_RATE_MAX = 20000.0  # Btu/kWh; with-capture heat rates above this in th
 BASE_YEAR = 2024             # last year of operating history in the plant file
 BENCHMARK_LAST = 2026        # EIA holds the early years to the Short-Term Energy Outlook
 BENCHMARK_FADE = 3           # years over which the stand-in for that benchmark fades out after BENCHMARK_LAST
+# Each wind and solar unit runs at its own annual factor for life, with the region's hourly shape. udat.f 6890-6950: an
+# existing unit (vintage 1) keeps the plant file's W_CF and only its months move with AVG_x_CF; a planned one (vintage 2,
+# the state floors included) takes AVG_x_CF of its online year, which is WRENEW's of the year before (CFYR, 5430); a model
+# build keeps EPIACF of its solve (uecp.f 26195), WRENEW's of two years before. No outage rate is taken off (7023
+# W_CFA = W_CF; 10189-10197 MAXCF = AVGCF). On: the fleet profile is the capacity-weighted factor of those cohorts. Off:
+# all capacity at this year's new-build factor less UP_XFOR, with the plant file's factor fading out after BENCHMARK_LAST.
+FLEET_VINTAGE_CF = True
 UNSERVED_COST = 1000.0       # 1987$/MWh
 HOURS_PER_YEAR = 8760.0
 
@@ -345,6 +352,9 @@ class DispatchCase:
     # wind and solar -> (25, 36, hours) capacity factor of a plant built now: WRENEW's new-build profile of the main
     # type (wn, pv) less its outage rate, as ECP values new intermittent capacity (uecp.f EP$INT: UPICFC). None: profile.
     build_profile: dict = None
+    # wind and solar -> (25, 36, hours) WRENEW's profile over the region's types, what CAP_CREDIT works on (its capacity
+    # is adjusted, WN_CAP_ADJ, to that level). None: profile.
+    credit_profile: dict = None
     coal_share: dict = None             # thermal group -> (25,) share of its Btu that is coal (cofire; None: none)
     capture_net: np.ndarray = None      # (25,) coal_ccs capacity that generates per GW of reported capacity (None: 1)
     coal_classes: object = None         # coal_supply.CoalClasses (COAL_BY_CONFIGURATION; None: one coal group per region)
@@ -552,6 +562,96 @@ def _wrenew_profile(snapshot, key, y) -> np.ndarray:
     return a.transpose(0, 2, 1, 3).reshape(NUM_R, 36, 24)
 
 
+_ANNUAL_CF: dict = {}
+START_OF_FLOORS = 2026
+
+
+def _annual_cf(snapshot, key: str) -> np.ndarray:
+    """Annual mean of a WRENEW hourly factor, (25, 61): AVG_x_CF (udat.f 5445-5450)."""
+    if (id(snapshot), key) not in _ANNUAL_CF:
+        day = load.day_weights().reshape(36).astype(float).reshape(12, 3)         # month, day type
+        a = snapshot[f"WRENEW/{key}"][:NUM_R].astype(float).mean(axis=-1)         # (25, year, day type, month)
+        _ANNUAL_CF[id(snapshot), key] = np.einsum("rydm,md->ry", a, day) / day.sum()
+    return _ANNUAL_CF[id(snapshot), key]
+
+
+def vintage_cf(snapshot, year: int, part: tuple, total: np.ndarray, builds: dict) -> np.ndarray:
+    """Capacity-weighted annual factor of one wind or solar type's fleet, (25,) (FLEET_VINTAGE_CF).
+    part: an entry of WRENEW_PROFILES. total: (25,) GW. builds: {online year: (25,) GW} of model builds, which weigh what
+    the plant file and the floors do not cover."""
+    _, key, code = part
+    avg = _annual_cf(snapshot, key)
+    u = plants.load_units()
+    gw, gen = np.zeros(NUM_R), np.zeros(NUM_R)
+    on = _online(year) & (u.efd_type == code)
+    r = u.region[on] - 1
+    mw = u.summer_mw[on] / 1000.0
+    of_year = np.clip(np.asarray(u.online_year[on]).astype(int) - 1 - history.FIRST_YEAR, 0, avg.shape[1] - 1)
+    cf = np.where(np.asarray(u.vintage[on]) == plants.VINTAGE_EXISTING, u.capacity_factor[on], avg[r, of_year])
+    np.add.at(gw, r, mw)
+    np.add.at(gen, r, mw * cf)
+    if code == "WFS":
+        for t in range(START_OF_FLOORS, year + 1):
+            f = plants.floor_adds_gw(t, ("WF",))
+            gw += f
+            gen += f * avg[:, t - 1 - history.FIRST_YEAR]
+    built, built_gen = np.zeros(NUM_R), np.zeros(NUM_R)
+    for t, b in builds.items():
+        if t <= year:
+            built += b
+            built_gen += b * avg[:, t - 2 - history.FIRST_YEAR]
+    now = avg[:, max(year - 2 - history.FIRST_YEAR, 0)]
+    built_cf = np.divide(built_gen, built, out=now.copy(), where=built > 1e-6)
+    file_cf = np.divide(gen, gw, out=now.copy(), where=gw > 1e-9)
+    old = np.minimum(gw, total)
+    return np.divide(old * file_cf + (total - old) * built_cf, total, out=now.copy(), where=total > 1e-9)
+
+
+def reference_builds(snapshot, group: str, last: int = 2050) -> dict:
+    """{online year: (25,) GW} the reference run's main wind or solar type adds beyond the plant file, from 2025."""
+    prefix, _, code = WRENEW_PROFILES[group][0]
+    out, before = {}, None
+    for t in range(2024, last + 1):
+        beyond = _ucap(snapshot, (prefix,), t - history.FIRST_YEAR) - _capacity_gw(t, (code,))[:NUM_R]
+        if before is not None:
+            out[t] = np.maximum(beyond - before, 0.0)
+        before = beyond
+    return out
+
+
+def fleet_profiles(snapshot, year: int, total: dict = None, builds: dict = None) -> dict:
+    """Hourly profile of the wind and solar fleets, {group: (25, 36, 24)} (FLEET_VINTAGE_CF). total: {group: (25,) GW} in
+    place of the reference run's; what the plant file and the floors do not hold is then the main type. builds: {group:
+    {online year: (25,) GW}} of the model builds (default the reference run's)."""
+    y = year - history.FIRST_YEAR
+    out = {}
+    for group, parts in WRENEW_PROFILES.items():
+        made = (builds or {}).get(group)
+        made = reference_builds(snapshot, group, year) if made is None else made
+        if total is None:
+            caps = [_in_service(snapshot, (prefix,), (code,), year) for prefix, _, code in parts]
+        else:
+            rest = np.asarray(total[group], dtype=float).copy()
+            others = []
+            for _, _, code in parts[1:]:
+                gw = _capacity_gw(year, (code,))[:NUM_R].copy()
+                if code == "WFS":
+                    gw = gw + sum(plants.floor_adds_gw(t, ("WF",)) for t in range(START_OF_FLOORS, year + 1))
+                gw = np.minimum(gw, rest)
+                rest = rest - gw
+                others.append(gw)
+            caps = [rest] + others
+        all_gw = sum(caps)
+        profile = np.zeros((NUM_R, 36, 24))
+        for k, (part, c) in enumerate(zip(parts, caps)):
+            weight = np.divide(c, all_gw, out=np.full(NUM_R, 1.0 if k == 0 else 0.0), where=all_gw > 1e-9)
+            level = np.maximum(_annual_cf(snapshot, part[1])[:, y], 1e-9)
+            own = vintage_cf(snapshot, year, part, c, made if k == 0 else {})
+            profile += (weight * own / level)[:, None, None] * _wrenew_profile(snapshot, part[1], y)
+        out[group] = np.minimum(profile, 1.0)
+    return out
+
+
 def build_links(snapshot, year: int) -> dict:
     """Transmission between EMM regions from the ETT pre-processor table (V_EMM_PRETTIN).
 
@@ -628,7 +728,7 @@ def restart_capture_capacity(snapshot, year: int) -> dict:
     return {g: _ucap(snapshot, CAPACITY_PREFIXES[g], y) for g in CAPTURE_GROUPS}
 
 
-def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) -> DispatchCase:
+def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None, builds: dict = None) -> DispatchCase:
     """Assemble a year's inputs from the reference run's capacity and fuel prices.
 
     trade="none": regions meet their own net load from sales (demand.net_load_twh).
@@ -637,7 +737,7 @@ def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) 
     capacity: {group: (25,) GW} in place of the reference run's (the capacity LP's fleet, a lever). Everything that
     depends on the fleet's make-up is built on it: the existing / new split behind each group's heat rate and VOM,
     the heat-rate tiers, the new-CC share EPA 111 caps, the cofired units' coal share. The case's capacity is
-    `capacity` itself.
+    `capacity` itself. builds: {group: {online year: (25,) GW}}, that fleet's wind and solar builds (fleet_profiles).
     """
     y = year - history.FIRST_YEAR
     cap = {g: _in_service(snapshot, p, EXISTING_TYPES.get(g), year) for g, p in CAPACITY_PREFIXES.items()}
@@ -717,6 +817,10 @@ def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) 
         build_profiles[group] = cfs[0]
         total = np.maximum(sum(caps), 1e-9)
         new_profile = sum(c[:, None, None] * f for c, f in zip(caps, cfs)) / total[:, None, None]
+        # A region where the reference run has none of a type but this fleet does (the capacity LP, a lever) runs it
+        # on the main type's profile. EFD's factors are by region (udat.f CFCOVR 17169-17212), not weighted by what
+        # stands there; the weighted mean is 0 / 0 here and gave new Florida wind no output.
+        new_profile = np.where((sum(caps) > 0.0)[:, None, None], new_profile, cfs[0])
         cap[group] = sum(caps)
         # WRENEW's profiles are for new builds. In EIA's run the wind, solar and hydro generation of the first years is
         # held to the Short-Term Energy Outlook (benchmark constraints within 2%, emmcntl.txt and
@@ -734,6 +838,12 @@ def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) 
         shape = new_profile / np.maximum(level, 1e-9)[:, None, None]
         share = benchmark_weight(year) * np.minimum(file_cap / total, 1.0)[:, None, None]
         profiles[group] = share * file_cf[:, None, None] * shape + (1.0 - share) * new_profile
+
+    credit_profiles = None
+    if FLEET_VINTAGE_CF:
+        credit_profiles = profiles
+        own = capacity is not None and "wind" in capacity and "solar" in capacity
+        profiles = fleet_profiles(snapshot, year, capacity if own else None, builds)
 
     shapes = load.regional_shapes().reshape(NUM_R, 36, 24)
     w = load.day_weights().reshape(36).astype(float)
@@ -793,6 +903,7 @@ def build_case(snapshot, year: int, trade: str = "none", capacity: dict = None) 
     return DispatchCase(year, cap, heat, vom, price, oil, avail, max_cf, credit, mcf,
                         profiles, nl, shapes, w, links, 0.0, mr_gw, mr_hr, ignition,
                         credit_share=credit_share(year_end, year, rule), build_profile=build_profiles,
+                        credit_profile=credit_profiles,
                         coal_share=coal_share, capture_net=capture_net, coal_classes=classes, tiers=tiers,
                         tier_max_cf=tier_max_cf, tier_vom=tier_vom, gross_ratio=gross, tier_outage=tier_outage)
 
@@ -879,7 +990,8 @@ def reduce_hours(case: DispatchCase, hours_per_block: int = 3) -> DispatchCase:
         return a.reshape(a.shape[:-1] + (24 // hours_per_block, hours_per_block)).mean(axis=-1)
 
     bp = None if case.build_profile is None else {k: blocks(v) for k, v in case.build_profile.items()}
-    return replace(case, shapes=blocks(case.shapes), profile={k: blocks(v) for k, v in case.profile.items()}, build_profile=bp)
+    cp = None if case.credit_profile is None else {k: blocks(v) for k, v in case.credit_profile.items()}
+    return replace(case, credit_profile=cp, shapes=blocks(case.shapes), profile={k: blocks(v) for k, v in case.profile.items()}, build_profile=bp)
 
 
 def spin_requirement(load_gw: np.ndarray, weights: np.ndarray, net_gw: np.ndarray) -> np.ndarray:

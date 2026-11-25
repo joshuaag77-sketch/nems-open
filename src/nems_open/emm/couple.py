@@ -99,7 +99,8 @@ class ElectricityLP:
         """The year's case rebuilt on `capacity` (COMPOSITION_FOLLOWS_CAPACITY), built once per year: the capacity
         path solves a year once and a lever's scale is fixed."""
         if year not in self._fleet_cases:
-            full = dispatch.build_case(self.snapshot, year, "none", capacity=capacity)
+            builds = self.capacity_path.renewable_builds() if self.capacity_path is not None else None
+            full = dispatch.build_case(self.snapshot, year, "none", capacity=capacity, builds=builds)
             self._fleet_cases[year] = dispatch.reduce_hours(full, self.hours_per_block)
         return self._fleet_cases[year]
 
