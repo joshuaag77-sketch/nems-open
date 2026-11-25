@@ -705,3 +705,29 @@ Chain 2027-2040 from EIA's 2026 fleet, GW (EIA / ECP_BUILD_CF and resource bound
 | CCS alone | 2 / 0 / 2 / 2 | 7 / 3 / 9 / 9 | 23 / 15 / 31 / 31 | 41 / 28 / 57 / 57 | 52 / 59 / 99 |
 
 Not ported, in order of likely effect on wind: (1) ECP's energy price, 1.27 times this LP's at the median in 2031 (20.3 against 15.4 $/MWh in TRE, gas prices about equal): its combined cycle capacity rows bind in every season, its planning dispatch burns 1.2 quads more gas. Worth about 15 $/kW-year of wind's 72. (2) State RPS rows (EP$ST_RPS, rGRPSge, 49 tranches in input/emm/rpstranche.txt): credits of 17 $/MWh (1987$) on solar in ISNE and NYUP, 13 and 12 on wind, 5 to 6 in MISE, PJME, CASO. MISE, ISNE, NY and PJME are 22 GW of the 2035 wind gap. (3) Battery retirements and reserve side: 12 GW of unplanned batteries in 2027 and 18 in 2032 are shortfalls the dearer battery does not prevent.
+
+## ECP's tail year, state RPS and the 2032 reserve price (branch wind-econ, round two, 2026-11-24)
+
+**Tail (`ECP_TAIL`, on).** `one_year_cost` and `retirement_tail_proxy` are replaced by columns: this year at its whole present value, planning year 2's columns (step 1, unbounded, `rate_adder` tail share) in a tail year only, weight = annuity of years 2 to 29 (14.7), reference year TAIL_OFFSET out, one day a month of 6-hour blocks, own reserve, RPS, gas curve and resource rows. The old HORIZON could not be used: it has a third explicit year, its tail paid build costs as level annuities and it ran 36 days. Approximations: one representative tail year instead of the present value of 28, the existing fleet's profiles and the plant file's dated changes to that year, coal absent (no coal column commits to the tail in EIA's 2026 and 2030 solves).
+
+**2027 and 2032 reserve side.** Row by row against EIA's 2026 and 2030 solves (`res2.py`): thermal, nuclear, hydro and pumped storage agree to 0.3 GW (2027); the requirement is 8 GW lower here (NWPP, ISNE, MISW, CASO, none of them short); wind credit 2.8 and solar 15.3 GW lower (4.6 in the short regions), batteries 13.6 GW higher (floors). MISC, MISE, PJME, PJMD, SRCA and PJMW are short by 15 GW before builds in both: EIA's own 2026 solve pays 100 to 600 $/kW there and fills them with 10 GW of turbines (both steps) and 2.5 GW of batteries. So no requirement or credit error; the mix was the missing tail, which values a turbine's remaining life and not a battery's. With it: 8.0 GW of turbines, 8.6 of batteries (was 5.3 and 12.1). What keeps batteries above ECP's 2.5 is ECP's 25 GW of subsidized solar that year.
+2032: the spike is in ECP too (median dual 522 nominal, 213 $/kW-year, 2031 solve). EIA passes a levelized price on (`capacity_payment`, RMAVG), which is 30.7 in 2032.
+
+**State RPS (`STATE_RPS`, on).** `rps.py`. Requirements, region maps and escape prices equal the 2030 composite everywhere.
+
+**Energy price.** Load is not it (LP load 4,301 TWh; ECP's 4,732 less cogeneration and contracts 61, Canada 67, end-use solar 182, must-run cogeneration 108, 13 TWh apart). Maximum-load output and seasonal maintenance: +1% (off). Converted coal at a 60% coal blend ran 221 TWh; ECP burns gas in it (`ECP_CONVERTED_BURNS_GAS`): +4%. The rest (about 15%) is the oracle's fleet: 46 GW of coal in 2031 against EIA's 78 and 213 TWh against 427 here.
+
+**Chain 2027-2040 from EIA's 2026 fleet** (EIA / 8cbda43 as committed, ECP_BUILD_CF off / final), GW:
+
+| | 2030 | 2032 | 2035 | 2037 | 2040 |
+|---|---|---|---|---|---|
+| wind | 212 / 204 / 206 | 262 / 233 / 245 | 344 / 268 / 336 | 356 / 284 / 354 | 404 / 314 / 411 |
+| solar | 258 / 293 / 243 | 288 / 354 / 266 | 305 / 354 / 285 | 306 / 356 / 286 | 323 / 358 / 295 |
+| battery | 88 / 99 / 97 | 99 / 118 / 114 | 100 / 123 / 115 | 100 / 123 / 115 | 103 / 126 / 118 |
+| CT | 171 / 171 / 171 | 195 / 191 / 194 | 208 / 213 / 205 | 220 / 224 / 214 | 267 / 250 / 230 |
+| CC without CCS | 288 / 278 / 282 | 316 / 291 / 310 | 334 / 306 / 313 | 340 / 316 / 315 | 378 / 343 / 335 |
+| CCS | 2 / 0 / 2 | 7 / 3 / 8 | 23 / 16 / 28 | 41 / 30 / 51 | 52 / 62 / 76 |
+
+Median reserve dual 2027-2040, 1987$/kW-year: 25, 42, 39, 34, 24, 1170, 47, 47, 45, 52, 42, 28, 527, 34; no shortfall in any year. `reserve_payment` (RMAVG) 34.5 in 2031 (ECP_BUILD_CF off), 69.8 in 2032 (EIA 30.7). The chain ran before `reserve_payment` was added, which only reads duals.
+
+Switches: CONVENTIONAL_CC off in 2032 (same 2031 fleet): CC 14.3 against 26.3 GW built, 11.3 GW short. ECP_BUILD_CF off in 2031: wind 5.4 against 13.5 GW built (EIA 22.6), solar 1.5 against 0. STEP_PREMIUM_LIFETIME off, chain to 2029: 2029 wind 21.5 against 8.0 (EIA 15.4), 2027 turbines 12.0 against 8.0 (ECP 8.0) and batteries 4.5 against 8.6 (ECP 2.5). Two of the isolation solves used retirements by region, not by group (2032's base solve gives the same builds). All three stay on.
