@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from nems_open.macro import symengine_py
 from nems_open.paths import REFERENCE_RUN
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -50,6 +51,7 @@ class Economy:
             raise RuntimeError("pyfrbus not found; see the module docstring")
         if str(FRBUS_DIR) not in sys.path:
             sys.path.insert(0, str(FRBUS_DIR))
+        symengine_py.install()
         from pyfrbus.frbus import Frbus
         from pyfrbus.load_data import load_data
 
